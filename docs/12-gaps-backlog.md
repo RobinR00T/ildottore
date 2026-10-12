@@ -79,8 +79,7 @@ P1 = strong differentiator / real attack surface · P2 = later.
 
 These are not coverage gaps a new spec closes; they change what a built row proves on a live
 target, and each waits on, or records, a decision: OD-18 and OD-19 are rows of
-`specs/contracts/00-INDEX.md`; the policy-pack flag is OD-46, open since it was numbered on
-2026-10-12 (OD-11, decided
+`specs/contracts/00-INDEX.md`; the policy-pack flag is OD-46, open since it was numbered on 2026-10-12 (OD-11, decided
 2026-10-11, says the PII opt-in comes with it: the pack and `--allow-pii-elicitation` together,
 never the run flag alone).
 
@@ -105,7 +104,6 @@ the spec lists first, through the golden harness and the mock target. The CI wal
 mypy --strict, import-linter, `lint specs`, pytest + coverage and the self-scan; `bandit` and
 `pip-audit` are not in CI, only in `make gates`, which needs both installed by hand
 (`SUPPLY-CHAIN.md`). This note does not certify a green run: the latest workflow run does. The
-strength remains the methodology (reproducibility + evidence + risk mapping, judge hardening,
-self-validation, extensibility);
+strength remains the methodology (reproducibility + evidence + risk mapping, judge hardening, self-validation, extensibility);
 what is left is coverage breadth (the rows above) and the deliberately deferred P2 items
 (streaming pre-moderation, timing side-channels) that trade away reproducibility.

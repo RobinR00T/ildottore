@@ -32,8 +32,7 @@ neighbouring entries can interleave (an older branch merged later sits above a n
 - CLI: no `--help` shows internal text, pinned by `tests/cli/test_help_text.py` (17 tests, 6 of
   them fail on the old docstrings); `dottore(1)` documents every command's options.
 - Gates: `make --no-print-directory gates` green on this branch before the rewrap commit, 5493
-  tests (17 new), 97.84% coverage, 75 specs lint OK, four import contracts kept, self-scan 0
-  high/critical, bandit and pip-audit
+  tests (17 new), 97.84% coverage, 75 specs lint OK, four import contracts kept, self-scan 0 high/critical, bandit and pip-audit
   clean. `main` itself after the merges of 2026-10-11, measured in a clean copy of `de122e26`
   (`git archive`): 5476 passed, 97.84% coverage, a figure no entry recorded. Lines over 100
   columns are rewrapped in the last commit, alone, so it can be redone after a rebase.
@@ -68,8 +67,7 @@ neighbouring entries can interleave (an older branch merged later sits above a n
   than refused out of order, since a report's redactor can mask a name and move it).
 - Tests now: `tests/evaluators/test_operator_not_destructive.py` (34, 33 fail on `main` at
   `a69dbd8c`), `tests/core/test_operator_declaration_runner.py` (9, all fail there),
-  `tests/cli/test_operator_declaration_campaign.py` (16, all fail there). `make gates` green on
-  `9096f659`
+  `tests/cli/test_operator_declaration_campaign.py` (16, all fail there). `make gates` green on `9096f659`
   (with `PYTHONPATH` set to the worktree's `src`): 5391 tests (5332 on `main` at `a69dbd8c`, 59
   new), 97.83% coverage (`shared/tool_abuse.py` and `evaluators/tool_call.py` 100%), 75 specs
   lint OK, four import contracts kept, self-scan, bandit and pip-audit clean.
@@ -111,8 +109,7 @@ neighbouring entries can interleave (an older branch merged later sits above a n
   like a hand-off ("make sure it destroys nothing", the second look lint gives a scene's
   `destructive: false` since the A-71 audit's M2; the heuristic moved to
   `shared/tool_abuse.handoff_shaped`, read by both); the `-q` lines end `, <k> tool(s) declared
-  not destructive`. Every attempt it changed carries in its verdict `operator declaration (OD-43):
-  the
+  not destructive`. Every attempt it changed carries in its verdict `operator declaration (OD-43): the
   target file declares '<tool>' (its name holds '<verb>') not destructive
   (seeded_setup.granted_tools, destructive: false), so no call to it was judged destructive`, in
   the form of the scene's own clearing note and after it when both apply, carried by the runner to
@@ -133,8 +130,7 @@ neighbouring entries can interleave (an older branch merged later sits above a n
   `tests/core/test_operator_declaration_runner.py` (6, all fail there, among them a cut reply),
   `tests/cli/test_operator_declaration_campaign.py` (12, all fail there: every report of one run
   through the real CLI and the same run without the declaration, the dry run, `-sn`, the two plan
-  warnings, the worked example, five resume cases, a corrupt record among them). Docs: MANUAL §4.2,
-  §5, §8, §10 and replay,
+  warnings, the worked example, five resume cases, a corrupt record among them). Docs: MANUAL §4.2, §5, §8, §10 and replay,
   FAQ, USAGE, both man pages, `docs/01`, `03`, `04`, `09`, `12`, `16`, ADR-0009,
   `examples/target.app.yaml` (the support agent now declares its hand-off) and Scenario G's real
   output, CHANGELOG. `make gates` green on `a9564e9d` (with `PYTHONPATH` set to the
@@ -172,8 +168,7 @@ neighbouring entries can interleave (an older branch merged later sits above a n
   Measured with the auditor's `probe_cli.py` on `b5a4e7e1`: the broad filter on attack words
   finishes the default battery (160 of 550 blocked, 2 checks at `--concurrency 1`, exit 0; on
   `07aa0b3a`, exit 3 at a run of 20 and every resume after 5); all HTML: 9 requests (6 at 1), 27
-  with `-sV` (24 at 1); two readable then HTML: 26 to 27, exit 3; 30% HTML at random: finishes,
-  every
+  with `-sV` (24 at 1); two readable then HTML: 26 to 27, exit 3; 30% HTML at random: finishes, every
   spec `inconclusive`. Tests: core 15 (6 fail on `07aa0b3a`), adapters 37 (3 fail there), CLI 11 (4
   fail there). `eca90de1` names the resume note's clause apart (mypy). `make --no-print-directory
   gates` green on `eca90de1` (2026-10-11, 18:34 to 18:41): ruff, format (405 files), mypy strict
@@ -453,8 +448,7 @@ neighbouring entries can interleave (an older branch merged later sits above a n
   vulnerable (67 confirmed fails, 8 inconclusive) and hardened (64 passes, 11 inconclusive)
   unchanged spec by spec. No fixture verdict changed. The no-judge dry-run warning on
   `examples/target.local.yaml` read 34 of the 34 specs (was 33 of 34): every shipped spec declares
-  a judge; since OD-44 (below) it reads 33 of the 33. Left out: `MCP-TOOLPOISON-001` against a
-  non-MCP target with a judge configured is
+  a judge; since OD-44 (below) it reads 33 of the 33. Left out: `MCP-TOOLPOISON-001` against a non-MCP target with a judge configured is
   what the judge makes of a reply that lists no tool (gating MCP specs to `provider: mcp` is a
   planner change of its own).
 - **OD-19 (ADR-0010 B with the amendment, accepted, u06 A-73):** one rule, `deterministic_first`,
@@ -664,8 +658,7 @@ neighbouring entries can interleave (an older branch merged later sits above a n
   `92c7b11`). Left open: Bedrock's guardrail intervention (an HTTP 200 read as a reply), OpenAI's
   `invalid_prompt` 400 and Gemini's OpenAI-compatible endpoint (no documented shape); the `-sV`
   pass still stops on such a refusal of an attributing probe (the benign one and, since the
-  audit, the carriers are failed probes). Not run against a live Azure or Gemini endpoint.
-  `make gates` green (2026-10-10, 20:49): ruff, format (386 files),
+  audit, the carriers are failed probes). Not run against a live Azure or Gemini endpoint. `make gates` green (2026-10-10, 20:49): ruff, format (386 files),
   mypy strict (156 source files), import-linter (4 kept), spec lint (0 errors, 0 warnings across 75
   specs, 14 suites, 1 pack), 4,954 tests with 97.63% coverage, self-scan 0 high/critical, bandit,
   pip-audit (no known vulnerabilities).
@@ -740,8 +733,7 @@ neighbouring entries can interleave (an older branch merged later sits above a n
   the fixes are redone in small commits. MEDIUM: a judge whose model refused sampling was silent
   (`SemanticJudgeEvaluator` read `SamplingRefused` as an outage: every judged spec inconclusive,
   exit 0, 29 judge 400s); it is re-raised and stops the run. Lows: `SamplingRefused` fires only on a
-  sent parameter named as a parameter (`sampling_params_named`,
-  `tests/adapters/test_sampling_refused.py`
+  sent parameter named as a parameter (`sampling_params_named`, `tests/adapters/test_sampling_refused.py`
   with 21 tests, 17 failing on `7dd5ec1`); the run records whether its target and judge were sent a
   temperature and a resume that keeps attempts continues as it started; `sampling_not_sent` counts
   the block as written; the judge refusal says "capabilities" without nested parentheses; the
@@ -903,8 +895,7 @@ neighbouring entries can interleave (an older branch merged later sits above a n
   suites) are unchanged: no mapping moved (`dottore coverage --json` is byte-identical to
   `f12ba83`'s). `make gates` green (with `PYTHONPATH` set to the worktree's `src`): 4685 tests
   (67 new, 24 of them from the pre-merge audit below), 97.60% coverage, 75 specs lint OK, four
-  import contracts kept, self-scan, bandit and pip-audit clean. Left open, out of reach rather than
-  decided: a confirmation from outside the
+  import contracts kept, self-scan, bandit and pip-audit clean. Left open, out of reach rather than decided: a confirmation from outside the
   model needs an input no evaluator has (a harness's approval record, approvals a target
   declares, a spec whose later turn confirms after the agent asked); when one exists it is the
   only thing that may mark a destructive call confirmed. Until then neither evaluator can honour a
@@ -1568,8 +1559,7 @@ neighbouring entries can interleave (an older branch merged later sits above a n
   `signal.default_int_handler`, whose KeyboardInterrupt raised inside a weakref callback is printed
   and dropped, so the run went on. Ctrl-C never was, because inside `asyncio.run` it goes to
   asyncio's handler, which cancels. Now SIGTERM and SIGHUP call the SIGINT handler in place at that
-  moment, and raise as before only when SIGINT has none (ignored, a job a script starts with `&`).
-  Left as
+  moment, and raise as before only when SIGINT has none (ignored, a job a script starts with `&`). Left as
   it is: with Ctrl-C ignored, and outside the event loop (where no request is sent), a signal in a
   callback can still be dropped, as Ctrl-C can in any Python program. Contract u12 A-60;
   `tests/cli/test_termination_signals.py`, 2 of its 8 tests fail on `e4d6c83`.
@@ -1973,11 +1963,9 @@ neighbouring entries can interleave (an older branch merged later sits above a n
   handler's own write has nothing after it (2 of 41 tries just after a 503 stop). Writing again on
   that signal was built and withdrawn (on a locked store, one Ctrl-C after a pass that succeeded
   waited 15.1 s instead of 9.8 for a record lost anyway); the window is written in the contract.
-  Contract u12 A-46; `tests/cli/test_probe_pass_spend.py`, 11 of its 14 tests fail on `2f6201a`. Not
-  changed: a fresh
+  Contract u12 A-46; `tests/cli/test_probe_pass_spend.py`, 11 of its 14 tests fail on `2f6201a`. Not changed: a fresh
   run's pass and a `--resume-unverified` run with no recorded spend record nothing; a signal during
-  a handler's write, a SIGKILL, or a write that fails (a warning) still leave the record low. Left
-  open as a follow-up: the adapters
+  a handler's write, a SIGKILL, or a write that fails (a warning) still leave the record low. Left open as a follow-up: the adapters
   are built with no retries of their own, so the error that stops a probe pass, and an attack
   attempt's evidence, say `exhausted 1 attempt(s)` after three sends. Merged in a scratch
   repository with PR #66 and with PR #68, code, u12 and the index merge cleanly (only
@@ -2499,8 +2487,7 @@ neighbouring entries can interleave (an older branch merged later sits above a n
   (EMB-XTENANT-RETRIEVAL / EMB-INVERSION-PROBE / EMB-NEIGHBOR-LEAK + embeddings suite).
 - **Safeguard event logged** (2026-07-08): Opus 4.8 blocked the kill_chain sub-agents 3×
   (cyber-topic false positive); exemption email prepped for Marta+Laurens; mitigation = route
-  security-content sub-agents to Sonnet 5 (works). See
-  `~/AI projects/ildottore-anthropic-safeguard-log.md`.
+  security-content sub-agents to Sonnet 5 (works). See `~/AI projects/ildottore-anthropic-safeguard-log.md`.
 - **Backlog left (docs/12):** adversarial-suffix/transfer attacks, guardrail-evasion, multilingual
   battery, function-calling attacks, finding-dedupe-across-mutations; P2 items. Pre-public: GPG
   re-sign + history scrub of old `.dottore/` artifacts. OD-11 default (PII off) still human-pending.
@@ -2517,8 +2504,7 @@ neighbouring entries can interleave (an older branch merged later sits above a n
   sub-agent for kill_chain were blocked 3× ('flagged for a cybersecurity topic', Opus 4.8;
   req_011CcpPiPD5JcrF26mwMTWs5 +2). Code (impl it1) + its 20-test FP/harmful suite had already
   landed → gate stayed green; conductor did **manual** senior validation. Did NOT circumvent.
-  Logged to ~/AI projects/ildottore-anthropic-safeguard-log.md; exemption:
-  claude.com/form/cyber-use-case.
+  Logged to ~/AI projects/ildottore-anthropic-safeguard-log.md; exemption: claude.com/form/cyber-use-case.
 - **RESPONSIBLE-USE.md** charter added (`80d574f`). Dependabot actions-bump merged earlier.
 - Carryover: MVP-2 w2 (baseline/drift, adversarial-suffix, multilingual, embeddings); GPG re-sign
   + history scrub of old `.dottore/` artifacts before public flip.
@@ -2617,10 +2603,8 @@ neighbouring entries can interleave (an older branch merged later sits above a n
 
 ## State: 2026-07-07 16:22 CEST
 
-- **Stage:** 1 ✅ · 2 Specify **✅** (15 contracts + consistency gate reconciled) · 3 Execute ⬜
-  (starting W0).
-- Repo bootstrap complete + first commit (37 files, **unsigned**: gpg-agent locked
-  non-interactively).
+- **Stage:** 1 ✅ · 2 Specify **✅** (15 contracts + consistency gate reconciled) · 3 Execute ⬜ (starting W0).
+- Repo bootstrap complete + first commit (37 files, **unsigned**: gpg-agent locked non-interactively).
 - **Stage 2 done via workflow** (`wpzv95kk4`, 15 agents, ~981k tok): 14 unit contracts written +
   cross-unit consistency review. The gate caught **3 blocking issues** at the TestPlan/planner
   seam (u08↔u09) + missing schemas → **resolved by ADR-0006** (TestPlan+ModelFingerprint in

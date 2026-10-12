@@ -138,8 +138,7 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   template reads the text at `text`, since a target file cannot declare a template). With
   concurrent specs, each one already sending stops at its own next unreadable reply, so the stop
   costs at most the 5 (or 20) requests, the check and one per other spec in flight, and every
-  reply sent is stored. A run of fewer attempts that read nothing is `unreachable` (exit 3, below),
-  its reason
+  reply sent is stored. A run of fewer attempts that read nothing is `unreachable` (exit 3, below), its reason
   giving the same advice. A non-retryable 4xx is not this: it still stops the run. Over MCP stdio a
   line that is not JSON is skipped as stray output, so a server that writes nothing else times out
   instead. An MCP server over stdio may write up to the same 4 MiB for one request, its stray
@@ -356,8 +355,7 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   value (`"x #\u0023[error]y"` is `x ##[error]y`). The JUnit XML report writes it `&#35;`, the
   character reference every XML parser reads as `#`. A program that compares the bytes rather than
   the parsed value sees the escape. The HTML report is left as it is: it is a page for a browser,
-  and inside `<script>` or `<style>` a reference would not be decoded. Not covered: a forged
-  evidence tree can still start a
+  and inside `<script>` or `<style>` a reference would not be decoded. Not covered: a forged evidence tree can still start a
   `replay` line with an id; the operator's own values in the run's plan lines (the target id under
   `--dry-run`, `--estimate` and `-sn`) are printed as written; invisible characters outside Cf
   (variation selectors, U+034F, U+3164) are not written out.
@@ -528,8 +526,7 @@ either: Anthropic's API reference says every Claude 4 model answers the pair wit
 in the reference bundled with the claude-api skill, cached 2026-09-25, and not tested against
 the live API). Every request the scanner makes to a target that takes sampling (below) sets a
 temperature (a spec's own, temperature 0 for a spec that declares none, the probes' 0, the
-judge's 0 and 0.5), so on an Anthropic target or judge no `top_p` goes out at all: not the block's,
-not the 1.0 six shipped specs set
+judge's 0 and 0.5), so on an Anthropic target or judge no `top_p` goes out at all: not the block's, not the 1.0 six shipped specs set
 themselves (`EMB-INVERSION-PROBE-001`, `EMB-NEIGHBOR-LEAK-001`, `EMB-XTENANT-RETRIEVAL-001`,
 `PI-DIRECT-001`, `PI-INDIRECT-RAG-001`, `PI-INDIRECT-TOOL-001`), not the judge's 1.0; the
 temperature is kept. Before, a block `top_p`, or one of those specs, stopped an Anthropic campaign
@@ -600,8 +597,7 @@ it keeps attempts, so one campaign is not half pinned and half unpinned, and is 
 version decides when it keeps none; both are said on stderr (`resume: <run id> sent stub a
 temperature when it started and keeps 3 attempt(s) sent so, so it continues as it started; this
 version would send no temperature or top_p (a fresh run does)`; a top_p is not named, since one
-goes out only where a spec or a block sets it, and never beside a temperature to Anthropic). If the
-reference
+goes out only where a spec or a block sets it, and never beside a temperature to Anthropic). If the reference
 is right, a run of an older version against a listed model stopped at its first request and kept
 nothing, so its resume sends no sampling; if a listed model did take the temperature, the run kept
 pinned attempts, and its resume stays pinned. A run started by the first version of this
@@ -890,8 +886,7 @@ open was dialled again inside each send, uncounted: `max_attempts: 1` made 8 dia
 requests.
 
 **Reading a turn.** Frames are JSON objects (a binary, non-JSON or non-object frame is a reply
-the adapter cannot read, which fails its attempt, as a malformed HTTP reply does: §3, OD-21). A
-frame whose `type_path` value is in
+the adapter cannot read, which fails its attempt, as a malformed HTTP reply does: §3, OD-21). A frame whose `type_path` value is in
 `ignore_types` is discarded; one with `error_path` present ends the attempt as `inconclusive`
 (an environment error, retried by the runner's policy and debited each time); every string at
 `text_path` is appended; the frame satisfying `final_path`/`final_value` ends the turn; its
@@ -1223,8 +1218,7 @@ encoding attack): `carrier/carrier_base64_wrap: ProviderFilterBlock`, that carri
 left out of `effective_mutators`. Either refusal is the provider saying its input filter refused a
 prompt, so `input_filter` is `true`; otherwise it is `null`, never `false` (benign probes cannot
 show there is no filter, and an undocumented 4xx claims nothing). Until 2026-10-11 (OD-40) it was
-`null` on every pass. The same refusal of an attributing probe still exits 3. In the attack phase
-such a refusal is a blocked attempt and the campaign goes
+`null` on every pass. The same refusal of an attributing probe still exits 3. In the attack phase such a refusal is a blocked attempt and the campaign goes
 on (§9).
 On a target that answers every attributing probe alike, `refusal_style` and `benign_refused` are
 `null`. `false` is what two benign probes saw, not proof that there is no filter. Before, any
@@ -1480,8 +1474,7 @@ artifacts can share one attempt id (the failed try and its re-send). A reply sto
 verdict (a ceiling stopped its evaluation) is sent again the same way, and listed with `?` for
 its verdict. Replay lists them all but counts one per id (the one that got an answer and a
 verdict, else any with a verdict, such as an environment error's inconclusive, else a bare
-reply), and says so in a line above the totals:
-`(2 more artifacts share an attempt id with one listed above: one per id is
+reply), and says so in a line above the totals: `(2 more artifacts share an attempt id with one listed above: one per id is
 counted below)` (`1 more artifact shares` for one). Attack attempts and the
 recognition probes sent by `-sV` are listed apart: a probe is not an attempt, so it never enters
 the reproducibility ratio or the attempt count, but it is stored, hashed and replayable like
@@ -1499,8 +1492,7 @@ inconclusive or never sent: not shown fixed), STILL-FAIL or UNCHANGED and exits 
 regression is present, so it is CI-gateable like `run`. A FIXED the operator's declaration may
 have made (OD-43, §8: the current report has attempts of that spec the declaration changed, or
 the two reports declare different tools not destructive) reads `FIXED (operator declaration,
-OD-43)`, with a line naming those specs: the pass may be the operator's word, not the target's. A
-report covering several targets, or
+OD-43)`, with a line naming those specs: the pass may be the operator's word, not the target's. A report covering several targets, or
 two reports about different targets, is refused (exit 3): indexing by spec id used to merge
 targets, so a PASS on one could replace a FAIL on another. A report of a run that did not
 complete is refused too, and so is one that cannot be read (not UTF-8, not JSON, or nested past
@@ -1589,8 +1581,7 @@ what it is sent. Attacks on the **agent harness** a developer runs locally (the 
 repository ships, the trust prompt shown before it is opened, the plugins and skills an agent
 installs) are a different target class: they act on the machine opening the project, not on
 the model's replies, so no request this tool sends can exercise them and none of these figures
-covers them. See `docs/REFERENCES.md` for a current survey of that class. Off-universe values never
-reach a numerator (a Responsible-AI
+covers them. See `docs/REFERENCES.md` for a current survey of that class. Off-universe values never reach a numerator (a Responsible-AI
 `RAI0x` code is not an OWASP LLM category), so a percentage cannot exceed 100%, and a spec file
 that fails to load is named in a warning instead of quietly leaving the spec count.
 
@@ -2286,10 +2277,8 @@ mutator takes no parameter. `dottore lint` reports any other parameter as
 and the runner refuses the spec the same way at run time: nothing is sent for it, and its
 finding is `inconclusive` with the reason `unknown_mutator_parameter: translate:klingon, rot13:x
 names a parameter the mutator does not accept; nothing was sent for this spec`. A plugin
-mutator that does not declare its parameters is not checked. See
-[`06-extensibility-suites.md`](06-extensibility-suites.md),
-[`03-attack-spec-format.md`](03-attack-spec-format.md) and
-[`../CONTRIBUTING.md`](../CONTRIBUTING.md).
+mutator that does not declare its parameters is not checked. See [`06-extensibility-suites.md`](06-extensibility-suites.md),
+[`03-attack-spec-format.md`](03-attack-spec-format.md) and [`../CONTRIBUTING.md`](../CONTRIBUTING.md).
 
 ## 13. Troubleshooting
 

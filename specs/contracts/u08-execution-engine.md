@@ -164,8 +164,7 @@ read the persisted `TestRun`/`Finding`s. Redactor masks before any evidence/stor
   (OD-19) and is stored, its reasoning naming the evaluator not consulted (only the aggregate is
   stored, and it was silent: delta audit); otherwise the reply is stored without a verdict. If
   that was the campaign's last
-  attempt, the campaign is complete: every verdict is decided and nothing more is sent. A product
-  error sets the campaign's abort before the
+  attempt, the campaign is complete: every verdict is decided and nothing more is sent. A product error sets the campaign's abort before the
   batch's replies are evaluated, so no spec starts while they are judged, and an evaluator's own
   error during that evaluation is quoted in the halt's reason, not swallowed by it. A conversation
   the halt stops mid-way has no reply to score and is not stored; its turns are in the spend, as
@@ -202,8 +201,7 @@ read the persisted `TestRun`/`Finding`s. Redactor masks before any evidence/stor
 **A-4 The wall budget MUST measure time (added 2026-09-22).** The composition root injects a
 deterministic counter as the runner's clock so OFFLINE evidence records a byte-stable
 `latency_ms` (a live route gets `time.monotonic` since 2026-10-04: the counter made a 1 ms
-loopback reply read 2000.0 ms). That counter was also handed to the budget ledger, so `max_wall_s`
-counted clock
+loopback reply read 2000.0 ms). That counter was also handed to the budget ledger, so `max_wall_s` counted clock
 **reads**: 1800 "seconds" was fewer reads than a 72-spec run performs, the default battery
 halted after 45 specs on every invocation, adding a telemetry read anywhere changed which specs
 were scanned, and a **live** run had no time bound at all. The ledger takes a real monotonic
@@ -662,10 +660,8 @@ as amended:
   campaign as `budget_exhausted` with the reply that called for it in hand (`CeilingAtUnreadable`,
   turned by `execute_attempt` into a `ReplyOverBudget`), stored and refunded (verification of
   `da16f219`, LOW 1: the ceiling replaced that reply, which was never stored, and its tokens
-  stayed reserved; `--budget-requests 5` now gives 5 requests, 5 attempts stored, 0 tokens). A
-  resume of a run that holds a read reply (or a
-  provider's filter block) starts the watch proven (`_read_a_reply`), so only 20 in a row stop it.
-  Once stopped, every later unreadable reply raises the same halt, so a spec already
+  stayed reserved; `--budget-requests 5` now gives 5 requests, 5 attempts stored, 0 tokens). A resume of a run that holds a read reply (or a
+  provider's filter block) starts the watch proven (`_read_a_reply`), so only 20 in a row stop it. Once stopped, every later unreadable reply raises the same halt, so a spec already
   sending stops at its own next one. The halt carries the result its reply makes, refunded, and
   `reproduce` and the conversation executor keep it before it goes on, as a `ReplyOverBudget`'s
   (MEDIUM 1: the reply that stopped each spec was sent, debited and never stored, and its token
@@ -680,8 +676,7 @@ request with an HTML page, the default battery stops after 9 requests (5, the ch
 other spec in flight at the default `--concurrency 4`) with 8 attempts and 1 probe stored and 0
 tokens recorded, 6 with `--concurrency 1`; `run -sV` after 27 (18 probes, each a failed probe since
 the reply is refused, u09 A-35, then 9), 24 with `--concurrency 1`; two readable replies, then that
-page for everything: 26 to 27 requests (the replies in flight vary), exit 3; the verification's
-filter on attack words (a 200 HTML
+page for everything: 26 to 27 requests (the replies in flight vary), exit 3; the verification's filter on attack words (a 200 HTML
 block page for prompts holding "ignore", "instruction", "system prompt", "pretend", "rules",
 "secret", "password" or "bypass"): the default battery finishes, exit 0, 160 of 550 attacks
 blocked and counted, 2 checks at `--concurrency 1` (on `07aa0b3a`, exit 3 at a run of 20, and each
@@ -771,8 +766,7 @@ every probe was unreadable after its probes (u09 A-35).
   by a resume, counted in every report. Left open then, closed by OD-42 (A-70): a Bedrock
   guardrail intervention (an HTTP 200 whose output is the guardrail's message, read as a reply).
   Still open, not part of the decision: OpenAI's `invalid_prompt` 400 (in forum reports, not in its
-  error-code reference) and Gemini's OpenAI-compatible endpoint, for want of a documented shape; and
-  the `-sV` pass, which still stops
+  error-code reference) and Gemini's OpenAI-compatible endpoint, for want of a documented shape; and the `-sV` pass, which still stops
   on such a refusal of an attributing probe (the benign one, u09 A-67, and since the pre-merge
   audit of `3d739f3` the carriers, are failed probes instead). Owner: human.
 - **OD-42** (2026-10-11): a reply the provider's own filter cut or replaced came back as an HTTP
@@ -788,8 +782,7 @@ every probe was unreadable after its probes (u09 A-35).
   Gemini from a target file (no template there: library-only), Bedrock's `InvokeModel` guardrail
   shape and a streamed reply. Owner: human.
 - **OD-21** (2026-10-07; shared with u04): a 200 whose body is not JSON (or not an object, or not
-  the provider's shape) stopped the whole campaign at the first such reply, exit 3. **Decided
-  2026-10-11
+  the provider's shape) stopped the whole campaign at the first such reply, exit 3. **Decided 2026-10-11
   under the owner's delegation (best practice), revisable:** the attempt is inconclusive, not
   retried, and the campaign goes on; a campaign whose first five replies all cannot be read, with
   none that can, stops early (`aborted on UnreadableReplies`, exit 3), so a wrong endpoint is not a
@@ -802,8 +795,7 @@ every probe was unreadable after its probes (u09 A-35).
   attempt again. **Amended again after the verification of `07aa0b3a`:** before either stop the
   watch sends one benign request, and stops only when that one cannot be read either, so a target
   behind a content filter that answers attack prompts with a block page finishes its battery; a
-  resume of a run that read replies starts proven. Built as §7 A-74. Why: it is the rule #65, #68
-  and OD-41 already
+  resume of a run that read replies starts proven. Built as §7 A-74. Why: it is the rule #65, #68 and OD-41 already
   follow for neighbouring cases, a hostile reply should not decide whether the rest of a battery is
   measured, and the early stop keeps what the old rule bought (a misconfigured endpoint caught at
   once) for 5 requests instead of 1. Not taken: keep stopping at the first one (one hostile reply

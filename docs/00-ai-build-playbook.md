@@ -172,8 +172,7 @@ owner per unit, no double-edits.
 See `specs/contracts/00-INDEX.md` for the authoritative DAG. Waves:
 
 - **W0** `u00-shared-models`
-- **W1** `u01-config-scope-policy` · `u02-spec-registry-linter` · `u05-prompt-mutator` ·
-  `u07-scoring`
+- **W1** `u01-config-scope-policy` · `u02-spec-registry-linter` · `u05-prompt-mutator` · `u07-scoring`
 - **W2** `u03-mock-target-golden-harness` · `u04-target-adapters` · `u10-evidence-run-store`
 - **W3** `u06-evaluators` · `u09-fingerprint-engine`
 - **W4** `u08-execution-engine` · `u11-reporting` · `u13-attack-specs-battery`

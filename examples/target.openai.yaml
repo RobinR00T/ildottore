@@ -21,5 +21,4 @@ capabilities:
 sampling_defaults: { temperature: 0.0, top_p: 1.0 }
 # Its authorization record ships beside it: examples/scope.openai.yaml (Scenario D in
 # examples/README.md). Check the pair, and the cost, before spending anything:
-#   dottore run --dry-run --suite owasp:llm -t examples/target.openai.yaml \
-#     --scope examples/scope.openai.yaml
+#   dottore run --dry-run --suite owasp:llm -t examples/target.openai.yaml --scope examples/scope.openai.yaml

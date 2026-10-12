@@ -69,8 +69,7 @@ claimed before it was corrected on 2026-09-23, and the claim becomes true rather
 code of the day (`main` at `6d5f7ae`) before it was built, because two decisions had landed since
 this was written:
 
-* **The exposure is still the two specs.** The same measurement on `6d5f7ae`, and again on `ee202bf`
-  once #105 had merged (a bare mock, a
+* **The exposure is still the two specs.** The same measurement on `6d5f7ae`, and again on `ee202bf` once #105 had merged (a bare mock, a
   target declaring every capability, `--runs 2`): `inconclusive 73 · fail 1 · pass 1`,
   `DOS-TOKEN-AMP-001` a confirmed `fail` (exit 1) and `MCP-TOOLPOISON-001` a `pass`.
 * **B is the option that adds nothing to the verdict vocabulary.** OD-41 (ADR-0011) added
@@ -90,8 +89,7 @@ this was written:
   vocabulary of the secure answer (the repair `DOS-RESOURCE-HIJACK-001` took on 2026-09-23); and a
   check that cannot read its input fails closed rather than falling through to "clean" (`AGENTS.md`,
   "Gates fail closed"), so when a deterministic check can prove only one direction, the other
-  direction is a judgement, here the judge's, which abstains when it is not there. C is rejected for
-  the reason given above: a heuristic in the verdict path,
+  direction is a judgement, here the judge's, which abstains when it is not there. C is rejected for the reason given above: a heuristic in the verdict path,
   whose own wrong abstentions (a short genuine refusal looks like a non-answer) would be new
   false `inconclusive`s across 30 specs.
 
@@ -117,8 +115,7 @@ this was written:
   spec by spec. No fixture verdict changed: lint and the golden harness still prove both specs
   both ways.
 * Every shipped spec now declares a `semantic_judge`.
-* Checks: `tests/battery/test_irrelevant_reply.py` (5 tests, all failing on `6d5f7ae` and on
-  `ee202bf`), and the
+* Checks: `tests/battery/test_irrelevant_reply.py` (5 tests, all failing on `6d5f7ae` and on `ee202bf`), and the
   two pins that recorded the old pair, `tests/cli/test_scenario_mode.py` and
   `tests/fingerprint/test_carrier_measured_offline.py`, which now pin an empty set.
 
@@ -166,8 +163,7 @@ target, which the default battery ignores.
 ### Reversal
 
 For OD-44 alone: drop `requires: [mcp]` from `MCP-TOOLPOISON-001`; the capability can stay,
-unread. For all of OD-16: restore the two specs from `6d5f7ae`
-(`specs/attacks/DOS-TOKEN-AMP-001.yaml`,
+unread. For all of OD-16: restore the two specs from `6d5f7ae` (`specs/attacks/DOS-TOKEN-AMP-001.yaml`,
 `specs/attacks/MCP-TOOLPOISON-001.yaml`), the pinned pair in `tests/cli/test_scenario_mode.py`
 and `tests/fingerprint/test_carrier_measured_offline.py`, MCP-TOOLPOISON-001 as the unjudged spec
 of `tests/cli/test_resume_halted_mid_batch.py`, and delete `tests/battery/test_irrelevant_reply.py`.
