@@ -757,27 +757,30 @@ def _assert_same_rules(run_id: str, context: dict[str, object]) -> None:
     if stored == JUDGING_RULES_VERSION:
         return
     this = f"this is Il Dottore {__version__}, judging rules {JUDGING_RULES_VERSION}"
-    why = (
-        "A resume keeps the attempts the halted half stored with the verdicts those rules gave "
-        "them and judges only what it sends, so one report would judge the same kind of reply "
-        "two ways; the stored replies are redacted, so they cannot be judged again. There is no "
-        "flag for this: finish it with the version that started it (`dottore --version` names "
-        "its judging rules), or start a fresh run."
-    )
+
+    def why(which: str) -> str:
+        return (
+            "A resume keeps the attempts the halted half stored with the verdicts those rules "
+            "gave them and judges only what it sends, so one report would judge the same kind of "
+            "reply two ways; the stored replies are redacted, so they cannot be judged again. "
+            f"There is no flag for this: finish it with the version that started it{which}, or "
+            "start a fresh run."
+        )
+
     if stored is None:
         # The date is kept away from the version number: "1 (2026-10-12" reads as a phone
         # number to the redactor every error goes through.
         raise ValueError(
             f"run {run_id!r} records no judging rules (the record exists since "
             f"{JUDGING_RULES_SINCE}), so it was made by an Il Dottore older than this one, whose "
-            f"rules this version cannot vouch for ({this}). {why}"
+            f"rules this version cannot vouch for ({this}). {why('')}"
         )
     started = context.get("tool_version")
     by = f", started by Il Dottore {started}" if isinstance(started, str) and started else ""
     age = "an older" if isinstance(stored, int) and stored < JUDGING_RULES_VERSION else "a newer"
     raise ValueError(
         f"run {run_id!r} was judged by the rules of {age} Il Dottore (judging rules {stored}{by}), "
-        f"and {this}. {why}"
+        f"and {this}. {why(' (`dottore --version` names its judging rules)')}"
     )
 
 
