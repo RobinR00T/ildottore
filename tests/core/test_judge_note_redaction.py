@@ -88,7 +88,10 @@ def test_a_judge_that_could_not_be_consulted_is_quoted_redacted_too(no_known_sec
 
 
 def test_a_cut_moves_before_a_token_rather_than_through_it() -> None:
-    reasoning = "a" * (_JUDGE_NOTE_CHARS - 10) + " ZYNAP_CANARY_run-4c397602a2e0 end"
+    # Ordinary words, which no key, hex or entropy rule takes (a run of one letter is a hex run to
+    # the key-format rules), so the cut lands in the canary and nowhere else.
+    words = ("the judge read the reply and wrote this note " * 10)[: _JUDGE_NOTE_CHARS - 10]
+    reasoning = words + " ZYNAP_CANARY_run-4c397602a2e0 end"
     note = _judge_record(
         Verdict(status=VerdictStatus.PASS, confidence=0.5, reasoning=reasoning, evaluator_type="j")
     )
