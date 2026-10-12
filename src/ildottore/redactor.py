@@ -1863,8 +1863,11 @@ def _protocol_paths(node: Mapping[object, object]) -> list[list[str]] | None:
     return [list(_DEFAULT_PROTOCOL)]
 
 
-def _transcript_streams(frames: Sequence[object], protocol: list[list[str]]) -> list[_Stream]:
-    """The content of the frames received, one stream per field, the protocol's fields aside."""
+def _transcript_streams(
+    frames: Sequence[object], protocol: list[list[str]], *, minimum: int = 2
+) -> list[_Stream]:
+    """The content of the frames received, one stream per field, the protocol's fields aside
+    (a field in fewer than ``minimum`` frames is no stream to join)."""
 
     streams: dict[_LeafPath, _Stream] = {}
     for index, entry in enumerate(frames):
@@ -1875,7 +1878,7 @@ def _transcript_streams(frames: Sequence[object], protocol: list[list[str]]) -> 
             if any(segments[: len(declared)] == declared for declared in protocol):
                 continue
             streams.setdefault(path, []).append((index, path, text))
-    return [stream for stream in streams.values() if len(stream) > 1]
+    return [stream for stream in streams.values() if len(stream) >= minimum]
 
 
 def split_texts(obj: object, *, alternatives: bool = False) -> Iterator[str]:
@@ -2250,6 +2253,76 @@ def withhold_split(obj: object) -> object:
     """
 
     return _withheld(obj)[0]
+
+
+#: A character a token of the rules can be made of: a run of them at a cut may be a secret's head.
+_TAIL_CHAR: Final = re.compile(r"[\w+/=.:@-]")
+#: The longest run of them read as a head: a longer one is long enough for the rules on its own
+#: (the excerpt's cut uses the same bound), and a field every event repeats (``text_delta``) joins
+#: into one run as long as the stream, which is no secret's head.
+_TAIL_RUN: Final = 256
+
+
+def _open_tail(joined: str) -> int:
+    """Where the part of ``joined`` that may run on past its end starts (``len`` when none).
+
+    The run of key characters it ends with, when no longer than :data:`_TAIL_RUN`, and the
+    longest end of it that begins a registered credential: either may be the head of a secret
+    whose rest was not read, which no rule recognises in part (the excerpt's own cut keeps out
+    what crosses it the same way).
+    """
+
+    start = len(joined)
+    while start > 0 and len(joined) - start <= _TAIL_RUN and _TAIL_CHAR.match(joined, start - 1):
+        start -= 1
+    if len(joined) - start > _TAIL_RUN:
+        start = len(joined)
+    for secret in _known_secrets():
+        for size in range(min(len(secret) - 1, len(joined)), 0, -1):
+            if joined.endswith(secret[:size]):
+                start = min(start, len(joined) - size)
+                break
+    return start
+
+
+def withhold_open_ends(transcript: object, *, after: int = 0) -> object:
+    """``transcript`` with, in each of its streams whose last piece is in a frame from ``after``
+    on, the pieces from where its open tail starts emptied (:func:`_open_tail`), or
+    ``transcript`` itself when no piece changes (A-77).
+
+    For a transcript read from the head of a longer body (an unreadable reply's excerpt reads
+    only that, third pre-merge audit, LOW 4): a secret whose pieces run on past what was read is
+    joined only in part, and no rule masks a head, so its pieces are left out instead. A stream
+    whose last piece came earlier is read as complete.
+    """
+
+    if not isinstance(transcript, Mapping):
+        return transcript
+    protocol = _protocol_paths(transcript)
+    if protocol is None:
+        return transcript
+    frames = cast("list[object]", transcript[TRANSCRIPT_FRAMES])
+    edits: dict[int, list[tuple[_LeafPath, str]]] = {}
+    # A field read once is a stream's head too: its rest may lie past what was read.
+    for stream in _transcript_streams(frames, protocol, minimum=1):
+        if stream[-1][0] < after:
+            continue
+        joined = "".join(text for _, _, text in stream)
+        tail = _open_tail(joined)
+        start = 0
+        for index, path, text in stream:
+            if start + len(text) > tail and text:
+                edits.setdefault(index, []).append((path, text[: max(0, tail - start)]))
+            start += len(text)
+    if not edits:
+        return transcript
+    out = list(frames)
+    for index, leaves in edits.items():
+        item = _thawed(out[index])
+        for path, piece in leaves:
+            item = _with_leaf(item, path, piece)
+        out[index] = item
+    return {**transcript, TRANSCRIPT_FRAMES: out}
 
 
 def mask_split(redactor: _RedactsText, obj: object) -> object:

@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from ildottore.adapters.base import ResponseMalformed, reply_excerpt
+from ildottore.adapters.base import ResponseMalformed, _split_masked, reply_excerpt
 from ildottore.redactor import Redactor, register_known_secret
 from ildottore.shared.models import Attempt, ModelRequest
 from ildottore.store import FsEvidenceStore
@@ -281,3 +281,78 @@ def test_a_streamed_secret_is_masked_in_every_shape_of_event_stream(
     # Nothing to mask: quoted as it came.
     clean = _STREAMS[shape]([text[i : i + 3] for i in range(0, 18, 3)])
     assert reply_excerpt(clean.encode(), Redactor(salt="s"))[0] == clean
+
+
+def test_a_json_lines_log_is_records_and_quoted_as_main_quotes_it() -> None:
+    """Read as a stream, a log's fields were joined across its records and masked: 181 of 217
+    clean logs were quoted otherwise than by main (third pre-merge audit, LOW 2)."""
+
+    words = ["debug", "r7", "Kx", "info", "Wq3", "auth", "Zp", "ok9"]  # joined: high entropy
+    body = "".join(
+        json.dumps(
+            {"ts": f"2026-10-12T08:00:{i:02d}Z", "msg": w, "req": f"r{i}"}, separators=(",", ":")
+        )
+        + "\n"
+        for i, w in enumerate(words * 3)
+    )
+    assert _split_masked(body, Redactor(salt="s")) is body
+    excerpt, _ = reply_excerpt(body, Redactor(salt="s"))
+    assert excerpt == Redactor(salt="s").redact_text(body)
+    # OpenAI chunks written as JSON lines are a stream, as Ollama's lines are.
+    text = f"Sure: {KEY} ok"
+    chunks = "".join(
+        json.dumps({"object": "chat.completion.chunk", "choices": [{"delta": {"content": c}}]})
+        + "\n"
+        for c in [text[i : i + 3] for i in range(0, len(text), 3)]
+    )
+    assert KEY[8:20] not in _rebuilt(reply_excerpt(chunks, Redactor(salt="s"))[0])
+
+
+def test_a_block_of_data_lines_is_read_line_by_line_beside_a_masked_event(
+    registered: None,
+) -> None:
+    """The line-by-line reading ran only when the format's masked nothing (LOW 3)."""
+
+    email = "alice.wong@corp-example.com"
+    text = f"Here: {KEY} ok"
+    body = (
+        f"data: {_oai('mail ' + email[:10])}\n\ndata: {_oai(email[10:])}\n\n"
+        + "".join(f"data: {text[i : i + 3]}\n" for i in range(0, len(text), 3))
+        + "\n"
+    )
+    excerpt, _ = reply_excerpt(body, Redactor(salt="s"))
+    assert email not in _rebuilt(excerpt) and KEY[8:20] not in _rebuilt(excerpt)
+
+
+def test_only_the_head_the_excerpt_reads_is_read_and_a_secret_past_it_is_left_out(
+    no_known_secrets: None,
+) -> None:
+    """A 4 MiB stream of tiny events cost up to 12.8 s (LOW 4). Read up to its window, a
+    registered credential whose deltas run past the window is not shown in part."""
+
+    import time
+
+    hostile = "data\n\n" * (4 * 1024 * 1024 // 6)
+    started = time.perf_counter()
+    reply_excerpt(hostile, Redactor(salt="s"))
+    assert time.perf_counter() - started < 2.0
+    secret = "Gl4ss-Harbour-Credential-Seven-2026"
+    register_known_secret(secret)
+    pad = "p" * 1200  # each delta's event carries this much else, as a target may write it
+    body = "".join(
+        f"data: {json.dumps({'choices': [{'delta': {'content': c}}], 'pad': pad})}\n\n"
+        for c in secret + " outro"
+    )
+    assert len(body) > 40_000  # the credential's deltas run past the window
+    excerpt, _ = reply_excerpt(body, Redactor(salt="s"))
+    assert secret[:3] not in _rebuilt(excerpt), excerpt[:200]
+    # A clean stream longer than the window is not rewritten: quoted as main quotes it.
+    words = ("the reply goes on and on " * 3000).split(" ")
+    clean = "".join(
+        "event: content_block_delta\ndata: "
+        + json.dumps({"type": "content_block_delta", "delta": {"type": "text_delta", "text": w}})
+        + "\n\n"
+        for w in words
+    )
+    assert len(clean) > 200_000
+    assert _split_masked(clean, Redactor(salt="s")) is clean

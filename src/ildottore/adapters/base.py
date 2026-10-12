@@ -48,6 +48,7 @@ from ildottore.redactor import (
     mask_split,
     redact_split,
     registered_secrets,
+    withhold_open_ends,
 )
 from ildottore.shared.logprobs import readable_logprob
 from ildottore.shared.models import (
@@ -300,29 +301,91 @@ def _event(data: str) -> tuple[str, Any]:
     return ("string", value) if isinstance(value, str) else ("text", data)
 
 
-def _masked_events(
-    redactor: Redactor, events: list[tuple[str, Any]]
-) -> list[tuple[str, Any]] | None:
-    """``events`` with their content masked across them as a transcript's is, or None."""
+def _stream_window() -> tuple[int, int]:
+    """``(window, settled)``: how much of a streamed body the excerpt's masking reads, and from
+    where in it a stream's last piece may be the head of more (third pre-merge audit, LOW 4).
+
+    The excerpt reads at most ``extent`` characters of the body it is given (twice what it keeps,
+    then a margin for a registered credential or a short key-shaped token crossing that cut,
+    :func:`reply_excerpt`). A window of four times that leaves the excerpt reading well inside
+    the rewritten part even where masks shorten it, and nothing past the window is read: a 4 MiB
+    stream of tiny events cost up to 12.8 s and costs what 37 KiB does. A stream cut by the
+    window may run on past it, so the part of each stream whose last piece lies past half the
+    window that may be a secret's head (a run of key characters, a registered credential's
+    beginning) is left out (:func:`ildottore.redactor.withhold_open_ends`): no span crossing the
+    cut is shown in part. One that ended in the first half is read as complete.
+    """
+
+    longest = max((len(secret) for secret in registered_secrets()), default=0)
+    extent = 2 * UNREADABLE_EXCERPT_BYTES + 4 * max(longest, _SHORT_TOKEN_HEAD)
+    return 4 * extent, 2 * extent
+
+
+def _head(text: str, window: int) -> tuple[str, bool]:
+    """``text``, or its head up to the last line end at or before ``window``, and whether cut."""
+
+    if len(text) <= window:
+        return text, False
+    cut = max(text.rfind("\n", 0, window), text.rfind("\r", 0, window)) + 1
+    return text[:cut], True
+
+
+#: A unit of a stream as read: the lines it comes from, its kind and its frame.
+_Unit = tuple[list[int], str, Any]
+
+
+def _written(kind: str, value: Any, original: str) -> str:
+    """A unit's data as written again: JSON as the target wrote it, compact when it was so and
+    not ``\\u``-escaped (second pre-merge audit, MEDIUM 1)."""
+
+    if kind == "text":
+        return cast("str", value)
+    compact = False
+    try:
+        before = json.loads(original)
+        compact = original.strip() in (
+            json.dumps(before, separators=(",", ":"), ensure_ascii=False),
+            json.dumps(before, separators=(",", ":")),
+        )
+    except ValueError:
+        compact = False
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":") if compact else None)
+
+
+def _masked_units(
+    redactor: Redactor, units: list[_Unit], *, cut: bool, settled: int, offsets: list[int]
+) -> list[Any] | None:
+    """Each unit's frame with the stream's content masked across the units as a transcript's is
+    (A-77), its open tails left out when ``cut``, or None when no frame changes."""
 
     transcript = {
-        TRANSCRIPT_FRAMES: [{"direction": "received", "frame": value} for _, value in events],
+        TRANSCRIPT_FRAMES: [{"direction": "received", "frame": frame} for _, _, frame in units],
         TRANSCRIPT_PROTOCOL_PATHS: list(_STREAM_PROTOCOL_PATHS),
     }
     masked = mask_split(redactor, transcript)
+    if cut:
+        after = next(
+            (i for i, (lines, _, _) in enumerate(units) if offsets[lines[0]] >= settled),
+            len(units),
+        )
+        masked = withhold_open_ends(masked, after=after)
     if masked is transcript:
         return None
     frames = cast("dict[str, list[dict[str, Any]]]", masked)[TRANSCRIPT_FRAMES]
-    return [(kind, frame["frame"]) for (kind, _), frame in zip(events, frames, strict=True)]
+    return [frame["frame"] for frame in frames]
 
 
-def _written(kind: str, value: Any) -> str:
-    """An event's data as written again: JSON as the target wrote it, not ``\\u``-escaped."""
+def _offsets(lines: list[list[str]]) -> list[int]:
+    """Where each line starts in the text it was cut from."""
 
-    return value if kind == "text" else json.dumps(value, ensure_ascii=False)
+    out, at = [], 0
+    for line, ending in lines:
+        out.append(at)
+        at += len(line) + len(ending)
+    return out
 
 
-def _sse_masked(text: str, redactor: Redactor, *, per_line: bool = False) -> str | None:
+def _sse_masked(text: str, redactor: Redactor) -> str | None:
     """``text``, a server-sent event stream, with its events' content masked across the events
     as a WebSocket transcript's is (A-77), or None when it is no such stream or holds nothing to
     mask.
@@ -333,15 +396,20 @@ def _sse_masked(text: str, redactor: Redactor, *, per_line: bool = False) -> str
     (second pre-merge audit, MEDIUM 2): a line ends at CRLF, LF or CR only, a blank line ends an
     event, a line starting with a colon is a comment, the field is what comes before the first
     colon and one space after it is dropped, and an event's ``data`` lines are joined by LF. An
-    event's data is an object or an array when it parses as one, else the text it holds (a JSON
-    string decoded); objects are masked field by field across the events, and the texts as one
-    stream. A masked event is written again on one ``data`` line (a text holding LF, on as many),
-    every other line as it came. ``per_line`` reads each ``data`` line as an event of its own, for
-    a page that is not an event stream but writes ``data:`` lines with no blank line between them
-    (a log), which the format reads as one event.
+    event's data is an object or an array when it parses as one, and is then masked field by
+    field across the events; an event of several ``data`` lines that make no object or array
+    joined is read line by line (a page of ``data:`` lines with no blank line between them, which
+    the format reads as one event), each line as its own unit; any other data is the text it
+    holds, of one stream (a JSON string decoded). One reading: the line-by-line one used to run
+    only when the format's masked nothing, so one masked event kept a block's key in clear (third
+    pre-merge audit, LOW 3). Only the head the excerpt can read is read (:func:`_stream_window`).
+    A masked unit is written again on one ``data`` line (a text holding LF, on as many), every
+    other line as it came; the text returned is that head.
     """
 
-    lines = _lines(text, _SSE_LINE_BREAK)
+    window, settled = _stream_window()
+    head, cut = _head(text, window)
+    lines = _lines(head, _SSE_LINE_BREAK)
     events: list[list[int]] = []
     current: list[int] = []
     for index, (line, _) in enumerate(lines):
@@ -352,29 +420,37 @@ def _sse_masked(text: str, redactor: Redactor, *, per_line: bool = False) -> str
                 current = []
         elif not line.startswith(":") and line.partition(":")[0] == _SSE_DATA:
             current.append(index)
-            if per_line:
-                events.append(current)
-                current = []
     if current:
         events.append(current)
-    if len(events) < 2:
-        return None
 
     def value(index: int) -> str:
         field = lines[index][0].removeprefix(_BOM) if index == 0 else lines[index][0]
         data = field.partition(":")[2]
         return data[1:] if data.startswith(" ") else data
 
-    parsed = [_event("\n".join(value(index) for index in event)) for event in events]
-    masked = _masked_events(redactor, parsed)
+    units: list[_Unit] = []
+    for event in events:
+        values = [value(index) for index in event]
+        kind, frame = _event("\n".join(values))
+        if kind != "json" and len(event) > 1:
+            units.extend(
+                ([index], *_event(data)) for index, data in zip(event, values, strict=True)
+            )
+        else:
+            units.append((event, kind, frame))
+    if len(units) < 2:
+        return None
+    offsets = _offsets(lines)
+    masked = _masked_units(redactor, units, cut=cut, settled=settled, offsets=offsets)
     if masked is None:
         return None
-    for event, before, after in zip(events, parsed, masked, strict=True):
+    for (event, kind, before), after in zip(units, masked, strict=True):
         if after == before:
             continue
         first, ending = event[0], lines[event[0]][1] or "\n"
         prefix = _BOM if first == 0 and lines[0][0].startswith(_BOM) else ""
-        written = _written(*after).split("\n")
+        original = "\n".join(value(index) for index in event)
+        written = _written(kind, after, original).split("\n")
         lines[first] = [
             prefix + ending.join(f"{_SSE_DATA}: {piece}" for piece in written),
             lines[first][1],
@@ -384,28 +460,54 @@ def _sse_masked(text: str, redactor: Redactor, *, per_line: bool = False) -> str
     return "".join(line + ending for line, ending in lines)
 
 
-def _ndjson_masked(text: str, redactor: Redactor) -> str | None:
-    """``text``, newline-delimited JSON (each line an object or an array, as Ollama streams its
-    reply), with its lines' content masked across them as an event stream's is, or None when it
-    is not that or holds nothing to mask (second pre-merge audit, MEDIUM 2)."""
+def _stream_line(value: Any) -> bool:
+    """Whether a JSON line is a piece of a streamed reply in a shape known to stream: Ollama's
+    (``done`` beside a ``message`` or a ``response``) or an OpenAI chunk (``object``
+    ``chat.completion.chunk``, or ``choices`` holding a ``delta``)."""
 
-    lines = _lines(text, _NDJSON_LINE_BREAK)
-    events: list[tuple[int, tuple[str, Any]]] = []
+    if not isinstance(value, dict):
+        return False
+    if "done" in value and ("message" in value or "response" in value):
+        return True
+    if value.get("object") == "chat.completion.chunk":
+        return True
+    choices = value.get("choices")
+    return isinstance(choices, list) and any(
+        isinstance(choice, dict) and "delta" in choice for choice in choices
+    )
+
+
+def _ndjson_masked(text: str, redactor: Redactor) -> str | None:
+    """``text``, a reply streamed as JSON lines in a shape known to stream (:func:`_stream_line`:
+    Ollama's, OpenAI's chunks), with its lines' content masked across them as an event stream's
+    is, or None when it is not that or holds nothing to mask.
+
+    Any other body of JSON lines is a list of records (a log), masked string by string as every
+    list of records is: read as a stream, the fields of 181 of 217 clean logs were joined across
+    the records and masked, and the excerpt was not `main`'s (third pre-merge audit, LOW 2). Only
+    the head the excerpt can read is read (:func:`_stream_window`); lines not masked are kept as
+    they came.
+    """
+
+    window, settled = _stream_window()
+    head, cut = _head(text, window)
+    lines = _lines(head, _NDJSON_LINE_BREAK)
+    units: list[_Unit] = []
     for index, (line, _) in enumerate(lines):
         if not line.strip():
             continue
         kind, value = _event(line.strip())
-        if kind != "json":
+        if kind != "json" or not _stream_line(value):
             return None
-        events.append((index, (kind, value)))
-    if len(events) < 2:
+        units.append(([index], kind, value))
+    if len(units) < 2:
         return None
-    masked = _masked_events(redactor, [event for _, event in events])
+    masked = _masked_units(redactor, units, cut=cut, settled=settled, offsets=_offsets(lines))
     if masked is None:
         return None
-    for (index, before), after in zip(events, masked, strict=True):
+    for (event, kind, before), after in zip(units, masked, strict=True):
         if after != before:
-            lines[index][0] = _written(*after)
+            lines[event[0]][0] = _written(kind, after, lines[event[0]][0])
     return "".join(line + ending for line, ending in lines)
 
 
@@ -426,9 +528,7 @@ def _split_masked(body: bytes | str, redactor: Redactor) -> bytes | str:
         parsed = well_formed_json(bounded_loads(body))
     except ValueError:
         text = body if isinstance(body, str) else bytes(body).decode("utf-8", "replace")
-        streamed = None
-        if _SSE_DATA in text:
-            streamed = _sse_masked(text, redactor) or _sse_masked(text, redactor, per_line=True)
+        streamed = _sse_masked(text, redactor) if _SSE_DATA in text else None
         if streamed is None:
             streamed = _ndjson_masked(text, redactor)
         return body if streamed is None else streamed
