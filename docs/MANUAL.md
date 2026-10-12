@@ -2219,15 +2219,19 @@ Cut by the provider's output filter: 8 attempt(s) in 2 spec(s) came back cut or 
   (`response.raw_ids.websocket.frames`). The evidence and every report mask those pieces as the
   text they make: a logprob list's tokens, and the content of the frames received field by field,
   are joined and redacted once; the first piece a mask covers shows it and the others lose the
-  text under it, so the pieces joined read as `response.text` reads, and a masked token's
-  alternatives and `bytes` are masked with it. A key streamed in three deltas is stored as
+  text under it, so, joined, the pieces show each mask once and never more than `response.text`
+  shows (a few show less, when a literal between two masks could stand in more than one place),
+  and a masked token's alternatives and `bytes` are masked with it. A key streamed in three deltas is stored as
   `«REDACTED:high_entropy:<digest>»`, `""`, `""`; a refusal is stored as it came. The figures, the
   token count and the frames' protocol fields are kept, so `dottore replay` and the membership
   evaluator read the same run. The evidence store refuses a write in which a joined text still
   masks something, as it refuses one in which a string does; the attempt is then stored with the
   pieces of its reply withheld (empty tokens and content, the text, figures and verdict kept,
   `request.metadata.evidence_withheld` saying why) and its finding's line says `stored with the
-  pieces of the reply withheld`, so the run goes on (A-77). Evidence written before A-77 keeps an
+  pieces of the reply withheld`, which SARIF's message repeats with an `evidence_withheld` count,
+  and the terminal prints an `Evidence withheld:` line, so the run goes on (A-77). A recognition
+  probe refused is stored withheld the same way. An unreadable reply's excerpt is masked the same
+  way: a body streamed as server-sent events is read as the format says, and so is NDJSON. Evidence written before A-77 keeps an
   OpenAI or WebSocket target's reply in pieces as it came. The keys of an attempt's
   free-form fields (a tool call's argument names, `usage`, a frame's fields) are masked in the
   reports as in the evidence, two that mask alike numbered apart (`«REDACTED:email»`,

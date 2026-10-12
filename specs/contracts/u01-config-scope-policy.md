@@ -701,8 +701,11 @@ frames received that is not under a protocol path, field by field. A stream's pi
 in order and redacted once, and the masks are placed back on the joined text: each literal of the
 redacted copy is placed as early and as late as it can be, so a mask spans every character it
 could stand for (`_placed_masks`). The first piece a mask covers shows it in place of the part it
-covers, and every later piece it covers loses that part (one it covers whole is empty), so the
-pieces joined read as the redacted text, each mask once. A mask shown in every piece it covered
+covers, and every later piece it covers loses that part (one it covers whole is empty), so,
+joined, the pieces show each mask once and never more than the redacted text; they show less
+only where a literal between two masks could stand in more than one place, since the masks then
+merge and that literal goes (8 of 1,500 realistic replies and 309 of 1,500 hostile ones in the
+second pre-merge audit, always towards masking more). A mask shown in every piece it covered
 read, joined, `user:«REDACTED:url_password»«REDACTED:url_password»...@host`, which the URL rule
 masks again as one, and the store's guard refused a URL password the redactor had masked (18 of
 18 connection strings at token sizes 1 to 8, and two in WebSocket deltas; the run aborted, where
@@ -713,8 +716,9 @@ token shows what the token shows, any other the token's masks; a later edit used
 leave 10 characters of a labelled password, MEDIUM 2), and wherever a token or an alternative is
 masked, by its stream or on its own, the `bytes` OpenAI writes beside it go, since they spell it
 (LOW 4). The alternatives are no stream: a rank of them side by side, or the alternatives of one
-token, is text no one wrote, and joining a rank masked 6.9% of the alternatives of clean replies
-whose token was kept (LOW 5; 0% now, on the auditor's 898 clean replies). Then each string is redacted
+token, is text no one wrote, and joining a rank masked 6.9% of all the alternatives of clean
+replies (5,794 of 83,950 on the auditor's 898 clean replies), each beside a token that was kept
+(LOW 5; none now). Then each string is redacted
 on its own (`Redactor.redact`), and both again while either masks more, so the result is a fixed
 point of both; a text holding a stash delimiter is read both ways `redact_text` reads it. The
 figures, the shape and every piece no mask covers are kept, so `logprob_membership`, `dottore
@@ -735,8 +739,11 @@ list of its own JSON that is no stream (a REST body's array); a secret its alter
 spell while the tokens beside them are kept (a rank of `top` or `top_logprobs`, and the `bytes` of
 those alternatives, as an unreadable reply's excerpt quotes them: no model's alternatives spell a
 text, each being weighed for the token the model wrote before it, and joining them masked clean
-replies); a secret encoded rather than split; a field of a transcript that the target file
-declares as the protocol's; and evidence written before A-77, whose pieces stay on disk. Checks:
+replies); in an unreadable reply's excerpt, a line that is no field of an event stream (a
+`data:` after a space, a delta on a plain line), a body mixing JSON lines with other lines, and
+any line-based format but server-sent events and NDJSON (u04's half says what is read); a secret
+encoded rather than split; a field of a transcript that the target file declares as the
+protocol's; and evidence written before A-77, whose pieces stay on disk. Checks:
 `tests/test_redactor_split_values.py` (a property test cuts a key, a registered credential, an
 email and four URLs with a password into pieces of 1 to 4 characters, as tokens and as deltas,
 and checks every joined text is a fixed point), `tests/store/test_split_values_at_rest.py`,

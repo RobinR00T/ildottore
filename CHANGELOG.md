@@ -5,6 +5,41 @@ versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed (what the second pre-merge audit, of `ea13562f`, found in A-77, before it lands)
+
+- **A rewritten excerpt keeps a grouped phone or card masked (MEDIUM, a regression against
+  `main`).** The excerpt of a reply the adapters could not read is rewritten when it holds a reply
+  in pieces, and was written with `json.dumps`' ASCII escaping, so the text outside any stream
+  reached the excerpt's redaction `\u00a0`-escaped: `Appelez le +33 6 12 34 56 78 merci.` grouped
+  by no-break spaces, in an OpenAI-compatible body whose `content` is a list of parts, was shown
+  where `main` printed `«REDACTED:phone»`, and so was a card grouped by U+00A0 or U+202F, in the
+  JSON-body path and the event-stream path (`reserialize_leak.py`: 3 of 3 visible in both, now
+  masked). Both are written as the target wrote them, and so is a WebSocket turn's excerpt.
+- **An event stream is read as the format says, and NDJSON too (MEDIUM).** The excerpt split the
+  stream with `str.splitlines` and read one JSON object per `data:` line, so a raw U+2028 or
+  U+0085 inside an event's JSON, an event's JSON over two `data:` lines, plain-text data and
+  JSON-string data were rebuilt (`sse_variants.py`: the key rebuilt in 9 of 19 shapes and the
+  credential in 10, now in 2 and 1, neither an event of the format: a `data:` after a space,
+  deltas on plain lines). Lines end at
+  CRLF, LF or CR only, a leading U+FEFF is dropped, a blank line ends an event, comments and
+  fields are read as the format writes them, an event's `data` lines join with LF, data that is
+  a JSON object or array is masked field by field across the events and any other data as the
+  text of one stream, a page of `data:` lines with no blank line between them is read line by
+  line, and a body whose every non-blank line is a JSON object or array (NDJSON, Ollama's stream)
+  is masked the same way. Not covered, in A-77: a line that is no field of the format, a body
+  mixing JSON lines with other lines, and any other line-based format.
+- **A withheld reply is said in SARIF and on the terminal, and probes are withheld too (LOW).**
+  SARIF adds the finding's "stored with the pieces of the reply withheld" to the result's message
+  and an `evidence_withheld` count to the result and the run; the terminal prints an `Evidence
+  withheld:` line naming the specs. A recognition probe whose write is refused (the watch's
+  benign check, `-sV`) is stored withheld the same way, where it ended the run.
+- **Figures and wording (LOW).** Joined, the pieces show each mask once and never more than the
+  redacted text; they show less where a literal between two masks could stand in more than one
+  place (the masks merge and that literal goes: 8 of 1,500 realistic replies, 309 of 1,500
+  hostile ones), where the docs said they read as the redacted text. The rank figure below is
+  6.9% of all the alternatives of clean replies (5,794 of 83,950), each beside a token that was
+  kept.
+
 ### Fixed (what the pre-merge audit of `c4bd2012` found in A-77, before it lands)
 
 - **A URL password masked in pieces no longer makes the guard refuse the reply and end the run
@@ -14,7 +49,7 @@ versioning: [SemVer](https://semver.org/).
   in 3-character tokens aborted the campaign (`aborted on RedactionLeakError ... 1 of 1 specs never
   ran`, exit 3, where `main` exits 0), and so did 18 of 18 connection strings at token sizes 1 to
   8 and two in WebSocket deltas. The first piece a mask covers now shows it and the others lose
-  the text under it, so the pieces joined read as the redacted text: 18 of 18 stored, the run
+  the text under it, so the pieces joined show each mask once: 18 of 18 stored, the run
   exits 0, and the auditor's fuzz counts 0 refusals in 3,000 cases (110 to 122 per 1,000 before).
   A refused write no longer ends the campaign alone: the attempt is stored with the pieces of its
   reply withheld, its text, figures and verdict kept and `request.metadata.evidence_withheld`
@@ -26,13 +61,15 @@ versioning: [SemVer](https://semver.org/).
   shows.
 - **A reply streamed as server-sent events is quoted masked (MEDIUM).** A body that is not JSON
   was quoted as it came, each delta redacted alone, so a key or a registered credential in
-  3-character deltas was rebuilt from the excerpt; its `data:` events are masked across the events
-  as a transcript is.
+  3-character deltas was rebuilt from the excerpt; its events, one JSON object per `data:` line
+  in this round, are masked across the events as a transcript is (the second pre-merge audit
+  widened it to the format, above).
 - **The `bytes` of every masked token and alternative are dropped (LOW),** whether the mask comes
   from its stream or from the token alone: they spelled a key a rank's mask hid.
 - **A rank of alternatives is no stream (LOW).** Side by side, alternatives are text no one wrote:
-  joining a rank masked 6.9% of the alternatives of clean replies whose token was kept, now 0%
-  (the auditor's 898 clean replies). Not covered, recorded in A-77: a secret that the alternatives
+  joining a rank masked 6.9% of all the alternatives of clean replies (5,794 of 83,950 on the
+  auditor's 898 clean replies), each beside a token that was kept; none now. Not covered,
+  recorded in A-77: a secret that the alternatives
   alone spell beside kept tokens.
 
 ### Fixed (a secret kept in pieces is masked as the text they make: u01 A-77, audit of main `de122e26`)
@@ -48,7 +85,8 @@ versioning: [SemVer](https://semver.org/).
   email and a key from a transcript's three deltas (rebuilt in all three cases; now in none). A
   logprob list's tokens, and a transcript's received content field by field, are now joined and
   redacted once; the first piece a mask covers shows it and the others lose the text under it,
-  so the pieces joined read as the redacted text, and a masked token's alternatives show its
+  so the pieces joined show each mask once and never more than the redacted text, and a masked
+  token's alternatives show its
   masks and lose the `bytes` OpenAI writes beside them. The figures,
   the token count and every other piece are kept, so `dottore replay` and `logprob_membership`
   read the run as before. The pieces are masked rather than dropped because the alternatives and

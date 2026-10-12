@@ -180,11 +180,14 @@ redacts every joined text of the stored payload's streams (`redactor.split_texts
 every string, and refuses the write when one changes: before, it scanned one string at a time and
 passed the pieces. The figures, the token count and the shape are as before, so `replay_run`
 validates the attempt and `logprob_membership` scores it to the same verdict and confidence. The
-guard's criterion stands: since the pre-merge audit of `c4bd2012` the pieces joined read as the
-redacted text, each mask once, so a reply the redactor masked passes it (a mask repeated in every
+guard's criterion stands: since the pre-merge audit of `c4bd2012`, joined, the pieces show each
+mask once and never more than the redacted text (less only where a literal between two masks
+could stand in more than one place: 8 of 1,500 realistic replies, 309 of 1,500 hostile ones), so
+a reply the redactor masked passes it (a mask repeated in every
 piece it covered read, joined, as a run the URL rule masked again, and the guard refused 18 of 18
 connection strings). A refusal is a `RedactionLeakError` with the marker `evidence_refused`, which
-the runner answers by storing the attempt again with its pieces withheld (u08's half). The
+the runner answers, for an attempt and for a probe (`put_probe`), by storing it again with its
+pieces withheld (u08's half). The
 media digest (`request.metadata.media_sha256`) is put back verbatim only in the shape the runner
 writes, a list of SHA-256 hex digests; anything else under that name (a text, a list holding one)
 was put back unread and is now redacted like any value (LOW 7). Checked by

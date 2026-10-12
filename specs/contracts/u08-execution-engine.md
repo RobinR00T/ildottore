@@ -710,17 +710,24 @@ evidence store refuses a write whose redacted payload is not a fixed point of th
 which is right, and the refusal propagated out of the spec and ended the campaign: `aborted on
 RedactionLeakError ... 1 of 1 specs never ran or did not finish`, exit 3, for a reply holding a
 URL password the redactor had masked, which `main` stored (exit 0). The runner stores each
-attempt through `_stored`: a refusal the store marks (`evidence_refused`, a structural marker,
-since `core` imports no store) is answered by storing the attempt again with every piece of its
+attempt through `store_withholding`, and so are the recognition probes (the watch's benign
+check, `-sV`'s probes, since the second pre-merge audit, LOW 4: a refused probe raised): a refusal
+the store marks (`evidence_refused`, a structural marker, since `core` imports no store) is
+answered by storing the attempt again with every piece of its
 reply's streams empty (`redactor.withhold_split`: the logprob tokens and their alternatives, a
 transcript's content), the reply's text, the figures and the verdict kept, and
-`request.metadata.evidence_withheld` saying what was withheld and quoting the refusal. That
-attempt is the one scored, stored and reported, and the finding's line counts it (`; <k>/<n>
-stored with the pieces of the reply withheld, since the redactor could not prove them masked as
-one text (A-77)`), which every format and the terminal show. A second refusal, or one for a reply
+`request.metadata.evidence_withheld` (`shared.withheld`) saying what was withheld and quoting
+the refusal. That attempt is the one scored, stored and reported, and the finding's line counts it
+(`; <k>/<n> stored with the pieces of the reply withheld, since the redactor could not prove them
+masked as one text (A-77)`), which the JSON, JUnit and HTML reports quote; SARIF adds the same
+words to the result's message and an `evidence_withheld` count to the result and the run, and the
+terminal summary prints an `Evidence withheld:` line naming the specs (second pre-merge audit, LOW
+3). A probe's note is in its artifact; no finding counts it. A second refusal, or one for a reply
 with no piece to withhold, ends the campaign as before: nothing raw is ever written. Checked by
-`tests/cli/test_split_values_e2e.py` (a store refusing every reply's pieces: both specs run, every
-attempt is stored withheld and each finding says so; on `c4bd2012` the run aborts).
+`tests/cli/test_split_values_e2e.py` (a store refusing every reply's pieces, with `-sV`: both
+specs run, every attempt and probe is stored withheld, each finding, each SARIF result and the
+terminal say so; on `c4bd2012` the run aborts, on `ea13562f` the probes stop it) and
+`tests/core/test_stored_withholds_pieces.py`.
 
 ## §8 Out of scope / forbidden
 - MUST NOT import adapter/evaluator/scorer/store **concretes**: interfaces only; composition is

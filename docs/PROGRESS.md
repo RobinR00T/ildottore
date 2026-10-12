@@ -3,6 +3,32 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-12 (morning): the second pre-merge audit, of `ea13562f` (A-77), fixed
+
+- Not merge-ready on `ea13562f`: two MEDIUMs (one a regression against `main`) and four LOWs;
+  every first-round figure re-ran as claimed. Fixed as new commits on
+  `fix/no-secret-in-fragments`, no history rewritten; the org spend limit stopped the work at
+  about 02:30 and it resumed at 09:23 on `c21879dd`.
+- MEDIUM 1 (regression): a rewritten excerpt went through `json.dumps` with ASCII escaping, so
+  text outside any stream reached the excerpt's redaction `\u00a0`-escaped and a phone or a card
+  grouped by U+00A0 or U+202F was shown where `main` masked it. Written with `ensure_ascii` off in
+  the JSON-body, event-stream and WebSocket paths (`reserialize_leak.py`: 3 of 3 visible in both
+  paths, now 0; `nbsp_realistic.py`: 3 of 3, now masked).
+- MEDIUM 2: an event stream is read as the format says (lines end at CRLF, LF or CR only, an
+  event's data lines join, data that is no object or array is text of one stream), a page of
+  `data:` lines is read line by line, and NDJSON is masked the same way (`sse_variants.py`: the key
+  rebuilt in 9 of 19 shapes and the credential in 10, now 2 and 1, both not events of the format;
+  `sse_min.py`: 4 of 5 rebuilt, now 0).
+- LOW 3: SARIF's result message and an `evidence_withheld` count, and an `Evidence withheld:`
+  terminal line (`e2e_withheld.py` forced: SARIF 0 mentions, now 2 results and a run count of 12;
+  terminal line now). LOW 4: recognition probes go through `store_withholding`. LOW 5 and LOW 6:
+  the join invariant stated as measured (never more than the redacted text, less in 8 of 1,500
+  realistic replies and 309 of 1,500 hostile ones), the rank figure as 6.9% of all the
+  alternatives of clean replies, the test counts, and the stale docstrings and docs.
+- Merge prep with `fix/redactor-key-formats`: the judge-note test's filler is ordinary words
+  (its 230 letters were a hex run to A-78).
+- Tests: 98 new against `main` (5476 there, 5574 here), 27 of them since `ea13562f`. GATES_LINE
+
 ## State, 2026-10-12 (night, later): the pre-merge audit of `c4bd2012` (A-77), fixed
 
 - Not merge-ready on `c4bd2012`: one HIGH regression and two MEDIUMs, plus two LOWs; fixed as new
@@ -11,10 +37,10 @@ The carryover ledger. Every agent session updates this so context survives even 
   which the URL rule masks again as one, so the store's guard refused a URL password the
   redactor had masked and the run aborted (`aborted on RedactionLeakError`, exit 3; `main` exits
   0). The first piece a mask covers now shows it and the others lose the text under it, so the
-  pieces joined read as the redacted text. Measured: `url_tokens.py` 18 of 18 refused, now 18
+  pieces joined show each mask once and never more than the redacted text. Measured: `url_tokens.py` 18 of 18 refused, now 18
   stored; `ws_dsn.py` 2 of 2 refused, now stored; the auditor's DSN run exit 3, now 0;
   `fuzz_rejoin.py` 110, 120 and 122 refusals per 1,000 cases (seeds 1 to 3), now 0. A refused
-  write no longer ends the campaign alone: `runner._stored` stores the attempt again with its
+  write no longer ends the campaign alone: the runner stores the attempt again with its
   pieces withheld (`redactor.withhold_split`), `request.metadata.evidence_withheld` and the
   finding's line saying so; a second refusal ends it as before. The A-77 property test now cuts
   four URLs with a password too and checks every joined text is a fixed point (it fails on
@@ -23,12 +49,13 @@ The carryover ledger. Every agent session updates this so context survives even 
   characters of a labelled password in an alternative, now none). MEDIUM 3: a body streamed as
   server-sent events is quoted with its events masked across the events (`sse_excerpt.py`: key
   and credential rebuilt, now neither). LOW 4: the `bytes` of every masked token and alternative
-  are dropped. LOW 5: alternatives are no stream, neither a rank nor one token's; a clean reply's
-  alternatives changed where the token was kept, 6.9% of 83,950 on the auditor's 898 clean
-  replies, now 0%, and `fuzz_rejoin.py` rank leaks 19 to 25 per 1,000, now 0. Left, in A-77's
+  are dropped. LOW 5: alternatives are no stream, neither a rank nor one token's; joining a rank
+  masked 6.9% of all the alternatives of clean replies (5,794 of 83,950 on the auditor's 898
+  clean replies), each beside a token that was kept, now none, and `fuzz_rejoin.py` rank leaks 19
+  to 25 per 1,000, now 0. Left, in A-77's
   not-covered list: a secret the alternatives alone spell beside kept tokens (`excerpt_bytes.py`
   case B), and evidence written before A-77 (a CHANGELOG line says so).
-- Tests: 31 more (5547 here, 5476 on `main`). `make gates` green on `78f94404` (with `PYTHONPATH` set to the worktree's `src`): ruff and format clean (422 files), mypy strict (160), four import contracts kept, 75 specs lint OK, 5547 tests, 97.81% coverage, self-scan 0 high or critical, bandit and pip-audit clean.
+- Tests: 71 new against `main` (5476 there, 5547 here), 31 of them since `c4bd2012`. `make gates` green on `78f94404` (with `PYTHONPATH` set to the worktree's `src`): ruff and format clean (422 files), mypy strict (160), four import contracts kept, 75 specs lint OK, 5547 tests, 97.81% coverage, self-scan 0 high or critical, bandit and pip-audit clean.
 
 ## State, 2026-10-12 (night): a secret kept in pieces, the report's keys, judge notes (A-77)
 

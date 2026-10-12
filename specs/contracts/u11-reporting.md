@@ -245,13 +245,19 @@ MEDIUM 2) A report masks each attempt as the evidence store does.** `mask_run` a
 through `_masked_attempt`: the keys of its free-form fields (`request.messages`, `tools`, `media`
 and `metadata`; `response.tool_calls`, `raw_ids` and `usage`) with `redactor.mask_keys`, two
 that mask alike numbered apart as in the evidence (`«REDACTED:email»`, `«REDACTED:email», #2`),
-then its values with `redactor.redact_split`, so a reply kept as logprob tokens, their
-alternatives or a transcript's deltas is masked as the text it makes. Before, `r.json` wrote a
+then its values with `redactor.redact_split`, so a reply kept as logprob tokens or a
+transcript's deltas is masked as the text it makes, a masked token's alternatives with it. Before,
+`r.json` wrote a
 tool call's argument names, a usage field's and a frame's in clear (an `sk-proj-` key, a
 registered credential and an email measured as keys), since the redactor masks values only, and
 the pieces of a reply rebuilt the canary and a key the text masked. The model's own keys stay as
 they are, so the masked run validates, and the tool's own fields are restored as before (spec ids,
-attempt ids, evidence references). SARIF, JUnit and HTML read the same masked copies. Checked by
+attempt ids, evidence references). SARIF, JUnit and HTML read the same masked copies. An
+attempt stored with the pieces of its reply withheld (u08's half) is counted from its
+`request.metadata.evidence_withheld` (`shared.withheld`): JSON, JUnit and HTML quote the
+finding's line that says so, and SARIF adds those words to the result's message and an
+`evidence_withheld` count to the result and the run (`RunSummary.withheld`, which the terminal
+reads too; second pre-merge audit, LOW 3). Checked by
 `tests/reporting/test_split_values_and_keys.py` (three of its seven tests fail on `de122e26`;
 SARIF, JUnit and HTML carried none of those values there either) and through the CLI by
 `tests/cli/test_split_values_e2e.py`.
