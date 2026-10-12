@@ -979,7 +979,7 @@ def _no_judge_warning(
 ) -> str | None:
     """Say, before sending, that a live run without ``--judge`` will decide little.
 
-    74 of the 75 shipped specs carry ``semantic_judge``. A live deep run without a judge
+    Every shipped spec carries ``semantic_judge`` (74 of 75 then). A live deep run without a judge
     ended with pass 1, fail 0, inconclusive 74 and exit 0, and neither the run nor the dry run
     said why (audit 2026-10-03, R13). An offline mock decides on its fixtures, so it is exempt.
 

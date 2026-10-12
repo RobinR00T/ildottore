@@ -673,8 +673,8 @@ def fleet(
 
     Declares the whole set of targets to validate in one place (hosted LLMs by API-key env
     reference, a local model, a raw URL, or an MCP server). Keys are never written, each
-    entry references an env var. With ``--run`` it scans every expanded target right away.
-    A judge is authorized only when the fleet file declares it in a ``judge:`` block.
+    entry references an env var. With --run it scans every expanded target right away.
+    A judge is authorized only when the fleet file declares it in a 'judge:' block.
     """
 
     try:
@@ -767,10 +767,10 @@ def fingerprint(
         ),
     ] = False,
 ) -> None:
-    """Fingerprint a target's model + guardrails (``-sV``).
+    """Fingerprint a target's model + guardrails (what run -sV does first).
 
     A target declaring a real endpoint is probed over the wire (scope-gated). Use
-    ``--offline`` for the deterministic mock, which sends nothing and works in CI.
+    --offline for the deterministic mock, which sends nothing and works in CI.
     """
 
     try:
@@ -852,7 +852,7 @@ def lint(
     paths: Annotated[list[Path] | None, typer.Argument(help="Spec paths to lint.")] = None,
     as_json: Annotated[bool, typer.Option("--json", help="Machine-readable output.")] = False,
 ) -> None:
-    """Schema + policy + fixtures-prove-detection lint (u02 command body)."""
+    """Schema + policy + fixtures-prove-detection lint of spec files, suites and packs."""
 
     search = paths or DEFAULT_SPEC_PATHS
     code, output = run_lint(search, as_json=as_json)
@@ -910,8 +910,8 @@ def render_media(
 ) -> None:
     """Render a multimodal spec's media carrier(s) to disk to inspect them (read-only, no target).
 
-    Writes one file per ``attack.media`` part, named by its rendered type (``.png`` for an image,
-    ``.wav`` for audio), and prints each path, size and SHA-256 digest (the same
+    Writes one file per attack.media part, named by its rendered type (.png for an image,
+    .wav for audio), and prints each path, size and SHA-256 digest (the same
     chain-of-custody hash a run records). Sends nothing.
     """
 
@@ -988,10 +988,11 @@ def diff(
     baseline: Annotated[Path, typer.Argument(help="Baseline JSON run report (-oJ output).")],
     current: Annotated[Path, typer.Argument(help="Current JSON run report (-oJ output).")],
 ) -> None:
-    """Compare a run against a stored baseline and surface regressions (docs/12 P1).
+    """Compare a run against a stored baseline and surface regressions.
 
-    Classifies each spec id as NEW-FAIL (regression), FIXED, STILL-FAIL or UNCHANGED and
-    exits nonzero when any regression is present, so this is CI-gateable like ``run``.
+    Classifies each spec id as NEW-FAIL (regression), FIXED, UNVERIFIED, STILL-FAIL,
+    UNCHANGED, ONLY-IN-BASELINE or ONLY-IN-CURRENT and exits nonzero when any regression is
+    present, so it can gate CI like run.
     """
 
     try:
@@ -1025,7 +1026,7 @@ def calibrate(
     report: Annotated[Path, typer.Argument(help="A JSON run report (-oJ output).")],
     labels: Annotated[Path, typer.Argument(help="Operator labels file (spec_id -> pass|fail).")],
 ) -> None:
-    """Compare a run's findings against operator labels (human-in-the-loop, docs/12 P2).
+    """Compare a run's findings against operator labels (human-in-the-loop).
 
     Reports agreement plus precision/recall (fail = positive). Read-only: it consumes operator
     verdicts to measure the scanner and its judge; it changes nothing and sends nothing.
