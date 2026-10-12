@@ -1279,19 +1279,21 @@ this branch by `scratch/fixcli3/repro.sh`:
   kept readable in a URL's authority (`_LOOPBACK_IN_URL`), unless a registered credential holds it.
 * **Scaffolds (L10).** `new-spec --family` refuses a control or format character (Cc, Cf, Zl, Zp)
   and blank text, never echoing it, and writes any other value as a YAML string that reads back as
-  written (a plain word as before); nothing is created for a refused scaffold.
+  written: a plain word as before, unless YAML 1.1 reads it as something else (`yes`, `null`,
+  `123`, found by the self-review), which is quoted; nothing is created for a refused scaffold.
 
-Tests (193 in 8 files, one skipped without `DOTTORE_REPORT_CORPUS`): `tests/cli/
+Tests (197 in 8 files, one skipped without `DOTTORE_REPORT_CORPUS`): `tests/cli/
 test_usage_errors_masked.py`, `test_credential_variables.py`, `test_provider_transport_values.py`,
 `test_non_finite_values.py`, `test_spec_paths_that_hold_nothing.py`, `test_spec_id_collisions.py`,
 `test_report_and_file_versions.py` and `test_cli_messages_read_right.py`; on `de122e26` 68 of the 92
 in the five files that import there fail, and the other three import `shared.credential_refs`,
-`shared.error_text` and `reporting.report_schema`, which `de122e26` does not have (with the first
-two modules alone added, 45 of their 58 tests fail there). Tests that pinned the old behaviour now
+`shared.error_text` and `reporting.report_schema`, which `de122e26` does not have: with those three
+added to it as this branch has them (the schema function reading `de122e26`'s own schema), 80 of
+their 105 fail (one skipped), so 148 of the 197 in all. Tests that pinned the old behaviour now
 pin the new one: `test_real_target_routing` (an unknown provider routed to REST), `test_commands`
 (an unknown suite listed nothing), `test_loader` and `test_pr45_followups` (a missing path was a
 `PARSE_ERROR` and a warning), `test_audit_block6_cli_reports` (`--timeout` wording) and the reports
-hand-built without `schema_version` in five test files. Outside the clause, said rather than pinned:
+hand-built without `schema_version` in five test files, and `test_authz_leak_corroboration` follows the reworded `env://NONE` comment of `examples/scope.local.yaml`. Outside the clause, said rather than pinned:
 a literal key in a scope identity's `auth_ref` is still loaded (it is refused when a target names
 it, and `vault://` references stay a u01 shape); a target file's endpoint with user info is still
 read (its password masked by value, SEC-02); `--rate inf` is still taken; a per-file read error in a

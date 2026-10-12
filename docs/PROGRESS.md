@@ -3,6 +3,45 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-12 (morning): CLI input validation, from the full CLI audit of `de122e26` (u12 A-82)
+
+- On `fix/cli-input-validation` (worktree `wt/fixcli3`, from `main` at `de122e26`), one commit per
+  finding: the audit's M4 to M9, L2, L4, L5, L7, L8 and L10 (fixcli1 and fixcli2 hold the others).
+  Clause A-82 in u12, with halves in u01 (scope version, identity variable names), u02 (the path
+  codes, the loose-tree notes, collisions naming both files), u11 (the report schema) and u00
+  (finite `Sampling`, `shared.credential_refs`, `shared.error_text`); no new OD.
+- M7: the console scripts run `cli.main:main`, which prints a usage error through `_masked`
+  (exit 3); `--runs "$KEY"` printed the key. **An installed `dottore` keeps the old entry point
+  until it is reinstalled.** M4: a live run or `fingerprint` refuses an unset or blank credential
+  variable before any traffic, naming it; a dry run warns; `env://NONE` is never read. M8: an
+  `env://` name is `[A-Za-z_][A-Za-z0-9_]*` in target, scope and fleet files; a fleet endpoint with
+  user info is refused. M5: `provider` and `transport` take known values (A-53's open item). M6:
+  `Sampling` is finite. M9 and L7: `PATH_NOT_FOUND` and `NO_SPECS` (lint exit 3), `FILES_NOT_READ`,
+  and every spec-path consumer refuses a path that holds nothing; `registry ls --suite nope`;
+  scope and fleet `version`. L2: a collision refuses the run. L4 and L5: `diff` reads schema 1 and
+  knows a SARIF log; the report schema constrains run and findings, `schema export --name report`.
+  L8: separated figures, one unknown-suite wording, `--timeout` 1 to 86,400 with a timeout that
+  says so and no empty reason, `127.0.0.1` kept in a URL. L10: `new-spec --family`.
+- The self-review found one more: `--family yes` (or `null`, `123`) scaffolded a tag YAML reads as
+  a boolean, a null or a number; a plain word is now checked by reading it back.
+- Measured before and after with `scratch/fixcli3/repro.sh` (the audit's cases, on `de122e26`
+  through the old `app()` entry and on the branch through `main()`): every case the audit listed now
+  refuses with exit 3 and a line that names the field, or keeps its words; no key is printed.
+- Tests: 197 new in 8 files (`tests/cli/test_usage_errors_masked.py`,
+  `test_credential_variables.py`, `test_provider_transport_values.py`, `test_non_finite_values.py`,
+  `test_spec_paths_that_hold_nothing.py`, `test_spec_id_collisions.py`,
+  `test_report_and_file_versions.py`, `test_cli_messages_read_right.py`), 148 of which fail on
+  `de122e26` (three of the files need this branch's new modules to import there); two reports of
+  earlier builds kept as fixtures, and the audit's 89 reports validated through
+  `DOTTORE_REPORT_CORPUS`. `make gates` green on `669d9ec7` with `PYTHONPATH` set to the
+  worktree's `src` (only PROGRESS's figures and the clause's counts follow it): 5673 tests (5476 on
+  `main` at `de122e26`, 197 new), 97.85% coverage (`shared/credential_refs.py`,
+  `shared/error_text.py`, `cli/lint.py` and `cli/new_spec.py` 100%), 75 specs lint OK, four import
+  contracts kept, self-scan, bandit and pip-audit clean.
+- Expected conflicts with fixcli1 and fixcli2 in `cli/app.py`, `cli/run.py` and `cli/wiring.py`
+  (and with fixscore and fixstop in `core/runner.py`, one line here), and a doc conflict in the
+  MANUAL's troubleshooting table and the CHANGELOG head.
+
 ## State, 2026-10-11 (evening): the pre-merge audit of `ed381359` (OD-43), fixed
 
 - No bypass found; one MEDIUM and seven LOWs, fixed one commit each on
