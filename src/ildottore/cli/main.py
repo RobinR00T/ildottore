@@ -6,7 +6,9 @@
 tool, through the redactor, and not by click: ``dottore run --runs "$KEY"`` printed
 ``Invalid value for '--runs': 'sk-ant-api03-...' is not a valid integer.`` with the key in
 clear (CLI audit of 2026-10-11, M7; u12 A-82). :data:`app` is re-exported for the in-process
-tests and for a caller embedding the command tree.
+tests, for a caller embedding the command tree, and for a console script an older install
+generated (``from ildottore.cli.main import app; sys.exit(app())``): calling it runs :func:`main`
+too, so that script masks as well.
 """
 
 from __future__ import annotations
@@ -66,7 +68,7 @@ def _message(exc: BaseException) -> str:
     return str(format_message()) if callable(format_message) else str(exc)
 
 
-def main(argv: Sequence[str] | None = None) -> NoReturn:
+def main(argv: Sequence[str] | None = None, *, prog_name: str | None = None) -> NoReturn:
     """Run the ``dottore`` command tree and exit with its code.
 
     Non-standalone, so click hands its exceptions back here instead of printing them: a usage
@@ -78,7 +80,11 @@ def main(argv: Sequence[str] | None = None) -> NoReturn:
 
     command = typer.main.get_command(app)
     try:
-        code = command.main(args=list(argv) if argv is not None else None, standalone_mode=False)
+        code = command.main(
+            args=list(argv) if argv is not None else None,
+            prog_name=prog_name,
+            standalone_mode=False,
+        )
     except _click_classes("UsageError") as exc:
         # The help of a bare `dottore` (no_args_is_help) was printed when the error was built;
         # Typer prints nothing more for it either.

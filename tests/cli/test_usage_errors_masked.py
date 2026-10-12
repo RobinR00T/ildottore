@@ -71,13 +71,20 @@ def _typed_options() -> list[tuple[list[str], str]]:
 TYPED = _typed_options()
 
 
-def _invoke(argv: list[str], capsys: pytest.CaptureFixture[str]) -> tuple[int, str, str]:
-    """``main()`` as the console script calls it: no arguments, the words in ``sys.argv``."""
+#: The two ways a console script calls the CLI: the one this version installs (``main()``), and
+#: the one an older install generated and ``pip install -e`` keeps across a pull (``app()``).
+ENTRIES = {"main": lambda: main(), "app": lambda: app()}
+
+
+def _invoke(
+    argv: list[str], capsys: pytest.CaptureFixture[str], entry: str = "main"
+) -> tuple[int, str, str]:
+    """The CLI as a console script calls it: no arguments, the words in ``sys.argv``."""
 
     with pytest.MonkeyPatch.context() as patch:
         patch.setattr(sys, "argv", ["dottore", *argv])
         with pytest.raises(SystemExit) as exit_info:
-            main()
+            ENTRIES[entry]()
     out, err = capsys.readouterr()
     code = exit_info.value.code
     return (code if isinstance(code, int) else 1), out, err
@@ -108,15 +115,20 @@ def test_the_options_the_audit_named_are_among_those_tried() -> None:
         assert expected in named, sorted(named)
 
 
+@pytest.mark.parametrize("entry", sorted(ENTRIES))
 @pytest.mark.parametrize(("path", "option"), TYPED, ids=[f"{' '.join(p)} {o}" for p, o in TYPED])
 def test_a_key_given_to_a_typed_option_is_masked(
-    path: list[str], option: str, capsys: pytest.CaptureFixture[str]
+    path: list[str], option: str, entry: str, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    code, out, err = _invoke([*path, option, KEY], capsys)
+    code, out, err = _invoke([*path, option, KEY], capsys, entry)
     _assert_masked(code, out, err)
-    # Still a usage error that says which option, and how to get help.
+    # Still a usage error that says which option, and how to get help. The program's name is
+    # left out: click takes it from the launcher (`python -m pytest` under some runners).
     assert f"'{option}'" in err or option in err, err
-    assert err.splitlines()[0].startswith(f"Usage: dottore {' '.join(path)}"), err
+    first = err.splitlines()[0]
+    assert first.startswith("Usage: ") and first.split("[OPTIONS]")[0].rstrip().endswith(
+        " ".join(path)
+    ), err
     assert any(line.startswith("error: ") for line in err.splitlines()), err
 
 
@@ -132,10 +144,11 @@ def test_a_key_given_to_a_typed_option_is_masked(
     ],
     ids=["command", "option", "lint-option", "subcommand", "extra-argument", "missing-value"],
 )
+@pytest.mark.parametrize("entry", sorted(ENTRIES))
 def test_every_other_usage_error_goes_through_the_mask(
-    argv: list[str], capsys: pytest.CaptureFixture[str]
+    argv: list[str], entry: str, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    code, out, err = _invoke(argv, capsys)
+    code, out, err = _invoke(argv, capsys, entry)
     assert code == 3, err
     assert "Traceback" not in out + err
     for fragment in FRAGMENTS:
@@ -153,14 +166,27 @@ def test_control_characters_in_a_usage_error_are_written_out(
     assert "\x1b" not in err and "\x07" not in err, err
 
 
-def test_what_is_not_an_error_keeps_its_exit_code(capsys: pytest.CaptureFixture[str]) -> None:
-    code, out, _ = _invoke(["--version"], capsys)
+@pytest.mark.parametrize("entry", sorted(ENTRIES))
+def test_what_is_not_an_error_keeps_its_exit_code(
+    entry: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    code, out, _ = _invoke(["--version"], capsys, entry)
     assert code == 0 and out.startswith("dottore ")
-    code, out, _ = _invoke(["run", "--help"], capsys)
+    code, out, _ = _invoke(["run", "--help"], capsys, entry)
     assert code == 0 and "Usage" in out
     # A bare `dottore` prints the help and exits 3, as before (no_args_is_help).
-    code, out, err = _invoke([], capsys)
+    code, out, err = _invoke([], capsys, entry)
     assert code == 3 and "Usage" in out and "error:" not in err
+
+
+def test_an_embedding_caller_still_gets_typers_own_call() -> None:
+    """``app(..., standalone_mode=False)`` returns what the command returns, as Typer's call did,
+    and a test runner still drives the command tree (it never calls ``app``)."""
+
+    from typer.testing import CliRunner
+
+    assert app(args=["--version"], standalone_mode=False) == 0
+    assert CliRunner().invoke(app, ["--version"]).exit_code == 0
 
 
 def test_the_console_scripts_point_at_main() -> None:
@@ -178,11 +204,26 @@ def test_the_console_scripts_point_at_main() -> None:
     }
 
 
-def test_the_entry_point_masks_in_a_real_process() -> None:
-    """The same through ``python -m ildottore.cli.main``, as an installed script runs it."""
+@pytest.mark.parametrize(
+    "launch",
+    [
+        ["-m", "ildottore.cli.main"],
+        # The console script an older install generated, which `pip install -e` keeps across a
+        # pull (pre-merge audit of A-82, MEDIUM 1).
+        [
+            "-c",
+            "import sys; from ildottore.cli.main import app; sys.argv[0] = 'dottore'; "
+            "sys.exit(app())",
+        ],
+        ["-c", "import sys; from ildottore.cli.main import main; sys.argv[0] = 'dottore'; main()"],
+    ],
+    ids=["module", "old-script", "new-script"],
+)
+def test_the_entry_point_masks_in_a_real_process(launch: list[str]) -> None:
+    """The same in a process of its own, as each kind of installed script runs it."""
 
     result = subprocess.run(  # noqa: S603 - this interpreter running this CLI
-        [sys.executable, "-m", "ildottore.cli.main", "run", "--runs", KEY],
+        [sys.executable, *launch, "run", "--runs", KEY],
         capture_output=True,
         text=True,
         timeout=120,

@@ -21,7 +21,7 @@ import sys
 from functools import partial
 from itertools import chain
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 import typer
 
@@ -58,7 +58,28 @@ from ildottore.store.replay import TamperError
 
 DEFAULT_SPEC_PATHS = [Path("specs")]
 
-app = typer.Typer(
+
+class _MaskedTyper(typer.Typer):
+    """The root app, whose call runs :func:`ildottore.cli.main.main` (u12 A-82).
+
+    A console script that an older install generated runs ``from ildottore.cli.main import app;
+    sys.exit(app())``, and ``pip install -e`` keeps that script across a ``git pull``: called the
+    Typer way, click printed a usage error itself, the value typed included, so ``dottore run
+    --runs "$KEY"`` still printed the key there (pre-merge audit of A-82, MEDIUM 1). Called with
+    ``standalone_mode=False``, as an embedding caller does to get the return value, it is Typer's
+    own call; a test runner (``typer.testing.CliRunner``) builds the command and never calls this.
+    """
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        if kwargs.get("standalone_mode", True) is False:
+            return super().__call__(*args, **kwargs)
+        from ildottore.cli.main import main
+
+        argv = kwargs.get("args", args[0] if args else None)
+        main(argv, prog_name=kwargs.get("prog_name"))
+
+
+app = _MaskedTyper(
     name="dottore",
     help="Il Dottore, nmap-for-AI: a spec-driven security scanner for LLMs and AI apps.",
     no_args_is_help=True,
