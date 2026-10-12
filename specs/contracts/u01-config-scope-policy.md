@@ -8,7 +8,9 @@ Config, scope authorization, policy packs and the central redactor. 9-section an
 - **OWNS:** `src/ildottore/policy/`: `scope.py` (scope.yaml loader/validator), `allowlist.py`
   (endpoint default-deny matcher), `packs.py` (policy-pack loader + spec/category gate),
   `identities.py` (multi-identity resolution), `errors.py`; `src/ildottore/config.py` (app
-  config + env/vault sourcing); `src/ildottore/redactor.py` (central secret/PII masking).
+  config + env/vault sourcing); `src/ildottore/redactor.py` (central secret/PII masking);
+  `src/ildottore/safe_yaml.py` (the safe YAML loader every loader shares, measured by A-37,
+  A-52 and A-58; recorded 2026-10-12).
 - **MUST NOT touch:** `shared/`, `adapters/`, `evaluators/`, `core/`, `store/`, `reporting/`,
   any spec YAML, `schemas/`.
 

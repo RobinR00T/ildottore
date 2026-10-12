@@ -12,7 +12,9 @@ Stage-2 build contract. 9-section anatomy per `docs/00 §2`. Read `AGENTS.md` + 
   shape comes from the target file's `websocket:` block, the gate runs before the socket is
   dialled, redirects at the upgrade are never followed, every frame is recorded with the
   credential as `{{token}}`, one connection per conversation, a turn bounded in time, bytes and
-  frames; `tests/adapters/test_websocket.py` against a loopback server).
+  frames; `tests/adapters/test_websocket.py` against a loopback server), and `comprehending.py`
+  (the offline target that decodes what it is sent, test support for `-sV`; recorded
+  2026-10-12).
 - **MUST NOT touch:** `shared/`, `policy/`, `evaluators/`, `core/`, `fingerprint/`, `scoring/`,
   `store/`, any spec/suite YAML. `adapters/mock.py` is u03's: do not create it here.
 
