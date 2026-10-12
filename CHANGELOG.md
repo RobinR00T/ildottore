@@ -12,8 +12,9 @@ the file, schema copy, build or pipeline it names.
 - **The CI example installed v0.1.0, and a wheel.** `examples/ci-github-actions.yml` installed
   `@v0.1.0` with `pip install "git+https://..."`, which builds a wheel, and the wheel
   `pyproject.toml` selects ships neither `specs/` nor `schemas/`: measured from a directory outside
-  the repo, a bare `dottore lint` exits 1 with `path not found: specs`, `dottore lint
-  <checkout>/specs` exits 1 with a traceback on a missing `schemas/attack-spec.schema.json`, and
+  the repo, a bare `dottore lint` exits 1 with `path not found: specs`,
+  `dottore lint <checkout>/specs` exits 1 with a traceback on a missing
+  `schemas/attack-spec.schema.json`, and
   `dottore run --dry-run` exits 3, with or without `--spec-path`. The example now checks Il
   Dottore out at a pinned full SHA of `main` (`# pin: update to the commit you have reviewed`,
   `v0.1.0` as the commented alternative), installs that checkout with `pip install -e` and passes
@@ -163,8 +164,8 @@ the file, schema copy, build or pipeline it names.
   unexpected keys), while older reports validate against the new one. Validate with the copy
   shipped in this version. An older build cannot read such a run either: the new reason is not
   in its `InconclusiveReason` (measured on 2026-10-12: `dottore replay` of a run this version
-  stored against an HTML stub, with the code of `6837a71d`'s parent, exits 3 with `1 validation
-  error for Attempt` at `verdict.inconclusive_reason`).
+  stored against an HTML stub, with the code of `6837a71d`'s parent, exits 3 with
+  `1 validation error for Attempt` at `verdict.inconclusive_reason`).
 - Decided under the owner's delegation (best practice), revisable: OD-21 in u04 and u08 §9 and its
   00-INDEX row, the new clause A-74 (u08, with u04's, u10's, u11's and u12's halves), ADR-0012,
   u00, u09 A-35 (a 200 that is not JSON was out of it), the MANUAL (§3 "A reply the adapter cannot
