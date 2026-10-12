@@ -7,10 +7,13 @@ The carryover ledger. Every agent session updates this so context survives even 
 
 - Branch `fix/cli-store-budgets-paths` from `de122e26`, not pushed. Six findings of the full CLI
   audit (H1, M2, M3, L1, L3, L9), each with tests that fail on `de122e26` (the new CLI tests run
-  against a `git archive` of it: 24 of 29 store and evidence tests, 11 of 14 attempts and
-  `--estimate -q` tests, 17 of 18 report-path and fleet tests fail there; the 5, 3 and 1 that pass
-  are guards that a good run still works). Clause A-80 in u12, with u10's and u08's halves; A-9
-  amended. No new open decision.
+  against a `git archive` of it: 7 of 8 store-level tests, 24 of 29 CLI store and evidence tests,
+  11 of 14 attempts and `--estimate -q` tests, 17 of 18 report-path and fleet tests fail there;
+  the ones that pass there are guards (a good run still works, Ctrl-C still exits 130, the no-send
+  modes still create nothing, a second migration is a no-op) and the six-run CLI reproduction,
+  which raced clean on that attempt: the store-level test, with a start barrier, is the one that
+  fails reliably there). Clause A-80 in u12, with u10's and u08's halves; A-9 amended. No new
+  open decision.
 - H1: a run store that cannot be used exits 3 before any send (`cannot open the run store at
   <path>: <reason>`), in every mode (read-only in the ones that send nothing); concurrent opens
   wait 30 s and retry the WAL switch, and a migration runs under the write lock (18 of 80
