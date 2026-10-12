@@ -887,11 +887,14 @@ def _assert_same_context(
     from ildottore.store.run_sqlite import SqliteRunStore
 
     with SqliteRunStore(Path(run_db)) as store:
-        # As stored first: the rules are read before any other field is checked, so a run a
-        # newer version made is refused for its rules, not called corrupt over a field this
+        # As stored first: a run judged by other rules is refused for them before any other
+        # field is checked, so a run a newer version made is not called corrupt over a field this
         # version does not know the shape of (pre-merge audit of 22269e0c, L-4).
-        recorded = store.get_run_context(run_id, checked=False)
-    stored_target = (recorded or {}).get("target_digest")
+        recorded = store.get_run_context(run_id, checked=False) or {}
+        if recorded.get("judging_rules", JUDGING_RULES_VERSION) != JUDGING_RULES_VERSION:
+            _assert_same_rules(run_id, recorded)
+        context = store.get_run_context(run_id)
+    stored_target = (context or {}).get("target_digest")
     current_target = target_digest(target, mock_scenario=mock_scenario)
     if stored_target is None:
         # NOT waivable, for the same reason the target id is not: this digest covers the
@@ -903,9 +906,7 @@ def _assert_same_context(
         return
     # The rules before anything else of the invocation: under other rules nothing the operator
     # can restore makes the two halves one campaign (u12 A-81).
-    _assert_same_rules(run_id, recorded or {})
-    with SqliteRunStore(Path(run_db)) as store:
-        context = store.get_run_context(run_id)
+    _assert_same_rules(run_id, context or {})
     if stored_target != current_target:
         # The operator's declaration is named when it is what changed (OD-43): the digest alone
         # said "seeded_setup differ", and a reader could not tell a new grant from a tool the
