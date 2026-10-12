@@ -317,8 +317,9 @@ verdict and nothing of the judge's exchange is persisted, `docs/04 §5`.) PII/se
   `inconclusive` with a reason of its own, as a judge outage already is, at the cost of more
   inconclusive results from a noisy judge (`00-INDEX.md`).
 - **OD-15** (shared with u01) whether `secret_shape`'s entropy threshold is global or
-  per-key-type. **Resolved (`00-INDEX.md`): per key type, landed in `secret_shape`;** the
-  redactor still uses its own global threshold, so u01's reuse half is pending (audit F-25).
+  per-key-type. **Status (`00-INDEX.md`):** `secret_shape` has landed with per-key-type entropy
+  thresholds; the redactor still uses its own global one (`redactor.py`), so the reuse half of
+  the resolution is pending (audit F-25).
 - **OD-38** a `confirm: true` the model sets on its own destructive tool call: a confirmation,
   or not. **Decided 2026-10-09 by the owner, built (A-65):** not a confirmation. Only a
   confirmation from outside the model counts (the user's reply after the agent asked, never the

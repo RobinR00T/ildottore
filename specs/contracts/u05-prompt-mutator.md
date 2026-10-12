@@ -100,3 +100,8 @@ schema.
   new OD to index.
 - Whether `unicode_confusable`/`zero_width_inject` density defaults live in mutator code or move to
   a shared `frameworks/`-style table (**propose:** in-module tables for MVP‑1).
+- **OD-47** (shared with u13; numbered 2026-10-12; open, owner to decide): `leetspeak` rewrites
+  `JB-ENCODING-001`'s Base64 payload, so that variant tests nothing, and `rot13` carries no decode
+  cue (F9, 2026-10-03 audit). This unit's half: `leetspeak` substitutes characters in whatever it
+  is given, an encoded payload included. Recommended (`00-INDEX.md`): drop `leetspeak` from that
+  spec's `mutations` and decide `rot13`'s cue apart, changing no mutator.

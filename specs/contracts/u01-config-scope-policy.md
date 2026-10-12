@@ -765,3 +765,8 @@ adapters catch only `TimeoutException` and `TransportError`), websockets' `Inval
   refused there too, and so is a judge spelled as a target only up to case, which worked. The
   alternative not taken: refuse only where the `--out` directory's file system folds case, found
   by probing it.
+- **OD-46** (shared with u12; numbered 2026-10-12; open, owner to decide): a CLI flag that loads a
+  policy pack. This unit's half: `policy.packs.load_pack` loads and validates a pack and no command
+  calls it, so the 8 specs that declare `requires_policy` never send from `dottore`. Recommended
+  (`00-INDEX.md`): one `run` option that loads a pack through that loader, printed in the plan and
+  recorded with the run, landing with OD-11's `--allow-pii-elicitation` (u12 §9).

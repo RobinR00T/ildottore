@@ -806,3 +806,9 @@ every probe was unreadable after its probes (u09 A-35).
   Reversal: make `ResponseMalformed` an `AdapterProductError` again, without `is_env_error` (u04),
   and the first one halts as before; the watch (`_WatchedAdapter` in `core/runner.py`) can then go.
   Owner: human.
+- **OD-45** (shared with u06; numbered 2026-10-12; open, owner to decide): a judge whose
+  self-consistency passes disagree. This unit's half: the runner combines a spec's verdicts with
+  `shared.combination.combine_verdicts` (OD-19), which drops a judge abstention that carries no
+  reason, so the deterministic evaluators decide the attempt and can pass it, while `docs/02 §4`
+  says it stays `inconclusive`. Recommended (`00-INDEX.md`): keep the attempt `inconclusive` with
+  a reason of its own, as a judge outage already is (u06 §9).

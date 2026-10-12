@@ -141,8 +141,8 @@ the attack once as each identity for every spec that sweeps them (`DL-XTENANT-00
 never over an in-band scene; the second row declares no `multi_identity`, and with it declared
 only `DL-XTENANT-001`, which has no scene, would be swept there), and since PR #60 (merged
 2026-10-09) the estimate prices that too: with two identities the third row is 582, the fourth 737
-and the last 779 (re-measured on 2026-10-12 with `--estimate`; the single-identity figures above
-did not move). Before, main priced the last row at 780 with two
+and the last 779 (re-measured on 2026-10-12 with `--estimate`: 2, 2 and 4 above the
+single-identity rows, which pricing the sweep left as they were). Before, main priced the last row at 780 with two
 identities, for a run that would send 782 (the sweep of `DL-XTENANT-001`, never priced).
 
 Two things that table says out loud:
