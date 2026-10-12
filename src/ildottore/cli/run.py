@@ -1300,7 +1300,7 @@ def _print_dry_run_plan(
         print(
             f"  budgets{where}: {budgets.max_tokens} tokens, {budgets.max_requests} requests, "
             f"{budgets.max_attempts} attempts, {budgets.max_wall_s}s wall "
-            "(derived from this plan, or the --budget-* flags)"
+            "(derived from this plan, or --budget-requests, --budget-tokens, --budget-wall)"
         )
     if not plans:
         budgets = DEFAULT_PLAN_BUDGETS
