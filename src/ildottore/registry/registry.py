@@ -14,10 +14,23 @@ API (contract §3):
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from ildottore.shared import AttackSpec, Suite
 
 from .errors import LintCode, LintError
 from .pack import LoadedPack
+
+
+def _same_file(first: str, second: str) -> bool:
+    """Whether two recorded spec files are one file on disk (as written, if they cannot resolve)."""
+
+    if first == second:
+        return True
+    try:
+        return Path(first).resolve() == Path(second).resolve()
+    except (OSError, RuntimeError, ValueError):
+        return False
 
 
 class SpecNotFoundError(KeyError):
@@ -53,6 +66,11 @@ class Registry:
             file = pack.spec_file(index)
             if spec.id in self._specs:
                 first = self._spec_file[spec.id]
+                if first is not None and file is not None and _same_file(first, file):
+                    # One file read twice (`lint sp sp`, or `specs` and `specs/attacks`) declares
+                    # nothing twice; `run` took it so, and lint reported 75 collisions naming the
+                    # same file twice (pre-merge audit of A-82, LOW b).
+                    continue
                 # Both files, when the loader recorded them: two files of one directory share a
                 # pack, and the pack's name said nothing about which two (u12 A-82).
                 where = (

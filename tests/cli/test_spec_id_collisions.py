@@ -96,3 +96,14 @@ def test_one_file_read_twice_is_no_collision(tmp_path: Path) -> None:
     specs = _REPO / "specs"
     assert _run(tmp_path, specs, specs).exit_code == 0
     assert _run(tmp_path, specs, specs / "attacks").exit_code == 0
+
+
+def test_lint_reads_one_file_read_twice_as_one_declaration_too() -> None:
+    """`lint sp sp` reported 75 ID_COLLISION naming the same file twice while `run` took the
+    file once (pre-merge audit of A-82, LOW b)."""
+
+    specs = str(_REPO / "specs")
+    for args in ([specs, specs], [specs, str(_REPO / "specs" / "attacks")]):
+        result = runner.invoke(app, ["lint", *args])
+        assert result.exit_code == 0, result.output
+        assert "ID_COLLISION" not in result.output

@@ -236,3 +236,25 @@ def test_a_plain_family_scaffold_is_unchanged() -> None:
     text = scaffold_spec("PI-NEW-001", family="jailbreak")
     assert "name: TODO short human name for jailbreak\n" in text
     assert text.endswith("tags: [jailbreak]\n")
+
+
+# --- what the operator typed, echoed (pre-merge audit of A-82, LOW a) --------------------------
+
+_KEY = "sk-ant-api03-Q7xZ2mV9pL4kR8tN1wB6yH3jF5dS0aC-QwErTyUiOpAsDfGh"
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["lint", _KEY],
+        ["lint", "--json", _KEY],
+        ["describe", _KEY, "--spec-path", str(_REPO / "specs")],
+        ["schema", "export", "--name", _KEY],
+    ],
+    ids=["lint", "lint-json", "describe", "schema-export"],
+)
+def test_a_key_typed_where_a_name_belongs_is_masked(argv: list[str]) -> None:
+    result = runner.invoke(app, argv)
+    assert result.exit_code == 3, result.output
+    assert _KEY[:16] not in result.output and _KEY[-16:] not in result.output
+    assert "«REDACTED" in result.output or "\\u00abREDACTED" in result.output

@@ -914,7 +914,9 @@ def lint(
     """Schema + policy + fixtures-prove-detection lint (u02 command body)."""
 
     search = paths or DEFAULT_SPEC_PATHS
-    code, output = run_lint(search, as_json=as_json)
+    # A path the operator typed is echoed by the path findings, through the CLI's mask as every
+    # other error line is: `lint <key>` printed the key (pre-merge audit of A-82, LOW a).
+    code, output = run_lint(search, as_json=as_json, mask=lambda text: _masked(ValueError(text)))
     typer.echo(output)
     raise typer.Exit(code)
 
@@ -958,7 +960,7 @@ def describe(
         typer.echo(f"error: {_masked(exc)}", err=True)
         raise typer.Exit(ExitCode.ERROR) from exc
     except describe_mod.DescribeError as exc:
-        typer.echo(f"error: spec {spec_id!r} not found", err=True)
+        typer.echo(f"error: {_masked(ValueError(f'spec {spec_id!r} not found'))}", err=True)
         for note in registry_mod.unloaded_warnings(exc.unloaded):
             typer.echo(note, err=True)
         raise typer.Exit(ExitCode.ERROR) from exc
@@ -1132,10 +1134,8 @@ def schema_export(
     schemas = {**export_schemas(), "report": report_schema()}
     if name is not None:
         if name not in schemas:
-            typer.echo(
-                f"error: unknown schema {name!r}; available: {', '.join(sorted(schemas))}",
-                err=True,
-            )
+            refusal = f"unknown schema {name!r}; available: {', '.join(sorted(schemas))}"
+            typer.echo(f"error: {_masked(ValueError(refusal))}", err=True)
             raise typer.Exit(ExitCode.ERROR)
         typer.echo(log_safe_json(json.dumps(schemas[name], indent=2, sort_keys=True)))
         return
