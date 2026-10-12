@@ -15,7 +15,7 @@ targets:
     identities:                       # >=1; auth by reference only, never a secret value
       - name: default
         auth_ref: "env://OPENAI_API_KEY"
-# checksum: "<sha256 of the body above>"   # optional, tamper-evident
+# checksum: "<sha256 of the body above>"   # optional integrity check, not a signature (OD-2)
 #
 # Policy-gated specs (those declaring `requires_policy`, e.g. PII elicitation or the
 # agentic-extortion battery) are gated by the run's POLICY PACK, not by this file: the
