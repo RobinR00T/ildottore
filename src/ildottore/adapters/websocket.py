@@ -69,7 +69,7 @@ from ildottore.adapters.rest import get_path
 from ildottore.policy import EndpointAllowlist
 from ildottore.redactor import Redactor
 from ildottore.shared.config_errors import quoted
-from ildottore.shared.filter_stops import normalized_stop
+from ildottore.shared.filter_stops import FILTER_STOPS, normalized_stop
 from ildottore.shared.models import (
     Capabilities,
     JsonDict,
@@ -79,7 +79,7 @@ from ildottore.shared.models import (
     WebSocketSpec,
 )
 from ildottore.shared.nesting import NestedTooDeeply, bounded_loads
-from ildottore.shared.provider_filter import stop_provenance
+from ildottore.shared.provider_filter import blank_text, stop_provenance
 from ildottore.shared.toolcalls import check_argument_nesting
 from ildottore.shared.wellformed import well_formed_json
 
@@ -732,20 +732,30 @@ class WebSocketAdapter:
             ) from exc
 
         finish = get_path(final, reading.final_path) if final is not None else None
+        stop = normalized_stop(finish if isinstance(finish, str) else None)
+        text = "".join(parts)
         # A turn with no text is still a reply when it carries tool calls (an agent that only
         # acts) or a stop the provider's filter writes (OD-42 reads it as the filter's cut), one
         # the target file declares (u04 A-79). Read first: raised before them, the call was never
-        # evaluated (pre-merge audit of 598f0858).
+        # evaluated (pre-merge audit of 598f0858). A turn whose text is blank (``blank_text``: a
+        # relay of a streamed Azure reply sends a first delta of ``""``) and that ends on a
+        # filter word the file does not declare is read as one with no text frame at all: it was
+        # the model's empty answer and passed (pre-merge audit of e1a8aacf, MEDIUM 1).
         if (
-            not parts
-            and not calls
-            and normalized_stop(finish if isinstance(finish, str) else None)
-            not in self.filter_stops
+            not calls
+            and stop not in self.filter_stops
+            and (not parts or (stop in FILTER_STOPS and blank_text(text)))
         ):
             raise self._unreadable(
-                f"{self.id}: no frame of the turn carried text at path "
-                f"{quoted(reading.text_path)}, a tool call or a filter stop the file declares; "
-                "not evaluated",
+                (
+                    f"{self.id}: no frame of the turn carried text at path "
+                    f"{quoted(reading.text_path)}, a tool call or a filter stop the file "
+                    "declares; not evaluated"
+                    if not parts
+                    else f"{self.id}: the turn's text at path {quoted(reading.text_path)} was "
+                    "blank, with no tool call, and it ended on a provider filter's word that is "
+                    "not a filter stop the file declares; not evaluated"
+                ),
                 json.dumps(
                     [e["frame"] for e in frames[start:] if e.get("direction") == "received"],
                     default=str,
@@ -755,7 +765,7 @@ class WebSocketAdapter:
         conversation.reported = len(frames)
         ids["websocket"] = {"frames": [dict(f) for f in recorded]}
         reply = ModelResponse(
-            text="".join(parts),
+            text=text,
             tool_calls=calls,
             logprobs=None,  # no WebSocket chat exposes logprobs; never fabricated (ADR-0005)
             finish_reason=finish if isinstance(finish, str) else "final",

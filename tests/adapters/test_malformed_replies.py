@@ -293,6 +293,48 @@ async def test_a_websocket_turn_with_an_undeclared_filter_stop_and_no_text_is_un
     _is_one_attempt_failure(raised.value)
 
 
+@pytest.mark.parametrize("fragment", ["", "  ", "\u200b"])
+async def test_a_websocket_turn_with_blank_text_and_an_undeclared_filter_stop_is_unreadable(
+    fragment: str,
+) -> None:
+    """Pre-merge audit of ``e1a8aacf``, MEDIUM 1: a relay of a streamed Azure reply sends a first
+    delta of ``""`` before it ends on ``content_filter``. Only a turn with no text frame at all
+    was unreadable; with a blank one the turn was the model's empty answer and passed."""
+
+    with pytest.raises(ResponseMalformed, match="not a filter stop the file declares") as raised:
+        await _ws_turn(
+            [
+                {"type": "delta", "delta": {"text": fragment}},
+                {"type": "end", "finish_reason": "content_filter"},
+            ],
+            final_path="finish_reason",
+            final_value=None,
+        )
+    _is_one_attempt_failure(raised.value)
+    assert "response.filter_stops" in (raised.value.advice or "")
+
+
+async def test_control_a_websocket_turn_with_blank_text_is_a_reply_when_declared_or_ordinary() -> (
+    None
+):
+    from ildottore.shared.provider_filter import filter_side
+
+    blank = [{"type": "delta", "delta": {"text": "  "}}]
+    declared = await _ws_turn(
+        [*blank, {"type": "end", "finish_reason": "content_filter"}],
+        final_path="finish_reason",
+        final_value=None,
+        filter_stops=["content_filter"],
+    )
+    assert filter_side(declared) == "output", "the declared filter's withheld turn"
+    ordinary = await _ws_turn(
+        [*blank, {"type": "end", "finish_reason": "stop"}],
+        final_path="finish_reason",
+        final_value=None,
+    )
+    assert (ordinary.text, filter_side(ordinary)) == ("  ", None), "an empty answer, as before"
+
+
 async def test_a_websocket_turn_with_neither_text_nor_calls_nor_a_filter_stop_is_unreadable() -> (
     None
 ):

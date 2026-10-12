@@ -19,6 +19,7 @@ genuine Azure 400 on some prompts of an ``openai`` target and a genuine Anthropi
 
 from __future__ import annotations
 
+import contextlib
 import json
 import re
 import threading
@@ -455,6 +456,65 @@ def test_a_websocket_target_file_declares_its_filter_stops(tmp_path: Path) -> No
     target = wiring.load_target(path)
     assert target.websocket is not None
     assert target.websocket.response.filter_stops == ["safety"]
+
+
+@pytest.mark.parametrize(
+    ("fragment", "declared"),
+    [("", None), ("  ", None), ("\u200b", None), ("", "[content_filter]")],
+)
+def test_a_websocket_turn_withheld_after_a_blank_delta_is_never_a_pass(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fragment: str, declared: str | None
+) -> None:
+    """Pre-merge audit of ``e1a8aacf``, MEDIUM 1 (its ``ws_probe.py``): a WebSocket file with no
+    ``response.filter_stops`` whose server relays a streamed Azure reply, a first delta of ``""``
+    (or ``"  "``) and then ``finish_reason: content_filter``. On e1a8aacf both specs passed, exit
+    0. Unreadable until the word is declared, as a turn with no text frame at all: every attempt,
+    so the run is ``unreachable``, exit 3, with advice that names ``response.filter_stops``. The
+    last case is the control: declared, it is the filter's cut, ``filtered``, exit 3."""
+
+    from websockets.asyncio.server import ServerConnection
+    from websockets.exceptions import ConnectionClosed
+
+    from ildottore.cli.run import execute_run
+    from tests.cli.conftest import make_spec, write_spec_tree
+    from tests.cli.test_websocket_target import _BLOCK, _opts, _write_scope, _write_target
+    from tests.ws_chat_server import TOKEN
+    from tests.ws_raw_servers import HandlerServer, Log, auth_then, send_json
+
+    monkeypatch.setenv("TEST_WS_TOKEN", TOKEN)
+    block = _BLOCK.replace(
+        '    final_path: "type"\n    final_value: "done"\n',
+        '    final_path: "finish_reason"\n'
+        + (f"    filter_stops: {declared}\n" if declared is not None else ""),
+    )
+
+    async def handler(connection: ServerConnection, log: Log) -> None:
+        async def on_query(conn: ServerConnection, _message: dict[str, Any]) -> None:
+            await send_json(conn, {"type": "delta", "delta": {"text": fragment}})
+            await send_json(conn, {"type": "end", "finish_reason": "content_filter"})
+
+        with contextlib.suppress(ConnectionClosed):
+            await auth_then(connection, log, on_query)
+
+    with HandlerServer(handler) as server:
+        target = _write_target(tmp_path, endpoint=server.url, block=block)
+        scope = _write_scope(tmp_path, server)
+        specs = write_spec_tree(
+            tmp_path, [make_spec("PI-DIRECT-001"), make_spec("JB-ROLEPLAY-001")]
+        )
+        outcome = execute_run(_opts(tmp_path, target, scope), [specs])
+
+    assert int(outcome.exit_code) == 3
+    reason = "cut_by_provider_output_filter" if declared else "unreadable_reply"
+    for finding in outcome.findings:
+        assert finding.status.value == "inconclusive"
+        assert {
+            a.verdict.inconclusive_reason.value
+            for a in finding.attempts
+            if a.verdict and a.verdict.inconclusive_reason
+        } == {reason}
+    if declared is None:
+        assert "response.filter_stops" in outcome.incomplete["ws-live"]
 
 
 def test_a_websocket_target_file_refuses_an_undocumented_stop_without_quoting_it(
