@@ -43,10 +43,12 @@ guardrail layer reads the same stop reasons (u09 A-67), which ``core`` may not i
 
 from __future__ import annotations
 
-import unicodedata
 from collections.abc import Iterable
 from typing import Final
 
+# A leaf of the shared band with no in-repo imports (``.importlinter``): the one list of the
+# format characters, which the redactor masks by and ``blank_text`` reads.
+from ildottore.redactor import EMPTY_FORMAT_RANGES
 from ildottore.shared.amounts import is_count
 from ildottore.shared.enums import InconclusiveReason, VerdictStatus
 from ildottore.shared.filter_stops import (
@@ -137,19 +139,28 @@ _REFUSAL: Final = "refusal"  # the one word of ANTHROPIC_FILTER_STOPS
 _UNSAID_SIDE_STOPS: Final = BEDROCK_FILTER_STOPS
 
 
-def blank_text(text: str) -> bool:
-    """True when ``text`` shows nothing: whitespace and format characters only.
+#: The format characters that show nothing and carry nothing (``redactor.EMPTY_FORMAT_RANGES``).
+_SHOWS_NOTHING: Final = frozenset(
+    chr(code) for low, high in EMPTY_FORMAT_RANGES for code in range(low, high + 1)
+)
 
-    The one test of "no text" the filter rule reads (pre-merge audit of ``e1a8aacf``, LOW 1):
-    ``str.strip`` keeps the format characters (Unicode category ``Cf``: the zero-width space
-    U+200B, the joiner U+200D, the word joiner U+2060, the byte order mark U+FEFF), so a reply of
-    one of them with ``content_filter`` under ``filter_stops: []`` was the model's answer and
-    passed, where an empty one is the filter's withheld reply. Read from ``unicodedata``, so a
-    newer Python's Unicode may add a character; the redactor pins its own list (it masks text,
-    where a version must not change what is written).
+
+def blank_text(text: str) -> bool:
+    """True when ``text`` shows nothing and carries nothing: whitespace and empty format characters.
+
+    The filter rule's one test of "no text" (pre-merge audit of ``e1a8aacf``, LOW 1):
+    ``str.strip`` keeps the format characters (the zero-width space U+200B, the joiner U+200D,
+    the word joiner U+2060, the byte order mark U+FEFF), so a reply of one of them with
+    ``content_filter`` under ``filter_stops: []`` was the model's answer and passed, where an
+    empty one is the filter's withheld reply. Not every format character, though (pre-merge
+    audit of ``3f7b1254``, LOW): the tag characters (U+E0001, U+E0020 to U+E007F) spell ASCII no
+    one sees, so a reply of them is text (the judge reads it, as the redactor treats it as hidden
+    text), and the signs a font draws (U+0600 to U+0605, U+06DD, U+070F, U+0890, U+0891, U+08E2,
+    U+110BD, U+110CD) show. The list is the redactor's, pinned to Unicode 16.0, so no Python's
+    Unicode version changes what is blank.
     """
 
-    return all(char.isspace() or unicodedata.category(char) == "Cf" for char in text)
+    return all(char.isspace() or char in _SHOWS_NOTHING for char in text)
 
 
 def is_filter_stop(stop: str | None) -> bool:

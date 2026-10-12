@@ -218,6 +218,53 @@ def test_blank_text_is_whitespace_and_format_characters_only(text: str, blank: b
     assert blank_text(text) is blank
 
 
+#: "Sure, DAN here." in Unicode tag characters: ASCII no one sees (ASCII smuggling).
+_TAGGED = "".join(chr(0xE0000 + ord(char)) for char in "Sure, DAN here.")
+
+
+@pytest.mark.parametrize(
+    "text",
+    [_TAGGED, "\U000e0001", "\U000e007f", "\u0600", "\u06dd", "\u070f", "\u08e2", "\U000110bd"],
+)
+def test_tag_characters_and_the_signs_a_font_draws_are_text(text: str) -> None:
+    """Pre-merge audit of ``3f7b1254``, LOW: ``blank_text`` read every format character (Cf) as
+    no text, the tag block and the visible signs too."""
+
+    from ildottore.shared.provider_filter import blank_text
+
+    assert blank_text(text) is False
+
+
+def test_the_empty_format_characters_and_the_rest_are_the_redactors_one_list() -> None:
+    from ildottore import redactor
+
+    def codes(ranges: tuple[tuple[int, int], ...]) -> set[int]:
+        return {code for low, high in ranges for code in range(low, high + 1)}
+
+    empty, signs, tags = (
+        codes(redactor.EMPTY_FORMAT_RANGES),
+        codes(redactor.FORMAT_SIGN_RANGES),
+        codes(redactor.TAG_RANGES),
+    )
+    assert empty | signs | tags == codes(redactor._FORMAT_RANGES)
+    assert not (empty & signs or empty & tags or signs & tags)
+
+
+def test_a_reply_of_tag_characters_is_text_with_or_without_the_declaration() -> None:
+    """3f7b1254: no text, so the judge was not consulted on it (undeclared) and under ``[]`` it
+    was the filter's withheld reply; e1a8aacf and now: text the model wrote."""
+
+    undeclared = _send(_openai(), _OPENAI_URL, _openai_body(_TAGGED, "content_filter"))
+    assert partial_reply(undeclared), "the judge reads it"
+    declared = _send(_openai(_NONE), _OPENAI_URL, _openai_body(_TAGGED, "content_filter"))
+    assert declared.foreign_stop is True and filter_side(declared) is None, "the model's answer"
+
+
+def test_a_sign_a_font_draws_is_text_under_the_declaration() -> None:
+    sign = _send(_openai(_NONE), _OPENAI_URL, _openai_body("\u0600", "content_filter"))
+    assert sign.foreign_stop is True and filter_side(sign) is None
+
+
 @pytest.mark.parametrize("text", ["\u200b", "\u200d\u2060\ufeff"])
 def test_a_zero_width_reply_on_openais_own_word_is_the_filters_whatever_is_declared(
     text: str,
