@@ -33,7 +33,12 @@ versioning: [SemVer](https://semver.org/).
   provider's filter stopped already was, and `authz_leak` cannot pass beside it (`; the identity
   sweep left out tenant-a (ResponseMalformed: ...): that reply could not be read as the provider's,
   and it may be the one that received another identity's data`). A transient failure of one
-  identity's send now keeps such a spec from passing, visibly.
+  identity's send now keeps such a spec from passing, visibly. The canary an identity owns is
+  mapped to it before its send (pre-merge audit, MEDIUM 2): mapped once its reply was read, an
+  owner left out had no canary, and tenant A's reply showing it was no crossing (three identities,
+  the owner timing out: PASS on `de122e26`, `inconclusive` on the first version of this fix); it
+  is a confirmed fail, and with two identities `authz_leak` reads the owner map on the one reply
+  left (u06's half of A-74).
 - **The resume note names each id it sends again once (LOW 1).** An id holding a reply stored
   without a verdict and its unreadable re-send read `-1 that ended in an environment error will
   be sent again; 1 that could not be read ...; 1 answered but not evaluated ...`; now `1 that

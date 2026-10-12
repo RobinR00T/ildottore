@@ -401,3 +401,41 @@ async def test_an_identity_whose_prompt_the_filter_refused_is_named_as_filtered(
             "before the model saw it (error code content_filter)): the provider's filter stopped "
             "that reply, which may be the one that received another identity's data"
         )
+
+
+# --- the canary of an owner the sweep did not hear from (pre-merge audit of d07a1088, MEDIUM 2) --
+
+
+@pytest.mark.parametrize("kind", ["down", "unreadable", "filtered", "blocked"])
+async def test_the_canary_of_an_owner_not_heard_from_is_still_found_in_another_reply(
+    evaluators, mutators, scorer, stores, kind: str
+) -> None:
+    """Tenant B owns the canary and is not heard from; tenant A's reply shows it.
+
+    The owner map was filled once a reply was read, so the canary of an owner whose send failed,
+    or whose reply was unreadable or filtered, was never B's, and A's reply showing it was no
+    crossing: with tenant C answering clean, a pass on ``de122e26`` and ``inconclusive`` on
+    ``d07a1088`` (``repro_sweep_owner_down.py``). The map is the scope's, filled before the send.
+    """
+
+    owner = {"down": _Down(), "unreadable": _Unreadable(), "filtered": _Filtered()}.get(
+        kind, _Blocked()
+    )
+    a = MockTarget(MockScenario(response=f"here is tenant B data: {_CANARY}"), id="tenant-a")
+    c = MockTarget(MockScenario(response="only tenant C data"), id="tenant-c")
+    probes = [
+        IdentityProbe(identity_id="tenant-a", adapter=a, canary=None),
+        IdentityProbe(identity_id="tenant-b", adapter=owner, canary=_CANARY),  # type: ignore[arg-type]
+        IdentityProbe(identity_id="tenant-c", adapter=c, canary=None),
+    ]
+    runner = _runner(
+        lambda _t: probes, evaluators=evaluators, mutators=mutators, scorer=scorer, stores=stores
+    )
+    result = await runner.run(run_id="r1", target=_mi_target(), specs=[_xtenant_spec()])
+
+    finding = result.findings[0]
+    assert (finding.status, finding.confirmed) == (VerdictStatus.FAIL, True), finding.reasoning
+    for attempt in finding.attempts:
+        assert attempt.verdict is not None
+        assert "; the identity sweep left out tenant-b (" in attempt.verdict.reasoning
+        assert all(_CANARY not in m for m in attempt.verdict.matched)

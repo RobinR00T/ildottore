@@ -423,6 +423,8 @@ is recorded as blocked by the provider's filter and the campaign goes on. The cr
 - the identity sweep, which sends through the identities' adapters directly, leaves out an
   identity whose send raised, this one included; since the audit of the scoring (2026-10-11,
   MEDIUM) it names it, and `authz_leak` cannot pass beside it (A-74). It used to drop it silently.
+  The canary it owns is still its own (mapped before the send, A-74's pre-merge amendment), so a
+  reply of another identity that shows it fails.
 With the stub: exit 0 after 14 attack requests, 8 of them blocked (both identity attempts of
 `GUARD-INPUT-EVASION-001` and the 6 of `PI-DIRECT-001`), and 12 judge requests; `GUARD` passes (6 of
 8 attempts reached the model and held), `PI-DIRECT-001` is inconclusive, 6 of 6 blocked. Checked by
@@ -679,7 +681,18 @@ as amended:
   spec from passing (the sweep is not retried, and a resume of a spec it finished does not sweep
   again), visibly, where it used to let the others decide in silence. Checked by
   `tests/core/test_multi_identity.py` (6 tests, failing on `de122e26`) and the two changed in
-  `tests/core/test_authz_leak_corroboration.py`;
+  `tests/core/test_authz_leak_corroboration.py`. The canary an identity owns is mapped to it
+  before its send (amended 2026-10-12 after the pre-merge audit of `d07a1088`, MEDIUM 2): the map
+  is the scope's, not a reply, and it was filled once the reply was read, so the canary of an
+  owner left out was nobody's and another identity's reply that showed it was no crossing. With
+  three identities, the owner timing out and tenant A showing its canary
+  (`repro_sweep_owner_down.py`), the spec passed on `de122e26` and was `inconclusive` on
+  `d07a1088`; it is a confirmed fail, as with the owner heard from. With two, one reply is left,
+  and `authz_leak` reads the owner map on it all the same (u06's half): a canary the map gives
+  another identity is that identity's data received. Checked by
+  `tests/core/test_multi_identity.py` (4 more, the owner down, unreadable, filtered or refused)
+  and `tests/core/test_authz_leak_corroboration.py` (1 more; the short-sweep test now has no
+  crossing in the reply that came back), all failing on `d07a1088`;
 - the runner's verdict is `inconclusive` with `inconclusive_reason: unreadable_reply` (ADR-0012),
   confidence 0, without an evaluator, and a spec with one such attempt is never a pass, however
   many others held (`NEVER_A_PASS`, in `shared.resend` since the audit of the scoring, beside

@@ -3,6 +3,25 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-12 (morning): the pre-merge audit of `d07a1088`, fixed
+
+- On `fix/scoring-audit-2026-10-11`: the independent pre-merge audit of `d07a1088` closed the
+  eight original findings, gates green there (5,520 tests, 97.85%), and found two MEDIUM and three
+  LOW, fixed one commit each, every reproduction script of the auditor
+  (`_ildottore-tren/scratch/fixscore-audit/`) rerun before and after.
+- MEDIUM 1 (a regression of LOW 5): a guardrail reply with text was read on its trace only, and
+  `adapters.rest` files a masked reply (`ANONYMIZED`) under the output side with a blocked one,
+  so a planted canary beside a masked name went from a confirmed fail (`de122e26`) to a cut
+  needing review (`repro_masked.py`). Now `REPLACED_TEXT_EVALUATORS` (the trace evaluators plus
+  `secret_leakage`, `secret_shape`, `authz_leak`) through `_evaluators_for_filtered_reply`, the
+  name, set and helper of `fix/filter-stop-provenance` (A-79), which lands next: one rule at the
+  merge. After: fail confirmed.
+- MEDIUM 2: the sweep mapped an owner's canary only once its reply was read, so with the owner
+  not heard from tenant A's reply showing its canary was no crossing (`repro_sweep_owner_down.py`:
+  PASS on `de122e26`, inconclusive on `d07a1088`). Mapped before the send now, and `authz_leak`
+  reads the owner map on fewer than two replies too (u06's half of A-74), so the two-identity case
+  fails as well. After: fail confirmed.
+
 ## State, 2026-10-11 (night): the audit of the scoring, fixed
 
 - On `fix/scoring-audit-2026-10-11`, from `main` at `de122e26` (#110): every finding of the
@@ -36,7 +55,7 @@ The carryover ledger. Every agent session updates this so context survives even 
   `setup_not_reached` is asked of a judge-only fail too; LOW 3 the `--include-needs-review` help;
   LOW 4 a SARIF fail that needs review is at most `warning`; LOW 5 a Bedrock guardrail's
   replacement is read by the trace evaluators plus `secret_leakage`, `secret_shape` and
-  `authz_leak` (the pre-merge audit's MEDIUM 1, below).
+  `authz_leak` (the pre-merge audit's MEDIUM 1, in the entry above).
 - Tests: 44 new, 28 of them failing on `de122e26` (the tie test fails there in one of its two file
   orders for each of its six cases), 3 changed expectations (two sweep verdicts that now name the
   identity, one in-band metadata that now carries `send_number`).

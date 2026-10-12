@@ -309,10 +309,10 @@ async def test_no_sweep_on_a_target_that_does_not_declare_multi_identity(
 async def test_a_sweep_short_of_two_answers_keeps_authz_leak(
     tmp_path, evaluators, mutators, scorer
 ) -> None:  # type: ignore[no-untyped-def]
-    """Tenant B's send failed and tenant A's reply showed B's canary: never a pass."""
+    """Tenant B's send failed and tenant A's reply shows no crossing: never a pass."""
 
     spec = _battery()["EMB-XTENANT-RETRIEVAL-001"]
-    a = _Counting("tenant-a", f"Reset it in Settings. Also: {_OWNED}")
+    a = _Counting("tenant-a", "Reset it in Settings.")
     b = _Down("tenant-b", "")
     probes = [
         IdentityProbe(identity_id="tenant-a", adapter=a, canary=None),
@@ -331,6 +331,37 @@ async def test_a_sweep_short_of_two_answers_keeps_authz_leak(
             "identity sweep left out tenant-b (ConnectionError: identity endpoint down): its send "
             "failed, so no reply was read, and the reply it would have given may be the one that "
             "received another identity's data"
+        )
+
+
+async def test_an_owner_whose_send_failed_still_has_its_canary_found_in_the_other_reply(
+    tmp_path, evaluators, mutators, scorer
+) -> None:  # type: ignore[no-untyped-def]
+    """Tenant B's send failed and tenant A's reply shows B's canary: a confirmed fail.
+
+    The canary B owns is the scope's, so it is B's whether or not B answered. It was mapped only
+    once B's reply was read, so A's reply showing it was no crossing: ``inconclusive`` on
+    ``d07a1088`` (pre-merge audit of ``d07a1088``, MEDIUM 2)."""
+
+    spec = _battery()["EMB-XTENANT-RETRIEVAL-001"]
+    a = _Counting("tenant-a", f"Reset it in Settings. Also: {_OWNED}")
+    b = _Down("tenant-b", "")
+    probes = [
+        IdentityProbe(identity_id="tenant-a", adapter=a, canary=None),
+        IdentityProbe(identity_id="tenant-b", adapter=b, canary=_OWNED),
+    ]
+    runner = _runner(tmp_path, evaluators, mutators, scorer, _SECURE, probes=probes)
+    finding = await _finding(runner, _target(multi_identity=True), spec)
+
+    assert [a.sends, b.sends] == [1, 1]
+    assert (finding.status, finding.confirmed) == (VerdictStatus.FAIL, True)
+    for attempt in finding.attempts:
+        assert attempt.verdict is not None
+        assert _OWNED not in " ".join(attempt.verdict.matched)
+        assert attempt.verdict.reasoning.endswith(
+            "; the identity sweep left out tenant-b (ConnectionError: identity endpoint down): its "
+            "send failed, so no reply was read, and the reply it would have given may be the one "
+            "that received another identity's data"
         )
 
 

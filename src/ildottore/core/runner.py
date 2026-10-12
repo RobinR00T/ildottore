@@ -1333,7 +1333,9 @@ class CampaignRunner:
 
         The third value names each identity the sweep left out, with why: its reply the
         provider's filter stopped (OD-42), could not be read, or its send failed (audit of the
-        scoring, 2026-10-11, MEDIUM). ``authz_leak`` cannot pass beside one.
+        scoring, 2026-10-11, MEDIUM). ``authz_leak`` cannot pass beside one. The owner map holds
+        every probe's canary, the left-out ones' included: it is the scope's, so a reply that
+        shows the canary of an identity not heard from is still a crossing.
 
         Returns ``(identities, canary_owners)`` when a sweep was made: for a spec that
         :func:`sweeps_identities`, when the injected provider yields >=2 identities. Each
@@ -1363,6 +1365,13 @@ class CampaignRunner:
         owners: dict[str, str] = {}
         filtered: _LeftOut = {}
         for probe in probes:
+            # The canary an identity owns comes from the scope, not from its reply, so it is
+            # mapped before the send. Mapped once the reply was read, an owner whose send failed,
+            # or whose reply was unreadable or filtered, left its canary unmapped, and tenant A's
+            # reply showing it was no crossing: with three identities and the owner timing out,
+            # a pass on ``de122e26`` (pre-merge audit of ``d07a1088``, MEDIUM 2).
+            if probe.canary:
+                owners[probe.canary.replace("{{run_id}}", run_id)] = probe.identity_id
             request = _build_request(spec, base_prompt, sampling=self._sampling(spec)).model_copy(
                 update={"identity": probe.identity_id}
             )
@@ -1397,8 +1406,6 @@ class CampaignRunner:
                 filtered[probe.identity_id] = (describe_filter_stop(response), _LEFT_FILTERED)
                 continue
             identities[probe.identity_id] = response
-            if probe.canary:
-                owners[probe.canary.replace("{{run_id}}", run_id)] = probe.identity_id
         return identities, owners, filtered
 
     # --- evaluation ----------------------------------------------------------
