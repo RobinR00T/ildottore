@@ -1,11 +1,13 @@
 # Changelog
 
 All notable changes to Il Dottore. Format: [Keep a Changelog](https://keepachangelog.com/),
-versioning: [SemVer](https://semver.org/).
+versioning: [SemVer](https://semver.org/). A heading that says "breaking for <whom>" marks a change
+after which something an earlier version accepted is refused, or reads or gates differently, for
+the file, schema copy, build or pipeline it names.
 
 ## [Unreleased]
 
-### Added (a target file may declare one of its own granted tools not destructive, OD-43)
+### Added (breaking for an older copy of the report schema and an older build reading the run: a target file may declare one of its own granted tools not destructive, OD-43)
 
 - **A `seeded_setup.granted_tools` entry may be `{name: <tool>, destructive: false}`.** A tool a
   deployment grants is in no spec's scene, so the scene's `destructive: false` could not reach it,
@@ -66,7 +68,7 @@ versioning: [SemVer](https://semver.org/).
   `tests/cli/test_operator_declaration_campaign.py` (16, all fail there); the golden JSON report
   snapshot gains the empty key.
 
-### Changed (a reply the adapters cannot read fails its attempt, not the campaign, OD-21)
+### Changed (breaking for an older copy of the report schema: a reply the adapters cannot read fails its attempt, not the campaign, OD-21)
 
 - **One hostile reply no longer ends a scan.** A 200 whose body is not JSON (brackets that do not
   balance, an integer of more than 4,300 digits, bytes that are not text), not a JSON object, or
@@ -117,6 +119,12 @@ versioning: [SemVer](https://semver.org/).
   schema's `status` description names `aborted` and the wider `unreachable`.
 - A REST template whose `text_path` starts at an index (Hugging Face's `0.generated_text`) reads a
   body that is a JSON array; it was refused as not an object.
+- **Schema note** (added 2026-10-12): `summary.unreadable_reply` is a new optional property of a
+  summary that admits no other key, and `schema_version` stays `1.0`: a report from this version
+  fails validation against an older copy of `report-1.0.schema.json` (measured: a report of
+  `de122e26` against the schema of `6837a71d`'s parent fails with `unreadable_reply` among the
+  unexpected keys), while older reports validate against the new one. Validate with the copy
+  shipped in this version.
 - Decided under the owner's delegation (best practice), revisable: OD-21 in u04 and u08 §9 and its
   00-INDEX row, the new clause A-74 (u08, with u04's, u10's, u11's and u12's halves), ADR-0012,
   u00, u09 A-35 (a 200 that is not JSON was out of it), the MANUAL (§3 "A reply the adapter cannot
@@ -233,7 +241,7 @@ where to reverse it.
   rest would be one the reply never had; a positive figure counts as impossible; an entry that is
   not an object or has no figure is still skipped as absent. No behaviour change.
 
-### Changed (an MCP spec runs against an MCP server only: OD-44)
+### Changed (breaking for an older copy of the spec schema: an MCP spec runs against an MCP server only, OD-44)
 
 - **`MCP-TOOLPOISON-001` was sent to a chat model as a prompt.** It reads what the read-only MCP
   adapter renders of a server's advertised tools, resources and prompts, and nothing gated it, so
@@ -288,7 +296,7 @@ where to reverse it.
   them failing on `23e2cec`: the benign request and a carrier refused by the filter); the CLI test
   asserts `true`.
 
-### Removed (the plan's `baseline_resistance`, dead at both ends: OD-17)
+### Removed (breaking for a stored plan JSON: the plan's `baseline_resistance`, dead at both ends, OD-17)
 
 - **`PlanSelection.baseline_resistance` is gone.** No fingerprint layer wrote the
   `guardrails["baseline_resistance"]` map the planner read it from, and nothing read the field the
@@ -496,7 +504,7 @@ the alternative not taken and how to reverse it, in its `00-INDEX` row and its u
   switch; `--deep` as timing only, which would need a compatibility path for halted `--deep`
   campaigns.
 
-### Changed (a reply the provider's filter cut or replaced is never a pass: OD-42)
+### Changed (breaking for an older copy of the report schema and an older build reading the run: a reply the provider's filter cut or replaced is never a pass, OD-42)
 
 - **An empty or canned reply from the provider's filter passed the spec.** A provider's output
   filter answers HTTP 200 with its own stop reason: Azure OpenAI withholds the completion
@@ -746,7 +754,7 @@ the alternative not taken and how to reverse it, in its `00-INDEX` row and its u
   Event and aborts the transport in a `finally`, and the test sets the Event before `wait_closed()`:
   3.5 s and 1.0 s on 3.14.7.
 
-### Changed (a prompt the provider's input filter refuses no longer stops the campaign: OD-41)
+### Changed (breaking for an older copy of the report schema: a prompt the provider's input filter refuses no longer stops the campaign, OD-41)
 
 - **The first prompt a provider's filter refused ended the scan.** Azure OpenAI's prompt filter
   answers a prompt it blocks with HTTP 400 and the error code `content_filter`; the adapters read
@@ -1246,7 +1254,7 @@ the alternative not taken and how to reverse it, in its `00-INDEX` row and its u
   websockets' `InvalidProxyStatus` and `InvalidProxyMessage` are reworded without their class.
   Contract u01 A-63; u08 and the MANUAL's redaction paragraph follow.
 
-### Changed (a confirmation flag the model sets on its own destructive call is not a confirmation)
+### Changed (breaking for a CI gate: a confirmation flag the model sets on its own destructive call is not a confirmation, OD-38)
 
 - **A destructive tool call is a finding whatever confirmation flag the agent wrote into it**
   (owner decision OD-38, 2026-10-09). The `tool_call` evaluator read a truthy `confirm`,
@@ -2153,7 +2161,7 @@ the alternative not taken and how to reverse it, in its `00-INDEX` row and its u
   figure does. With the sweep priced, retries are what that advice still cannot see (entry below).
   One more test in the same file pins both (19 there).
 
-### Changed (a target file refuses a key no reader reads and a field that is not text; OD-31)
+### Changed (breaking for a target file: it refuses a key no reader reads and a field that is not text, OD-31)
 
 - **A misspelled key at a target file's top level was dropped without a word, and a misspelled
   endpoint ran a live target on the offline mock.** `load_target`, `target_uses_mock` and
@@ -2686,7 +2694,7 @@ the alternative not taken and how to reverse it, in its `00-INDEX` row and its u
   `coverage` for one field, lint at every depth around its own limit with `re`'s cache overrun,
   and the fixture proof's refusal for each field.
 
-### Changed (a target file's `capabilities` refuses an unknown key and a non-mapping value; OD-29)
+### Changed (breaking for a target or fleet file: `capabilities` refuses an unknown key and a non-mapping value, OD-29)
 
 - **A typo under a target file's `capabilities` was dropped without a word.** `load_target`
   validated only the keys `Capabilities` knows, so `tool: true` written for `tools` ran the target
@@ -2756,7 +2764,7 @@ the alternative not taken and how to reverse it, in its `00-INDEX` row and its u
   `zero_width_inject`), where the same command without `-sV` keeps the declared order. It leaves
   the "Not verified" list; `docs/10` §3 points at it.
 
-### Changed (a target or scope id longer than 128 characters is refused)
+### Changed (breaking for a target or scope file and a run stored with such an id: an id longer than 128 characters is refused, A-57)
 
 - **A target or scope id, or an identity name, longer than 128 characters is refused when its file
   is loaded.** A scope file's `targets.N.id` or `identities.N.name` is a validation problem (`String
@@ -3982,7 +3990,7 @@ the fix added findings that only show through the real adapters, fixed here too.
   the same mode); an existing one keeps its mode, and `--run-db :memory:` creates no file.
 - `tests/test_audit_last_lows.py` covers the three fixes.
 
-### Changed
+### Changed (breaking for a pack with a symlinked `attacks/` and a report another user reads: SEC-09, SEC-10)
 
 - **A spec, suite or pack file that resolves outside its pack is refused** (SEC-09). A pack whose
   `attacks/` is a symlink to a shared directory elsewhere, or a loose directory holding a
@@ -4190,7 +4198,7 @@ What the earlier passes left open on purpose, each reproduced before it was fixe
   (ADR-0003). Also left to the maintainer: the multilingual spec's `translate:zh` variant,
   which an investigation found to send the base prompt unchanged.
 
-### Fixed (full audit of 2026-10-03: residuals of the seven blocks)
+### Fixed (breaking for an older copy of the report schema: full audit of 2026-10-03, residuals of the seven blocks)
 
 What the blocks left open, fixed after them and audited in eight rounds before commit
 (`tests/test_audit_residuals.py`).
