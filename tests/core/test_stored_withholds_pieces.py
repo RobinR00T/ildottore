@@ -77,3 +77,18 @@ def test_any_other_refusal_is_raised_as_before(store: _Store, attempt: Attempt) 
     with pytest.raises((ValueError, _Refused), match="refused for the test"):
         _stored(store, attempt)
     assert store.stored == []
+
+
+def test_the_watch_s_benign_check_is_stored_withheld_too() -> None:
+    """A refused probe write raised and ended the campaign (second pre-merge audit, LOW 4)."""
+
+    class _ProbeStore(_Store):
+        def put_probe(self, run_id: str, attempt: Attempt) -> EvidenceRef:
+            return self.put(run_id, attempt)
+
+    store = _ProbeStore()
+    runner = cast("CampaignRunner", SimpleNamespace(_evidence=store))
+    CampaignRunner._record_probe(runner, "run-1", _attempt())
+    assert len(store.stored) == 1
+    assert store.stored[0].request.metadata is not None
+    assert EVIDENCE_WITHHELD in store.stored[0].request.metadata

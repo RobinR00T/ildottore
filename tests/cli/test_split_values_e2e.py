@@ -197,7 +197,7 @@ def test_a_refused_write_withholds_the_pieces_and_the_campaign_goes_on(
                 *(arg for spec in specs for arg in ("--spec", spec)),
                 *("--runs", "1", "--rate", "1000", "--concurrency", "1", "--no-color"),
                 *("--evidence-root", str(tmp_path / "ev"), "--run-db", str(tmp_path / "r.db")),
-                *("-oJ", str(tmp_path / "r.json")),
+                *("-oJ", str(tmp_path / "r.json"), "-oS", str(tmp_path / "r.sarif"), "-sV"),
             ],
         )
     assert result.exception is None or isinstance(result.exception, SystemExit), result.output
@@ -207,6 +207,21 @@ def test_a_refused_write_withholds_the_pieces_and_the_campaign_goes_on(
     assert sorted(f["spec_id"] for f in report["findings"]) == sorted(specs)
     for finding in report["findings"]:
         assert "stored with the pieces of the reply withheld" in finding["reasoning"]
+    # Said in SARIF and on the terminal too (second pre-merge audit, LOW 3).
+    sarif = json.loads((tmp_path / "r.sarif").read_text(encoding="utf-8"))["runs"][0]
+    assert sarif["properties"]["evidence_withheld"] >= 2
+    for sarif_result in sarif["results"]:
+        assert "stored with the pieces of the reply withheld" in sarif_result["message"]["text"]
+        assert sarif_result["properties"]["evidence_withheld"] >= 1
+    assert "Evidence withheld:" in " ".join(result.output.split()), result.output
+    # A recognition probe refused is stored withheld the same way (second pre-merge audit, LOW 4).
+    probes = sorted((tmp_path / "ev").rglob("*/probes/*.json"))
+    assert probes
+    for path in probes:
+        probe = json.loads(path.read_text(encoding="utf-8"))
+        if probe["response"] and probe["response"].get("logprobs"):
+            assert "evidence_withheld" in probe["request"]["metadata"]
+            assert {entry["token"] for entry in probe["response"]["logprobs"]} == {""}
     for path in sorted((tmp_path / "ev").rglob("*/attempts/*.json")):
         stored = json.loads(path.read_text(encoding="utf-8"))
         assert "evidence_withheld" in stored["request"]["metadata"]

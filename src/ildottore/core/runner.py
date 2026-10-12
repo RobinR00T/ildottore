@@ -136,6 +136,7 @@ from ildottore.shared.provider_filter import (
 from ildottore.shared.tool_abuse import OPERATOR_DECLARATION, operator_cleared_calls, operator_note
 from ildottore.shared.toolcalls import call_name
 from ildottore.shared.unreadable import UNREADABLE_REPLY_KEY, unreadable_attempt_ids
+from ildottore.shared.withheld import EVIDENCE_WITHHELD, withheld_attempt_ids
 
 __all__ = [
     "CUT_DECIDING_EVALUATORS",
@@ -851,11 +852,14 @@ class CampaignRunner:
         return findings, None, None
 
     def _record_probe(self, run_id: str, attempt: Attempt) -> None:
-        """File the watch's benign check with the recognition probes, where the store has them."""
+        """File the watch's benign check with the recognition probes, where the store has them.
+
+        A refused write is stored with the pieces of the reply withheld, as an attempt's is.
+        """
 
         put_probe = getattr(self._evidence, "put_probe", None)
         if callable(put_probe):
-            put_probe(run_id, attempt)
+            store_withholding(put_probe, run_id, attempt)
 
     def _holds_plan(
         self, done: set[str] | frozenset[str], spec_id: str, mutators: Sequence[str]
@@ -1123,39 +1127,11 @@ class CampaignRunner:
     def _stored(self, run_id: str, attempt: Attempt) -> tuple[EvidenceRef, Attempt]:
         """Store ``attempt``; refused, store it with the pieces of its reply withheld (A-77).
 
-        The evidence store refuses a write whose redacted payload is not a fixed point of the
-        redactor, which is right, and the refusal used to end the campaign: every spec after it
-        never ran, for one reply the redactor had in fact masked (pre-merge audit of c4bd2012,
-        HIGH 1). A refusal the store marks (``evidence_refused``) is answered by storing the
-        attempt again with every piece of its streams empty (``redactor.withhold_split``: its
-        logprob tokens and their alternatives, a transcript's content), the reply's text, the
-        figures and the verdict kept, and ``request.metadata`` naming what was withheld and why;
-        that attempt is the one scored and reported, and the finding's line counts it. A second
-        refusal, or one with no piece to withhold, ends the campaign as before: nothing raw is
-        ever written.
+        That attempt is the one scored and reported, and the finding's line counts it
+        (:func:`store_withholding`).
         """
 
-        try:
-            return self._evidence.put(run_id, attempt), attempt
-        except Exception as exc:
-            if not getattr(exc, "evidence_refused", False) or attempt.response is None:
-                raise
-            dumped = attempt.response.model_dump(mode="json")
-            kept = withhold_split(dumped)
-            if kept is dumped:
-                raise
-            note = (
-                "the pieces of this reply (its logprob tokens and their alternatives, a "
-                f"transcript's content) were withheld from the evidence: {exc}"
-            )
-            metadata: JsonDict = {**(attempt.request.metadata or {}), EVIDENCE_WITHHELD: note}
-            withheld = attempt.model_copy(
-                update={
-                    "response": ModelResponse.model_validate(kept),
-                    "request": attempt.request.model_copy(update={"metadata": metadata}),
-                }
-            )
-            return self._evidence.put(run_id, withheld), withheld
+        return store_withholding(self._evidence.put, run_id, attempt)
 
     async def _reproduce_single_turn(
         self,
@@ -1841,7 +1817,7 @@ class CampaignRunner:
         cut = len(cut_attempt_ids(attempts))
         unsaid = len(side_unknown_attempt_ids(attempts))
         unreadable = len(unreadable_attempt_ids(attempts))
-        withheld = sum(1 for a in attempts if EVIDENCE_WITHHELD in (a.request.metadata or {}))
+        withheld = len(withheld_attempt_ids(attempts))
         return Finding(
             spec_id=spec.id,
             target_id=target.id,
@@ -2099,8 +2075,6 @@ CUT_DECIDING_EVALUATORS: Final = frozenset(
 CUT_NOT_DECIDING_EVALUATORS: Final = frozenset(
     {EvaluatorType.REGEX_PRESENCE, EvaluatorType.SEMANTIC_JUDGE}
 )
-#: Where an attempt stored with the pieces of its reply withheld says so (A-77).
-EVIDENCE_WITHHELD: Final = "evidence_withheld"
 #: The most of the judge's own words a cut verdict records (they are the judge model's text).
 _JUDGE_NOTE_CHARS = 240
 #: Redacts a judge's words before they are cut, as the report redacts every reasoning after.
@@ -2564,6 +2538,47 @@ def _is_confirmed(status: VerdictStatus, attempts: list[Attempt], spec: AttackSp
 #: Request metadata key of a conversation the provider's input filter cut after a tool call that
 #: failed it (OD-41): the refused turn's error, which the attempt's own ``error`` no longer holds.
 PROVIDER_FILTER_CUT = "provider_filter_cut"
+
+
+def store_withholding(
+    put: Callable[[str, Attempt], EvidenceRef], run_id: str, attempt: Attempt
+) -> tuple[EvidenceRef, Attempt]:
+    """``put(run_id, attempt)``; refused, the same with the pieces of the reply withheld (A-77).
+
+    The evidence store refuses a write whose redacted payload is not a fixed point of the
+    redactor, which is right, and the refusal used to end the campaign: every spec after it
+    never ran, for one reply the redactor had in fact masked (pre-merge audit of c4bd2012,
+    HIGH 1). A refusal the store marks (``evidence_refused``) is answered by storing the attempt
+    again with every piece of its streams empty (``redactor.withhold_split``: its logprob tokens
+    and their alternatives, a transcript's content), the reply's text, the figures and the
+    verdict kept, and ``request.metadata`` naming what was withheld and why
+    (:data:`~ildottore.shared.withheld.EVIDENCE_WITHHELD`). A second refusal, or one with no
+    piece to withhold, is raised as before: nothing raw is ever written. The attempts of a spec
+    and the recognition probes (the watch's benign check, ``-sV``) are stored through it.
+    Returns the reference and the attempt as stored.
+    """
+
+    try:
+        return put(run_id, attempt), attempt
+    except Exception as exc:
+        if not getattr(exc, "evidence_refused", False) or attempt.response is None:
+            raise
+        dumped = attempt.response.model_dump(mode="json")
+        kept = withhold_split(dumped)
+        if kept is dumped:
+            raise
+        note = (
+            "the pieces of this reply (its logprob tokens and their alternatives, a "
+            f"transcript's content) were withheld from the evidence: {exc}"
+        )
+        metadata: JsonDict = {**(attempt.request.metadata or {}), EVIDENCE_WITHHELD: note}
+        withheld = attempt.model_copy(
+            update={
+                "response": ModelResponse.model_validate(kept),
+                "request": attempt.request.model_copy(update={"metadata": metadata}),
+            }
+        )
+        return put(run_id, withheld), withheld
 
 
 def _cut_by_filter(attempt: Attempt) -> Attempt:

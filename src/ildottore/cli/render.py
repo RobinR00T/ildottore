@@ -181,6 +181,7 @@ def coverage_lines(
     cut = summary.output_filter
     unsaid = summary.filter_side_unknown
     unread = summary.unreadable
+    withheld = summary.withheld
     return [
         (
             f"Coverage - OWASP LLM Top 10 ({OWASP_LLM_EDITION}): "
@@ -270,6 +271,21 @@ def coverage_lines(
                 "and a resume sends them again"
             ]
             if unread.attempts
+            else []
+        ),
+        # A-77 (u08's half): the evidence store could not prove a reply's pieces masked as one
+        # text, so they were left out of it; never silent.
+        *(
+            [
+                f"Evidence withheld: {withheld.attempts} attempt(s) in {len(withheld.specs)} "
+                "spec(s) ("
+                + ", ".join(withheld.specs)
+                + ") were stored with the pieces of the reply withheld (logprob tokens, a "
+                "transcript's content), since the redactor could not prove them masked as one "
+                "text; their text and verdict are kept, and each says why under "
+                "request.metadata.evidence_withheld"
+            ]
+            if withheld.attempts
             else []
         ),
         *(

@@ -67,6 +67,7 @@ from ildottore.core.runner import (
     IdentityProbe,
     PolicyGate,
     fill_sampling,
+    store_withholding,
     unsent_fields,
 )
 from ildottore.evaluators import build_default_registry as build_evaluator_registry
@@ -1128,7 +1129,10 @@ class _RecordingAdapter:
                 ),
             )
             raise
-        self.evidence.put_probe(
+        # A refused write is stored with the pieces of the reply withheld (A-77), as an
+        # attempt's is: a probe ended the pass on it.
+        store_withholding(
+            self.evidence.put_probe,
             self.run_id,
             Attempt(
                 attempt_id=attempt_id,

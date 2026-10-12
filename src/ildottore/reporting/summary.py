@@ -58,6 +58,7 @@ from ildottore.shared.provider_filter import (
     side_unknown_attempt_ids,
 )
 from ildottore.shared.unreadable import unreadable_attempt_ids
+from ildottore.shared.withheld import withheld_attempt_ids
 
 __all__ = [
     "ATLAS_MATRIX_RELEASE",
@@ -329,6 +330,9 @@ class RunSummary:
     #: counted the same way. Never a pass of the model either: a spec with one is inconclusive.
     unreadable: FilterCuts = field(default_factory=FilterCuts)
     operator_declarations: OperatorDeclarations = field(default_factory=OperatorDeclarations)
+    #: A-77 (u08's half): attempts stored with the pieces of their reply withheld, since the
+    #: evidence store could not prove them masked as one text. Counted for SARIF and the terminal.
+    withheld: FilterCuts = field(default_factory=FilterCuts)
 
 
 def _distribution(values: list[float]) -> dict[str, float]:
@@ -582,6 +586,8 @@ def build_run_summary(
     unsaid_specs: set[str] = set()
     unread = 0
     unread_specs: set[str] = set()
+    withheld = 0
+    withheld_specs: set[str] = set()
 
     for finding in findings:
         filtered = len(blocked_attempt_ids(finding.attempts))
@@ -600,6 +606,10 @@ def build_run_summary(
         if broken:
             unread += broken
             unread_specs.add(finding.spec_id)
+        kept_back = len(withheld_attempt_ids(finding.attempts))
+        if kept_back:
+            withheld += kept_back
+            withheld_specs.add(finding.spec_id)
         by_status[finding.status.value] += 1
         by_band[finding.risk.band.value] += 1
         # A spec nothing was sent for (a capability skip, a policy block) measured nothing, so
@@ -647,6 +657,7 @@ def build_run_summary(
         filter_side_unknown=FilterCuts(attempts=unsaid, specs=tuple(sorted(unsaid_specs))),
         unreadable=FilterCuts(attempts=unread, specs=tuple(sorted(unread_specs))),
         operator_declarations=operator_declarations(targets, findings),
+        withheld=FilterCuts(attempts=withheld, specs=tuple(sorted(withheld_specs))),
     )
 
 
