@@ -94,9 +94,10 @@ versioning: [SemVer](https://semver.org/).
   `tests/shared/test_judging_rules.py` (7), `tests/cli/test_resume_judging_rules.py` (8, all failing
   before the fix), `tests/cli/test_resume_refusal_advice.py` (9, all failing before) and
   `tests/cli/test_resume_corrupt_context.py` (31, 28 failing before: the three that pass are the
-  `sampling_defaults_applied` refusal, which existed, an unknown key and a well-formed start); four
-  tests updated for the messages named above (`--version`, the route refusal, the per-field
-  sampling message, the corrupt declaration record).
+  `sampling_defaults_applied` refusal, which existed, an unknown key and a well-formed start); six
+  tests updated for the messages named above or the stricter store (`--version`, the route
+  refusal, the per-field sampling message, the corrupt declaration record, a scope test's fake
+  target digest, and the scope-note test, whose hostile entries are now refused unquoted).
 
 ### Added (a target file may declare one of its own granted tools not destructive, OD-43)
 

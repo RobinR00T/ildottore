@@ -3,6 +3,49 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-12: a resume is bound to the rules that judged it (u12 A-81); its refusals say what changed; a corrupt context value is refused
+
+- On `fix/resume-judging-rules`, from `main` at `de122e26`: three findings of the CLI audit of
+  2026-10-11 (harness and logs in `_ildottore-tren/scratch/audit-cli/`), one commit or more each.
+- H2: a run halted on `f12ba83` (`--spec PI-DIRECT-001 --spec SP-LEAK-001 --runs 2 --concurrency 1
+  --budget-requests 14 --judge ...`, a stub answering every request with `finish_reason:
+  content_filter` and a refusal, a secure judge) and resumed on `de122e26` with `--spec-path` at
+  `f12ba83`'s specs kept 4 attempts judged `pass` beside 2 judged `cut_by_provider_output_filter`;
+  the summary and `replay` said "6 of 10 attempt(s) ... cut" where all 10 were cut, exit 0.
+  Reproduced here on the same commits. Re-judging the kept replies was checked first and is not
+  possible: the evidence is redacted at rest (DL2; `SP-LEAK-001`'s failing reply against the
+  vulnerable mock is stored as `«REDACTED:canary:…»`), no logprob is kept, the judge would have to
+  be asked again. So: `shared.judging_rules.JUDGING_RULES_VERSION` (`1`), recorded with
+  `tool_version` in `context_json` when a run starts, and a resume under other rules, or of a run
+  that records none, refused before it sends, with no flag. `--version` prints `dottore 0.1.0
+  (judging rules 1)`. The bump is forced by `tests/shared/test_judging_rules.py`, which pins a
+  digest of `JUDGING_SOURCES` (comments, docstrings, blank lines left out; equal on 3.12 and 3.14)
+  to each version. After: the same `f12ba83` halt, resumed on this branch, `--spec-path` or not,
+  `--resume-unverified` or not: exit 3, 0 requests sent; halted and resumed on this branch: 10 of 10
+  attempts cut, as the summary says.
+- M1: the run context records `selection`, `spec_fields`, `target_fields` and `route`, and the
+  refusals name the field (`1 changed (PI-DIRECT-001), in attack`), the selection flags the run was
+  made with (`Resume with --spec PI-DIRECT-001 --spec SP-LEAK-001`), the target field (`its
+  capabilities differ`), or the route and its flag (`... resolves the offline 'hardened' replay
+  (--hardened forces it). The target file is otherwise unchanged ... Resume without --hardened`).
+- L6: `run_sqlite._check_context` checks every field of `context_json` where it is read (and the
+  appends refuse rather than overwrite); `runs.started_at` is checked by the resume. On
+  `de122e26`: `adaptive: "x"` refused as "adaptive planning on", `scope_sha256s: 7` and a
+  non-list `mutator_orders` overwritten (exit 2), `started_at: not-a-date` in the report; here each
+  is exit 3 naming the field, the stored value untouched. A null `target_digest` still reads as
+  absent (the unwaivable target refusal).
+- Breaking for a halted run: every run halted before this branch is refused by its resume, one
+  halted on `de122e26` included. CHANGELOG says it, and corrects the OD-44 note that recommended
+  the `--spec-path` route (ADR-0007's copy too).
+- Merge note: `fix/scoring-audit-2026-10-11` changes the ranking of an attempt's copies in
+  `core/runner.py` and `store/replay.py`. Those functions (`_answer_rank`, `_one_per_attempt_id`)
+  are scoring-time and not in `JUDGING_SOURCES`; if that branch touches a listed function, the
+  tripwire fails after the merge and the merger bumps the version (to 2) and pins the new digest.
+- Tests: `tests/shared/test_judging_rules.py` (7), `tests/cli/test_resume_judging_rules.py` (8, all
+  failing before), `tests/cli/test_resume_refusal_advice.py` (9, all failing before),
+  `tests/cli/test_resume_corrupt_context.py` (31, 28 failing before); six tests updated for the
+  changed messages or the stricter store. GATES_PLACEHOLDER
+
 ## State, 2026-10-11 (evening): the pre-merge audit of `ed381359` (OD-43), fixed
 
 - No bypass found; one MEDIUM and seven LOWs, fixed one commit each on
