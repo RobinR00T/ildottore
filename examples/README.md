@@ -301,7 +301,8 @@ so `target.websocket.yaml` declares it: the handshake frame (`{{token}}` is the 
 knows nothing else. If the server relays a provider's filter verdict at `final_path` (a gateway
 in front of Azure OpenAI that ends a turn with `content_filter`), list those words under
 `response.filter_stops` and leave `final_value` out; without it, no word at `final_path` is read
-as a filter's (A-79). `scope.websocket.yaml` authorizes `wss://` as it would `https://`
+as a filter's (A-79), and a turn that ends on one with no text, or only blank text, and no tool
+call cannot be read. `scope.websocket.yaml` authorizes `wss://` as it would `https://`
 (cleartext `ws://` only to loopback), and a redirect at the upgrade is never followed. Both
 files are written by hand: a fleet entry carries no `websocket:` block, so `dottore fleet`
 refuses a `ws://` or `wss://` endpoint (exit 3, nothing written) and points here (OD-37):

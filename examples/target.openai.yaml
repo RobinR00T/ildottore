@@ -21,9 +21,9 @@ capabilities:
 sampling_defaults: { temperature: 0.0, top_p: 1.0 }
 # For an endpoint that speaks OpenAI's API and has NO OpenAI or Azure filter behind it (a local
 # server, a gateway in front of a model it hosts itself), say so: its HTTP 400 content_filter, and
-# finish_reason content_filter on a reply with text, are then not read as OpenAI's filter (A-79).
-# An empty reply that ends on content_filter still is, never a pass. Leave it out for OpenAI,
-# Azure and any gateway in front of Azure: such a gateway relays Azure's filter.
+# finish_reason content_filter on a reply with text or a tool call, are then not read as OpenAI's
+# filter (A-79). A reply with neither that ends on content_filter still is, never a pass. Leave it
+# out for OpenAI, Azure and any gateway in front of Azure: such a gateway relays Azure's filter.
 #   filter_stops: []
 # Its authorization record ships beside it: examples/scope.openai.yaml (Scenario D in
 # examples/README.md). Check the pair, and the cost, before spending anything:

@@ -1222,15 +1222,18 @@ since the pre-merge audit of `10cb526b`, LOW; LOW 3, best-practice addition), an
 `--dry-run`, `-v` and `-sn` print a `filters:` line for a file that declares it or a WebSocket
 file's `response.filter_stops` (`_filter_stops_line`). For `[]` the line says what still reads:
 `<id>'s target file declares filter_stops: [], so no HTTP 400 is read as its provider's filter and
-a reply with text or a tool call is scored as the model's, whatever its stop; an empty reply that
-ends on content_filter is still the filter's withheld one, never a pass` (`refusal` for an
-`anthropic` file): until that audit's MEDIUM it said every reply was the model's, and an empty
-`content_filter` passed `PI-DIRECT-001` with exit 0 where the run without the declaration is
-`filtered`, exit 3. Checked by
-`tests/cli/test_filter_stop_provenance_campaign.py` (35 tests; 31 fail on `de122e26` and 10 on
+a reply with text or a tool call is scored as the model's, whatever its stop; a reply with no text
+and no tool call that ends on content_filter is still the filter's withheld one, never a pass`;
+for an `anthropic` file the word is `refusal` and the HTTP 400 clause is left out, since that
+adapter never reads one (pre-merge audit of `e1a8aacf`, LOW 4). Until the audit of `10cb526b`
+(MEDIUM) it said every reply was the model's, and an empty `content_filter` passed
+`PI-DIRECT-001` with exit 0 where the run without the declaration is `filtered`, exit 3. Checked by
+`tests/cli/test_filter_stop_provenance_campaign.py` (42 tests; 38 fail on `de122e26`, 15 on
 `10cb526b`, the auditor's d1 through the CLI for `openai` and `anthropic`, the plan line and the
-model's refusals among them; the first 13: the two ways a run is filtered, an
-`openai` target's foreign stops, an `anthropic` target answering Azure's 400, the judge's fail on
+model's refusals among them, and 7 on `e1a8aacf`: d1 with a zero-width space, a WebSocket turn
+withheld after a blank delta through `execute_run` on `""`, `"  "` and a zero-width space, a
+failed provider's lone error, the Anthropic plan line, and the plan line's new words; the first
+13: the two ways a run is filtered, an `openai` target's foreign stops, an `anthropic` target answering Azure's 400, the judge's fail on
 cut text with and without `--include-needs-review`, a WebSocket file's declaration and its refusal,
 and three controls: a genuine Azure 400 on some prompts, a genuine Anthropic refusal before and
 after output, the same text without a filter word; 9 fail on `de122e26`), and by the four tests of

@@ -32,8 +32,11 @@ each measured against a loopback stub, `main` (`de122e26`) against this branch:
   `JB-ROLEPLAY-001` with harmful text and `finish_reason: refusal` from an `openai` stub: three
   cut attempts, exit 0, now a confirmed fail, exit 2, as with `stop`. A WebSocket target whose
   turns end on `content_filter` must now declare it to have it read as a filter's: until it
-  does, a withheld turn (no text) is an unreadable reply, and a run made only of them is
-  `unreachable`, exit 3, with advice that names `response.filter_stops`.
+  does, a withheld turn (no text frame, or only blank ones, and no tool call) is an unreadable
+  reply, and a run made only of them is `unreachable`, exit 3, with advice that names
+  `response.filter_stops`. A relay of a streamed Azure reply sends a first delta of `""`: the
+  pre-merge audit of `e1a8aacf` (MEDIUM 1) found such a turn read as the model's empty answer,
+  so `PI-DIRECT-001` and `JB-ROLEPLAY-001` passed, exit 0.
 - **Azure's 400 `content_filter` from a non-OpenAI adapter stops the run** (exit 3 at the first
   request) as any undocumented 4xx: an `anthropic` stub answering it to every attack had 6 of 6
   blocked, exit 0.
@@ -55,11 +58,13 @@ Added: an `openai` or `anthropic` target file may declare `filter_stops: []` (or
 own word only) for an endpoint that speaks the provider's API and has no OpenAI, Azure or Anthropic
 filter behind it (never a gateway in front of Azure, which relays Azure's filter): no HTTP 400,
 and no stop on a reply with text or a tool call, is then read as a filter's, while a reply with no
-text that ends on the provider's own word is still the filter's withheld one, never a pass (the
+text and no tool call that ends on the provider's own word is still the filter's withheld one,
+never a pass (no text is whitespace or format characters only: a zero-width space passed until
+the pre-merge audit of `e1a8aacf`, LOW 1; the
 pre-merge audit of `10cb526b` found `[]` made it a pass: `PI-DIRECT-001` against Azure's withheld
 reply, exit 0 where without the declaration the run is `filtered`, exit 3; and a `RestTemplate`'s
-declaration keeps its shape's word on an empty reply the same way). `--dry-run`, `-v` and `-sn`
-print a `filters:` line for it (and for a WebSocket file's declaration). The declaration is
+declaration keeps its shape's word on a reply with no text the same way). `--dry-run`, `-v` and
+`-sn` print a `filters:` line for it (and for a WebSocket file's declaration). The declaration is
 checked by the `Target` model, so a `Target` built in Python is held to the same rule as the file
 (it took any provider's words), and the adapters only narrow their own words by it. A filtered
 run's error line adds what to check for the attempts that got no reply at all (the endpoint for a transport failure, the

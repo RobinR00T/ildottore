@@ -435,24 +435,33 @@ reads as U+FFFD, since httpx decodes the stream as text.
     `own_filter_stops`: `BaseAdapter` none (the WebSocket adapter none either), `OpenAIAdapter`
     `content_filter`, `AnthropicAdapter` `refusal`, `RestAdapter` its template's
     `shape_filter_stops` (the shape's, as above). `stop_provenance` never marks a reply with no
-    text and no tool call that ends on one of them: that is the filter's withheld reply, scored as
+    text (`blank_text`: whitespace and Unicode format characters only, so a zero-width space is
+    none, pre-merge audit of `e1a8aacf`, LOW 1) and no tool call that ends on one of them: that
+    is the filter's withheld reply, scored as
     without the declaration, never a pass. A gateway in front of Azure relays Azure's empty
     `content_filter`, and the first version marked it foreign under `[]`, so `PI-DIRECT-001`
     passed and the run exited 0 where without the declaration it is `filtered`, exit 3 (pre-merge
     audit of `10cb526b`, MEDIUM). A REST body with no text reads the shape's word too, as `""`;
   - the WebSocket adapter's `unreadable_advice` names `response.filter_stops`: a file written
     before A-79 whose server ends a withheld turn on a filter word gets an unreadable reply for it
-    until the word is declared (LOW 2).
+    until the word is declared (LOW 2). A withheld turn is one with no tool call and no text
+    frame, or only blank ones (`blank_text`), ending on a documented filter word the file does
+    not declare: a relay of a streamed Azure reply sends a first delta of `""`, and until the
+    pre-merge audit of `e1a8aacf` (MEDIUM 1) only a turn with no text frame at all was
+    unreadable, so that one was the model's empty answer and passed, exit 0. A blank turn on a
+    declared word is the filter's cut, one on an ordinary stop an empty answer, as before.
   Measured on `de122e26` through the CLI: an `openai` stub answering `JB-ROLEPLAY-001` with
   harmful text and `finish_reason: refusal` gave three cut attempts and exit 0, and gives a
   confirmed fail, exit 2, as the same text with `stop` does; an `anthropic` stub answering every
   attack with Azure's 400 gave six blocked attempts and exit 0, and stops at the first, exit 3.
-  Checked by `tests/adapters/test_filter_stop_provenance.py` (33 tests; 31 fail on `de122e26`, the
-  two controls pass; 6 fail on `10cb526b`: the empty reply on the provider's own word under a
+  Checked by `tests/adapters/test_filter_stop_provenance.py` (43 tests; 41 fail on `de122e26`, the
+  two controls pass; 16 fail on `10cb526b`: the empty reply on the provider's own word under a
   declaration, from OpenAI, Anthropic and a Gemini template, and an adapter given another
-  provider's word), `tests/adapters/test_provider_filter_block.py` (59: the Azure 400 from the
+  provider's word; 10 on `e1a8aacf`: `blank_text` on 8 strings and a zero-width reply through
+  the OpenAI adapter), `tests/adapters/test_provider_filter_block.py` (59: the Azure 400 from the
   adapters that do not read it, 2 of them failing on `de122e26`) and the WebSocket cases of
-  `tests/adapters/test_malformed_replies.py`.
+  `tests/adapters/test_malformed_replies.py` (42 tests; the blank turn on `""`, `"  "` and a
+  zero-width space, 3 failing on `e1a8aacf`, and its control).
 
 ## §8 Out of scope / forbidden
 - MUST NOT import or call vendor SDKs (`openai`, `anthropic` packages): httpx only (ADR-0002).

@@ -327,8 +327,8 @@ is an ordinary stop (foreign_stop in the stored reply), and the reply is the mod
 An openai or anthropic target file declares filter_stops: [] for an endpoint that speaks the
 provider's API and has no OpenAI, Azure or Anthropic filter behind it (never a gateway in front
 of Azure, which relays Azure's filter): no HTTP 400, and no stop on a reply with text or a tool
-call, is then read as a filter's, while a reply with no text that ends on the provider's own word
-still is, never a pass. A
+call, is then read as a filter's, while a reply with no text (whitespace or format characters
+only) and no tool call that ends on the provider's own word still is, never a pass. A
 Bedrock guardrail's configured message is read only for a planted canary or secret, a crossing
 canary or the tool trace.
 .PP

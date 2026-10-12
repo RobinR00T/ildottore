@@ -3,6 +3,38 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-12 (morning): the pre-merge audit of `e1a8aacf` (A-79), fixed
+
+- One MEDIUM and five LOWs, fixed as new commits on `fix/filter-stop-provenance` (no history
+  rewritten), under the owner's delegation (best practice, revisable). The auditor's raw outputs
+  are in `scratch/fixstop-audit3/`; the fix's notes and probe runs in `scratch/fixstop-fix2/`.
+- MEDIUM 1, on the one adapter the round-2 rule left out: a WebSocket file with no
+  `response.filter_stops` whose server sends a first delta of `""` (or `"  "`) and then
+  `finish_reason: content_filter`, what a relay of a streamed Azure reply looks like. The turn was
+  unreadable only with no text frame at all, so this one was the model's empty answer:
+  `PI-DIRECT-001` and `JB-ROLEPLAY-001` passed, exit 0 (a zero-width space: inconclusive, exit
+  0). Now a turn with no tool call whose joined text is blank and that ends on a documented
+  filter word the file does not declare is unreadable too, same advice: the auditor's
+  `ws_probe.py` gives exit 3, every attempt `unreadable_reply`, for `""`, `"  "` and U+200B; a
+  declared word stays the filter's cut, exit 3; text stays a fail, exit 2.
+- LOW 1: `str.strip` keeps format characters, so under `[]` an OpenAI reply of U+200B (or U+200D,
+  U+2060, U+FEFF) with `content_filter` passed, exit 0. `shared.provider_filter.blank_text`
+  (whitespace and Unicode Cf only) is now the one test of "no text": `stop_provenance`,
+  `partial_reply`, `replaced_reply`, the runner's `_trace_before_block` and the WebSocket turn.
+  `_refusal_side` keeps reading presence (any character is output, which decides Anthropic's side).
+  After: `filtered`, exit 3, as an empty reply.
+- LOW 2: the stale comment on `OpenAIAdapter.declared_filter_stops`. LOW 3: `Target(provider=5,
+  filter_stops=[...])` gave a second, misleading error; the check is left out when the provider
+  failed. LOW 4: "a reply with no text and no tool call" (and "with text or a tool call") in every
+  doc and in the plan line, and the plan line for an `anthropic` file no longer names an HTTP 400.
+  LOW 5: the round-2 report said 17 new tests failing on `10cb526b`; it was 17 new, 16 failing
+  there (6 adapter, 10 CLI, one of them the changed plan-line test), as the repo docs said.
+- Tests, 21 new: `tests/adapters/test_filter_stop_provenance.py` now 43 (41 fail on `de122e26`,
+  16 on `10cb526b`, 10 on `e1a8aacf`), `tests/cli/test_filter_stop_provenance_campaign.py` now 42
+  (38, 15 and 7: d1 with U+200B, the WebSocket turn through `execute_run` on 3 fragments, the
+  lone provider error, the Anthropic plan line, and the changed plan-line test), and
+  `tests/adapters/test_malformed_replies.py` now 42 (3 fail on `e1a8aacf`, and a control).
+
 ## State, 2026-10-12 (02:00): the pre-merge audit of `10cb526b` (A-79), fixed
 
 - One MEDIUM and one LOW, fixed as new commits on `fix/filter-stop-provenance` (no history

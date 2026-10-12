@@ -112,7 +112,9 @@ must round-trip any schema-valid YAML and reject any schema-invalid one (schema 
   `foreign_stop: bool = False`: `true` when `finish_reason` is some provider's filter word that
   the target's own provider does not document, or its target file does not declare (never on a
   reply with no text and no tool call that ends on the provider's own word, which is the filter's
-  withheld one whatever is declared: pre-merge audit of `10cb526b`, MEDIUM); the adapter
+  withheld one whatever is declared: pre-merge audit of `10cb526b`, MEDIUM; no text is
+  `shared.provider_filter.blank_text`, whitespace and format characters only, since that of
+  `e1a8aacf`, LOW 1); the adapter
   that read the reply sets it (`shared.provider_filter.stop_provenance`, u04), the stop is kept as
   sent, and every reader takes it for an ordinary stop. `false` is left out of a dump by the same
   serializer, so every other reply is stored, reported and hashed as before.
@@ -125,6 +127,8 @@ must round-trip any schema-valid YAML and reject any schema-invalid one (schema 
   checked it, so `Target(provider="openai", filter_stops=["refusal", "guardrail_intervened"])`
   built an adapter that read those two as OpenAI's filter. `Target`'s config sets
   `hide_input_in_errors`, so a refusal, pydantic's own text included, never quotes a value (A-53).
+  A `provider` that failed is not in `info.data`, and the check is then left out, so its error is
+  the only one (pre-merge audit of `e1a8aacf`, LOW 3).
 - `WebSocketResponse` gains `filter_stops: list[str]` (A-79): the provider filter words the
   endpoint writes at `final_path`, each one of `shared.filter_stops.FILTER_STOPS` (validated,
   stored trimmed, lower case, sorted, once), none by default, refused beside a `final_value`; an
