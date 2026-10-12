@@ -23,15 +23,35 @@ jobs:
           python-version: "3.11"
 
       - name: Install Il Dottore
-        # Not on PyPI (`pip install ildottore` 404s): install from the repository, pinned to
-        # a tag so a pipeline gate cannot change meaning under you between runs.
-        # Caveat: v0.1.0 is the only tag and predates two behaviours these gates rely on, as
-        # USAGE.md and docs/MANUAL.md describe them: exit 3 for a run that did not finish
-        # (budget halt, unreachable target, a target none of whose first replies could be read)
-        # and `dottore diff` refusing an incomplete report.
-        # Until a later release is tagged, pin a commit of main that has them (@<commit-sha>)
-        # rather than v0.1.0, or know that this pin gates without them.
-        run: pip install "git+https://github.com/RobinR00T/ildottore@v0.1.0"
+        # Not on PyPI (`pip install ildottore` 404s): install from the repository, pinned to a
+        # full commit SHA so a pipeline gate cannot change meaning under you between runs. The
+        # SHA below is main on 2026-10-12; replace it with the commit of main you have reviewed.
+        # The only tag, v0.1.0 (2026-09-03), predates most of what these gates rely on, as
+        # USAGE.md and docs/MANUAL.md describe them. Pinned to v0.1.0 (the commented line), the
+        # same scan gates differently; CHANGELOG.md ([Unreleased]) has each change:
+        # - exit codes: a run that did not finish (budget halt, unreachable target, a target none
+        #   of whose first replies could be read) does not exit 3, a usage error exits 2 (the
+        #   findings code), an empty spec selection exits 0, and `dottore diff` does not refuse
+        #   an incomplete report;
+        # - confirmation (OD-19): a fail decided only by the judge is confirmed and trips
+        #   `--fail-on`; here it needs review and gates only with `--include-needs-review`;
+        # - scoring (the 2026-10-03 audit): one refused mutation variant un-confirms an exploit
+        #   that always worked, a judge outage reads as a pass, one passing attempt passes a spec,
+        #   and an inconclusive attempt leaves the reproducibility denominator;
+        # - agent tool calls (OD-38): a destructive call the model marks `confirm: true` itself
+        #   passes;
+        # - provider filters (OD-41, OD-42): the first prompt the provider's input filter refuses
+        #   stops the campaign, and an empty or canned reply from its output filter can pass;
+        # - unreadable replies (OD-21): the first reply that is not JSON, or not the provider's
+        #   shape, stops the campaign;
+        # - MCP (OD-44): MCP-TOOLPOISON-001 goes to a chat target, where it can be a confirmed
+        #   Critical;
+        # - scenes (OD-18): a spec's documents, tools and memory never reach the target, so a
+        #   PASS on the specs that need them means nothing;
+        # - target files (OD-29, OD-31): a misspelled key is dropped without a word, and a
+        #   misspelled `endpoint` runs a live target on the offline mock.
+        run: pip install "git+https://github.com/RobinR00T/ildottore@de122e266e5b067ca11bcfae394c1c0902ceff4b"  # pin: update to the commit you have reviewed
+        # run: pip install "git+https://github.com/RobinR00T/ildottore@v0.1.0"
 
       - name: Scan (fail the build on confirmed high/critical)
         env:

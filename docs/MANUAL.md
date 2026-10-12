@@ -2232,7 +2232,8 @@ fail (a variant that did not fail on every attempt), the trade-off to weigh befo
 baseline is a `NEW_FAIL` regression whatever the flag.
 
 A ready-made GitHub Actions workflow is in
-[`../examples/ci-github-actions.yml`](../examples/ci-github-actions.yml).
+[`../examples/ci-github-actions.yml`](../examples/ci-github-actions.yml). It installs a pinned
+commit of `main`, not the `v0.1.0` tag, which gates differently (the file lists how).
 
 ## 12. Extending the battery
 
