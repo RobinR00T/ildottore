@@ -13,6 +13,8 @@ import re
 import unicodedata
 from pathlib import Path
 
+import yaml
+
 from ildottore.shared.enums import Category
 
 __all__ = ["scaffold_spec", "write_scaffold"]
@@ -112,13 +114,17 @@ def _check_family(family: str) -> None:
 
 
 def _scalar(text: str) -> str:
-    """``text`` as YAML reads it back: plain when it is a plain word, else double-quoted.
+    """``text`` as YAML reads it back: plain when it is a plain word that reads back as itself,
+    else double-quoted.
 
     JSON's double-quoted string is a YAML double-quoted scalar, so ``json.dumps`` writes one that
-    reads back as written, with ``:``, ``#``, ``,``, ``]`` and quotes inside.
+    reads back as written, with ``:``, ``#``, ``,``, ``]`` and quotes inside. A plain word is
+    checked by reading it back, in a flow list as ``tags`` writes it: YAML 1.1 reads ``yes``,
+    ``on``, ``null``, ``123`` and ``1.0`` as a boolean, a null or a number, not as the text.
     """
 
-    if _PLAIN.fullmatch(text) or (" " in text and _PLAIN_NAME.fullmatch(text)):
+    shaped = _PLAIN.fullmatch(text) or (" " in text and _PLAIN_NAME.fullmatch(text))
+    if shaped and yaml.safe_load(f"[{text}]") == [text]:
         return text
     return json.dumps(text, ensure_ascii=False)
 

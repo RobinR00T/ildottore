@@ -223,7 +223,8 @@ def test_new_spec_refuses_a_family_with_a_control_character(tmp_path: Path, fami
 
 
 @pytest.mark.parametrize(
-    "family", ["key: value", "a]b", "#hash", "tag, other", "'quoted'", "dólar"]
+    "family",
+    ["key: value", "a]b", "#hash", "tag, other", "'quoted'", "dólar", "yes", "null", "123", "1.0"],
 )
 def test_new_spec_writes_any_other_family_as_a_string_that_reads_back(family: str) -> None:
     doc = yaml.safe_load(scaffold_spec("PI-NEW-001", family=family))

@@ -1487,7 +1487,8 @@ Writes a spec skeleton plus empty fixtures (or prints them with `--stdout`). `--
 `name` and the `tags`: a value with a control or format character (a line break, an escape, a
 direction override such as U+202E) or nothing but spaces is refused (exit 3) and nothing is
 written; any other text is written as a YAML string that reads back as written (`tags: ["key:
-value"]`), a plain word as before (`tags: [jailbreak]`). Until 2026-10-11 the value went into the
+value"]`, and `["yes"]` rather than the boolean YAML reads from `yes`), a plain word as before
+(`tags: [jailbreak]`). Until 2026-10-11 the value went into the
 file raw, so a control character made a scaffold `lint` then refused, and a `: ` or a `]` one
 that did not parse.
 
