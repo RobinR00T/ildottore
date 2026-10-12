@@ -14,15 +14,24 @@ findings are a redacted projection, not the attempts themselves.
 
 from __future__ import annotations
 
+import shlex
 import sys
-from collections import defaultdict
+from collections import Counter, defaultdict
+from datetime import datetime
 from pathlib import Path
 
 from pydantic import ValidationError
 
+from ildottore import __version__
 from ildottore.shared.config_errors import quoted
-from ildottore.shared.digest import spec_digests, target_digest
+from ildottore.shared.digest import (
+    spec_digests,
+    spec_field_digests,
+    target_digest,
+    target_field_digests,
+)
 from ildottore.shared.enums import ScanBand, VerdictStatus
+from ildottore.shared.judging_rules import JUDGING_RULES_SINCE, JUDGING_RULES_VERSION
 from ildottore.shared.models import (
     AttackSpec,
     Attempt,
@@ -40,6 +49,7 @@ __all__ = [
     "adopt_resumed",
     "declared_not_destructive",
     "load_resume_run",
+    "selection_record",
     "stored_adaptive",
     "stored_runs",
     "stored_sampling_defaults",
@@ -74,6 +84,8 @@ def load_resume_run(
     adaptive: bool | None = None,
     allow_unverified: bool = False,
     adopt: bool = True,
+    selection: dict[str, object] | None = None,
+    hardened: bool = False,
 ) -> TestRun:
     """Rebuild the partial :class:`TestRun` for ``run_id`` from stored evidence.
 
@@ -88,7 +100,9 @@ def load_resume_run(
     It is still refused when the run store journals an artifact the evidence root does not
     hold (the wrong ``--evidence-root``), since resuming would send it all again.
 
-    ``specs`` binds it to the battery the run was made with (see :func:`_assert_same_specs`).
+    ``specs`` binds it to the battery the run was made with (see :func:`_assert_same_specs`);
+    ``selection`` (:func:`selection_record`) and ``hardened`` are this invocation's selection
+    flags and ``--hardened``, which a refusal names against the ones the run recorded (M1).
 
     ``run_db`` binds the resume to the target the run was made against. Without it, resuming
     target B with target A's run id produced **a full report for B out of A's evidence, with
@@ -108,9 +122,12 @@ def load_resume_run(
             judge=judge,
             adaptive=adaptive,
             allow_unverified=allow_unverified,
+            hardened=hardened,
         )
         if specs is not None:
-            _assert_same_specs(run_db, run_id, specs, allow_unverified=allow_unverified)
+            _assert_same_specs(
+                run_db, run_id, specs, allow_unverified=allow_unverified, selection=selection
+            )
     try:
         result = replay_run(Path(evidence_root), run_id)
     except ValidationError as exc:
@@ -155,8 +172,7 @@ def load_resume_run(
         finally:
             manifest_store.close()
         # The start of the run being finished: a resume used to restamp it with its own start.
-        stored_start = row.get("started_at")
-        started_at = stored_start if isinstance(stored_start, str) and stored_start else None
+        started_at = _stored_start(row.get("started_at"))
     else:
         started_at = None
 
@@ -193,6 +209,30 @@ def load_resume_run(
     if adopt and run_db is not None:
         adopt_resumed(run_db, run)
     return run
+
+
+def _stored_start(value: object) -> str | None:
+    """The halted run's ``started_at``, as this tool writes it, or ``None`` when it has none.
+
+    Anything else is a corrupt record, refused (CLI audit 2026-10-11, L6): ``not-a-date`` was
+    published as the run's start in every report of the resume. The value is not quoted.
+    """
+
+    from ildottore.store.run_sqlite import CorruptRunContext
+
+    if value is None or value == "":
+        return None
+    try:
+        if not isinstance(value, str) or len(value) != len("2026-01-01T00:00:00Z"):
+            raise ValueError
+        datetime.strptime(value, "%Y-%m-%dT%H:%M:%SZ")
+    except ValueError:
+        raise CorruptRunContext(
+            "runs.started_at holds a value that is not a timestamp (YYYY-MM-DDTHH:MM:SSZ, UTC). "
+            "An integrity record that cannot be read is not the same as one that was never "
+            "written: refusing rather than continuing."
+        ) from None
+    return value
 
 
 def adopt_resumed(run_db: Path, run: TestRun) -> None:
@@ -359,8 +399,8 @@ def stored_adaptive(run_db: Path, run_id: str) -> bool | None:
         return None
     with SqliteRunStore(Path(run_db)) as store:
         context = store.get_run_context(run_id)
-    value = (context or {}).get("adaptive")
-    return bool(value) if value is not None else None
+    value = (context or {}).get("adaptive")  # true or false: the store checked it (L6)
+    return value if isinstance(value, bool) else None
 
 
 def stored_sampling_defaults(run_db: Path, run_id: str) -> bool | None:
@@ -372,20 +412,15 @@ def stored_sampling_defaults(run_db: Path, run_id: str) -> bool | None:
     record, refused as the other integrity fields are.
     """
 
-    from ildottore.store.run_sqlite import CorruptRunContext, SqliteRunStore
+    from ildottore.store.run_sqlite import SqliteRunStore
 
     if not Path(run_db).exists():
         return None
     with SqliteRunStore(Path(run_db)) as store:
         context = store.get_run_context(run_id)
+    # True, false or null: a value of another shape is refused where the store reads it (L6).
     value = (context or {}).get("sampling_defaults_applied")
-    if value is not None and not isinstance(value, bool):
-        raise CorruptRunContext(
-            "context_json holds a sampling_defaults_applied value that is not true or false. "
-            "An integrity record that cannot be read is not the same as one that was never "
-            "written: refusing rather than continuing."
-        )
-    return value
+    return value if isinstance(value, bool) else None
 
 
 def stored_takes_sampling(run_db: Path, run_id: str) -> tuple[bool | None, bool | None]:
@@ -396,20 +431,18 @@ def stored_takes_sampling(run_db: Path, run_id: str) -> tuple[bool | None, bool 
     value that is not a boolean is a corrupt record, refused as the other integrity fields are.
     """
 
-    from ildottore.store.run_sqlite import CorruptRunContext, SqliteRunStore
+    from ildottore.store.run_sqlite import SqliteRunStore
 
     if not Path(run_db).exists():
         return None, None
     with SqliteRunStore(Path(run_db)) as store:
         context = store.get_run_context(run_id) or {}
-    values = (context.get("takes_sampling"), context.get("judge_takes_sampling"))
-    if any(value is not None and not isinstance(value, bool) for value in values):
-        raise CorruptRunContext(
-            "context_json holds a takes_sampling or judge_takes_sampling value that is not true "
-            "or false. An integrity record that cannot be read is not the same as one that was "
-            "never written: refusing rather than continuing."
-        )
-    return values
+    # Each true, false or null: another shape is refused where the store reads it (L6).
+    target, judge = context.get("takes_sampling"), context.get("judge_takes_sampling")
+    return (
+        target if isinstance(target, bool) else None,
+        judge if isinstance(judge, bool) else None,
+    )
 
 
 def declared_not_destructive(target: Target) -> list[str]:
@@ -432,8 +465,8 @@ def declared_not_destructive(target: Target) -> list[str]:
 def _declaration_changed(context: dict[str, object], target: Target) -> str | None:
     """How the target file's declaration differs from the halted run's, or ``None``.
 
-    A run stored before a file could declare one recorded nothing, which is no tool declared;
-    a record that is not a list of names says nothing, and the digest refusal then speaks.
+    A run stored before a file could declare one recorded nothing, which is no tool declared; a
+    record that is not a list of names is refused where the store reads it (L6).
     """
 
     stored = context.get("not_destructive_tools", [])
@@ -487,8 +520,84 @@ def _unverifiable(run_id: str, what: str, *, allow: bool, waivable: bool = True)
     )
 
 
+def selection_record(
+    *,
+    suite: str | None,
+    quick: bool,
+    categories: list[str],
+    spec: list[str],
+    exclude: list[str],
+    top_tests: int | None,
+) -> dict[str, object]:
+    """The selection flags of an invocation, as the run context records them (M1).
+
+    Each string masked with the fixed identity salt the store masks a target id with, so a glob
+    that reads as a secret is not kept in clear and the record still compares equal across
+    processes; a spec id or an ordinary glob is kept as written.
+    """
+
+    from ildottore.redactor import redact_identity
+
+    return {
+        "suite": redact_identity(suite) if suite is not None else None,
+        "quick": quick,
+        "categories": [redact_identity(token) for token in categories],
+        "spec": [redact_identity(glob) for glob in spec],
+        "exclude": [redact_identity(glob) for glob in exclude],
+        "top_tests": top_tests,
+    }
+
+
+def selection_flags(selection: dict[str, object]) -> str:
+    """The flags that make ``selection``, as an operator types them."""
+
+    def strings(key: str) -> list[str]:
+        value = selection.get(key)
+        return [str(item) for item in value] if isinstance(value, list) else []
+
+    parts = ["--quick"] if selection.get("quick") else []
+    if isinstance(selection.get("suite"), str):
+        parts.append(f"--suite {shlex.quote(str(selection['suite']))}")
+    if strings("categories"):
+        parts.append(f"-p {shlex.quote(','.join(strings('categories')))}")
+    parts += [f"--spec {shlex.quote(glob)}" for glob in strings("spec")]
+    parts += [f"--exclude {shlex.quote(glob)}" for glob in strings("exclude")]
+    if isinstance(selection.get("top_tests"), int):
+        parts.append(f"--top-tests {selection['top_tests']}")
+    return " ".join(parts) or "no selection flag"
+
+
+def _changed_fields(stored: object, specs: list[AttackSpec], changed: list[str]) -> str | None:
+    """Where the ``changed`` specs differ, by field: ``attack`` or ``severity (3)`` (M1).
+
+    ``None`` when the run recorded no field digests (a run started before they were kept).
+    """
+
+    if not isinstance(stored, dict):
+        return None
+    by_id = {spec.id: spec for spec in specs}
+    fields: Counter[str] = Counter()
+    for spec_id in changed:
+        before = stored.get(spec_id)
+        if not isinstance(before, dict):
+            continue
+        now = spec_field_digests(by_id[spec_id])
+        fields.update(f for f in sorted(before.keys() | now.keys()) if before.get(f) != now.get(f))
+    if not fields:
+        return None
+    ranked = sorted(fields.items(), key=lambda item: (-item[1], item[0]))
+    if len(changed) == 1:
+        return ", ".join(field for field, _ in ranked)
+    return ", ".join(f"{field} ({count})" for field, count in ranked)
+
+
 def _assert_same_specs(
-    run_db: Path, run_id: str, specs: list[AttackSpec], *, allow_unverified: bool = False
+    run_db: Path,
+    run_id: str,
+    specs: list[AttackSpec],
+    *,
+    allow_unverified: bool = False,
+    selection: dict[str, object] | None = None,
 ) -> None:
     """Refuse a resume whose battery changed since the halt, naming what changed.
 
@@ -499,12 +608,18 @@ def _assert_same_specs(
     with nothing in it saying so. The digest is over a behavioural projection of the loaded
     model, so a corrected description or a reflowed line is not a change while anything that
     reaches the wire, the verdict or a published number is.
+
+    The refusal says which field changed, which selection flags the run was made with and
+    which flag restores the battery (CLI audit 2026-10-11, M1): "restore the specs as they
+    were" was the advice for a spec edit, for a different ``--spec`` with no file changed, and
+    for the OD-19 rename, in which ``evaluator_logic`` was the only field.
     """
 
     from ildottore.store.run_sqlite import SqliteRunStore
 
     with SqliteRunStore(Path(run_db)) as store:
         stored = store.get_run_spec_digests(run_id)
+        context = store.get_run_context(run_id) or {}
     if stored is None:
         _unverifiable(run_id, "the battery", allow=allow_unverified)
         return
@@ -516,15 +631,153 @@ def _assert_same_specs(
         return
     parts = []
     if changed:
-        parts.append(f"{len(changed)} changed ({', '.join(changed[:5])})")
+        where = _changed_fields(context.get("spec_fields"), specs, changed)
+        shown = f"{len(changed)} changed ({', '.join(changed[:5])})"
+        parts.append(shown + (f", in {where}" if where else ""))
     if removed:
         parts.append(f"{len(removed)} no longer selected ({', '.join(removed[:5])})")
     if added:
         parts.append(f"{len(added)} new ({', '.join(added[:5])})")
+    advice = []
+    recorded = context.get("selection")
+    if removed or added:
+        if isinstance(recorded, dict) and selection is not None and recorded != selection:
+            then, now = selection_flags(recorded), selection_flags(selection)
+            advice.append(
+                "The selection differs"
+                + ("" if changed else " and no spec it ran changed")
+                + f": the run was made with {then} and this invocation selects with {now}. "
+                f"Resume with {then}"
+            )
+        elif isinstance(recorded, dict):
+            holds = [f"holds {len(added)} spec(s) the run did not have"] if added else []
+            holds += [f"lacks {len(removed)} spec(s) it had"] if removed else []
+            advice.append(
+                f"Under the same selection flags the spec path {' and '.join(holds)}: point "
+                "--spec-path at the specs the run was made with"
+            )
+        else:
+            advice.append(
+                "Resume with the selection flags the run was made with (--suite, --quick, -p, "
+                "--spec, --exclude, --top-tests) and its --spec-path"
+            )
+    if changed:
+        advice.append(
+            "Point --spec-path at the specs the run was made with (a copy of them, or the "
+            "specs/ of the version that started it)"
+        )
     raise ValueError(
         f"the battery changed since run {run_id!r} halted: {'; '.join(parts)}. Resuming "
         "would merge two different batteries into one report under one run id, and score "
-        "them as one campaign. Start a fresh run, or restore the specs as they were."
+        f"them as one campaign. {'. '.join(advice)}, or start a fresh run."
+    )
+
+
+def _route_shown(route: object) -> str:
+    if route == "live":
+        return "the live endpoint"
+    return f"the offline {route!r} replay" if isinstance(route, str) else "another route"
+
+
+def _refuse_other_target(
+    run_id: str,
+    context: dict[str, object],
+    target: Target,
+    *,
+    mock_scenario: str | None,
+    hardened: bool,
+) -> None:
+    """Refuse a resume whose target digest differs, naming the fields or the route (M1).
+
+    The run records a short digest of each field of the target's digest payload and the route
+    it resolved, so the refusal says which field changed, or that only the route did and which
+    flag put it there: ``--resume --hardened`` read "Restore the target as it was" over a target
+    file nobody had touched (CLI audit 2026-10-11, M1). A run that recorded neither gets the
+    list of everything the digest covers, as before.
+    """
+
+    stored = context.get("target_fields")
+    if not isinstance(stored, dict):
+        raise ValueError(
+            f"run {run_id!r} was made against a different target than the one resolved now "
+            "(its endpoint, model, capabilities, sampling_defaults, offline scenario or "
+            "seeded_setup differ, even though the id matches). Resuming would publish one "
+            "target's evidence as another's. Restore the target as it was, or start a fresh run."
+        )
+    now = target_field_digests(target, mock_scenario=mock_scenario)
+    differ = sorted(f for f in stored.keys() | now.keys() if stored.get(f) != now.get(f))
+    fields = [f for f in differ if f != "__route__"]
+    then_route, now_route = context.get("route"), mock_scenario or "live"
+    if not fields:
+        if hardened and now_route == "hardened":
+            why, remedy = " (--hardened forces it)", "Resume without --hardened"
+        elif then_route == "hardened":
+            why = ""
+            remedy = "Resume with --hardened (or the target file's mock_scenario as it was)"
+        elif now_route == "live" or then_route == "live":
+            why, remedy = "", "Restore the target file's mock_scenario as it was"
+        else:
+            why = " (the target file's mock_scenario)"
+            remedy = f"Restore the target file's mock_scenario: {then_route}"
+        raise ValueError(
+            f"run {run_id!r} was made on {_route_shown(then_route)} and this invocation "
+            f"resolves {_route_shown(now_route)}{why}. The target file is otherwise unchanged, "
+            "so the answers would come from another route: resuming would publish one route's "
+            f"evidence as the other's. {remedy}, or start a fresh run."
+        )
+    shown = ", ".join(fields[:-1]) + (" and " if len(fields) > 1 else "") + fields[-1]
+    route = (
+        f", and it was made on {_route_shown(then_route)} where this invocation resolves "
+        f"{_route_shown(now_route)}"
+        if "__route__" in differ
+        else ""
+    )
+    raise ValueError(
+        f"run {run_id!r} was made against a different target than the one resolved now: its "
+        f"{shown} {'differs' if len(fields) == 1 else 'differ'}{route}, even though the id "
+        "matches. Resuming would publish one target's evidence as another's. Restore the target "
+        f"file's {shown} as {'it was' if len(fields) == 1 else 'they were'}, or start a fresh run."
+    )
+
+
+def _assert_same_rules(run_id: str, context: dict[str, object]) -> None:
+    """Refuse a resume whose halted half was judged by other rules than this version's (A-81).
+
+    A resume keeps the attempts the halted half stored, with the verdicts it gave them, and judges
+    only what it sends. Judging the kept ones again is not possible: the stored reply is the
+    redacted one (a leaked canary reads ``«REDACTED:canary:…»``), so a rule that looks for the raw
+    value would pass it, and the judge would have to be asked again. So under other rules the
+    report would judge one kind of reply two ways and contradict itself (CLI audit 2026-10-11, H2:
+    4 attempts kept as ``pass`` beside 2 judged cut, and "6 of 10 cut" where all 10 were). A run
+    that records no rules was made by a version before the record, and is refused the same way.
+    No flag waives it, as for the target: what it would publish is not a matter of trust.
+    """
+
+    stored = context.get("judging_rules")
+    if stored == JUDGING_RULES_VERSION:
+        return
+    this = f"this is Il Dottore {__version__}, judging rules {JUDGING_RULES_VERSION}"
+    why = (
+        "A resume keeps the attempts the halted half stored with the verdicts those rules gave "
+        "them and judges only what it sends, so one report would judge the same kind of reply "
+        "two ways; the stored replies are redacted, so they cannot be judged again. There is no "
+        "flag for this: finish it with the version that started it (`dottore --version` names "
+        "its judging rules), or start a fresh run."
+    )
+    if stored is None:
+        # The date is kept away from the version number: "1 (2026-10-12" reads as a phone
+        # number to the redactor every error goes through.
+        raise ValueError(
+            f"run {run_id!r} records no judging rules (the record exists since "
+            f"{JUDGING_RULES_SINCE}), so it was made by an Il Dottore older than this one, whose "
+            f"rules this version cannot vouch for ({this}). {why}"
+        )
+    started = context.get("tool_version")
+    by = f", started by Il Dottore {started}" if isinstance(started, str) and started else ""
+    age = "an older" if isinstance(stored, int) and stored < JUDGING_RULES_VERSION else "a newer"
+    raise ValueError(
+        f"run {run_id!r} was judged by the rules of {age} Il Dottore (judging rules {stored}{by}), "
+        f"and {this}. {why}"
     )
 
 
@@ -538,6 +791,7 @@ def _assert_same_context(
     judge: Target | None = None,
     adaptive: bool | None = None,
     allow_unverified: bool = False,
+    hardened: bool = False,
 ) -> None:
     """Refuse a resume whose TARGET, route or sample size changed since the halt.
 
@@ -563,6 +817,9 @@ def _assert_same_context(
         # context column was absent, and through a context row that simply lacked this key.
         _unverifiable(run_id, "the target and the route", allow=allow_unverified, waivable=False)
         return
+    # The rules before anything else of the invocation: under other rules nothing the operator
+    # can restore makes the two halves one campaign (u12 A-81).
+    _assert_same_rules(run_id, context or {})
     if stored_target != current_target:
         # The operator's declaration is named when it is what changed (OD-43): the digest alone
         # said "seeded_setup differ", and a reader could not tell a new grant from a tool the
@@ -575,11 +832,8 @@ def _assert_same_context(
                 "destructive calls fail, so the two halves would be judged two ways in one "
                 "report. Restore the declaration as it was, or start a fresh run."
             )
-        raise ValueError(
-            f"run {run_id!r} was made against a different target than the one resolved now "
-            "(its endpoint, model, capabilities, sampling_defaults, offline scenario or "
-            "seeded_setup differ, even though the id matches). Resuming would publish one "
-            "target's evidence as another's. Restore the target as it was, or start a fresh run."
+        _refuse_other_target(
+            run_id, context or {}, target, mock_scenario=mock_scenario, hardened=hardened
         )
     context = context or {}
     stored_judge = context.get("judge_digest")

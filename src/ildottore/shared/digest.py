@@ -20,7 +20,15 @@ from typing import Any, Final
 
 from ildottore.shared.models import AttackSpec, Target
 
-__all__ = ["DIGEST_PREFIX", "spec_digest", "spec_digests", "target_digest"]
+__all__ = [
+    "DIGEST_PREFIX",
+    "FIELD_DIGEST_LENGTH",
+    "spec_digest",
+    "spec_digests",
+    "spec_field_digests",
+    "target_digest",
+    "target_field_digests",
+]
 
 #: Marks a digest as produced by this scheme. A future scheme change is then visible in the
 #: stored value instead of silently comparing apples to oranges.
@@ -53,16 +61,46 @@ _COSMETIC_FIELDS: Final = frozenset({"name", "description", "preconditions", "ai
 _TARGET_COSMETIC: Final = frozenset({"name", "description", "tags"})
 
 
+#: Hex digits of a field digest (:func:`spec_field_digests`): it names the field a refusal
+#: blames, while the full digest is what binds, so 32 bits are plenty and a battery's record
+#: stays small (about 40 KB for the 75 shipped specs).
+FIELD_DIGEST_LENGTH: Final = 8
+
+
+def _canonical(payload: Any) -> bytes:
+    return json.dumps(payload, sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode(
+        "utf-8"
+    )
+
+
 def _sha(payload: Any) -> str:
-    canonical = json.dumps(payload, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
-    return DIGEST_PREFIX + hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    return DIGEST_PREFIX + hashlib.sha256(_canonical(payload)).hexdigest()
+
+
+def _short(payload: Any) -> str:
+    return hashlib.sha256(_canonical(payload)).hexdigest()[:FIELD_DIGEST_LENGTH]
+
+
+def _spec_payload(spec: AttackSpec) -> dict[str, Any]:
+    dumped = spec.model_dump(mode="json")
+    return {k: v for k, v in dumped.items() if k not in _COSMETIC_FIELDS}
 
 
 def spec_digest(spec: AttackSpec) -> str:
     """SHA-256 over one spec's behavioural projection (see :data:`_COSMETIC_FIELDS`)."""
 
-    dumped = spec.model_dump(mode="json")
-    return _sha({k: v for k, v in dumped.items() if k not in _COSMETIC_FIELDS})
+    return _sha(_spec_payload(spec))
+
+
+def spec_field_digests(spec: AttackSpec) -> dict[str, str]:
+    """``{field: short digest}`` over the same projection, so a refusal can name the field.
+
+    The spec digest says THAT a spec changed; this says WHERE. A resume of a run halted before
+    the OD-19 rename read "75 changed", which said neither that ``evaluator_logic`` was the only
+    field, nor what to do about it (CLI audit 2026-10-11, M1).
+    """
+
+    return {field: _short(value) for field, value in _spec_payload(spec).items()}
 
 
 def spec_digests(specs: Iterable[AttackSpec]) -> dict[str, str]:
@@ -71,15 +109,7 @@ def spec_digests(specs: Iterable[AttackSpec]) -> dict[str, str]:
     return {spec.id: spec_digest(spec) for spec in specs}
 
 
-def target_digest(target: Target, *, mock_scenario: str | None = None) -> str:
-    """SHA-256 over the target and the route resolved for it.
-
-    ``mock_scenario`` is part of the digest because it is part of what answers: `--resume`
-    with `--hardened` flipped the offline replay and published a vulnerable half's criticals
-    as a hardened run's findings, without touching a single file. The id matched, the specs
-    matched, and the answers came from somewhere else.
-    """
-
+def _target_payload(target: Target, mock_scenario: str | None) -> dict[str, Any]:
     dumped = target.model_dump(mode="json")
     payload = {k: v for k, v in dumped.items() if k not in _TARGET_COSMETIC}
     # Absent, it is left out, so a run stored before the field existed still resumes; present,
@@ -105,4 +135,27 @@ def target_digest(target: Target, *, mock_scenario: str | None = None) -> str:
     if isinstance(capabilities, dict) and (not capabilities.get("mcp") or provider == "mcp"):
         capabilities.pop("mcp", None)
     payload["__route__"] = mock_scenario or "live"
-    return _sha(payload)
+    return payload
+
+
+def target_digest(target: Target, *, mock_scenario: str | None = None) -> str:
+    """SHA-256 over the target and the route resolved for it.
+
+    ``mock_scenario`` is part of the digest because it is part of what answers: `--resume`
+    with `--hardened` flipped the offline replay and published a vulnerable half's criticals
+    as a hardened run's findings, without touching a single file. The id matched, the specs
+    matched, and the answers came from somewhere else.
+    """
+
+    return _sha(_target_payload(target, mock_scenario))
+
+
+def target_field_digests(target: Target, *, mock_scenario: str | None = None) -> dict[str, str]:
+    """``{field: short digest}`` over the target digest's payload, ``__route__`` included.
+
+    So a refused resume names what differs: "its endpoint, model, capabilities, sampling_defaults,
+    offline scenario or seeded_setup differ" told the operator of a ``--resume --hardened``, whose
+    file was unchanged, to "restore the target as it was" (CLI audit 2026-10-11, M1).
+    """
+
+    return {field: _short(value) for field, value in _target_payload(target, mock_scenario).items()}

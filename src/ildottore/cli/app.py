@@ -51,6 +51,7 @@ from ildottore.redactor import (
     log_safe_json,
     visible_controls,
 )
+from ildottore.shared.judging_rules import JUDGING_RULES_VERSION
 from ildottore.shared.schema_export import export_schemas
 from ildottore.store.replay import TamperError
 
@@ -90,7 +91,9 @@ _usage_errors_exit_3()
 
 def _version_callback(value: bool) -> None:
     if value:
-        typer.echo(f"dottore {__version__}")
+        # The rules that judge a stored attempt, which a resume is bound to (u12 A-81): the
+        # package version said 0.1.0 across five changes to them.
+        typer.echo(f"dottore {__version__} (judging rules {JUDGING_RULES_VERSION})")
         raise typer.Exit(ExitCode.CLEAN)
 
 

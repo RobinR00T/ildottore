@@ -16,7 +16,7 @@ import json
 import re
 from pathlib import Path
 from types import TracebackType
-from typing import Any
+from typing import Any, Final
 
 from ildottore.redactor import Redactor, redact_evidence_ref, redact_identity
 from ildottore.shared.amounts import is_amount
@@ -326,7 +326,11 @@ class SqliteRunStore:
         row = self._conn.execute(
             "SELECT context_json AS value FROM runs WHERE run_id = ?", (run_id,)
         ).fetchone()
-        return _loads_dict(row["value"] if row is not None else None, column="context_json")
+        context = _loads_dict(row["value"] if row is not None else None, column="context_json")
+        # Checked here too, so an append never replaces a list it cannot read with a fresh one:
+        # a `mutator_orders` that was not a list was overwritten, the record lost (L6).
+        _check_context(context or {})
+        return context
 
     # --- queries (reporting / replay support) --------------------------------
 
@@ -373,6 +377,7 @@ class SqliteRunStore:
             "SELECT context_json AS value FROM runs WHERE run_id = ?", (run_id,)
         ).fetchone()
         context = _loads_dict(row["value"] if row is not None else None, column="context_json")
+        _check_context(context or {})
         # `--runs` is read back with `int()`: a list or an infinity was a traceback and exit 1, a
         # string was quoted in the error, and `true` or `1.9` resumed at one run (pre-commit
         # audit of the spend check, 2026-10-07). It is written with the target digest, so a
@@ -637,6 +642,127 @@ def _loads_dict(raw: str | None, *, column: str) -> dict[str, Any] | None:
     if not isinstance(parsed, dict):
         raise CorruptRunContext(f"{column} holds {type(parsed).__name__}, not an object.")
     return parsed
+
+
+_DIGEST = re.compile(r"sha256:v[0-9]+:[0-9a-f]{64}")
+_FIELD_DIGEST = re.compile(r"[0-9a-f]{8}")
+#: The mutator orders an invocation records (``add_run_order``), and the first entry of a run
+#: recorded before the list was kept.
+_ORDERS: Final = frozenset({"fingerprint", "declared", _UNRECORDED_SCOPE})
+#: The longest string a context field of this tool's own writes holds (a route, a version).
+_MAX_NAME = 200
+
+
+def _is_bool(value: object) -> bool:
+    return isinstance(value, bool)
+
+
+def _is_count(value: object, minimum: int) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value >= minimum
+
+
+def _is_name(value: object) -> bool:
+    return isinstance(value, str) and 0 < len(value) <= _MAX_NAME
+
+
+def _is_digest(value: object) -> bool:
+    return isinstance(value, str) and _DIGEST.fullmatch(value) is not None
+
+
+def _is_names(value: object) -> bool:
+    return isinstance(value, list) and all(isinstance(item, str) for item in value)
+
+
+def _is_field_digests(value: object) -> bool:
+    return isinstance(value, dict) and all(
+        isinstance(field, str) and isinstance(d, str) and _FIELD_DIGEST.fullmatch(d) is not None
+        for field, d in value.items()
+    )
+
+
+def _is_scopes(value: object) -> bool:
+    return (
+        isinstance(value, list)
+        and bool(value)
+        and all(
+            isinstance(item, str) and (item == _UNRECORDED_SCOPE or _SHA256.fullmatch(item))
+            for item in value
+        )
+    )
+
+
+def _is_selection(value: object) -> bool:
+    if not isinstance(value, dict) or set(value) != _SELECTION_KEYS:
+        return False
+    suite, top = value["suite"], value["top_tests"]
+    return (
+        (suite is None or isinstance(suite, str))
+        and isinstance(value["quick"], bool)
+        and all(_is_names(value[key]) for key in ("categories", "spec", "exclude"))
+        and (top is None or (isinstance(top, int) and not isinstance(top, bool)))
+    )
+
+
+_SELECTION_KEYS: Final = frozenset({"suite", "quick", "categories", "spec", "exclude", "top_tests"})
+
+#: Each field of ``context_json`` this tool writes, what it must be, and how a refusal says so.
+#: ``None`` is accepted only where the writer writes it (no judge, an offline route): elsewhere a
+#: null is a value that lost its meaning, not an absent one. A key not listed is a later version's
+#: and left alone. ``runs`` is checked by :meth:`SqliteRunStore.get_run_context` itself.
+_CONTEXT_FIELDS: Final[dict[str, tuple[bool, Any, str]]] = {
+    "target_digest": (False, _is_digest, "a sha256 digest this tool writes"),
+    "judge_digest": (True, _is_digest, "null or a sha256 digest this tool writes"),
+    "adaptive": (False, _is_bool, "true or false"),
+    "sampling_defaults_applied": (True, _is_bool, "true or false"),
+    "takes_sampling": (True, _is_bool, "true or false"),
+    "judge_takes_sampling": (True, _is_bool, "true or false"),
+    "not_destructive_tools": (False, _is_names, "a list of tool names"),
+    "scope_sha256s": (False, _is_scopes, "a list of scope digests"),
+    "mutator_orders": (
+        False,
+        lambda v: isinstance(v, list) and all(o in _ORDERS for o in v),
+        "a list of fingerprint, declared or unrecorded",
+    ),
+    "judging_rules": (False, lambda v: _is_count(v, 1), "a whole number from 1"),
+    "tool_version": (False, _is_name, "a version string"),
+    "route": (False, _is_name, "a route name"),
+    "selection": (False, _is_selection, "the selection flags this tool records"),
+    "spec_fields": (
+        False,
+        lambda v: (
+            isinstance(v, dict)
+            and all(isinstance(k, str) and _is_field_digests(d) for k, d in v.items())
+        ),
+        "a map of spec ids to field digests",
+    ),
+    "target_fields": (False, _is_field_digests, "a map of field digests"),
+}
+
+
+def _check_context(context: dict[str, Any]) -> None:
+    """Refuse a context field of the wrong shape, naming it (CLI audit 2026-10-11, L6).
+
+    Each reader used to take what it found: ``adaptive: "x"`` read as on, ``scope_sha256s: 7`` as
+    a run older than scope digests, a ``mutator_orders`` that was not a list was replaced by a
+    fresh one. A corrupt record is a stronger signal than a missing one
+    (:class:`CorruptRunContext`), so it is refused where it is read, before anything is sent or
+    written. No value is quoted.
+    """
+
+    for key, (nullable, valid, expected) in _CONTEXT_FIELDS.items():
+        if key not in context:
+            continue
+        value = context[key]
+        if value is None and nullable:
+            continue
+        if not valid(value):
+            article = "an" if key[0] in "aeiou" else "a"
+            raise CorruptRunContext(
+                f"context_json holds {article} {key} value that is not {expected}. An integrity "
+                "record "
+                "that cannot be read is not the same as one that was never written: refusing "
+                "rather than continuing."
+            )
 
 
 def _dominant_status(run: TestRun) -> str | None:

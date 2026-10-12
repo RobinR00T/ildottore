@@ -484,7 +484,8 @@ def test_the_offline_scenario_cannot_be_flipped_under_a_resume(tmp_path: Path) -
 
     flipped = _opts(tmp_path, spec_dir, resume=run_id, budget_requests=100)
     flipped.targets = [write_target(tmp_path, mock_scenario="hardened")]
-    with pytest.raises(ValueError, match="different target"):
+    # Named as the route it is, the file being otherwise unchanged (CLI audit 2026-10-11, M1).
+    with pytest.raises(ValueError, match="was made on the offline 'vulnerable' replay"):
         execute_run(flipped, [spec_dir])
 
 
