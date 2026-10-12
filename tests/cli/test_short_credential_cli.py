@@ -80,7 +80,14 @@ def _entry(target_id: str, port: int, *keys: str) -> str:
     )
 
 
-def _workspace(tmp_path: Path, port: int, *, target_keys: tuple[str, ...], judge_key: str | None):
+def _workspace(
+    tmp_path: Path,
+    port: int,
+    *,
+    target_keys: tuple[str, ...],
+    judge_key: str | None,
+    target_extra: str = "",
+):
     url = f"http://127.0.0.1:{port}/v1/chat/completions"
     scope = tmp_path / "scope.yaml"
     entries = _entry("live", port, *target_keys)
@@ -91,7 +98,9 @@ def _workspace(tmp_path: Path, port: int, *, target_keys: tuple[str, ...], judge
     capabilities = "capabilities:\n  multi_identity: true\n  rag: true\n"
     target.write_text(
         f'id: live\ntype: model\nprovider: openai\nendpoint: "{url}"\nmodel: m\n'
-        f'auth_ref: "env://{target_keys[0]}"\n' + (capabilities if len(target_keys) > 1 else "")
+        f'auth_ref: "env://{target_keys[0]}"\n'
+        + (capabilities if len(target_keys) > 1 else "")
+        + target_extra
     )
     args = ["-t", str(target), "--scope", str(scope), "--spec-path", str(REPO / "specs")]
     if judge_key is not None:
@@ -113,6 +122,18 @@ CASES = [
     ("target --estimate", ("SHORT",), None, "PI-DIRECT-001", ["--estimate"], "live: "),
     ("judge", ("LONG",), "SHORT", "PI-DIRECT-001", [], "judge: "),
     ("identity", ("LONG", "SHORT"), None, "DL-XTENANT-001", [], "live, identity 'second': "),
+    # The pre-flight checks the sweep's identities too (pre-merge audit of A-78, L4).
+    *(
+        (
+            f"identity {flag}",
+            ("LONG", "SHORT"),
+            None,
+            "DL-XTENANT-001",
+            [flag],
+            "live, identity 'second': ",
+        )
+        for flag in ("--dry-run", "-sn", "--estimate")
+    ),
 ]
 
 
@@ -175,3 +196,23 @@ def test_an_offline_mock_is_sent_no_key_so_its_length_is_not_checked(
     )
     assert "shorter than 8" not in result.output, result.output
     assert result.exit_code in (0, 1), result.output
+
+
+@pytest.mark.parametrize("extra", [[], ["--dry-run"], ["-sn"], ["--estimate"]])
+def test_only_an_mcp_target_is_launched_over_stdio(
+    tmp_path: Path, stub: tuple[int, list[str]], monkeypatch: pytest.MonkeyPatch, extra: list[str]
+) -> None:
+    # `transport: stdio` routes only an MCP target to a local subprocess; an OpenAI target sends
+    # its key over the wire whatever the field says, so its length is checked, pre-flight too
+    # (pre-merge audit of A-78, L4: the pre-flight exempted it, and only the send refused).
+    port, seen = stub
+    monkeypatch.setenv("SHORT", SHORT)
+    args = _workspace(
+        tmp_path, port, target_keys=("SHORT",), judge_key=None, target_extra="transport: stdio\n"
+    )
+    result = CliRunner().invoke(
+        app, ["run", *args, "--spec", "PI-DIRECT-001", "--runs", "1", *extra]
+    )
+    assert result.exit_code == 3, result.output
+    assert "live: " + MESSAGE in result.output, result.output
+    assert seen == []

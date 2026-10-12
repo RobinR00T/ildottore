@@ -892,11 +892,47 @@ def check_target_credential(scope: Scope, target: Target, *, sends: bool = True)
     # A credential the redactor could not mask by value is refused here too, so `--dry-run`, `-sn`
     # and `--estimate` answer what the run would (u04 A-78); a stdio MCP server and an offline
     # mock (``sends`` false) are sent no key.
-    if sends and (target.transport or "").strip().lower() != "stdio":
+    if sends and not _launched_locally(target):
         try:
             refuse_short_credential(target.id, api_key, target.endpoint)
         except CredentialTooShort as exc:
             raise ValueError(str(exc)) from None
+
+
+def check_identity_credentials(scope: Scope, target: Target) -> None:
+    """Refuse, pre-flight, a scope identity's credential the identity sweep would refuse.
+
+    The sweep sends a spec once as each scope identity of a live target, with that identity's
+    own credential (:func:`build_identity_probes`), which refuses one shorter than
+    ``MIN_CREDENTIAL_LEN`` (u04 A-78). `--dry-run`, `-sn` and `--estimate` checked only the
+    target's and the judge's credentials, so they exited 0 for a scope whose run then stopped
+    at exit 3 (pre-merge audit of A-78, L4). Raises ``ValueError`` with the run's message.
+    """
+
+    scope_target = scope.target(target.id)
+    if scope_target is None or len(scope_target.identities) < 2 or _launched_locally(target):
+        return
+    for ident in scope_target.identities:
+        try:
+            refuse_short_credential(
+                f"{target.id}, identity {quoted(ident.name)}",
+                resolve_auth_ref(ident.auth_ref),
+                target.endpoint,
+            )
+        except CredentialTooShort as exc:
+            raise ValueError(str(exc)) from None
+
+
+def _launched_locally(target: Target) -> bool:
+    """True for a stdio MCP target: a local subprocess, sent no key.
+
+    Only the MCP adapter honours ``transport: stdio``; any other provider sends its key over
+    the wire whatever the field says, so its credential is checked (pre-merge audit of A-78, L4).
+    """
+
+    return (target.provider or "").strip().lower() == "mcp" and (
+        target.transport or ""
+    ).strip().lower() == "stdio"
 
 
 @dataclass
@@ -1328,7 +1364,7 @@ def build_identity_probes(scope: Scope, target: Target) -> list[IdentityProbe]:
     probes: list[IdentityProbe] = []
     for ident in scope_target.identities:
         api_key = resolve_auth_ref(ident.auth_ref)
-        if (target.transport or "").strip().lower() != "stdio":
+        if not _launched_locally(target):
             # Named with its identity: the target's own id alone did not say whose key it was.
             identity = f"{target.id}, identity {quoted(ident.name)}"
             refuse_short_credential(identity, api_key, target.endpoint)  # u04 A-78

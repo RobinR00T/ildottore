@@ -2294,6 +2294,15 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
             )
         )
 
+    # The identity sweep's credentials too, for every plan that sweeps (u04 A-78): checked at
+    # send time only, `--dry-run`, `-sn` and `--estimate` exited 0 for a scope identity whose
+    # key the run then refused at exit 3 (pre-merge audit of A-78, L4).
+    for plan in plans:
+        if plan.identities >= 2 and any(
+            sweeps_identities(spec, plan.target) for spec in plan.selected
+        ):
+            wiring.check_identity_credentials(scope, plan.target)
+
     # Resolved BEFORE the three modes that send nothing, so a typo in the id is caught by the
     # command whose job is validation, and so the estimate prices the work that is actually
     # left. They used to return first, so `--dry-run --resume run-totally-bogus` exited 0
