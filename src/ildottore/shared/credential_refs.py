@@ -21,7 +21,6 @@ credential leaves ``auth_ref`` out; a scope identity, which must carry an ``auth
 
 from __future__ import annotations
 
-import os
 import re
 from collections.abc import Mapping
 from typing import Final
@@ -61,15 +60,15 @@ def env_name_of(auth_ref: str) -> str | None:
     return auth_ref[len(ENV_SCHEME) :] if auth_ref.startswith(ENV_SCHEME) else None
 
 
-def unset_variable(
-    auth_ref: str | None, environ: Mapping[str, str] | None = None
-) -> tuple[str, str] | None:
+def unset_variable(auth_ref: str | None, environ: Mapping[str, str]) -> tuple[str, str] | None:
     """``(name, "not set" | "set but empty")`` when ``auth_ref`` names a variable a run cannot
     send, else ``None``.
 
-    ``None``, :data:`NO_CREDENTIAL`, another scheme and a literal are not this question: the
-    first two send no credential on purpose, the last two are refused where the reference is
-    read. A value of whitespace only is empty: the resolver strips it.
+    ``environ`` is the environment to look in, which the caller reads: the CLI's wiring passes
+    the process's, as it alone reads it. ``None``, :data:`NO_CREDENTIAL`, another scheme and a
+    literal are not this question: the first two send no credential on purpose, the last two are
+    refused where the reference is read. A value of whitespace only is empty: the resolver strips
+    it.
     """
 
     if auth_ref is None:
@@ -77,7 +76,7 @@ def unset_variable(
     name = env_name_of(auth_ref)
     if name is None or name == NO_CREDENTIAL_NAME or not is_env_name(name):
         return None
-    value = (os.environ if environ is None else environ).get(name)
+    value = environ.get(name)
     if value is None:
         return name, "not set"
     if not value.strip():

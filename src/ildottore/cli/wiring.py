@@ -997,7 +997,8 @@ def unset_credentials(
     problems: list[str] = []
 
     def check(who: str, auth_ref: str | None) -> None:
-        found = unset_variable(auth_ref)
+        # The environment is read here, in the wiring, as `resolve_auth_ref` reads it.
+        found = unset_variable(auth_ref, os.environ)
         if found is not None and auth_ref is not None:
             name, state = found
             problems.append(
