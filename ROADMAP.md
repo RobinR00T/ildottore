@@ -40,10 +40,10 @@ noted, over the wire.
 
 ## Near-term (candidates, not committed)
 
-- ⬜ **An installable package**: a wheel (`pip install` without `-e`, `pip install
-  "git+https://..."`) ships neither `specs/` nor `schemas/` and cannot load the battery outside a
-  checkout (found 2026-10-12, `docs/12` P1); until it does, install a clone editable
-  (`INSTALL.md`).
+- ⬜ **An installable package**: a wheel (`pip install` without `-e`, or
+  `pip install "git+https://..."`) ships neither `specs/` nor `schemas/` and cannot load the
+  battery outside a checkout (found 2026-10-12, `docs/12` P1); until it does, install a clone
+  editable (`INSTALL.md`).
 - ⬜ **Live validation matrix**: run the multimodal (image + audio) battery end-to-end against real
   vision/audio models (a local Ollama vision model and/or a hosted provider) and record the
   results. The attacks are golden-proven offline; a live pass is the highest-credibility next step.
