@@ -795,9 +795,11 @@ differ in the 24 media digests, now readable, and the timestamps, the HTML in th
 the run store of the first target in its wall time. Only the run store of the UUID-named target
 differs otherwise: it keeps the target's identity mask (`tenant-«REDACTED:uuid:...»`), which a
 resume accepts with main's (below). `dottore diff` has no `--json` option (the first version of
-this clause listed one; on `de122e26` and here it prints `No such option: --json`). Searched for by the digest its mask would carry, no value the tool computed (222 artifact
+this clause listed one; on `de122e26` and here it prints `No such option: --json`). In a second
+full run of the battery (`--runs 2`, `-sV`, `-oA`, the stores, `replay`), every output searched
+for each value the tool computed by the digest its mask would carry: none of them (222 artifact
 digests, 18 probe digests, 7 media digests, 75 spec digests, the target and scope digests, the run
-id) is masked in any output of the same run.
+id) is masked anywhere.
 
 *The CLI.* `cli.app._masked` runs the late patterns on each stretch of the message its entropy pass
 reads, after that pass; what it keeps (a carried digest, an existing path, a spec file name) is kept

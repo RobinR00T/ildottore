@@ -36,8 +36,10 @@ The carryover ledger. Every agent session updates this so context survives even 
   process is read as text (a URL user one gets a `url_password` mask on its tail in a later report).
 - Tests: 6196 (61 more than `0b4b1f14`); new files `test_redactor_number_cuts.py` (14),
   `test_redactor_url_read_check.py` (4), `test_redactor_own_late_masks.py` (26),
-  `cli/test_report_target_id.py` (5), `cli/test_uuid_identifiers_readable.py` (4); gates: see the
-  PR body.
+  `cli/test_report_target_id.py` (5), `cli/test_uuid_identifiers_readable.py` (4). `make gates`
+  green on `fe6b4672` (`PYTHONPATH` at the worktree's `src`, `TMPDIR` the system's): 6196 tests,
+  97.63% coverage, mypy 160 files, 4 import contracts kept, 75 specs lint OK, self-scan, bandit
+  and pip-audit clean.
 
 ## State, 2026-10-12 (night): key formats, hex runs and UUIDs masked whatever their entropy; short credentials refused everywhere (u01 A-78)
 
