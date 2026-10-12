@@ -30,7 +30,7 @@ The carryover ledger. Every agent session updates this so context survives even 
   shaped, `judging_rules` at most 1,000,000; L-6 `tool_versions`, every invocation's; L-7 tests for
   the selection flags, the changed-field paths, an unrecorded selection, a live route and a run
   with no target fields; L-8 `in severity (2)` from a real run instead of `in evaluator_logic (75)`.
-- Tests: `tests/shared/test_judging_rules.py` 12, `tests/cli/test_resume_judging_rules.py` 25,
+- Tests: `tests/shared/test_judging_rules.py` 12, `tests/cli/test_resume_judging_rules.py` 26,
   `tests/cli/test_resume_refusal_advice.py` 15, `tests/cli/test_resume_corrupt_context.py` 31.
   GATES_PLACEHOLDER
 

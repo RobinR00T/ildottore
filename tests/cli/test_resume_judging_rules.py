@@ -285,11 +285,9 @@ def test_each_invocation_records_its_package_version(
 ) -> None:
     """``tool_version`` is the start's; ``tool_versions`` every invocation's, in order (L-6)."""
 
-    from ildottore.cli import run as run_mod
-
     run_id, spec_dir = _halted(tmp_path)
     assert _context(tmp_path)["tool_versions"] == [__version__]
-    monkeypatch.setattr(run_mod, "__version__", "0.1.1")
+    monkeypatch.setattr(resume_mod, "__version__", "0.1.1")
     execute_run(_opts(tmp_path, resume=run_id, budget_requests=7), [spec_dir])
     context = _context(tmp_path)
     assert context["tool_versions"] == [__version__, "0.1.1"]
@@ -331,3 +329,16 @@ def test_the_plugins_are_read_from_the_entry_points(monkeypatch: pytest.MonkeyPa
     ]
     monkeypatch.setattr(importlib.metadata, "entry_points", lambda group: points)
     assert resume_mod.evaluator_plugins() == ["bare=x:Y", "leak=acme.ev:Leak (acme 1.0)"]
+
+
+def test_a_package_version_with_no_pep_440_shape_is_recorded_as_unknown(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The store refuses to read back a version of another shape, so it is never written one."""
+
+    monkeypatch.setattr(resume_mod, "__version__", "a build of my own")
+    run_id, spec_dir = _halted(tmp_path)
+    context = _context(tmp_path)
+    assert context["tool_version"] == "unknown" and context["tool_versions"] == ["unknown"]
+    outcome = execute_run(_opts(tmp_path, resume=run_id, budget_requests=100), [spec_dir])
+    assert outcome.exit_code in {ExitCode.FINDINGS_AT_OR_ABOVE, ExitCode.FINDINGS_BELOW}

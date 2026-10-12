@@ -47,7 +47,8 @@ versioning: [SemVer](https://semver.org/).
   a resume under others is refused the same way.
 - **Recorded when a run starts, and checked before a resume sends anything.** `context_json`
   holds `judging_rules`, `tool_version` (the package that started the run) and `tool_versions`
-  (every invocation's, in order). A resume under other rules, older or newer, is refused (exit 3)
+  (every invocation's, in order; a package version with no PEP 440 shape is recorded as
+  `unknown`). A resume under other rules, older or newer, is refused (exit 3)
   with both versions named, why, and what to do: `run '<id>' was judged by the rules of an older Il
   Dottore (judging rules 1, started by Il Dottore v0.1.0), and this is Il Dottore v0.1.0, judging
   rules 2. ... the stored replies are redacted, so they cannot be judged again. There is no flag
@@ -116,11 +117,11 @@ versioning: [SemVer](https://semver.org/).
   note (corrected as below), PROGRESS; contracts u12 §7 A-81 (new) and A-24 (amended), u10 §6, the
   index rows. Where the docs say which runs are refused, they name `JUDGING_RULES_SINCE` rather
   than a date, set once when the version lands. Tests: `tests/shared/test_judging_rules.py` (12),
-  `tests/cli/test_resume_judging_rules.py` (25), `tests/cli/test_resume_refusal_advice.py` (15) and
+  `tests/cli/test_resume_judging_rules.py` (26), `tests/cli/test_resume_refusal_advice.py` (15) and
   `tests/cli/test_resume_corrupt_context.py` (31). On `de122e26` the first two do not import (the
   module is new), all 15 of the third fail and 28 of the 31 (the three that pass are the
   `sampling_defaults_applied` refusal, which existed, an unknown key and a well-formed start); on
-  `22269e0c`, the head the pre-merge audit read, the first does not import, 18 of the 25 fail and 2
+  `22269e0c`, the head the pre-merge audit read, the first does not import, 19 of the 26 fail and 2
   of the 15. Six tests updated for the
   messages named above or the stricter store (`--version`, the route refusal, the per-field
   sampling message, the corrupt declaration record, a scope test's fake target digest, and the

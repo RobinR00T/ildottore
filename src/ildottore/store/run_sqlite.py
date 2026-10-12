@@ -707,8 +707,14 @@ VERSION_SHAPE: Final = re.compile(
 )
 
 
+#: What the run store records for a package version that has no PEP 440 shape.
+UNKNOWN_VERSION: Final = "unknown"
+
+
 def _is_version(value: object) -> bool:
-    return isinstance(value, str) and VERSION_SHAPE.fullmatch(value) is not None
+    return isinstance(value, str) and (
+        value == UNKNOWN_VERSION or VERSION_SHAPE.fullmatch(value) is not None
+    )
 
 
 #: The highest judging-rules version a record may hold: a version is bumped by one per change of

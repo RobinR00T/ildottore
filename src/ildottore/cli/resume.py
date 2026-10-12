@@ -50,6 +50,7 @@ __all__ = [
     "declared_not_destructive",
     "evaluator_plugins",
     "load_resume_run",
+    "recorded_version",
     "selection_record",
     "stored_adaptive",
     "stored_runs",
@@ -811,6 +812,15 @@ def _is_version(value: object) -> bool:
     from ildottore.store.run_sqlite import VERSION_SHAPE
 
     return isinstance(value, str) and VERSION_SHAPE.fullmatch(value) is not None
+
+
+def recorded_version() -> str:
+    """This package's version as the run store records it: ``unknown`` when it has no PEP 440
+    shape, which the store would refuse to read back (a build's odd local version, say)."""
+
+    from ildottore.store.run_sqlite import UNKNOWN_VERSION
+
+    return __version__ if _is_version(__version__) else UNKNOWN_VERSION
 
 
 def _shown_version(version: object) -> str:

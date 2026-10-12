@@ -1300,12 +1300,13 @@ are the same class.
   it said `0.1.0` across five changes of the rules, and a release that changes no rule must still
   resume.
 
-Checked by `tests/cli/test_resume_judging_rules.py` (25: the record, `tool_version` kept and
+Checked by `tests/cli/test_resume_judging_rules.py` (26: the record, `tool_version` kept and
 `tool_versions` appended, older and newer rules refused naming both with nothing written, a run
 with no record refused with and without `--resume-unverified`, exit 3 through the CLI for a resume,
 `--dry-run` and `--estimate` with no part masked, a newer run refused for its rules over a field it
 does not know, a selection key a later release adds left alone, eleven version shapes through the
-error redactor, a corrupt stored version, the plugins recorded, a resume under others refused, and
+error redactor, a corrupt stored version, an unshaped package version recorded as `unknown`,
+the plugins recorded, a resume under others refused, and
 their entry points read, and `--version`) and `tests/shared/test_judging_rules.py` (12: the pin,
 the history, the closure, the entries and exemptions resolve, an assignment can be listed, the
 normalization keeps code and drops comments and docstrings).

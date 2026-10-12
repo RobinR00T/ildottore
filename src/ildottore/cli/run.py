@@ -40,7 +40,6 @@ from pathlib import Path
 from types import FrameType
 from typing import Any
 
-from ildottore import __version__
 from ildottore.cli import interrupts, wiring
 from ildottore.cli import resume as resume_mod
 from ildottore.cli.exit_codes import ExitCode, exit_code_for, fail_on_band
@@ -2927,7 +2926,7 @@ def _record_version(run_db: Path, run_id: str) -> None:
     from ildottore.store.run_sqlite import SqliteRunStore
 
     with SqliteRunStore(Path(run_db)) as store:
-        store.add_run_version(run_id, __version__)
+        store.add_run_version(run_id, resume_mod.recorded_version())
 
 
 def _record_order(run_db: Path, run_id: str, *, with_fingerprint: bool, resumed: bool) -> None:
@@ -3004,7 +3003,9 @@ def _persist_run_integrity(
     with SqliteRunStore(Path(run_db)) as store:
         prior = (store.get_run_context(run_id) or {}) if resumed else {}
         started = prior.get("tool_version")
-        started_by = started if isinstance(started, str) and started else __version__
+        started_by = (
+            started if isinstance(started, str) and started else resume_mod.recorded_version()
+        )
         chosen = prior.get("selection") if isinstance(prior.get("selection"), dict) else selection
         store.save_run_context(
             run_id,
