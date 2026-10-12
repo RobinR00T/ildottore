@@ -3,6 +3,31 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-12 (late morning): the pre-merge audit of `3f7b1254` (A-79), fixed
+
+- Merge-ready per the audit, with one LOW fixed before it lands (new commits, no history
+  rewritten, under the owner's delegation, best practice, revisable). `blank_text` read every
+  format character as no text, the tag block too, so harmful text in tag characters (ASCII
+  smuggling) with `content_filter` was a cut with no text and the judge that says exploited was
+  never consulted: 0 judge requests, `filtered`, exit 3, where `e1a8aacf` and `main` read it (6).
+  Never a pass, but hidden text went unjudged. The 13 format signs a font draws (U+0600 to
+  U+0605, U+06DD, U+070F, U+0890, U+0891, U+08E2, U+110BD, U+110CD) were blank too.
+- One list: the redactor's pinned `_FORMAT_RANGES` (Unicode 16.0, the same 170 characters) is
+  now the union of `EMPTY_FORMAT_RANGES`, `FORMAT_SIGN_RANGES` and `TAG_RANGES`, and
+  `blank_text` reads whitespace and `EMPTY_FORMAT_RANGES` only (no longer `unicodedata`).
+  `shared.provider_filter` imports it from the redactor, a leaf of the shared band. After (my
+  `repro_tags.py`): tags undeclared and under `[]`, U+0600 under `[]` and U+06DD undeclared all
+  give 6 judge requests, a fail that needs review, exit 0, as on `e1a8aacf`; the zero-width
+  replies stay `filtered`, exit 3, and the WebSocket blank turns stay unreadable.
+- The nit: `fingerprint/layers/guardrail.py:185` keeps `.strip()`. Its `empty` is a probe reply
+  that says nothing to the guardrail profile, not the filter rule, and moving it would change
+  u09 outcomes (a zero-width probe reply from `unclear` or `answered` to `empty`) outside this
+  branch's rule; the claim "the one test of no text" is narrowed to the filter rule (here and in
+  `blank_text`'s docstring).
+- Tests, 13 new, all failing on `3f7b1254`: `tests/adapters/test_filter_stop_provenance.py`
+  now 54 (52 fail on `de122e26`, 25 on `10cb526b`, 19 on `e1a8aacf`, 11 on `3f7b1254`),
+  `tests/cli/test_filter_stop_provenance_campaign.py` now 44 (40, 15, 7 and 2).
+
 ## State, 2026-10-12 (morning): the pre-merge audit of `e1a8aacf` (A-79), fixed
 
 - One MEDIUM and five LOWs, fixed as new commits on `fix/filter-stop-provenance` (no history
@@ -19,8 +44,9 @@ The carryover ledger. Every agent session updates this so context survives even 
   declared word stays the filter's cut, exit 3; text stays a fail, exit 2.
 - LOW 1: `str.strip` keeps format characters, so under `[]` an OpenAI reply of U+200B (or U+200D,
   U+2060, U+FEFF) with `content_filter` passed, exit 0. `shared.provider_filter.blank_text`
-  (whitespace and Unicode Cf only) is now the one test of "no text": `stop_provenance`,
-  `partial_reply`, `replaced_reply`, the runner's `_trace_before_block` and the WebSocket turn.
+  (whitespace and Unicode Cf only) is now the filter rule's one test of "no text":
+  `stop_provenance`, `partial_reply`, `replaced_reply`, the runner's `_trace_before_block` and the
+  WebSocket turn.
   `_refusal_side` keeps reading presence (any character is output, which decides Anthropic's side).
   After: `filtered`, exit 3, as an empty reply.
 - LOW 2: the stale comment on `OpenAIAdapter.declared_filter_stops`. LOW 3: `Target(provider=5,

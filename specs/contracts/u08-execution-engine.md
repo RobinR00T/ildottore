@@ -769,7 +769,8 @@ What it still leaves: a target that answers some attacks, not all, with its own 
 word and no text hides those attempts, which are inconclusive, never a pass, counted apart in
 every report and kept from confirming; a gateway that maps moderation to `content_filter` is read
 as OpenAI's filter (it speaks OpenAI's vocabulary), its text read as delivered, and with
-`filter_stops: []` its replies with no text (whitespace or format characters only) and no tool
+`filter_stops: []` its replies with no text (whitespace or a format character that shows nothing,
+never a tag character) and no tool
 call on that word still are. Measured on this
 branch through the CLI: the harmful text with `refusal` from an `openai` target is a confirmed
 fail, exit 2 (`de122e26`: inconclusive, exit 0); `PI-DIRECT-001` with text cut by `content_filter`

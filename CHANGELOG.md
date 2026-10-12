@@ -59,8 +59,10 @@ own word only) for an endpoint that speaks the provider's API and has no OpenAI,
 filter behind it (never a gateway in front of Azure, which relays Azure's filter): no HTTP 400,
 and no stop on a reply with text or a tool call, is then read as a filter's, while a reply with no
 text and no tool call that ends on the provider's own word is still the filter's withheld one,
-never a pass (no text is whitespace or format characters only: a zero-width space passed until
-the pre-merge audit of `e1a8aacf`, LOW 1; the
+never a pass (no text is whitespace or a format character that shows and carries nothing: a
+zero-width space passed until the pre-merge audit of `e1a8aacf`, LOW 1, and since that of
+`3f7b1254` a reply of tag characters, which spell ASCII no one sees, is text the judge reads,
+as are the 13 format signs a font draws; the
 pre-merge audit of `10cb526b` found `[]` made it a pass: `PI-DIRECT-001` against Azure's withheld
 reply, exit 0 where without the declaration the run is `filtered`, exit 3; and a `RestTemplate`'s
 declaration keeps its shape's word on a reply with no text the same way). `--dry-run`, `-v` and

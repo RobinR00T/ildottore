@@ -114,7 +114,9 @@ must round-trip any schema-valid YAML and reject any schema-invalid one (schema 
   reply with no text and no tool call that ends on the provider's own word, which is the filter's
   withheld one whatever is declared: pre-merge audit of `10cb526b`, MEDIUM; no text is
   `shared.provider_filter.blank_text`, whitespace and format characters only, since that of
-  `e1a8aacf`, LOW 1); the adapter
+  `e1a8aacf`, LOW 1, and only those that show and carry nothing, the redactor's
+  `EMPTY_FORMAT_RANGES`, since that of `3f7b1254`: a tag character or one of the 13 format signs
+  a font draws is text); the adapter
   that read the reply sets it (`shared.provider_filter.stop_provenance`, u04), the stop is kept as
   sent, and every reader takes it for an ordinary stop. `false` is left out of a dump by the same
   serializer, so every other reply is stored, reported and hashed as before.

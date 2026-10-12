@@ -1228,11 +1228,13 @@ for an `anthropic` file the word is `refusal` and the HTTP 400 clause is left ou
 adapter never reads one (pre-merge audit of `e1a8aacf`, LOW 4). Until the audit of `10cb526b`
 (MEDIUM) it said every reply was the model's, and an empty `content_filter` passed
 `PI-DIRECT-001` with exit 0 where the run without the declaration is `filtered`, exit 3. Checked by
-`tests/cli/test_filter_stop_provenance_campaign.py` (42 tests; 38 fail on `de122e26`, 15 on
+`tests/cli/test_filter_stop_provenance_campaign.py` (44 tests; 40 fail on `de122e26`, 15 on
 `10cb526b`, the auditor's d1 through the CLI for `openai` and `anthropic`, the plan line and the
 model's refusals among them, and 7 on `e1a8aacf`: d1 with a zero-width space, a WebSocket turn
 withheld after a blank delta through `execute_run` on `""`, `"  "` and a zero-width space, a
-failed provider's lone error, the Anthropic plan line, and the plan line's new words; the first
+failed provider's lone error, the Anthropic plan line, and the plan line's new words, and 2 on
+`3f7b1254`: harmful text in tag characters, undeclared and under `[]`, which the judge reads (6
+requests, a fail that needs review, exit 0; `3f7b1254` never consulted it); the first
 13: the two ways a run is filtered, an `openai` target's foreign stops, an `anthropic` target
 answering Azure's 400, the judge's fail on cut text with and without `--include-needs-review`, a
 WebSocket file's declaration and its refusal,

@@ -126,8 +126,9 @@ _CONTROL_RANGES: Final = ((0x00, 0x1F), (0x7F, 0x9F), (0x2028, 0x2029), (0xD800,
 #: 2026-10-07: written out like the controls). In three kinds, the one list for every reader that
 #: tells them apart (``shared.provider_filter.blank_text``, pre-merge audit of ``3f7b1254``):
 #: :data:`EMPTY_FORMAT_RANGES` show nothing and carry nothing; :data:`FORMAT_SIGN_RANGES` are the
-#: signs a font draws as a glyph (the Arabic number signs, the end of ayah, the Syriac
-#: abbreviation mark, the Arabic pound and piastre marks, the Kaithi number signs);
+#: 13 prepended concatenation marks, signs a font draws as a glyph (the Arabic number signs, the
+#: end of ayah, the Syriac abbreviation mark, the Arabic pound and piastre marks, the Kaithi
+#: number signs);
 #: :data:`TAG_RANGES` spell ASCII that no one sees (ASCII smuggling).
 EMPTY_FORMAT_RANGES: Final = (
     *((0x00AD, 0x00AD), (0x061C, 0x061C), (0x180E, 0x180E), (0x200B, 0x200F)),

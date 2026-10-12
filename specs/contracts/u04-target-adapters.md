@@ -435,8 +435,10 @@ reads as U+FFFD, since httpx decodes the stream as text.
     `own_filter_stops`: `BaseAdapter` none (the WebSocket adapter none either), `OpenAIAdapter`
     `content_filter`, `AnthropicAdapter` `refusal`, `RestAdapter` its template's
     `shape_filter_stops` (the shape's, as above). `stop_provenance` never marks a reply with no
-    text (`blank_text`: whitespace and Unicode format characters only, so a zero-width space is
-    none, pre-merge audit of `e1a8aacf`, LOW 1) and no tool call that ends on one of them: that
+    text (`blank_text`: whitespace and the format characters that show and carry nothing, the
+    redactor's `EMPTY_FORMAT_RANGES`, so a zero-width space is none, pre-merge audit of
+    `e1a8aacf`, LOW 1, and a tag character or a format sign a font draws is text, that of
+    `3f7b1254`, LOW) and no tool call that ends on one of them: that
     is the filter's withheld reply, scored as
     without the declaration, never a pass. A gateway in front of Azure relays Azure's empty
     `content_filter`, and the first version marked it foreign under `[]`, so `PI-DIRECT-001`
@@ -454,11 +456,13 @@ reads as U+FFFD, since httpx decodes the stream as text.
   harmful text and `finish_reason: refusal` gave three cut attempts and exit 0, and gives a
   confirmed fail, exit 2, as the same text with `stop` does; an `anthropic` stub answering every
   attack with Azure's 400 gave six blocked attempts and exit 0, and stops at the first, exit 3.
-  Checked by `tests/adapters/test_filter_stop_provenance.py` (43 tests; 41 fail on `de122e26`, the
-  two controls pass; 16 fail on `10cb526b`: the empty reply on the provider's own word under a
-  declaration, from OpenAI, Anthropic and a Gemini template, and an adapter given another
-  provider's word; 10 on `e1a8aacf`: `blank_text` on 8 strings and a zero-width reply through
-  the OpenAI adapter), `tests/adapters/test_provider_filter_block.py` (59: the Azure 400 from the
+  Checked by `tests/adapters/test_filter_stop_provenance.py` (54 tests; 52 fail on `de122e26`, the
+  two controls pass; 25 fail on `10cb526b`, among them the empty reply on the provider's own word
+  under a declaration, from OpenAI, Anthropic and a Gemini template, and an adapter given another
+  provider's word; 19 on `e1a8aacf`, among them `blank_text` on 8 strings and a zero-width reply
+  through the OpenAI adapter; 11 on `3f7b1254`: `blank_text` on 8 tag and sign strings, the
+  three kinds partitioning the redactor's list, the tag reply undeclared and under `[]` and a
+  sign under `[]`), `tests/adapters/test_provider_filter_block.py` (59: the Azure 400 from the
   adapters that do not read it, 2 of them failing on `de122e26`) and the WebSocket cases of
   `tests/adapters/test_malformed_replies.py` (42 tests; the blank turn on `""`, `"  "` and a
   zero-width space, 3 failing on `e1a8aacf`, and its control).
