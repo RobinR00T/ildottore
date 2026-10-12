@@ -284,3 +284,16 @@ def test_new_spec_stdout_checks_the_id_too() -> None:
     result = runner.invoke(app, ["new-spec", "--id", _KEY, "--family", "f", "--stdout"])
     assert result.exit_code == 3, result.output
     assert "invalid spec id" in result.output and _KEY[:16] not in result.output
+
+
+def test_new_spec_refuses_a_family_shaped_like_a_key() -> None:
+    result = runner.invoke(app, ["new-spec", "--id", "PI-NEW-001", "--family", _KEY, "--stdout"])
+    assert result.exit_code == 3, result.output
+    assert "shaped like a credential" in result.output and _KEY[:16] not in result.output
+    for family in ("prompt_injection", "deepteam-mapped", "nova-iopc-mapped", "rai01"):
+        assert (
+            runner.invoke(
+                app, ["new-spec", "--id", "PI-NEW-001", "--family", family, "--stdout"]
+            ).exit_code
+            == 0
+        )

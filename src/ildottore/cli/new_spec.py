@@ -15,6 +15,7 @@ from pathlib import Path
 
 import yaml
 
+from ildottore.redactor import Redactor
 from ildottore.shared.enums import Category
 
 __all__ = ["scaffold_spec", "write_scaffold"]
@@ -123,6 +124,13 @@ def _check_family(family: str) -> None:
         raise ValueError(
             "--family holds a control or format character (a line break, an escape, a "
             "direction override); give the spec family as plain text"
+        )
+    # A value the redactor would mask is a credential pasted into the wrong flag, not a family:
+    # the scaffold would print it whole (the rerun of the audit's M7 fuzz).
+    if Redactor().redact_text(family) != family:
+        raise ValueError(
+            "--family is shaped like a credential (a key or a token; not shown); give the spec "
+            "family, a word such as jailbreak"
         )
 
 
