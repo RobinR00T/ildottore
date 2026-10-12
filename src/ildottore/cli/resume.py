@@ -48,6 +48,7 @@ __all__ = [
     "RESUME_PLACEHOLDER_RISK",
     "adopt_resumed",
     "declared_not_destructive",
+    "evaluator_plugins",
     "load_resume_run",
     "selection_record",
     "stored_adaptive",
@@ -640,6 +641,9 @@ def _assert_same_specs(
         parts.append(f"{len(added)} new ({', '.join(added[:5])})")
     advice = []
     recorded = context.get("selection")
+    if isinstance(recorded, dict) and selection is not None:
+        # Compared on the keys this version writes: one a later version adds is not a difference.
+        recorded = {key: recorded.get(key) for key in selection}
     if removed or added:
         if isinstance(recorded, dict) and selection is not None and recorded != selection:
             then, now = selection_flags(recorded), selection_flags(selection)
@@ -732,11 +736,13 @@ def _refuse_other_target(
         if "__route__" in differ
         else ""
     )
+    one = len(fields) == 1
     raise ValueError(
         f"run {run_id!r} was made against a different target than the one resolved now: its "
-        f"{shown} {'differs' if len(fields) == 1 else 'differ'}{route}, even though the id "
-        "matches. Resuming would publish one target's evidence as another's. Restore the target "
-        f"file's {shown} as {'it was' if len(fields) == 1 else 'they were'}, or start a fresh run."
+        f"{shown} {'field' if one else 'fields'} changed{route}, even though the id matches. "
+        "Resuming would publish one target's evidence as another's. Restore "
+        f"{'that field' if one else 'those fields'} of the target file as "
+        f"{'it was' if one else 'they were'}, or start a fresh run."
     )
 
 
@@ -753,10 +759,27 @@ def _assert_same_rules(run_id: str, context: dict[str, object]) -> None:
     No flag waives it, as for the target: what it would publish is not a matter of trust.
     """
 
+    from ildottore.store.run_sqlite import MAX_JUDGING_RULES, CorruptRunContext
+
     stored = context.get("judging_rules")
+    if stored is not None and (
+        isinstance(stored, bool)
+        or not isinstance(stored, int)
+        or not 1 <= stored <= MAX_JUDGING_RULES
+    ):
+        raise CorruptRunContext(
+            "context_json holds a judging_rules value that is not a whole number from 1 to "
+            "1000000. An integrity record that cannot be read is not the same as one that was "
+            "never written: refusing rather than continuing."
+        )
     if stored == JUDGING_RULES_VERSION:
+        _assert_same_plugins(run_id, context)
         return
-    this = f"this is Il Dottore {__version__}, judging rules {JUDGING_RULES_VERSION}"
+    # Each version written with a `v` in front: a bare `1.2.3.4` read as an IPv4 address and a
+    # bare `2026.10.12` as a phone number to the redactor every error goes through (L-5).
+    this = (
+        f"this is Il Dottore {_shown_version(__version__)}, judging rules {JUDGING_RULES_VERSION}"
+    )
 
     def why(which: str) -> str:
         return (
@@ -776,11 +799,66 @@ def _assert_same_rules(run_id: str, context: dict[str, object]) -> None:
             f"rules this version cannot vouch for ({this}). {why('')}"
         )
     started = context.get("tool_version")
-    by = f", started by Il Dottore {started}" if isinstance(started, str) and started else ""
-    age = "an older" if isinstance(stored, int) and stored < JUDGING_RULES_VERSION else "a newer"
+    by = f", started by Il Dottore {_shown_version(started)}" if _is_version(started) else ""
+    age = "an older" if stored < JUDGING_RULES_VERSION else "a newer"
     raise ValueError(
         f"run {run_id!r} was judged by the rules of {age} Il Dottore (judging rules {stored}{by}), "
         f"and {this}. {why(' (`dottore --version` names its judging rules)')}"
+    )
+
+
+def _is_version(value: object) -> bool:
+    from ildottore.store.run_sqlite import VERSION_SHAPE
+
+    return isinstance(value, str) and VERSION_SHAPE.fullmatch(value) is not None
+
+
+def _shown_version(version: object) -> str:
+    """A package version as a refusal writes it: ``v`` and the version, which no rule masks."""
+
+    return f"v{version}" if _is_version(version) else "of an unknown version"
+
+
+def evaluator_plugins() -> list[str]:
+    """The evaluators plugins register (``dottore.evaluators`` entry points), as a run records them.
+
+    Each is ``<name>=<object> (<distribution> <version>)``, sorted, every string masked with the
+    store's fixed identity salt. A plugin's evaluator decides verdicts from outside this package,
+    where ``JUDGING_SOURCES`` cannot watch it (pre-merge audit of 22269e0c, H-1), so the run
+    records which ones it loaded and a resume under others is refused, as under other rules.
+    """
+
+    from importlib.metadata import entry_points
+
+    from ildottore.evaluators.registry import ENTRY_POINT_GROUP
+    from ildottore.redactor import redact_identity
+
+    found = []
+    for point in entry_points(group=ENTRY_POINT_GROUP):
+        dist = getattr(point, "dist", None)
+        origin = f" ({dist.name} {dist.version})" if dist is not None else ""
+        found.append(redact_identity(f"{point.name}={point.value}{origin}"))
+    return sorted(found)
+
+
+def _assert_same_plugins(run_id: str, context: dict[str, object]) -> None:
+    """Refuse a resume under other evaluator plugins than the run was judged with (A-81)."""
+
+    stored = context.get("evaluator_plugins", [])
+    stored_list = [str(item) for item in stored] if isinstance(stored, list) else []
+    current = evaluator_plugins()
+    if sorted(stored_list) == current:
+        return
+
+    def listed(names: list[str]) -> str:
+        return "; ".join(names) if names else "none"
+
+    raise ValueError(
+        f"run {run_id!r} was judged with the evaluator plugins {listed(sorted(stored_list))}, and "
+        f"this invocation loads {listed(current)} (dottore.evaluators entry points). A plugin's "
+        "evaluator decides verdicts, so one report would judge the same kind of reply two ways. "
+        "There is no flag for this: finish it with the plugins it was made with, or start a fresh "
+        "run."
     )
 
 
@@ -809,8 +887,11 @@ def _assert_same_context(
     from ildottore.store.run_sqlite import SqliteRunStore
 
     with SqliteRunStore(Path(run_db)) as store:
-        context = store.get_run_context(run_id)
-    stored_target = (context or {}).get("target_digest")
+        # As stored first: the rules are read before any other field is checked, so a run a
+        # newer version made is refused for its rules, not called corrupt over a field this
+        # version does not know the shape of (pre-merge audit of 22269e0c, L-4).
+        recorded = store.get_run_context(run_id, checked=False)
+    stored_target = (recorded or {}).get("target_digest")
     current_target = target_digest(target, mock_scenario=mock_scenario)
     if stored_target is None:
         # NOT waivable, for the same reason the target id is not: this digest covers the
@@ -822,7 +903,9 @@ def _assert_same_context(
         return
     # The rules before anything else of the invocation: under other rules nothing the operator
     # can restore makes the two halves one campaign (u12 A-81).
-    _assert_same_rules(run_id, context or {})
+    _assert_same_rules(run_id, recorded or {})
+    with SqliteRunStore(Path(run_db)) as store:
+        context = store.get_run_context(run_id)
     if stored_target != current_target:
         # The operator's declaration is named when it is what changed (OD-43): the digest alone
         # said "seeded_setup differ", and a reader could not tell a new grant from a tool the

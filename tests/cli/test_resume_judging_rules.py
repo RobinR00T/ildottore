@@ -127,7 +127,7 @@ def test_a_run_judged_by_older_rules_is_refused_naming_both(
     message = str(refused.value)
     assert f"judging rules {JUDGING_RULES_VERSION}," in message
     assert f"judging rules {JUDGING_RULES_VERSION + 1}" in message
-    assert f"started by Il Dottore {__version__}" in message
+    assert f"started by Il Dottore v{__version__}" in message
     assert "redacted" in message, "it says why the stored replies cannot be judged again"
     assert "the version that started it" in message and "fresh run" in message
     assert "There is no flag for this" in message
@@ -199,3 +199,135 @@ def test_version_names_the_judging_rules() -> None:
     result = CliRunner().invoke(app, ["--version"])
     assert result.exit_code == 0
     assert result.output.strip() == f"dottore {__version__} (judging rules {JUDGING_RULES_VERSION})"
+
+
+def test_a_newer_run_is_refused_for_its_rules_before_its_other_fields_are_checked(
+    tmp_path: Path,
+) -> None:
+    """A newer version may write a field this one does not know the shape of (L-4 of the pre-merge
+    audit of 22269e0c: such a record was called corrupt, where its rules are what refuses it)."""
+
+    run_id, spec_dir = _halted(tmp_path)
+    _rewrite(
+        tmp_path,
+        judging_rules=JUDGING_RULES_VERSION + 1,
+        selection={"spec": "PI-*", "added_later": True},
+        route=["a", "shape", "this", "version", "does", "not", "know"],
+    )
+    with pytest.raises(ValueError) as refused:
+        execute_run(_opts(tmp_path, resume=run_id, budget_requests=100), [spec_dir])
+    assert "a newer Il Dottore" in str(refused.value)
+    assert "context_json holds" not in str(refused.value)
+
+
+def test_a_selection_key_a_later_release_adds_under_the_same_rules_is_left_alone(
+    tmp_path: Path,
+) -> None:
+    run_id, spec_dir = _halted(tmp_path)
+    context = _context(tmp_path)
+    selection = context["selection"]
+    assert isinstance(selection, dict)
+    _rewrite(tmp_path, selection={**selection, "added_later": ["x"]})
+    outcome = execute_run(_opts(tmp_path, resume=run_id, budget_requests=100), [spec_dir])
+    assert outcome.exit_code in {ExitCode.FINDINGS_AT_OR_ABOVE, ExitCode.FINDINGS_BELOW}
+
+
+_VERSIONS = [
+    "0.1.0",
+    "1.2.3.4",
+    "2026.10.12",
+    "2026.10.12.1",
+    "0.1.0.dev20261012",
+    "1.2.3rc1",
+    "0.1.1.post1",
+    "10.20.30",
+    "1.0.0+local.7",
+    "1!2.0",
+    "26.10",
+]
+
+
+@pytest.mark.parametrize("version", _VERSIONS)
+def test_a_version_of_any_shape_reads_in_clear_through_the_error_masking(version: str) -> None:
+    """``1.2.3.4`` read as an IPv4 address and ``2026.10.12`` as a phone number (L-5): every
+    version the refusal names is a tool's own value, written ``v<version>``, which no rule masks."""
+
+    from ildottore.cli.app import _masked
+
+    for rules, stored in ((1, 2), (2, 1), (5, 2026), (1, 999_999)):
+        with pytest.MonkeyPatch.context() as patch:
+            patch.setattr(resume_mod, "JUDGING_RULES_VERSION", rules)
+            patch.setattr(resume_mod, "__version__", version)
+            contexts: list[dict[str, object]] = [
+                {"judging_rules": stored, "tool_version": version},
+                {"judging_rules": stored},
+                {},
+            ]
+            for context in contexts:
+                with pytest.raises(ValueError) as refused:
+                    resume_mod._assert_same_rules("run-0123456789ab", context)
+                shown = _masked(refused.value)
+                assert shown == str(refused.value), shown
+                assert f"v{version}" in shown
+
+
+def test_a_stored_tool_version_that_is_not_a_version_is_corrupt(tmp_path: Path) -> None:
+    run_id, spec_dir = _halted(tmp_path)
+    _rewrite(tmp_path, tool_version="sk-not-a-version")
+    with pytest.raises(
+        ValueError, match="holds a tool_version value that is not a package version"
+    ):
+        execute_run(_opts(tmp_path, resume=run_id, budget_requests=100), [spec_dir])
+
+
+def test_each_invocation_records_its_package_version(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``tool_version`` is the start's; ``tool_versions`` every invocation's, in order (L-6)."""
+
+    from ildottore.cli import run as run_mod
+
+    run_id, spec_dir = _halted(tmp_path)
+    assert _context(tmp_path)["tool_versions"] == [__version__]
+    monkeypatch.setattr(run_mod, "__version__", "0.1.1")
+    execute_run(_opts(tmp_path, resume=run_id, budget_requests=7), [spec_dir])
+    context = _context(tmp_path)
+    assert context["tool_versions"] == [__version__, "0.1.1"]
+    assert context["tool_version"] == __version__
+
+
+def test_a_run_records_the_evaluator_plugins_it_loaded_and_a_resume_under_others_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A plugin's evaluator judges from outside the package the version covers (H-1)."""
+
+    monkeypatch.setattr(resume_mod, "evaluator_plugins", lambda: ["leak=acme.ev:Leak (acme 1.0)"])
+    run_id, spec_dir = _halted(tmp_path)
+    assert _context(tmp_path)["evaluator_plugins"] == ["leak=acme.ev:Leak (acme 1.0)"]
+    stored = _stored(tmp_path)
+
+    monkeypatch.setattr(resume_mod, "evaluator_plugins", lambda: ["leak=acme.ev:Leak (acme 1.1)"])
+    with pytest.raises(ValueError) as refused:
+        execute_run(_opts(tmp_path, resume=run_id, budget_requests=100), [spec_dir])
+    message = str(refused.value)
+    assert "leak=acme.ev:Leak (acme 1.0)" in message and "(acme 1.1)" in message
+    assert "There is no flag for this" in message
+    assert _stored(tmp_path) == stored
+
+    monkeypatch.setattr(resume_mod, "evaluator_plugins", lambda: ["leak=acme.ev:Leak (acme 1.0)"])
+    outcome = execute_run(_opts(tmp_path, resume=run_id, budget_requests=100), [spec_dir])
+    assert outcome.exit_code in {ExitCode.FINDINGS_AT_OR_ABOVE, ExitCode.FINDINGS_BELOW}
+
+
+def test_the_plugins_are_read_from_the_entry_points(monkeypatch: pytest.MonkeyPatch) -> None:
+    import importlib.metadata
+    from types import SimpleNamespace
+
+    points = [
+        SimpleNamespace(
+            name="leak", value="acme.ev:Leak", dist=SimpleNamespace(name="acme", version="1.0")
+        ),
+        SimpleNamespace(name="bare", value="x:Y", dist=None),
+    ]
+    monkeypatch.setattr(importlib.metadata, "entry_points", lambda group: points)
+    assert resume_mod.evaluator_plugins() == ["bare=x:Y", "leak=acme.ev:Leak (acme 1.0)"]

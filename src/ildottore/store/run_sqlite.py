@@ -322,6 +322,30 @@ class SqliteRunStore:
             raise
         return after
 
+    def add_run_version(self, run_id: str, version: str) -> list[str]:
+        """Append the package version of this invocation of ``run_id``; return the list.
+
+        ``tool_versions`` holds one entry per invocation, in order, as ``mutator_orders`` does, so
+        the record names every release that sent traffic of the run, not only the one that started
+        it (``tool_version``; pre-merge audit of ``22269e0c``, L-6). One immediate transaction.
+        """
+
+        self._ensure_run_row(run_id)
+        self._conn.execute("BEGIN IMMEDIATE")
+        try:
+            context = self._context_in_transaction(run_id) or {}
+            recorded = context.get(_VERSIONS_KEY)
+            after = [*recorded, version] if isinstance(recorded, list) else [version]
+            self._conn.execute(
+                "UPDATE runs SET context_json = ? WHERE run_id = ?",
+                (_dumps({**context, _VERSIONS_KEY: after}), run_id),
+            )
+            self._conn.commit()
+        except BaseException:
+            self._conn.rollback()
+            raise
+        return after
+
     def _context_in_transaction(self, run_id: str) -> dict[str, Any] | None:
         row = self._conn.execute(
             "SELECT context_json AS value FROM runs WHERE run_id = ?", (run_id,)
@@ -370,13 +394,21 @@ class SqliteRunStore:
             )
         return spend
 
-    def get_run_context(self, run_id: str) -> dict[str, Any] | None:
-        """The target digest and run parameters recorded for ``run_id``, or ``None``."""
+    def get_run_context(self, run_id: str, *, checked: bool = True) -> dict[str, Any] | None:
+        """The target digest and run parameters recorded for ``run_id``, or ``None``.
+
+        ``checked=False`` returns the record as stored, every field unchecked but readable JSON:
+        a resume reads the version of the rules first, so a run a newer version made, whose
+        fields this version may not know the shape of, is refused for its rules and not called
+        corrupt (pre-merge audit of ``22269e0c``, L-4). Every other reader checks.
+        """
 
         row = self._conn.execute(
             "SELECT context_json AS value FROM runs WHERE run_id = ?", (run_id,)
         ).fetchone()
         context = _loads_dict(row["value"] if row is not None else None, column="context_json")
+        if not checked:
+            return context
         _check_context(context or {})
         # `--runs` is read back with `int()`: a list or an infinity was a traceback and exit 1, a
         # string was quoted in the error, and `true` or `1.9` resumed at one run (pre-commit
@@ -577,8 +609,10 @@ _SCOPES_KEY = "scope_sha256s"
 _UNRECORDED_SCOPE = "unrecorded"
 #: Context key holding the mutator order of each invocation of a run, in order (OD-5).
 _ORDERS_KEY = "mutator_orders"
+#: Context key holding the package version of each invocation of a run, in order (u12 A-81).
+_VERSIONS_KEY = "tool_versions"
 #: The context lists an append method owns, which a rewrite of the context keeps.
-_LIST_KEYS = (_SCOPES_KEY, _ORDERS_KEY)
+_LIST_KEYS = (_SCOPES_KEY, _ORDERS_KEY, _VERSIONS_KEY)
 
 
 def _dumps(obj: dict[str, Any]) -> str:
@@ -665,6 +699,23 @@ def _is_name(value: object) -> bool:
     return isinstance(value, str) and 0 < len(value) <= _MAX_NAME
 
 
+#: A package version as PEP 440 writes one (``0.1.0``, ``1!2.0.post1``, ``2026.10.12.dev3+g1a2b``),
+#: which a refusal quotes in clear: nothing else is a version (pre-merge audit, L-5).
+VERSION_SHAPE: Final = re.compile(
+    r"(?:\d{1,9}!)?\d{1,9}(?:\.\d{1,9}){0,5}(?:(?:a|b|rc)\d{1,9})?(?:\.post\d{1,9})?"
+    r"(?:\.dev\d{1,9})?(?:\+[a-z0-9]{1,16}(?:\.[a-z0-9]{1,16}){0,3})?"
+)
+
+
+def _is_version(value: object) -> bool:
+    return isinstance(value, str) and VERSION_SHAPE.fullmatch(value) is not None
+
+
+#: The highest judging-rules version a record may hold: a version is bumped by one per change of
+#: the rules, so a larger figure is a corrupt record, never a version.
+MAX_JUDGING_RULES: Final = 1_000_000
+
+
 def _is_digest(value: object) -> bool:
     return isinstance(value, str) and _DIGEST.fullmatch(value) is not None
 
@@ -692,7 +743,8 @@ def _is_scopes(value: object) -> bool:
 
 
 def _is_selection(value: object) -> bool:
-    if not isinstance(value, dict) or set(value) != _SELECTION_KEYS:
+    # The keys this version writes, each of its type; a key a later version adds is left alone.
+    if not isinstance(value, dict) or not set(value) >= _SELECTION_KEYS:
         return False
     suite, top = value["suite"], value["top_tests"]
     return (
@@ -725,8 +777,18 @@ _CONTEXT_FIELDS: Final[dict[str, tuple[bool, Any, str]]] = {
         lambda v: isinstance(v, list) and all(o in _ORDERS for o in v),
         "a list of fingerprint, declared or unrecorded",
     ),
-    "judging_rules": (False, lambda v: _is_count(v, 1), "a whole number from 1"),
-    "tool_version": (False, _is_name, "a version string"),
+    "judging_rules": (
+        False,
+        lambda v: _is_count(v, 1) and v <= MAX_JUDGING_RULES,
+        "a whole number from 1 to 1000000",
+    ),
+    "tool_version": (False, _is_version, "a package version"),
+    "tool_versions": (
+        False,
+        lambda v: isinstance(v, list) and bool(v) and all(_is_version(i) for i in v),
+        "a list of package versions",
+    ),
+    "evaluator_plugins": (False, _is_names, "a list of evaluator plugins"),
     "route": (False, _is_name, "a route name"),
     "selection": (False, _is_selection, "the selection flags this tool records"),
     "spec_fields": (

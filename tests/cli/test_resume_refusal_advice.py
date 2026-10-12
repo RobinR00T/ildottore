@@ -18,6 +18,7 @@ import pytest
 from ildottore.cli.exit_codes import ExitCode
 from ildottore.cli.run import RunOptions, execute_run
 from ildottore.shared.enums import Severity
+from ildottore.shared.models import Target
 
 from .conftest import make_spec, write_scope, write_spec_tree, write_target
 
@@ -163,4 +164,94 @@ def test_a_changed_target_field_is_named(tmp_path: Path) -> None:
 
     message = _refusal(tmp_path, spec_dir, run_id, targets=[other / "target.yaml"])
     assert "different target" in message
-    assert "its capabilities differ" in message
+    assert "its capabilities field changed" in message
+    assert "Restore that field of the target file as it was" in message
+
+
+def test_the_selection_flags_are_written_as_typed() -> None:
+    from ildottore.cli.resume import selection_flags
+
+    selection = {
+        "suite": "owasp top10",
+        "quick": True,
+        "categories": ["pi", "jailbreak"],
+        "spec": ["PI-*"],
+        "exclude": ["PI-DIRECT-002"],
+        "top_tests": 3,
+    }
+    assert selection_flags(selection) == (
+        "--quick --suite 'owasp top10' -p pi,jailbreak --spec 'PI-*' --exclude PI-DIRECT-002 "
+        "--top-tests 3"
+    )
+    assert selection_flags({}) == "no selection flag"
+
+
+def test_the_changed_fields_are_named_only_from_a_record_that_holds_them() -> None:
+    from ildottore.cli.resume import _changed_fields
+
+    spec = make_spec("PI-DIRECT-001")
+    assert _changed_fields(None, [spec], ["PI-DIRECT-001"]) is None
+    assert _changed_fields({"PI-DIRECT-002": {}}, [spec], ["PI-DIRECT-001"]) is None
+    from ildottore.shared.digest import spec_field_digests
+
+    same = {"PI-DIRECT-001": spec_field_digests(spec)}
+    assert _changed_fields(same, [spec], ["PI-DIRECT-001"]) is None
+
+
+def test_a_run_that_recorded_no_selection_is_told_the_flags_by_name(tmp_path: Path) -> None:
+    import json
+    import sqlite3
+    from contextlib import closing
+
+    run_id, spec_dir = _halted(tmp_path)
+    with closing(sqlite3.connect(tmp_path / "runs.sqlite")) as db:
+        (raw,) = db.execute("SELECT context_json FROM runs").fetchone()
+        context = json.loads(raw)
+        del context["selection"]
+        db.execute("UPDATE runs SET context_json = ?", (json.dumps(context),))
+        db.commit()
+    write_spec_tree(tmp_path, [make_spec("PI-DIRECT-004")])
+
+    message = _refusal(tmp_path, spec_dir, run_id)
+    assert "Resume with the selection flags the run was made with (--suite, --quick, -p" in message
+
+
+def _target() -> Target:
+    return Target(id="t", type="chatbot")
+
+
+def test_a_live_route_changed_for_an_offline_one_is_named() -> None:
+    from ildottore.cli.resume import _refuse_other_target
+    from ildottore.shared.digest import target_field_digests
+
+    target = _target()
+    context: dict[str, object] = {
+        "target_fields": target_field_digests(target, mock_scenario=None),
+        "route": "live",
+    }
+    with pytest.raises(ValueError) as refused:
+        _refuse_other_target("run-x", context, target, mock_scenario="vulnerable", hardened=False)
+    message = str(refused.value)
+    assert "was made on the live endpoint" in message
+    assert "resolves the offline 'vulnerable' replay" in message
+    assert "Restore the target file's mock_scenario as it was" in message
+
+
+def test_a_run_that_recorded_no_target_fields_gets_the_list_of_what_the_digest_covers() -> None:
+    from ildottore.cli.resume import _refuse_other_target
+
+    with pytest.raises(ValueError, match="its endpoint, model, capabilities, sampling_defaults"):
+        _refuse_other_target("run-x", {}, _target(), mock_scenario=None, hardened=False)
+
+
+def test_two_changed_target_fields_are_named_together(tmp_path: Path) -> None:
+    from ildottore.cli.resume import _refuse_other_target
+    from ildottore.shared.digest import target_field_digests
+
+    then = Target(id="t", type="chatbot", endpoint="https://a.test/v1", model="m1")
+    now = Target(id="t", type="chatbot", endpoint="https://b.test/v1", model="m2")
+    context: dict[str, object] = {"target_fields": target_field_digests(then), "route": "live"}
+    with pytest.raises(ValueError) as refused:
+        _refuse_other_target("run-x", context, now, mock_scenario=None, hardened=False)
+    assert "its endpoint and model fields changed" in str(refused.value)
+    assert "Restore those fields of the target file as they were" in str(refused.value)

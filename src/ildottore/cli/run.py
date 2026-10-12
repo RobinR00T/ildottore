@@ -2401,6 +2401,7 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
             with_fingerprint=adaptive and fingerprints.get(target.id) is not None,
             resumed=opts.resume is not None,
         )
+        _record_version(run_db, run_ids[target.id])
         result = _run_one_target(
             target=target,
             scope=scope,
@@ -2916,6 +2917,19 @@ def _record_scope(run_db: Path, run_id: str, scope_sha256: str, *, resumed: bool
         )
 
 
+def _record_version(run_db: Path, run_id: str) -> None:
+    """Append this invocation's package version to the run's ``tool_versions`` (u12 A-81).
+
+    Every invocation, as ``mutator_orders``: ``tool_version`` names the release that started the
+    run, this list every release that sent traffic of it (pre-merge audit of 22269e0c, L-6).
+    """
+
+    from ildottore.store.run_sqlite import SqliteRunStore
+
+    with SqliteRunStore(Path(run_db)) as store:
+        store.add_run_version(run_id, __version__)
+
+
 def _record_order(run_db: Path, run_id: str, *, with_fingerprint: bool, resumed: bool) -> None:
     """Record whether this invocation planned with a fingerprint, and say so when a resume plans
     in the declared order after an earlier part planned with one.
@@ -3014,6 +3028,9 @@ def _persist_run_integrity(
                 # started it (u12 A-81): a resume under other rules is refused.
                 "judging_rules": JUDGING_RULES_VERSION,
                 "tool_version": started_by,
+                # The evaluators plugins register, which judge from outside this package: a
+                # resume under others is refused as under other rules (u12 A-81).
+                "evaluator_plugins": resume_mod.evaluator_plugins(),
                 # What a refused resume names (M1): the field of a spec or of the target that
                 # changed, the route, and the selection flags the run was made with.
                 "spec_fields": {spec.id: spec_field_digests(spec) for spec in specs},
