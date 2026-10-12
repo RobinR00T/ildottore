@@ -739,10 +739,15 @@ list of its own JSON that is no stream (a REST body's array); a secret its alter
 spell while the tokens beside them are kept (a rank of `top` or `top_logprobs`, and the `bytes` of
 those alternatives, as an unreadable reply's excerpt quotes them: no model's alternatives spell a
 text, each being weighed for the token the model wrote before it, and joining them masked clean
-replies); in an unreadable reply's excerpt, a line that is no field of an event stream (a
-`data:` after a space, a delta on a plain line), a body mixing JSON lines with other lines, and
-any line-based format but server-sent events and NDJSON (u04's half says what is read); a secret
-encoded rather than split; a field of a transcript that the target file declares as the
+replies); in an unreadable reply's excerpt: a line that is no field of an event stream (a `data:`
+after a space, a `Data:` line, a delta on a plain line); pieces in a comment, an `event:` or an
+`id:` line; data whose pieces each begin with a space the format keeps (`data:  x`); an event whose
+JSON a raw CR or LF breaks (read as text); JSON lines in any shape but Ollama's and OpenAI's chunks
+(they are records, masked string by string), JSON lines with one line that is not a JSON object (a
+trailing `[DONE]`, a leading log line), lines of JSON strings or with CR-only ends, and a body
+mixing events with JSON lines; a stream whose pieces stop in the first half of the read window and
+resume past it (read as complete); and any other line-based format (u04's half says what is read);
+a secret encoded rather than split; a field of a transcript that the target file declares as the
 protocol's; and evidence written before A-77, whose pieces stay on disk. Checks:
 `tests/test_redactor_split_values.py` (a property test cuts a key, a registered credential, an
 email and four URLs with a password into pieces of 1 to 4 characters, as tokens and as deltas,

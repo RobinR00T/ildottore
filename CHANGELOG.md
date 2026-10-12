@@ -5,6 +5,30 @@ versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed (what the third pre-merge audit, of `74ace451`, found in A-77, before it lands)
+
+- **A log of JSON lines is quoted as main quotes it (LOW).** Any body whose lines were all JSON
+  objects was read as a stream, so a log's fields were joined across its records and masked
+  (`"msg":"emoji"` became a high-entropy mask, later fields went empty, rewritten lines lost their
+  compact form): 181 of 217 clean JSON Lines logs were quoted otherwise than by `main`, now 0 of
+  217. Only lines in a shape known to stream are a stream (Ollama's, a `done` beside a `message`
+  or a `response`; OpenAI's chunks); any other body of JSON lines is records, string by string.
+  A line rewritten keeps its compact form.
+- **A block of `data:` lines is read line by line beside a masked event (LOW).** The line-by-line
+  reading ran only when the format's masked nothing, so one masked event let a block of `data:`
+  lines with no blank line between them keep a key in clear; an event of several `data:` lines
+  that make no JSON object or array is now read line by line in the one reading, so a clean
+  stream is read once.
+- **An excerpt reads only the head it can show (LOW).** A 4 MiB hostile stream cost up to 12.8 s
+  in the audit (18.0 s here, `data` events with no colon; `main` 0.00 s); the excerpt keeps at most
+  4 KiB, so only four times the part it reads is read (37 KiB with no long registered
+  credential), and each stream that reaches past half that window has its open tail left out (a
+  run of key characters up to 256 long, a registered credential's beginning), so no secret whose
+  pieces run past the window is shown in part. `cost3.py` on 4 MiB bodies: 0.01 to 0.24 s, was
+  0.10 to 17.98 s.
+- **Figures (LOW).** The second audit's `sse_variants.py` figure was the key in 9 of 19 shapes
+  and the credential in 9, not 10. A-77's not-covered list is made exact.
+
 ### Fixed (what the second pre-merge audit, of `ea13562f`, found in A-77, before it lands)
 
 - **A rewritten excerpt keeps a grouped phone or card masked (MEDIUM, a regression against
@@ -19,15 +43,15 @@ versioning: [SemVer](https://semver.org/).
   stream with `str.splitlines` and read one JSON object per `data:` line, so a raw U+2028 or
   U+0085 inside an event's JSON, an event's JSON over two `data:` lines, plain-text data and
   JSON-string data were rebuilt (`sse_variants.py`: the key rebuilt in 9 of 19 shapes and the
-  credential in 10, now in 2 and 1, neither an event of the format: a `data:` after a space,
+  credential in 9, now in 2 and 1, neither an event of the format: a `data:` after a space,
   deltas on plain lines). Lines end at
   CRLF, LF or CR only, a leading U+FEFF is dropped, a blank line ends an event, comments and
   fields are read as the format writes them, an event's `data` lines join with LF, data that is
   a JSON object or array is masked field by field across the events and any other data as the
   text of one stream, a page of `data:` lines with no blank line between them is read line by
-  line, and a body whose every non-blank line is a JSON object or array (NDJSON, Ollama's stream)
-  is masked the same way. Not covered, in A-77: a line that is no field of the format, a body
-  mixing JSON lines with other lines, and any other line-based format.
+  line, and a body of JSON lines in the shape Ollama or OpenAI's chunks stream is masked the same
+  way (the third pre-merge audit narrowed it from any JSON lines, below). Not covered, in A-77:
+  the excerpt shapes its list names.
 - **A withheld reply is said in SARIF and on the terminal, and probes are withheld too (LOW).**
   SARIF adds the finding's "stored with the pieces of the reply withheld" to the result's message
   and an `evidence_withheld` count to the result and the run; the terminal prints an `Evidence

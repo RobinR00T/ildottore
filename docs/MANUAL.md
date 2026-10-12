@@ -2231,7 +2231,9 @@ Cut by the provider's output filter: 8 attempt(s) in 2 spec(s) came back cut or 
   pieces of the reply withheld`, which SARIF's message repeats with an `evidence_withheld` count,
   and the terminal prints an `Evidence withheld:` line, so the run goes on (A-77). A recognition
   probe refused is stored withheld the same way. An unreadable reply's excerpt is masked the same
-  way: a body streamed as server-sent events is read as the format says, and so is NDJSON. Evidence written before A-77 keeps an
+  way: a body streamed as server-sent events is read as the format says, and so are JSON lines
+  in Ollama's or OpenAI's chunk shape (any other JSON lines, a log, are quoted as they came); only
+  the head the excerpt can show is read. Evidence written before A-77 keeps an
   OpenAI or WebSocket target's reply in pieces as it came. The keys of an attempt's
   free-form fields (a tool call's argument names, `usage`, a frame's fields) are masked in the
   reports as in the evidence, two that mask alike numbered apart (`«REDACTED:email»`,

@@ -3,6 +3,28 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-12 (late morning): the third pre-merge audit, of `74ace451` (A-77), fixed
+
+- Merge-ready on `74ace451` (no HIGH or MEDIUM; reports 0 of 400 differ from `main`; a trial
+  merge with `fix/redactor-key-formats` passed 6,294 tests), with five LOWs, fixed as new commits.
+- LOW 1: the second audit's `sse_variants.py` figure is the key in 9 of 19 shapes and the
+  credential in 9 (the docs said 10), corrected from `scratch/fixfrag/r3-before/out.txt`.
+- LOW 2: only JSON lines in a shape known to stream (Ollama's, OpenAI's chunks) are a stream;
+  any other is records, as `main` quotes it: clean JSON Lines logs quoted otherwise than by `main`,
+  181 of 217 on `74ace451`, now 0 of 217 (`clean_excerpts.py`, 300 texts, every other shape 0
+  of 217 on both). A rewritten line keeps its compact form.
+- LOW 3: a block of `data:` lines with no blank line between them is read line by line in the
+  one reading (`reader_attacks.py` "masked event + a block": rebuilt, now masked), and a clean
+  stream is read once.
+- LOW 4: only four times the excerpt's read extent is read (37 KiB), and a stream reaching past
+  half of it has its open tail left out (`redactor.withhold_open_ends`). `cost3.py` on 4 MiB
+  bodies: 0.10 to 17.98 s on `74ace451` here, now 0.01 to 0.24 s; `scale3.py` flat (0.03 to
+  0.20 s from 0.5 to 4 MiB).
+- LOW 5: A-77's not-covered list names every excerpt shape the audit's `reader_attacks.py` still
+  rebuilds (10 of 26 on both trees; the set changed: the block case is masked now, and JSON lines
+  in another shape than Ollama's or OpenAI's chunks, the one with a raw U+2028, are records).
+- Tests: 101 new against `main` (5476 there, 5577 here), 3 of them since `74ace451`. GATES_LINE
+
 ## State, 2026-10-12 (morning): the second pre-merge audit, of `ea13562f` (A-77), fixed
 
 - Not merge-ready on `ea13562f`: two MEDIUMs (one a regression against `main`) and four LOWs;
@@ -17,7 +39,7 @@ The carryover ledger. Every agent session updates this so context survives even 
 - MEDIUM 2: an event stream is read as the format says (lines end at CRLF, LF or CR only, an
   event's data lines join, data that is no object or array is text of one stream), a page of
   `data:` lines is read line by line, and NDJSON is masked the same way (`sse_variants.py`: the key
-  rebuilt in 9 of 19 shapes and the credential in 10, now 2 and 1, both not events of the format;
+  rebuilt in 9 of 19 shapes and the credential in 9, now 2 and 1, both not events of the format;
   `sse_min.py`: 4 of 5 rebuilt, now 0).
 - LOW 3: SARIF's result message and an `evidence_withheld` count, and an `Evidence withheld:`
   terminal line (`e2e_withheld.py` forced: SARIF 0 mentions, now 2 results and a run count of 12;

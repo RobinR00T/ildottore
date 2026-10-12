@@ -378,20 +378,32 @@ reads as U+FFFD, since httpx decodes the stream as text.
   LF; data that is a JSON object or array is masked field by field across the events (`type`,
   `event`, `object`, `id`, `model`, `created`, `created_at`, `system_fingerprint`, `done` and
   `done_reason` its protocol's fields), and any other data (a bare delta, a JSON string, decoded)
-  as the text of one stream. A page of `data:` lines with no blank line between them, which the
-  format reads as one event, is read line by line when the format finds no stream to mask, and a
-  body whose every non-blank line is a JSON object or array (NDJSON, as Ollama streams its reply)
-  is masked the same way. A masked event is written again on one `data` line (a text holding LF,
-  on as many), every other line as it came. A body rewritten (a JSON body or a stream) is written
+  as the text of one stream. An event of several `data:` lines that make no object or array
+  joined (a page of `data:` lines with no blank line between them, which the format reads as one
+  event) is read line by line, each line a unit, in the same reading (third pre-merge audit,
+  LOW 3: a second reading ran only when the first masked nothing, so a masked event beside such a
+  block kept its key). A body of JSON lines is a stream only in a shape known to stream (each line
+  Ollama's, a `done` beside a `message` or a `response`, or an OpenAI chunk); any other is records,
+  masked string by string as `main` masks it (LOW 2: 181 of 217 clean JSON Lines logs were quoted
+  otherwise). Only the head the excerpt can read is read: four times its read extent (twice what
+  it keeps plus four times the longest registered credential or 256), cut at a line end, 37 KiB
+  with no long credential; when the body was longer, each stream whose last piece lies past half
+  that head has its open tail left out (`redactor.withhold_open_ends`: a run of key characters up
+  to 256 long, or a registered credential's beginning, at its end), so a secret whose pieces run
+  past the head is not shown in part, and the excerpt is read from that head alone (LOW 4: a 4 MiB
+  stream of tiny events cost up to 12.8 s, `main` 0.00 s; now under 0.25 s on every shape of the
+  audit's `cost3.py`). A masked unit is written again on one `data` line (a text holding LF, on as
+  many), JSON in the compact form it had, every other line as it came. A body rewritten (a JSON body or a stream) is written
   with `ensure_ascii` off, as the target wrote it: escaped, a phone or a card grouped by U+00A0 or
   U+202F outside any stream reached the excerpt's redaction as `\u00a0` and was shown where
   `main` masked it (second pre-merge audit, MEDIUM 1), and a WebSocket turn's frames are quoted
-  the same way. Not read: a line that is no field of the format (a `data:` after a space, a delta
-  on a plain line) and a body mixing JSON lines with other lines. Any other body, or one holding
+  the same way. Not read: what u01 A-77's not-covered list names for the excerpt (a line that is
+  no field of the format, pieces in a comment, `event:` or `id:` line, JSON lines in another shape,
+  among them). Any other body, or one holding
   no such stream, is quoted byte for byte as before; its `size` is the body's as it came. Checked
   by `tests/adapters/test_split_values_in_replies.py` (its first seven fail on `de122e26`, the
   three event-stream cases on `c4bd2012`, the six grouped-number cases and 12 of the 20 stream
-  shapes on `ea13562f`).
+  shapes on `ea13562f`, and the log, block and window cases on `74ace451`).
 
 - **A reply the provider's filter stopped keeps its stop reason, and the REST adapter reads a
   Bedrock guardrail's side (added 2026-10-11, OD-42; the runner's half is u08 A-70).** The stop
