@@ -111,14 +111,15 @@ def test_every_mask_type_the_tool_writes_is_kept_as_written() -> None:
         written |= set(re.findall(r'Pattern\(\s*"(\w+)"', code))
         written |= set(re.findall(r'_MASK_TEMPLATE(?:_HASHED)?\.format\(type="(\w+)"', code))
     assert len(written) >= 15
-    kept = redactor_mod._OWN_MASK_TYPES | {p.type for p in redactor_mod._default_patterns()}
-    assert kept == redactor_mod.Redactor()._mask_types
-    # The types A-78 added are kept only when this process wrote the mask (pre-merge audit of
-    # A-78, L3); between them, the two lists name every type the tool writes.
+    # The late patterns' types too (A-78): a redactor keeps them as it keeps its patterns' (the
+    # labelled rule alone reads them as text, `test_redactor_own_late_masks.py`).
     late = set(redactor_mod._LATE_MASK_TYPES)
-    assert late == {"hex_token", *(p.type for p in redactor_mod._late_patterns())} - kept
-    assert not late & kept
-    assert written <= kept | late, sorted(written - kept - late)
+    assert late == {"hex_token", *(p.type for p in redactor_mod._late_patterns())} - {
+        p.type for p in redactor_mod._default_patterns()
+    }
+    kept = redactor_mod._OWN_MASK_TYPES | {p.type for p in redactor_mod._default_patterns()} | late
+    assert kept == redactor_mod.Redactor()._mask_types
+    assert written <= kept, sorted(written - kept)
 
 
 @pytest.mark.parametrize(
