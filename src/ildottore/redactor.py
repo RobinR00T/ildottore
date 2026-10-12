@@ -1757,14 +1757,18 @@ def redact_identity(value: str) -> str:
 # HIGH 1). The pieces are kept, since they are the reply as the target sent it (the figures the
 # membership evaluator reads, the transcript a reviewer reads), and are masked as the text they
 # make: the pieces of one stream are joined in order, the joined text is redacted once, the first
-# piece a mask covers shows it and every piece it covers loses the text under it, so the pieces
-# joined read as the redacted text. A mask repeated in every piece it covered read, joined,
+# piece a mask covers shows it and every piece it covers loses the text under it. Joined, the
+# pieces never show more than the redacted text, and show less only where a literal between two
+# masks could stand in more than one place: the masks then merge and that literal goes (8 of
+# 1,500 realistic replies and 309 of 1,500 hostile ones, second pre-merge audit of the branch;
+# always towards masking more). A mask repeated in every piece it covered read, joined,
 # `user:«REDACTED:url_password»«REDACTED:url_password»@host`, which the URL rule masks again as
 # one, and the store's guard refused a reply it had masked correctly (pre-merge audit of
 # c4bd2012, HIGH 1). Two streams are read as such, where the data says what they are: a
 # logprob list's tokens (an alternative shows the masks of the token it stands beside; its rank
-# is no stream: alternatives side by side are text no one wrote, and joining them masked 7.0% of
-# the alternatives of clean replies, LOW 5) and a WebSocket transcript (the fields of the frames
+# is no stream: alternatives side by side are text no one wrote, and joining a rank masked 6.9%
+# of all the alternatives of clean replies, 5,794 of 83,950, each beside a token that was kept,
+# LOW 5) and a WebSocket transcript (the fields of the frames
 # received that are not the protocol's, which the transcript names). Any other list is a list of
 # records, each string masked on its own: joining every list read the `type` of a transcript's
 # frames as `auth_oksessiondeltaping...`, one high-entropy token, and masked every frame's type.
@@ -1987,9 +1991,11 @@ def _masked_pieces(
 
     The first piece a masked stretch covers shows its masks in place of the part it covers; every
     later piece it covers loses the part it covers (a piece it covers whole is empty). Joined
-    again, the pieces read as the redacted text, each mask once: shown in every piece, a mask the
-    URL rule had set read joined as a run of masks behind `user:`, which the rule masked again
-    as one, and the store's guard refused the reply (pre-merge audit of c4bd2012, HIGH 1).
+    again, the pieces show each mask once and never more than the redacted text; they show less
+    where a literal between two masks could stand in more than one place, since the stretches
+    then merge and that literal goes (``_placed_masks``). Shown in every piece, a mask the URL
+    rule had set read joined as a run of masks behind `user:`, which the rule masked again as
+    one, and the store's guard refused the reply (pre-merge audit of c4bd2012, HIGH 1).
     """
 
     joined = "".join(pieces)
@@ -2251,10 +2257,11 @@ def mask_split(redactor: _RedactsText, obj: object) -> object:
 
     ``obj`` is JSON-shaped (dicts, lists, strings and scalars) and is not changed: what is
     masked is copied, and ``obj`` itself comes back when nothing is. A stream is a logprob
-    list's tokens, each rank of their alternatives, or a WebSocket transcript's received
-    content field by field (see the block comment above); its pieces are joined in order and
-    redacted once, each piece a mask covers shows that mask, and a token a mask covers has its
-    alternatives show it too. Inner streams are read first, and the whole is read again until
+    list's tokens or a WebSocket transcript's received content field by field (see the block
+    comment above; alternatives are no stream); its pieces are joined in order and redacted once,
+    the first piece a mask covers shows that mask and the others lose the text under it, and a
+    token a mask covers has its alternatives masked and its ``bytes`` dropped. Inner streams are
+    read first, and the whole is read again until
     nothing more is masked, as ``redact_text`` reads a text to a fixed point. Only the joined
     texts are masked here: each string on its own is left to :meth:`Redactor.redact`
     (:func:`redact_split` does both).

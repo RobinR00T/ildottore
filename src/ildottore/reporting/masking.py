@@ -101,10 +101,11 @@ def _masked_attempt(raw: object, redactor: Redactor) -> dict[str, object]:
 
     The keys of its free-form fields are masked (:data:`_FREE_FORM`; a tool call's argument
     names, a usage field's, a WebSocket frame's, the report wrote them in clear: MEDIUM 2), two
-    that mask alike numbered apart, and its values as the store masks them: each string, and
-    each text the strings at one place in the items of a list make joined, so a reply kept in
-    pieces (a logprob's tokens and their alternatives, a transcript's deltas) is masked as the
-    text it makes (HIGH 1). The model's own keys stay as they are, so the dump validates.
+    that mask alike numbered apart, and its values as the store masks them
+    (:func:`ildottore.redactor.redact_split`): each string, and each stream's joined text, so a
+    reply kept in pieces (a logprob list's tokens, a transcript's deltas) is masked as the text
+    it makes, a masked token's alternatives with it (HIGH 1). The model's own keys stay as they
+    are, so the dump validates.
     """
 
     if not isinstance(raw, dict):  # pragma: no cover - an attempt dumps to a dict
