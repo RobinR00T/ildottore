@@ -36,8 +36,9 @@ the u00 protocols:
 ## §4 Known constraints: KEEP / DECIDE
 - KEEP: evidence artifacts are **immutable + content-addressed** (SHA-256); a rewrite with the
   same content is a no-op, differing content is a new ref (never overwrites).
-- KEEP: SQLite opened with `PRAGMA journal_mode=WAL`, `foreign_keys=ON`; all writes in a
-  transaction; schema version tracked in a `schema_version` table (forward-only migrations).
+- KEEP: SQLite opened with `PRAGMA journal_mode=WAL`, `foreign_keys=ON`, a 30 s busy timeout;
+  all writes in a transaction, a migration in one under the write lock; schema version tracked in
+  a `schema_version` table (forward-only migrations) (A-80).
 - KEEP: redaction is **fail-closed**: if the redactor errors or a raw-secret pattern survives,
   refuse the write and raise, never persist unredacted.
 - KEEP: paths-with-spaces safe; store root from config, never hardcoded; no writes outside root.
@@ -167,6 +168,22 @@ it (the record left out otherwise, so every other artifact is byte for byte as b
 `dottore replay` reads the record, never the text, to write `(operator declaration)` after such
 an attempt's status and a footer line with their count. Checked by
 `tests/cli/test_operator_declaration_campaign.py`.
+
+**A-80 (u12's clause; this unit's half, added 2026-10-12) The stores open under contention, say
+which path failed, and prove themselves before a send.** `migrations.connect` waits
+`BUSY_TIMEOUT_S` (30 s, was SQLite's 5 s default) for a lock another connection holds and retries
+the switch to WAL while SQLite answers it busy (it does so at once, without the busy handler, while
+another connection holds the file: 18 of 80 concurrent first opens failed, 0 of 160 after);
+`migrate` takes the write lock (`BEGIN IMMEDIATE`) before it reads the version it starts from and
+applies every pending step in that one transaction (two processes migrating together could both
+add the same column, and `executescript` committed each script step on its own). A path that cannot
+be opened (a directory, a file that is not SQLite, a path under a regular file), or a sqlite3 error
+inside `with SqliteRunStore(...)`, is a `RunStoreError` (an `OSError`) whose message names the
+path. `check_store_path` and `evidence_fs.check_root_path` refuse such paths writing nothing (for
+the modes that send nothing); `evidence_fs.prepare_run` creates `<root>/<run>/attempts` (and
+`probes`) and writes and removes a temporary file in each before the first send, raising
+`EvidenceStoreError` (an `OSError`) naming the root. Checked by
+`tests/store/test_store_open_errors.py` and `tests/cli/test_evidence_root_preflight.py`.
 
 ## §8 Out of scope / forbidden
 - MUST NOT compute scores/severity (u07), evaluate responses (u06), or render reports (u11) -

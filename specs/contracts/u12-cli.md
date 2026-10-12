@@ -196,6 +196,9 @@ fleet, labels, pack) is refused past 100 levels with its aliases expanded, which
 reach from 4 KB of text (`tests/cli/test_deep_json.py`, `test_replay.py`,
 `test_resume_integrity.py`), and past 100,000 nodes with them expanded, which 15 doubling
 anchors reach from 265 bytes (u01 A-37, `tests/cli/test_yaml_expansion.py`).
+Amended 2026-10-12 (A-80): a class nobody listed no longer reaches the terminal as a traceback
+with exit 1: the root command group maps any exception no handler caught to exit 3 with one line,
+and a sqlite3 error from the run store is named after the store.
 
 **A-10 A resumed run is bound to its target.** `--resume` refuses a run id whose stored run
 belongs to a different target, and refuses when no run store is available to check. Unbound, it
@@ -1181,6 +1184,60 @@ LOW 1), and one that keeps none says so (`keeps none of the <n> attempt(s) it st
 spec(s) (none was answered, or failed in a way a retry would repeat)`; it said `keeps 0
 attempt(s)`, verification of `07aa0b3a`, LOW 2). The report schema's `status` description names `aborted` and the wider `unreachable`.
 Checked by `tests/cli/test_malformed_reply_campaign.py`.
+
+**A-80 A run checks its stores and its paths before it sends, and nothing but findings exits 1
+(added 2026-10-12, CLI audit of `de122e26`; the stores' half is u10, the ledger's u08).**
+Exit 1 means "findings below `--fail-on`", so a CI step that lets 1 through read a crashed scan as
+a pass, and each of these crashed or misled after the traffic it could have refused before:
+
+* **The run store.** A `--run-db` naming a directory, a file that is not SQLite or a path under a
+  regular file, `replay --run-db <garbage>`, and five of six concurrent runs on a new store
+  (`OperationalError: database is locked`) ended in a traceback with exit 1, and with `-sV` the 18
+  probes went out first: the store was first opened inside the per-target loop. Every mode checks
+  both store paths read-only before anything else (`--dry-run`, `--estimate` and `-sn` included,
+  which still write nothing); a sending run then opens the run store and proves each run's
+  `attempts/` (and `probes/` with `-sV`) writable before its first request (`_open_stores`). The
+  refusal is `error: cannot open the run store at <path>: <reason>` (exit 3); a sqlite3 error that
+  reaches `run`, `fleet --run` or `replay` later is `error: the run store at <path> failed:
+  <reason>` (exit 3).
+* **The evidence root.** A `--evidence-root` that was a regular file was found by the first
+  attempt's write, after its batch was paid for (125 requests, then `NotADirectoryError`, nothing
+  stored, the requests counted against the resume's ceiling). It is `error: cannot write evidence
+  under <root>: <reason>` (exit 3) before any send now.
+* **Any exception no command handles.** The root group (`cli.app.OperationalErrorGroup`) turns it
+  into exit 3 and one line, ``error: unexpected <Class>: <message> (an internal error, not a scan
+  result; rerun as `dottore -v ...` for the traceback)``, the message through `_masked`; the
+  traceback is printed only under `-v` (`dottore -v <command>`, or `run -v`), each line through
+  `_masked`. A broken stdout pipe is exit 3; Ctrl-C keeps its 130. `dottore lint` still exits 1
+  for lint findings, which are findings. This closes A-9 for the classes nobody listed: the handler
+  tuples stay, and what they miss is no longer a traceback with exit 1.
+* **The attempts ceiling.** A campaign of more than 20,000 attempts could never finish (no flag
+  raised that ceiling); it is the request ceiling now (u08's half), and `--estimate` prints the
+  ceilings, attempts included (`ceilings: <n> requests, <n> attempts (one per accepted request),
+  ...`, one line per target when they differ), as the dry run's `budgets:` line does.
+* **`--estimate -q`** printed nothing and exited 0. It prints one line, as `--dry-run -q` does:
+  `estimate: <n> requests over <s> spec-runs across <t> target(s) at runs=<r>, ~<k> tokens`, then
+  the judge requests, the `-sV` probes and what a resume already did when there are any.
+* **A report never overwrites an input.** `-oJ scope.yaml -oH target.yaml` overwrote both with the
+  reports. A report path is refused (exit 3, before anything is sent) when it is the `--scope`
+  file, a target file, the `--judge` file, the fleet file of `fleet --run`, the run store or the
+  `-wal`, `-shm` or `-journal` file beside it (by resolved path, so before the store exists too),
+  or a file of the spec path; an existing output is compared with `samefile`, so a symlink, a hard
+  link or another spelling on a case-insensitive volume is the same file.
+* **One default spec path.** `fleet --run` read `specs/` in the working directory with no option
+  to change it ("path not found: specs" anywhere but the repository root) and had no
+  `--evidence-root`, `--run-db` or `-o*`. Every command reads `wiring.default_spec_paths()`:
+  `specs/` in the working directory when it is a directory, else the battery beside the installed
+  package (a source checkout or an editable install; a wheel ships none). `fleet` takes
+  `--spec-path`, `--evidence-root`, `--run-db` and `-oJ/-oH/-oS/-oX/-oA` with `run`'s meaning and,
+  without `--run`, carries them into the `dottore run` line it prints. A spec path that does not
+  exist is `error: spec path not found: <path>. Pass --spec-path <dir>; ...`, not "1 spec file(s)
+  failed to load".
+
+Checked by `tests/cli/test_run_store_errors.py` (21), `tests/cli/test_evidence_root_preflight.py`
+(10), `tests/cli/test_attempt_ceiling.py` (12), `tests/cli/test_estimate_quiet.py` (2),
+`tests/cli/test_report_paths_inputs.py` (11), `tests/cli/test_fleet_run_options.py` (7) and
+`tests/store/test_store_open_errors.py` (8).
 
 ## §8 Out of scope / forbidden
 - MUST NOT implement attack/mutation/evaluation/scoring/reporting/fingerprint logic (u05-u11,

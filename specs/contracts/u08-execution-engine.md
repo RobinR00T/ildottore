@@ -699,6 +699,23 @@ behind a filter on attack words that finishes its battery, and three on the unre
 words). Not built: the `-sV` probe pass seeding the watch, which would stop a run whose
 every probe was unreadable after its probes (u09 A-35).
 
+**A-80 (u12's clause; this unit's half, added 2026-10-12) An attempt is counted with its first
+accepted request, and its ceiling is the request ceiling.** `reproduce` and
+`reproduce_conversation` debited the attempt before its first request, so an attempt the request
+or token ceiling refused still counted, and the runner, which keeps starting specs after a ceiling,
+added one per spec it started: 8 specs of 5 attempts under `--budget-requests 12` recorded 18
+attempts for 12 requests, and a resume that met the same ceiling added 6 (128 for 100 on the
+shipped battery, 43 more per resume). `BudgetLedger.debit_request(tokens, opens_attempt=True)`
+checks the request, token and attempts axes and commits all or none; `execute_attempt` and
+`execute_conversation` pass it on their first send only (a retry, a later turn or a tool round is
+the same attempt), so attempts never exceed requests. `debit_attempt` stays for a library caller
+and the runner no longer calls it. In the CLI the attempts ceiling is the effective request
+ceiling (`budgets_for`; a library caller may still name its own): derived from the estimate and
+clamped at 20,000 on its own, no flag raised it and `--runs 100` over the battery halted on
+`max_attempts` with requests to spare; now it cannot stop a run before the request ceiling, and
+`--budget-requests` raises both. A resume reads a stored attempts figure as at most the stored
+requests, for a run recorded before this. Checked by `tests/cli/test_attempt_ceiling.py`.
+
 ## §8 Out of scope / forbidden
 - MUST NOT import adapter/evaluator/scorer/store **concretes**: interfaces only; composition is
   u12. `lint-imports` enforces.
