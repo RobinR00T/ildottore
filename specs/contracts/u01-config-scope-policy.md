@@ -691,7 +691,9 @@ whose `auth_ref` starts with `env://` and names no variable, `[A-Za-z_][A-Za-z0-
 (`shared.credential_refs`), naming the target and the identity, never the value
 (`_refuse_unnamed_variables`; `dottore fleet` wrote `env://<the key>` for a key pasted as
 `api_key_env`, M8). Another scheme (`vault://`) is still a reference this loader keeps, refused
-where it is read. `env://NONE` is the identity that carries no credential: its variable is never
+where it is read. A scope or policy pack whose name is too long to open is refused by its length,
+never the name (`shared.files.read_failure`; `--scope <5,000 digits>` printed `«REDACTED:phone»`
+twice, pre-merge audit LOW e). `env://NONE` is the identity that carries no credential: its variable is never
 read (`cli.wiring.resolve_auth_ref`). Checked by `tests/cli/test_credential_variables.py` and
 `tests/cli/test_report_and_file_versions.py`.
 

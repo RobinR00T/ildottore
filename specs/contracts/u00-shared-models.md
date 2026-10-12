@@ -174,8 +174,11 @@ built (`allow_inf_nan=False`): a target file's `sampling_defaults` took `.nan` a
 reached the JSON report as bare `NaN` and `Infinity` (CLI audit M6); a spec's schema check refused
 them first already (A-54). `WebSocketResponse` refuses a non-finite `timeout_seconds` and
 `final_value` built in code. `shared.credential_refs` says what an `env://` reference may name
-(`ENV_NAME`, `NO_CREDENTIAL`, `unset_variable`), and `shared.error_text` writes an exception as one
-line that is never an empty reason (`<Class> (no detail given)`). Checked by
+(`ENV_NAME`, `NO_CREDENTIAL`, and `unset_variable`, which looks in the environment its caller
+passes: only the CLI's wiring reads the process's), `shared.error_text` writes an exception as one
+line that is never an empty reason (`<Class> (no detail given)`), and `shared.files.read_failure`
+describes a file name too long to open by its length. `Sampling`'s docstring, the exported
+schema's description, is unchanged; the reason is a comment. Checked by
 `tests/cli/test_non_finite_values.py`, `tests/cli/test_credential_variables.py` and
 `tests/cli/test_cli_messages_read_right.py`.
 

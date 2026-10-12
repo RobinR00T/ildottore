@@ -1299,6 +1299,33 @@ it, and `vault://` references stay a u01 shape); a target file's endpoint with u
 read (its password masked by value, SEC-02); `--rate inf` is still taken; a per-file read error in a
 spec tree (permission, link loop) is still a `PARSE_ERROR`, exit 1.
 
+Amended after the pre-merge audit of `f9dbed49` (2026-10-12), each its own commit:
+* MEDIUM 1: the in-process `app` is a Typer subclass whose call runs `main()` (`app._MaskedTyper`),
+  so a console script an older install generated (`from ildottore.cli.main import app;
+  sys.exit(app())`, which `pip install -e` keeps across a pull) masks too: the audit's fuzz found
+  60 usage-error cases leaking there and 0 through `main()`. `standalone_mode=False` keeps Typer's
+  own call for an embedding caller, and `typer.testing.CliRunner`, which never calls `app`, is
+  unchanged. The masking tests run through both entries and in a process of each kind, and no
+  longer depend on the launcher's program name (LOW g: 10 of 23 failed under `python -m pytest`).
+* MEDIUM 3 (pre-existing): a fleet `endpoint` whose query or fragment carries a credential (a
+  parameter named like one, `?api_key=`, `#token=`, or a value or bare component the redactor would
+  mask) or that `urlsplit` reads with no host (`https:/ops:<key>@host`, `https:\\ops:<key>@host`)
+  is refused before anything is written, naming only a plain parameter name
+  (`fleet._endpoint_holds_no_credential`); the docstring that said `_split` and `_scope_endpoint`
+  refused such URLs was untrue and is gone. A query with no credential (`?api-version=...`) is kept.
+* LOW a: `lint <path>` (its path findings, through `run_lint`'s `mask`), `describe <id>` and `schema
+  export --name <name>` print what they echo through `_masked`. LOW b: the registry skips a second
+  declaration from the same resolved file, so `lint sp sp` reports no `ID_COLLISION` (u02's half).
+  LOW e: a file name too long to open is described by its length (`shared.files.read_failure`, in
+  the scope and policy pack loaders and `_masked`): `--scope <5,000 digits>` printed
+  `«REDACTED:phone»` twice. LOW f: the version refusals read `this build reads scope version 1:
+  write version: "1.0" ("1" and "1.<minor>" are read too)`. LOW d: the report schema, the manual and
+  u11 say a report written since `f12ba833` validates (a v0.1.0 report does not, as before). LOW h:
+  `Sampling`'s docstring, the exported schema's description, is as before; the reason is a comment.
+  LOW c: docs/06's provider sentence.
+* `shared.credential_refs.unset_variable` takes the environment as an argument; the wiring passes
+  `os.environ`, as it alone reads the environment.
+
 ## §8 Out of scope / forbidden
 - MUST NOT implement attack/mutation/evaluation/scoring/reporting/fingerprint logic (u05-u11,
   u13): only wire and call them. MUST NOT own `cli/lint.py` (u02) or edit any spec YAML.

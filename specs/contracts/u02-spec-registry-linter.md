@@ -448,7 +448,10 @@ the CLI refuses such a path in `run`, `registry ls`, `coverage` and `describe` (
 (pack '<id>') re-declares it without an explicit 'extends'`), which `run` now refuses on (L2). A
 spec schema error that opens with an integer writes it with thousands separators
 (`99,999,999,999,999,999,999 is greater than the maximum of 4`), which the CLI's redactor does not
-read as a phone number (L8). Checked by `tests/cli/test_spec_paths_that_hold_nothing.py`,
+read as a phone number (L8). After the pre-merge audit: the registry skips a second declaration of
+an id from the same resolved file (`lint sp sp` reported 75 collisions naming one file twice), and
+`cli.lint.run_lint` takes the CLI's mask for the findings that quote a search path
+(`PATH_NOT_FOUND`, `NO_SPECS`, `FILES_NOT_READ`). Checked by `tests/cli/test_spec_paths_that_hold_nothing.py`,
 `tests/cli/test_spec_id_collisions.py` and `tests/cli/test_cli_messages_read_right.py`.
 
 ## §8 Out of scope / forbidden

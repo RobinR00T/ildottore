@@ -87,7 +87,8 @@ declares its own. What works today, per group:
   registry is consulted. Opening the enum (or a `plugin:` namespace) is needed first.
 - **Adapters: design only.** `pyproject.toml` declares the `dottore.adapters` group and nothing
   reads it; the adapter is chosen by the hard-coded provider switch in `cli/wiring.py`
-  (`openai`, `anthropic`, `mcp`, anything else to the generic REST adapter).
+  (`openai`, `anthropic`, `mcp`, `websocket`, and `rest` or no provider to the generic REST
+  adapter); any other value is refused when the target file loads (u12 A-82).
 - A spec referencing an unknown evaluator `type` fails schema validation in the linter, and an
   unknown mutation fails `UNKNOWN_MUTATOR_TYPE`: never a silent skip.
 - The policy engine gates the requests the scanner sends (allowlist, `test_only`, budgets),

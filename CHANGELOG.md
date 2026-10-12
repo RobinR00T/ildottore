@@ -5,56 +5,95 @@ versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed (breaking for a pipeline that lints or lists a path holding nothing: `lint`, `registry ls`, `coverage`, `describe` and `run` refuse it, u12 A-82)
+
+- `lint` exits 3 on a path that does not exist (`PATH_NOT_FOUND`, it exited 1) or yields no spec and
+  no suite (`NO_SPECS`, it exited 0): `lint sp` with the specs under `sp/attacks/` and no
+  `pack.yaml` printed `lint OK ... across 0 spec(s)`. `NO_SPECS` names the YAML files in the
+  subdirectories of a directory without a `pack.yaml`, which is read as loose specs, its own files
+  only, and `FILES_NOT_READ` warns when a loose tree leaves YAML below it. 3 wins over 1.
+- `registry ls` and `coverage` exit 3 on a missing or empty path (they exited 0, `coverage`
+  printing 0%), and so does `registry ls --suite nope` (it listed nothing, exit 0); `describe`
+  with such a path exits 3 (it exited 0 when the spec was found elsewhere); `run --spec-path specs
+  --spec-path emptydir` exits 3 before anything is sent (it ran, exit 2 on the vulnerable mock).
+
+### Changed (breaking for a battery with a duplicate spec id: a collision refuses the run, u12 A-82)
+
+- A spec id two loaded files declare refuses `run` (exit 3, nothing sent), naming both files; the
+  first file loaded used to win without a word, a `--spec-path` pack that redeclared a shipped id
+  included. One file read twice (`lint sp sp`, `specs` and `specs/attacks`) is no collision, in
+  `lint` too.
+
+### Changed (breaking for a target file, a scope or a fleet file with a value the tool does not have, u12 A-82)
+
+- `provider` is `anthropic`, `mcp`, `openai`, `rest` or `websocket` (case and spaces ignored), or
+  left out for REST; any other value, `provider: ""` included (it was read as REST), is refused when
+  the file loads: `provider: skynet` sent an OpenAI endpoint REST bodies after a green dry run.
+  `transport` is `http` or `stdio`, and `stdio` only with `provider: mcp`: `transport:
+  carrier-pigeon` read as `http`.
+- A scope's and a fleet file's `version` is `1` or `1.<minor>` (`"1.0"` in every example); any
+  other text was read as this format.
+- `sampling_defaults` values are finite: `.nan` and `.inf` loaded and reached the JSON report as
+  bare `NaN` and `Infinity`.
+- After `env://`, a target file's `auth_ref` and a scope identity's name an environment variable,
+  `[A-Za-z_][A-Za-z0-9_]*` (a name with a hyphen or a space, or a key pasted there, is refused,
+  never quoted).
+
+### Changed (breaking for a fleet file with a credential in it, or `api_key_env: ""`, u12 A-82)
+
+- A fleet's `api_key_env` is a variable's name or left out: `api_key_env: "sk-ant-..."` was written
+  into `scope.yaml` and the target file as `env://sk-ant-...`, exit 0, and `api_key_env: ""`, which
+  meant no key, is refused (exit 0 to 3): leave the key out.
+- A fleet `endpoint` that carries a credential is refused before anything is written: user info
+  (`https://user:<password>@host`), a query or fragment parameter named like one (`?api_key=`,
+  `#token=`) or holding a value shaped like a key, and a URL with no host after its scheme
+  (`https:/ops:<key>@host`, `https:\\ops:<key>@host`), each of which was copied into both files.
+  A query that carries none (`?api-version=2024-02-01`) is kept. A `provider` the tool does not have
+  is refused too.
+
+### Changed (breaking for a live run with an unset credential variable: `run` and `fingerprint` refuse it, u12 A-82)
+
+- `auth_ref: env://TYPO` with `TYPO` unset (or set to spaces) sent every request without a
+  credential and ended on a bare `non-retryable HTTP 401`; against a server that needs no key it ran.
+  A live `run` or `fingerprint` now refuses it before anything is sent (exit 3), naming the variable
+  (the target's, the `--judge` model's, a swept identity's); `--dry-run`, `--estimate` and `-sn`
+  warn and go on. `env://NONE` names no credential and is never read; a target that takes none
+  leaves `auth_ref` out.
+
+### Changed (breaking for a run with `--timeout` under 1 second, u12 A-82)
+
+- `--timeout` takes 1 to 86,400 seconds (`0.5` ran; `1e-300` timed every attempt out at once and
+  ended `TimeoutError: ` with nothing after); NaN and infinity are refused too.
+
+### Changed (breaking for a regression gate on hand-built reports: `diff` and `calibrate` refuse a report without `schema_version`, u12 A-82)
+
+- `dottore diff` and `calibrate` read a JSON run report of schema 1 (`1`, `1.0`, `1.<minor>`) or a
+  bare list of findings. A report without `schema_version` (it was read, exit 0), one of another
+  major version (`2.0`, `9.0`: compared as this build's), a SARIF log (`error: 'findings'`) and a
+  document with no `findings` list are each refused (exit 3) on a line that says which. Add
+  `"schema_version": "1.0"` to a report built by hand, or pass a bare list of findings.
+
 ### Fixed (CLI input validation, from the full CLI audit of 2026-10-11; u12 A-82)
 
 - **A usage error no longer prints a secret.** `dottore run --runs "$KEY"` printed `Invalid value
   for '--runs': 'sk-ant-api03-...' is not a valid integer.` with the key in clear, and so did `-T`,
   `--rate`, `--timeout`, `--concurrency`, `--top-tests`, the `--budget-*` flags and `fleet --runs`.
-  The `dottore` and `dott` scripts now run `ildottore.cli.main:main`, which prints the usage block
-  and `error: <message>` through the CLI's redactor (exit 3, as before). **Reinstall** (`pip install
-  -e .` or your pinned install) to pick up the new entry point.
-- **An unset credential variable is refused, not sent as nothing.** `auth_ref: env://TYPO` with
-  `TYPO` unset sent every request without a credential and ended on a bare `non-retryable HTTP
-  401`. A live `run` or `fingerprint` refuses it before anything is sent, naming the variable (the
-  target's, the `--judge` model's, a swept identity's); `--dry-run`, `--estimate` and `-sn` warn and
-  go on. `env://NONE` names no credential and is never read; a target that takes none leaves
-  `auth_ref` out.
-- **A reference names a variable.** After `env://`, a target file's `auth_ref`, a scope identity's
-  and a fleet's `api_key_env` take a variable's name (`[A-Za-z_][A-Za-z0-9_]*`), refused without
-  being quoted: `api_key_env: "sk-ant-..."` was written into `scope.yaml` and the target file as
-  `env://sk-ant-...`, exit 0. A fleet endpoint with `user:password@` is refused before anything is
-  written.
-- **Unknown values are refused.** `provider` (`anthropic`, `mcp`, `openai`, `rest`, `websocket`)
-  and `transport` (`http`, `stdio`, the latter for `provider: mcp` only): `provider: skynet` sent an
-  OpenAI endpoint REST bodies after a green dry run, and `transport: carrier-pigeon` read as
-  `http`. A scope's and a fleet file's `version` is `1` or `1.<minor>`. `sampling_defaults` values
-  are finite: `.nan` and `.inf` reached the JSON report as bare `NaN` and `Infinity`.
-- **A check that checked nothing fails.** `lint` exits 3 on a path that does not exist
-  (`PATH_NOT_FOUND`) or yields no spec and no suite (`NO_SPECS`, naming the YAML files in the
-  subdirectories of a directory without a `pack.yaml`, which is read as loose specs, its own files
-  only), and warns `FILES_NOT_READ` when a loose tree leaves YAML below it: `lint sp` with the specs
-  under `sp/attacks/` printed `lint OK ... across 0 spec(s)`, exit 0. `run`, `registry ls`,
-  `coverage` and `describe` refuse such a path, and `registry ls --suite nope` is refused.
-  **Breaking for a pipeline** that ran `lint` on a path that held nothing, or relied on `lint
-  nonexistent` exiting 1.
-- **A spec id two files declare refuses a run**, naming both files (lint names them too); the first
-  file loaded used to win without a word.
-- **`dottore diff` reads report schema 1 only** (`1`, `1.0`, `1.<minor>`) and says so of a report
-  without `schema_version`, of another major version, of a SARIF log (it gave `error: 'findings'`)
-  and of a document with no `findings` list. A report hand-built without `schema_version` is refused:
-  add `"schema_version": "1.0"`, or pass a bare list of findings.
+  Usage errors are now printed with the usage block and `error: <message>` through the CLI's
+  redactor (exit 3, as before), whether the script runs `ildottore.cli.main:main` (what this
+  version installs) or `app()` (what an older install generated, which `pip install -e` keeps).
+- **What the operator typed is masked where the CLI echoes it**: `lint <path>`, `describe <id>` and
+  `schema export --name <name>` printed it raw.
 - **The report schema constrains the run and each finding** (required keys, types, the verdict's
   values and the risk's ranges, `additionalProperties` left open by the version note), and
-  `dottore schema export --name report` prints it; every report written since `f12ba833` that the
-  audit kept still validates.
+  `dottore schema export --name report` prints it; a report written since `f12ba833` validates (a
+  v0.1.0 report does not, as against the copy before).
 - **Messages say what happened.** The tool's own figures are written with thousands separators, so
   the redactor no longer masks them as phone numbers (`invalid -T template 12,345,678,901`, a
-  spec's out-of-range integer, a file name too long to open described by its length); `--suite
-  ../../etc/passwd` keeps its words; `--timeout` takes 1 to 86,400 seconds (`1e-300` timed every
-  attempt out and ended `TimeoutError: ` with nothing after), a per-attempt timeout says so, and an
+  spec's out-of-range integer); a file name too long to open, `--scope` included, is described by
+  its length; `--suite ../../etc/passwd` keeps its words; a per-attempt timeout says so, and an
   error with no message reads `<Class> (no detail given)`; `127.0.0.1` stays readable in an
   allowlist refusal's URL. `new-spec --family` refuses a control or format character and writes
-  any other text as a YAML string that reads back as written.
+  any other text as a YAML string that reads back as written (`yes` as `"yes"`, not a boolean).
 
 ### Added (a target file may declare one of its own granted tools not destructive, OD-43)
 
