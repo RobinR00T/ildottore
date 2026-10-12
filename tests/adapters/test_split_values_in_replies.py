@@ -336,7 +336,8 @@ def test_only_the_head_the_excerpt_reads_is_read_and_a_secret_past_it_is_left_ou
     started = time.perf_counter()
     reply_excerpt(hostile, Redactor(salt="s"))
     assert time.perf_counter() - started < 2.0
-    secret = "Gl4ss-Harbour-Credential-Seven-2026"
+    # Words no rule masks in part: only the window's open tail keeps its head out of the excerpt.
+    secret = "correct horse battery staple and a quiet harbour"
     register_known_secret(secret)
     pad = "p" * 1200  # each delta's event carries this much else, as a target may write it
     body = "".join(
@@ -346,6 +347,7 @@ def test_only_the_head_the_excerpt_reads_is_read_and_a_secret_past_it_is_left_ou
     assert len(body) > 40_000  # the credential's deltas run past the window
     excerpt, _ = reply_excerpt(body, Redactor(salt="s"))
     assert secret[:3] not in _rebuilt(excerpt), excerpt[:200]
+    assert '"content": ""' in excerpt  # left out, not masked: the window read only its head
     # A clean stream longer than the window is not rewritten: quoted as main quotes it.
     words = ("the reply goes on and on " * 3000).split(" ")
     clean = "".join(
@@ -356,3 +358,18 @@ def test_only_the_head_the_excerpt_reads_is_read_and_a_secret_past_it_is_left_ou
     )
     assert len(clean) > 200_000
     assert _split_masked(clean, Redactor(salt="s")) is clean
+
+
+def test_what_is_no_stream_is_quoted_as_it_came() -> None:
+    """One event, JSON lines that are arrays, Ollama's lines with blank lines between them."""
+
+    single = f"data: {_oai(KEY[:10])}\n\n"
+    assert _split_masked(single, Redactor(salt="s")) is single
+    arrays = "".join(json.dumps([KEY[i : i + 3]]) + "\n" for i in range(0, len(KEY), 3))
+    assert _split_masked(arrays, Redactor(salt="s")) is arrays
+    spaced = "".join(
+        json.dumps({"message": {"content": KEY[i : i + 3]}, "done": False}) + "\n\n"
+        for i in range(0, len(KEY), 3)
+    )
+    excerpt, _ = reply_excerpt(spaced, Redactor(salt="s"))
+    assert KEY[8:20] not in _rebuilt(excerpt) and "\n\n" in excerpt
