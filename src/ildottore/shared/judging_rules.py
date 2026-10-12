@@ -109,6 +109,18 @@ JUDGING_SOURCES: Final = (
     "ildottore.core.runner:CampaignRunner._trace_before_block",
     "ildottore.core.runner:CampaignRunner._cut_verdict",
     "ildottore.core.runner:CampaignRunner._run_evaluators",
+    "ildottore.core.runner:CampaignRunner._run_spec",
+    "ildottore.core.runner:CampaignRunner._sweep_identities",
+    "ildottore.core.runner:CampaignRunner._reproduce_single_turn",
+    "ildottore.core.runner:CampaignRunner._reproduce_multi_turn",
+    "ildottore.core.runner:CampaignRunner._tagged_unsent",
+    "ildottore.core.runner:sweeps_identities",
+    "ildottore.core.reproduce:reproduce",
+    "ildottore.adapters.base:BaseAdapter.sends_sampling",
+    "ildottore.adapters.openai:OpenAIAdapter.sends_sampling",
+    "ildottore.adapters.anthropic:AnthropicAdapter.sends_sampling",
+    "ildottore.adapters.openai:OpenAIAdapter.logprobs_enabled",
+    "ildottore.adapters.websocket:WebSocketAdapter.max_frame_bytes",
     "ildottore.core.runner:CUT_DECIDING_EVALUATORS",
     "ildottore.core.runner:PROVIDER_FILTER_CUT",
     "ildottore.core.runner:_JUDGE_NOTE_CHARS",
@@ -251,6 +263,18 @@ _MONEY = (
     "reply a ceiling stops is stored without a verdict and sent again, u12 A-24)"
 )
 _TEXT = "the words of a message, or the masking of what a verdict quotes: never a status"
+_SCORED = (
+    "applied when a finding is scored from stored verdicts, to both halves of a resume alike: no "
+    "stored verdict changes"
+)
+_GATE = (
+    "which specs are sent at all: bound by the battery and the target (u12 A-24); a spec it stops "
+    "stores no attempt a resume keeps"
+)
+_TARGET = (
+    "the target's own configuration (its file's websocket block, a template given through the "
+    "Python API), not a rule of this package; a target file's is in its digest (u12 A-24)"
+)
 _WIRE = (
     "what is sent, not how the reply is read: bound by the battery, the target and --runs (u12 "
     "A-24)"
@@ -298,4 +322,40 @@ JUDGING_EXEMPT: Final = {
     "ildottore.adapters.websocket:WebSocketAdapter.unreadable_advice": _TEXT,
     "ildottore.adapters.websocket:_scrub": _TEXT,
     "ildottore.adapters.base:BaseAdapter._parse_response": "abstract: each adapter's own is listed",
+    "ildottore.core.runner:CampaignRunner._score_finding": _SCORED,
+    "ildottore.core.runner:CampaignRunner._gated_prior": _SCORED,
+    "ildottore.core.runner:CampaignRunner._holds_plan": _SCORED,
+    "ildottore.core.runner:_one_per_attempt_id": _SCORED,
+    "ildottore.core.runner:CampaignRunner._blocked_finding": _GATE,
+    "ildottore.core.runner:CampaignRunner._capability_skipped_finding": _GATE,
+    "ildottore.core.runner:CampaignRunner._media_error_finding": _GATE,
+    "ildottore.core.runner:_BLOCKED": _GATE,
+    "ildottore.core.runner:_undelivered": _GATE,
+    "ildottore.core.setup_delivery:delivers_in_band": _GATE,
+    "ildottore.core.setup_delivery:in_band_setup": _GATE,
+    "ildottore.core.setup_delivery:needs_seeding": _GATE,
+    "ildottore.core.setup_delivery:trace_gap": _GATE,
+    "ildottore.core.runner:_WatchedAdapter": _MONEY,
+    "ildottore.core.runner:CampaignRunner._param_accepted": _WIRE,
+    "ildottore.core.runner:CampaignRunner._sampling": _WIRE,
+    "ildottore.core.runner:_base": _WIRE,
+    "ildottore.core.runner:_base_prompt": _WIRE,
+    "ildottore.core.runner:_build_request": _WIRE,
+    "ildottore.core.runner:_is_multi_turn": _WIRE,
+    "ildottore.shared.media:MediaError": _WIRE,
+    "ildottore.core.runner:CampaignRunner._apply_mutation": _WIRE,
+    "ildottore.core.runner:CampaignRunner._turn_mutator": _WIRE,
+    "ildottore.core.runner:spec_sampling": _WIRE,
+    "ildottore.core.runner:unsent_fields": _WIRE,
+    "ildottore.core.runner:SAMPLING_NOT_SENT": _TEXT,
+    "ildottore.core.reproduce:_pin_attempt_index": _WIRE,
+    "ildottore.adapters.base:BaseAdapter.id": _TEXT,
+    "ildottore.adapters.base:BaseAdapter.redactor": _TEXT,
+    "ildottore.adapters.base:BaseAdapter._redact_ids": _TEXT,
+    "ildottore.adapters.mcp:MCPAdapter.redactor": _TEXT,
+    "ildottore.adapters.websocket:WebSocketAdapter.id": _TEXT,
+    "ildottore.adapters.websocket:WebSocketAdapter.redactor": _TEXT,
+    "ildottore.adapters.websocket:WebSocketAdapter.api_key": _TEXT,
+    "ildottore.adapters.websocket:WebSocketAdapter.spec": _TARGET,
+    "ildottore.adapters.rest:RestAdapter.template": _TARGET,
 }

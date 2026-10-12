@@ -24,8 +24,10 @@ from __future__ import annotations
 import ast
 import hashlib
 import io
+import sys
 import textwrap
 import tokenize
+from collections.abc import Iterator
 from functools import cache
 from pathlib import Path
 
@@ -55,11 +57,19 @@ PIN_HISTORY: tuple[tuple[int, str, str], ...] = (
         "re-pin 2026-10-12: the list the closure test requires (pre-merge audit of 22269e0c, H-1); "
         "version 1 is not released",
     ),
+    (
+        1,
+        "c0c0f23b83a4e2c063d31f660a841a976cfdb9b049155a4b0d67085dd5370919",
+        "re-pin 2026-10-12: the runner's _run_spec, _sweep_identities and the reproduction "
+        "functions they call, which the scoring branch's audit named, and the class attributes "
+        "the walk follows now (sends_sampling, logprobs_enabled, max_frame_bytes); version 1 is "
+        "not released",
+    ),
 )
 
 #: The digest each version is pinned to now: the last line of :data:`PIN_HISTORY` for it.
 PINNED: dict[int, str] = {
-    1: "c4627211d80fdf0913d74546006e89494d2e1a73fb50a60527512cdb3c345710",
+    1: "c0c0f23b83a4e2c063d31f660a841a976cfdb9b049155a4b0d67085dd5370919",
 }
 
 _PACKAGE_ROOT = Path(__file__).resolve().parents[2] / "src"
@@ -283,19 +293,43 @@ def _walked(node: ast.AST) -> list[ast.AST]:
     return out
 
 
+def _members(module: str, cls: str, depth: int = 0) -> dict[str, Ref]:
+    """What ``self.<name>`` means in class ``cls`` of ``module``: each method and class attribute,
+    its own or inherited from a base class this package defines, as ``(module, "Class.name")``.
+
+    Inherited, because a subclass reads its base's attribute (an adapter's ``self.<flag>`` set on
+    ``BaseAdapter``): naming only the methods of the class itself missed a class attribute that
+    decides how a reply is read.
+    """
+
+    if depth > 10:
+        return {}
+    node = _entry_node(module, cls)
+    if not isinstance(node, ast.ClassDef):
+        return {}
+    out: dict[str, Ref] = {}
+    for base in node.bases:
+        if isinstance(base, ast.Name) and base.id in _bindings(module):
+            base_module, base_name = _resolve(*_bindings(module)[base.id])
+            if base_name is not None and base_module.startswith("ildottore"):
+                out.update(_members(base_module, base_name, depth + 1))
+    for statement in node.body:
+        if isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            out[statement.name] = (module, f"{cls}.{statement.name}")
+        elif isinstance(statement, ast.Assign):
+            for target in statement.targets:
+                if isinstance(target, ast.Name):
+                    out[target.id] = (module, f"{cls}.{target.id}")
+        elif isinstance(statement, ast.AnnAssign) and isinstance(statement.target, ast.Name):
+            out[statement.target.id] = (module, f"{cls}.{statement.target.id}")
+    return out
+
+
 def _refers_to(module: str, node: ast.AST, owner: str | None) -> set[Ref]:
-    """The ``ildottore`` names ``node`` refers to: imports, module names, ``self.<method>``."""
+    """The ``ildottore`` names ``node`` refers to: imports, module names, ``self.<member>``."""
 
     bound = _bindings(module)
-    methods = (
-        {
-            s.name
-            for s in getattr(_entry_node(module, owner), "body", [])
-            if isinstance(s, (ast.FunctionDef, ast.AsyncFunctionDef))
-        }
-        if owner is not None
-        else set()
-    )
+    members = _members(module, owner) if owner is not None else {}
     out: set[Ref] = set()
     for item in _walked(node):
         if isinstance(item, ast.ImportFrom):
@@ -305,8 +339,8 @@ def _refers_to(module: str, node: ast.AST, owner: str | None) -> set[Ref]:
             out.update((alias.name, None) for alias in item.names)
         elif isinstance(item, ast.Attribute) and isinstance(item.value, ast.Name):
             base = item.value.id
-            if base in {"self", "cls"} and item.attr in methods:
-                out.add((module, f"{owner}.{item.attr}"))
+            if base in {"self", "cls"} and item.attr in members:
+                out.add(members[item.attr])
             elif base in bound:
                 target = _resolve(*bound[base])
                 if target[1] is None:
@@ -443,6 +477,77 @@ def test_an_edit_to_a_listed_assignment_or_function_changes_its_source(
     source: str, edited: str
 ) -> None:
     assert _without_comments_and_docstrings(source) != _without_comments_and_docstrings(edited)
+
+
+def _synthetic(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, files: dict[str, str]) -> None:
+    """Point the walk at a package of ``files`` under ``tmp_path`` (``ildottore/...``)."""
+
+    for name, text in files.items():
+        path = tmp_path / "ildottore" / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+    monkeypatch.setattr(sys.modules[__name__], "_PACKAGE_ROOT", tmp_path)
+    _parsed.cache_clear()
+    _bindings.cache_clear()
+
+
+@pytest.fixture
+def _restore_caches() -> Iterator[None]:
+    yield
+    _parsed.cache_clear()
+    _bindings.cache_clear()
+
+
+@pytest.mark.usefixtures("_restore_caches")
+def test_the_closure_sees_a_new_module_a_listed_one_imports(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The landing case: a sibling branch moves the stop reasons to a new module the listed
+    ``provider_filter`` imports (``shared/filter_stops.py``); the walk names it."""
+
+    _synthetic(
+        tmp_path,
+        monkeypatch,
+        {
+            "__init__.py": "",
+            "shared/__init__.py": "",
+            "shared/filter_stops.py": "FILTER_STOPS = {'content_filter'}\n",
+            "shared/provider_filter.py": "from ildottore.shared.filter_stops import FILTER_STOPS\n",
+        },
+    )
+    assert _refs_of("ildottore.shared.provider_filter") == {
+        ("ildottore.shared.filter_stops", "FILTER_STOPS")
+    }
+
+
+@pytest.mark.usefixtures("_restore_caches")
+def test_the_closure_sees_a_class_attribute_a_subclass_method_reads(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``self.own_filter_stops`` set on the base adapter and read by a listed method of a
+    subclass, a renamed helper of the runner and a new constant: each one is named."""
+
+    _synthetic(
+        tmp_path,
+        monkeypatch,
+        {
+            "__init__.py": "",
+            "base.py": "class Base:\n    own_filter_stops = ('x',)\n",
+            "openai.py": (
+                "from ildottore.base import Base\n"
+                "REPLACED = {1}\n"
+                "def _failed_on_trace(a):\n    return a in REPLACED\n"
+                "class A(Base):\n"
+                "    def _parse(self, r):\n"
+                "        return _failed_on_trace(r) or r in self.own_filter_stops\n"
+            ),
+        },
+    )
+    assert _refs_of("ildottore.openai:A._parse") == {
+        ("ildottore.openai", "_failed_on_trace"),
+        ("ildottore.base", "Base.own_filter_stops"),
+    }
+    assert _refs_of("ildottore.openai:_failed_on_trace") == {("ildottore.openai", "REPLACED")}
 
 
 def test_an_assignment_can_be_listed() -> None:
