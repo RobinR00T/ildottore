@@ -43,6 +43,7 @@ guardrail layer reads the same stop reasons (u09 A-67), which ``core`` may not i
 
 from __future__ import annotations
 
+import unicodedata
 from collections.abc import Iterable
 from typing import Final
 
@@ -66,6 +67,7 @@ __all__ = [
     "OUTPUT_SIDE",
     "PROVIDER_FILTER_MARK",
     "UNKNOWN_SIDE",
+    "blank_text",
     "blocked_attempt_ids",
     "blocked_by_provider_filter",
     "cut_attempt_ids",
@@ -135,6 +137,21 @@ _REFUSAL: Final = "refusal"  # the one word of ANTHROPIC_FILTER_STOPS
 _UNSAID_SIDE_STOPS: Final = BEDROCK_FILTER_STOPS
 
 
+def blank_text(text: str) -> bool:
+    """True when ``text`` shows nothing: whitespace and format characters only.
+
+    The one test of "no text" the filter rule reads (pre-merge audit of ``e1a8aacf``, LOW 1):
+    ``str.strip`` keeps the format characters (Unicode category ``Cf``: the zero-width space
+    U+200B, the joiner U+200D, the word joiner U+2060, the byte order mark U+FEFF), so a reply of
+    one of them with ``content_filter`` under ``filter_stops: []`` was the model's answer and
+    passed, where an empty one is the filter's withheld reply. Read from ``unicodedata``, so a
+    newer Python's Unicode may add a character; the redactor pins its own list (it masks text,
+    where a version must not change what is written).
+    """
+
+    return all(char.isspace() or unicodedata.category(char) == "Cf" for char in text)
+
+
 def is_filter_stop(stop: str | None) -> bool:
     """True when ``stop``, as a provider wrote it, is one of :data:`FILTER_STOPS`.
 
@@ -163,15 +180,16 @@ def stop_provenance(
     recorded without deciding (security audit of 2026-10-11, MEDIUM 3).
 
     ``own`` is what the adapter's provider documents, whatever the file declares. A reply with no
-    text and no tool call that ends on one of them is the filter's withheld reply even when the
-    declaration leaves the word out (``filter_stops: []``): a gateway in front of Azure OpenAI
-    relays Azure's empty ``content_filter``, and an empty reply holds nothing of the model's to
-    score, so it is read as it is without the declaration, never as a pass (pre-merge audit of
-    ``10cb526b``, MEDIUM). A reply with text, or a tool call, is the model's, as declared.
+    text (:func:`blank_text`) and no tool call that ends on one of them is the filter's withheld
+    reply even when the declaration leaves the word out (``filter_stops: []``): a gateway in front
+    of Azure OpenAI relays Azure's empty ``content_filter``, and an empty reply holds nothing of
+    the model's to score, so it is read as it is without the declaration, never as a pass
+    (pre-merge audit of ``10cb526b``, MEDIUM). A reply with text, or a tool call, is the model's,
+    as declared.
     """
 
     stop = normalized_stop(response.finish_reason)
-    withheld = stop in own and not response.text.strip() and not response.tool_calls
+    withheld = stop in own and blank_text(response.text) and not response.tool_calls
     foreign = stop in FILTER_STOPS and stop not in honoured and not withheld
     if foreign == response.foreign_stop:
         return response
@@ -222,7 +240,7 @@ def partial_reply(response: ModelResponse) -> bool:
     """True when the reply holds text the model wrote before its provider's filter cut it."""
 
     return (
-        bool(response.text.strip())
+        not blank_text(response.text)
         and filter_stop(response) in _PARTIAL_STOPS
         and response.filter_side is None
     )
@@ -240,7 +258,7 @@ def replaced_reply(response: ModelResponse) -> bool:
     """
 
     return (
-        bool(response.text.strip())
+        not blank_text(response.text)
         and filter_stop(response) is not None
         and not partial_reply(response)
     )

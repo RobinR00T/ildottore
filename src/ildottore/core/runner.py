@@ -124,6 +124,7 @@ from ildottore.shared.provider_filter import (
     CUT_REASONS,
     INPUT_SIDE,
     UNKNOWN_SIDE,
+    blank_text,
     blocked_attempt_ids,
     blocked_by_provider_filter,
     cut_attempt_ids,
@@ -1551,7 +1552,7 @@ class CampaignRunner:
         stopped = attempt.response
         if stopped is None:
             return None
-        delivered = filter_side(stopped) == INPUT_SIDE and bool(stopped.text.strip())
+        delivered = filter_side(stopped) == INPUT_SIDE and not blank_text(stopped.text)
         if not delivered and not stopped.tool_calls:
             return None
         kinds = _evaluators_for_filtered_reply(stopped, trace_only=not delivered)

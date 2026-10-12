@@ -505,6 +505,8 @@ def test_an_openai_target_file_can_switch_the_providers_filter_reading_off(
     ("provider", "reply", "reason"),
     [
         ("openai", _openai(None, "content_filter"), "cut_by_provider_output_filter"),
+        # A zero-width space is no text either (pre-merge audit of e1a8aacf, LOW 1: a pass).
+        ("openai", _openai("\u200b", "content_filter"), "cut_by_provider_output_filter"),
         ("anthropic", _anthropic("", "refusal", 0), "blocked_by_provider_filter"),
     ],
 )
