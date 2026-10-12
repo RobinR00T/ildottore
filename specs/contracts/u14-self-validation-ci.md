@@ -117,8 +117,10 @@ precondition is asserted with a message that names the cause.
 - Not its call: coverage-scope decision if contested (see §9) · any threshold change (program).
 
 ## §9 Open decisions (human sign-off → rolls to 00-INDEX ledger)
-- Coverage scope: per-core-package ≥ 85% vs single global gate (propose per-package, aggregate
-  reported).
+- **OD-13** coverage scope: per-core-package ≥ 85% vs single global gate. **Decided:**
+  per-core-package ≥ 85%, aggregate reported. **Built:** an aggregate gate only
+  (`--cov-fail-under=85` in `Makefile`, `ci.yml` and `audit.yml`); no per-package threshold is
+  enforced (audit F-25, `00-INDEX.md`).
 - Whether `audit.yml` "workflow permissions read/write" is auto-set or left operator-pending
   (propose operator-pending, documented in workflow header).
 - Nightly regression golden-run baseline location + diff-review owner (propose `tests/golden-run/`,

@@ -725,8 +725,11 @@ adapters catch only `TimeoutException` and `TransportError`), websockets' `Inval
   `allowed_signers` file, or sigstore) in `policy/scope.py`, a `run` option naming the signature
   and the trusted-keys file, the bullet in `NON-GOALS.md` and the "verifies no signature" of
   `docs/MANUAL.md` §4.1 removed.
-- Redactor entropy threshold for unknown-shape secrets: global vs per-key-type (propose reuse of
-  u06 `secret_shape` policy once that lands; interim global threshold, documented).
+- **OD-15** redactor entropy threshold for unknown-shape secrets: global vs per-key-type.
+  **Resolved (`00-INDEX.md`): an interim global threshold, documented, then the reuse of u06's
+  `secret_shape` policy once it lands.** Status: `secret_shape` has landed with per-key-type
+  thresholds; the redactor still uses its own global one (`redactor.py`), so the reuse half is
+  pending (audit F-25).
 - **OD-26** reading the operator's files. **Decided 2026-10-07 by the owner, built (A-43):** 1
   MiB, the spec loader's figure, for the scope, target, fleet and labels files and the policy
   and signature packs; any file type, with the read bounded at one byte past the cap. **Open:**

@@ -405,6 +405,15 @@ reads as U+FFFD, since httpx decodes the stream as text.
 - **OD-1** (ADR-0005 Accepted): Anthropic logprob availability/shape: if the provider exposes no
   usable per-token logprobs in MVP-1, `anthropic.py` reports `logprobs=False` and returns `None`;
   confirm this is acceptable vs deferring membership-inference on Anthropic targets to MVP-2.
+- **OD-18** (ADR-0009; decided 2026-10-06 by the owner: C, A first; this unit's half, recorded
+  2026-10-12): against a `type: model` target a spec's setup goes out in-band (option A), so each
+  adapter says what of it it can carry: `carries_tool_definitions` (OpenAI and Anthropic when the
+  endpoint takes tools, translating the scene's tools into the provider's tool definitions; REST,
+  WebSocket and MCP carry none) and `carries_system_prompt`, where the memory seed goes (OpenAI
+  and Anthropic; a REST template with a system field; a WebSocket template with
+  `{{system_prompt}}`). The runner reads both and makes a spec the adapter cannot carry
+  `inconclusive: setup_not_delivered` with no send (u08 §2). Option B, a deployment's declared
+  seeded scene, changes nothing here (u08, u12).
 - **OD-24** (built 2026-10-07, A-39; **decided 2026-10-11 under the owner's delegation (best
   practice), revisable: kept as built**): what a logprob block with one figure no model produces
   reads as. When the figure is a token's own, the whole block is `None`, as if the reply carried

@@ -1318,3 +1318,19 @@ Checked by `tests/cli/test_malformed_reply_campaign.py`.
   3.7 GiB with both, and `2**53 + 1` was still growing at 3.7 GB when it was stopped after 4.5
   minutes on `2f6201a`. A bound with a meaning (the schema caps a
   spec's own unread `runs:` at 50) would have refused values that run today; counting does not.
+- **OD-22** (shared with u02, A-33; decided 2026-10-11 under the owner's delegation (best
+  practice), revisable: kept as built). This unit's half: `dottore run` refuses the run before
+  anything is sent when a selected spec writes a regex that does not compile (exit 3, naming the
+  spec and its first such pattern, a resume included), in `cli/run.py` (`_execute_run`, the
+  `uncompilable_patterns` step). The lint code is u02's (u02 §9, `00-INDEX.md`).
+- **OD-26** (shared with u01, A-43; decided 2026-10-07 by the owner). This unit's half: the
+  commands read the scope, target, fleet and labels files up to 1 MiB, and `dottore fleet`
+  refuses to write a file over the cap. Open, as the index says: the report JSON `dottore diff`
+  and `calibrate` read (`cli/diff.load_findings`) and the evidence artifacts `dottore replay` and
+  `run --resume` read are still read whole (u01 §9).
+- **OD-27** (shared with u01, A-57; decided 2026-10-07). This unit's half: a scope or target id
+  and an identity name of more than 128 characters are refused when the file is loaded, so no
+  command prints a longer one (u01 §9).
+- **OD-33** (shared with u01, A-56; decided 2026-10-07 by the conductor, confirmed by the owner).
+  This unit's half: `dottore fleet` refuses two ids that differ only by case on every file
+  system, so it never writes one `target-<id>.yaml` over another (u01 §9).

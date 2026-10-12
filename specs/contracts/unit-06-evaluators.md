@@ -291,6 +291,11 @@ verdict and nothing of the judge's exchange is persisted, `docs/04 §5`.) PII/se
 
 ## §9 Open decisions (human sign-off → rolls to 00-INDEX ledger)
 - **OD-3** default judge model (own-hosted vs API) + second-judge self-consistency on/off.
+  **Recorded default (`00-INDEX.md`):** the configured target model at temperature 0, the second
+  judge OFF in MVP-1 (revisit). As built (audit F-25): there is no default judge; a live run
+  without `--judge` leaves `semantic_judge` unregistered (`inconclusive: capability_unavailable`),
+  the judge's first pass is at temperature 0 and its self-consistency passes at 0.5, and the
+  second judge stays OFF.
 - **OD-19** `evaluator_logic: weighted` declared by 33 specs and implemented in no run path.
   **Decided 2026-10-11 under the owner's delegation (best practice, revisable): ADR-0010 option B
   with its amendment, built (A-73).** One rule, `deterministic_first`, named by every value; the
@@ -305,7 +310,9 @@ verdict and nothing of the judge's exchange is persisted, `docs/04 §5`.) PII/se
   a judge. The alternative not taken: C, a relevance precondition in both regex evaluators, a
   heuristic over 30 specs whose own wrong abstentions (a short genuine refusal reads like a
   non-answer) would need a new `InconclusiveReason`.
-- Whether `secret_shape` entropy threshold is global or per-key-type (propose per-type).
+- **OD-15** (shared with u01) whether `secret_shape`'s entropy threshold is global or
+  per-key-type. **Resolved (`00-INDEX.md`): per key type, landed in `secret_shape`;** the
+  redactor still uses its own global threshold, so u01's reuse half is pending (audit F-25).
 - **OD-38** a `confirm: true` the model sets on its own destructive tool call: a confirmation,
   or not. **Decided 2026-10-09 by the owner, built (A-65):** not a confirmation. Only a
   confirmation from outside the model counts (the user's reply after the agent asked, never the

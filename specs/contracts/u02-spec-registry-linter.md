@@ -441,7 +441,8 @@ provider shape, on every shipped fixture trace under every shipped spec that dec
 - Not its call: pack-signing enforcement (OD-2 / DECIDE) · scope-file signing (u01).
 
 ## §9 Open decisions (human sign-off → rolls to 00-INDEX ledger)
-- Pack **checksum/signature** enforcement in MVP-1 vs MVP-2 (ties to OD-2). Propose: parse +
+- **OD-10** pack **checksum/signature** enforcement in MVP-1 vs MVP-2 (ties to OD-2); resolved
+  in `00-INDEX.md` as proposed here. Propose: parse +
   record manifest in MVP-1, enforce signatures in MVP-2.
 - Whether suite/pack Pydantic models live in `shared/` (u00) or locally in `registry/` if u00
   omits them: propose local until promoted to shared by an ADR.

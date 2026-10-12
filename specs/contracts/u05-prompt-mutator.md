@@ -94,8 +94,9 @@ schema.
 - MUST NOT introduce nondeterminism (wall clock, unseeded RNG, dict-order-dependent output).
 
 ## §9 Open decisions (human sign-off → rolls to 00-INDEX ledger)
-- `translate` implementation: ship a small static phrase-map subset (deterministic, offline) for
-  MVP‑1 vs a pluggable dictionary provider; and the default language set. **Proposed:** static
-  offline subset for a fixed 3-4 language list; pluggable later (L3). Flag as new OD to index.
+- **OD-8** `translate` implementation: ship a small static phrase-map subset (deterministic,
+  offline) for MVP‑1 vs a pluggable dictionary provider; and the default language set.
+  **Proposed:** static offline subset for a fixed 3-4 language list; pluggable later (L3). Flag as
+  new OD to index.
 - Whether `unicode_confusable`/`zero_width_inject` density defaults live in mutator code or move to
   a shared `frameworks/`-style table (**propose:** in-module tables for MVP‑1).
