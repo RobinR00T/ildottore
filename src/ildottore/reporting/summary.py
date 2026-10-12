@@ -296,8 +296,9 @@ class RunStatus:
     """
 
     #: ``complete`` | ``budget_exhausted`` (the runner) | ``unreachable`` (the CLI, when a
-    #: target answered nothing at all). Not ``parked``: the contract reserves that word for
-    #: the PITV park rule and nothing produces it.
+    #: target answered nothing at all) | ``filtered`` (the CLI, when the provider's filter
+    #: answered every attempt for the model, u12 A-79). Not ``parked``: the contract reserves
+    #: that word for the PITV park rule and nothing produces it.
     state: str = "complete"
     reason: str | None = None
 

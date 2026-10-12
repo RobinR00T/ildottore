@@ -246,7 +246,9 @@ labelled tail's limits the fuzz found, memory and linear time on 2 MB of hostile
 
 **A-32 A registered credential is matched with the characters that do not show ignored (added
 2026-10-07).** In a text holding a control character (C0, DEL, C1, U+2028, U+2029, a lone
-surrogate), a format character (Unicode Cf, pinned to Unicode 16.0) or U+FFFD (what half a
+surrogate), a format character (Unicode Cf, pinned to Unicode 16.0, in three named kinds since
+the pre-merge audit of `3f7b1254`: `EMPTY_FORMAT_RANGES`, `FORMAT_SIGN_RANGES` and `TAG_RANGES`,
+the one list `shared.provider_filter.blank_text` reads too) or U+FFFD (what half a
 character in a reply reads as where the reply is parsed, u04 A-47), `redact_text` finds each
 registered credential in the text with those characters dropped, and the stretch it covers, the
 characters inside included, becomes the mask an unsplit occurrence gets, with the same digest;

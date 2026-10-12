@@ -165,7 +165,22 @@ Cut by the provider's output filter: 8 attempt(s) in 2 spec(s) came back cut or 
 
 and `reports/openai.json` carries `summary.cut_by_provider_output_filter`. Before 2026-10-11 both
 specs passed. A planted canary in a partial reply the filter cut is still a confirmed fail; a
-secure marker a spec wants present (`DOS-TOKEN-AMP-001`'s) is not held against an empty one.
+secure marker a spec wants present (`DOS-TOKEN-AMP-001`'s) is not held against an empty one; and
+the judge's fail on a partial reply stands as a fail that needs review, since the text was
+delivered whatever the filter says.
+
+Only the provider's own filter words are read (A-79, since 2026-10-11): `content_filter`, and
+Azure's 400, from this `openai` target; Anthropic's `refusal`, Gemini's `SAFETY` or Bedrock's
+`guardrail_intervened` in its reply is an ordinary stop, so a target cannot hide what it wrote
+behind another provider's word. And a run the filter answers every time never reads green: with
+the stub refusing every prompt, the same command exits 3 after 14 attack requests (the stub's
+target is `tgt`):
+
+```
+error: run on tgt did not complete: every one of the 14 attempt(s) was answered by the provider's filter (14 refused by its input filter), so no reply the model wrote whole was evaluated: the run measured the filter, not the model. To measure the model, run it where the filter lets the attack prompts through; every such attempt is in the reports, none of them a pass
+```
+
+and the report's `summary.status.state` is `filtered`. Until 2026-10-11 that run exited 0.
 
 A 200 that is not the provider's reply (an HTML page, JSON without `choices`) fails only its
 attempt (OD-21), and its spec is `inconclusive`, never a pass: the reply that broke may be the one
@@ -283,7 +298,11 @@ so `target.websocket.yaml` declares it: the handshake frame (`{{token}}` is the 
 `auth_ref` resolves to), the query frame (`{{prompt}}`), how the streamed reply is read back
 (`text_path`, the `final_path`/`final_value` that ends a turn, the `ignore_types` to discard,
 `error_path`, `timeout_seconds`), a session-start frame and the reconnect cap. The adapter
-knows nothing else. `scope.websocket.yaml` authorizes `wss://` as it would `https://`
+knows nothing else. If the server relays a provider's filter verdict at `final_path` (a gateway
+in front of Azure OpenAI that ends a turn with `content_filter`), list those words under
+`response.filter_stops` and leave `final_value` out; without it, no word at `final_path` is read
+as a filter's (A-79), and a turn that ends on one with no text, or only blank text, and no tool
+call cannot be read. `scope.websocket.yaml` authorizes `wss://` as it would `https://`
 (cleartext `ws://` only to loopback), and a redirect at the upgrade is never followed. Both
 files are written by hand: a fleet entry carries no `websocket:` block, so `dottore fleet`
 refuses a `ws://` or `wss://` endpoint (exit 3, nothing written) and points here (OD-37):

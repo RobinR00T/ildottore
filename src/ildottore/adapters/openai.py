@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from typing import Any, ClassVar
 
 from ildottore.adapters.base import BaseAdapter, ResponseMalformed, map_logprobs
+from ildottore.shared.filter_stops import OPENAI_FILTER_STOPS
 from ildottore.shared.media import render_media_part
 from ildottore.shared.models import Capabilities, ModelRequest, ModelResponse, Sampling
 
@@ -64,6 +65,10 @@ class OpenAIAdapter(BaseAdapter):
     audio_enabled: bool = False
     #: False when the target file says ``sampling: false`` (u12 A-68): no temperature, no top_p.
     sampling_enabled: bool = True
+    #: The target file's ``filter_stops`` (u04 A-79), ``None`` when it declares none: ``[]`` reads
+    #: no HTTP 400, and no stop on a reply with text or a tool call, as the provider's filter; a
+    #: reply with neither that ends on ``content_filter`` is still its filter's (``filter_stops``).
+    declared_filter_stops: frozenset[str] | None = None
     #: A 400 that names a sampling parameter is refused in words that name the capability.
     sends_sampling: ClassVar[bool] = True
 
@@ -79,6 +84,32 @@ class OpenAIAdapter(BaseAdapter):
     @property
     def _endpoint_path(self) -> str:
         return "/v1/chat/completions"
+
+    @property
+    def filter_stops(self) -> frozenset[str]:
+        """OpenAI's and Azure OpenAI's ``content_filter``, and no other provider's (u04 A-79).
+
+        The API documents no other filter stop, so ``refusal``, ``SAFETY`` or
+        ``guardrail_intervened`` in a reply is an ordinary stop: a gateway or a target that writes
+        one cannot make its reply read as a filter's. With it, Azure's HTTP 400 ``content_filter``
+        is the prompt filter's block (OD-41). A target file that declares ``filter_stops: []``
+        (an endpoint that speaks the API and has no OpenAI or Azure filter behind it) reads none
+        on a reply with text or a tool call, and no HTTP 400; an empty reply that ends on
+        ``content_filter`` is still the filter's withheld one (:attr:`own_filter_stops`).
+        """
+
+        # Narrowed, never widened: a declaration built past the Target model's check (an
+        # adapter made by hand, a ``model_copy``) cannot add another provider's word (pre-merge
+        # audit of 10cb526b, LOW).
+        if self.declared_filter_stops is not None:
+            return self.declared_filter_stops & OPENAI_FILTER_STOPS
+        return OPENAI_FILTER_STOPS
+
+    @property
+    def own_filter_stops(self) -> frozenset[str]:
+        """``content_filter``, whatever the file declares: on an empty reply, the filter's."""
+
+        return OPENAI_FILTER_STOPS
 
     @property
     def carries_tool_definitions(self) -> bool:
