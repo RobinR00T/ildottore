@@ -303,13 +303,28 @@ def test_a_redactor_without_the_entropy_rule_leaves_a_hex_run(redactor: Redactor
     """The hex run belongs to the fallback: what keeps a value out of it keeps it out of this.
 
     The CLI keeps the digests it computed out of the fallback, and a model name keeps its form.
-    A UUID is a pattern, run before the phone rule, which cut it: it is masked here too.
     """
 
     hex_run = "deadbeef" * 8
     assert redactor.redact_text(f"x {hex_run} y") == f"x {hex_run} y"
-    out = redactor.redact_text("x 3f2a1b4c-5d6e-4f80-9a1b-2c3d4e5f6071 y")
+
+
+def test_a_uuid_is_a_late_pattern_of_its_own() -> None:
+    """A redactor with no entropy rule still masks a UUID; the model-name twin does not.
+
+    The no-entropy twin is for a model name, which keeps its form: a deployment's name holding a
+    UUID reads as before A-78 (pre-merge audit of A-78, L5). A key format in it is still masked.
+    """
+
+    uuid = "3f2a1b4c-5d6e-4f80-9a1b-2c3d4e5f6071"
+    out = Redactor(salt="s", entropy_threshold=math.inf).redact_text(f"x {uuid} y")
     assert out.startswith("x «REDACTED:uuid:") and out.endswith("» y")
+    twin = Redactor(salt="s").without_entropy()
+    assert twin.redact_text(f"x {uuid} y") == f"x {uuid} y"
+    # The numbers in it masked as main masked them, the card mask with the space after it.
+    assert twin.redact_text("x 00000000-1111-2222-3333-444444444444 y") == (
+        "x «REDACTED:phone»-«REDACTED:card»y"
+    )
 
 
 def test_a_redactor_with_only_the_entropy_rule_masks_a_hex_run() -> None:
