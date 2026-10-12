@@ -214,3 +214,70 @@ def test_an_event_stream_rewritten_keeps_a_grouped_number_masked(
     excerpt, _ = reply_excerpt(note + deltas, Redactor(salt="s"))
     assert KEY not in _digits(excerpt)
     assert re.sub(r"\D", "", text)[2:] not in _digits(excerpt), excerpt[:300]
+
+
+def _oai(chunk: str, **extra: object) -> str:
+    return json.dumps(
+        {"object": "chat.completion.chunk", "choices": [{"delta": {"content": chunk}}]} | extra
+    )
+
+
+#: Event streams the format allows, and Ollama's NDJSON, each streaming a text in 3-character
+#: deltas (second pre-merge audit, MEDIUM 2: all but the first were rebuilt from the excerpt).
+_STREAMS = {
+    "one JSON object per event": lambda cs: "".join(f"data: {_oai(c)}\n\n" for c in cs),
+    "CR only": lambda cs: "".join(f"data: {_oai(c)}\r\r" for c in cs),
+    "a byte order mark first": lambda cs: "﻿" + "".join(f"data: {_oai(c)}\n\n" for c in cs),
+    "an event's JSON over two data lines": lambda cs: "".join(
+        "data: " + _oai(c).replace(', "choices"', ',\ndata: "choices"', 1) + "\n\n" for c in cs
+    ),
+    "U+2028 raw in each event's JSON": lambda cs: "".join(
+        f"data: {_oai(c, note=chr(0x2028))}\n\n".replace("\\u2028", chr(0x2028)) for c in cs
+    ),
+    "U+0085 raw in each event's JSON": lambda cs: "".join(
+        f"data: {_oai(c, note=chr(0x85))}\n\n".replace("\\u0085", chr(0x85)) for c in cs
+    ),
+    "plain-text data": lambda cs: "".join(f"data: {c}\n\n" for c in cs),
+    "JSON-string data": lambda cs: "".join(f"data: {json.dumps(c)}\n\n" for c in cs),
+    "a log page of data lines": lambda cs: (
+        "log\n" + "".join(f"data: {json.dumps({'m': c})}\n" for c in cs)
+    ),
+    "NDJSON, as Ollama streams": lambda cs: "".join(
+        json.dumps(
+            {"model": "llama3", "message": {"role": "assistant", "content": c}, "done": False}
+        )
+        + "\n"
+        for c in cs
+    ),
+}
+
+
+def _rebuilt(excerpt: str) -> str:
+    """Every string the excerpt quotes, decoded, and every line's data, joined in order."""
+
+    values = []
+    for value in re.findall(r'"(?:content|m)": "((?:[^"\\]|\\.)*)"', excerpt):
+        values.append(json.loads('"' + value + '"'))
+    for line in re.split("\r\n|\r|\n", excerpt.removeprefix("﻿")):
+        if line.startswith("data:"):
+            data = line[5:].strip()
+            with contextlib.suppress(ValueError):
+                data = json.loads(data) if data.startswith('"') else data
+            values.append(data if isinstance(data, str) else "")
+    return "".join(values)
+
+
+@pytest.mark.parametrize("shape", list(_STREAMS))
+@pytest.mark.parametrize("secret", [KEY, REGISTERED])
+def test_a_streamed_secret_is_masked_in_every_shape_of_event_stream(
+    registered: None, secret: str, shape: str
+) -> None:
+    text = f"Sure, here it is: {secret} done"
+    body = _STREAMS[shape]([text[i : i + 3] for i in range(0, len(text), 3)])
+    excerpt, size = reply_excerpt(body.encode(), Redactor(salt="s"))
+    assert size == len(body.encode())
+    assert secret[8:20] not in _rebuilt(excerpt), excerpt[:400]
+    assert "REDACTED:" in excerpt
+    # Nothing to mask: quoted as it came.
+    clean = _STREAMS[shape]([text[i : i + 3] for i in range(0, 18, 3)])
+    assert reply_excerpt(clean.encode(), Redactor(salt="s"))[0] == clean
