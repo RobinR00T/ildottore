@@ -401,3 +401,61 @@ def test_fleet_still_writes_a_variable_name_and_the_no_credential_reference(
     assert "auth_ref: env://OPENAI_API_KEY" in scope and "auth_ref: env://NONE" in scope
     assert "auth_ref: env://OPENAI_API_KEY" in (tmp_path / "o" / "target-hosted.yaml").read_text()
     assert "auth_ref" not in (tmp_path / "o" / "target-local.yaml").read_text()
+
+
+@pytest.mark.parametrize(
+    ("endpoint", "said"),
+    [
+        (f"https://api.example.com/v1?api_key={KEY}", "query string (the parameter 'api_key')"),
+        (f"https://api.example.com/v1?access_token={PASSWORD}", "the parameter 'access_token'"),
+        (f"https://api.example.com/v1?q={KEY}", "query string (a value shaped like a key)"),
+        (f"https://api.example.com/v1?{KEY}", "query string (a value shaped like a key)"),
+        (f"https://api.example.com/v1#token={PASSWORD}", "fragment (the parameter 'token')"),
+        (f"https:/ops:{KEY}@api.example.com/v1", "has no host after its scheme"),
+        (f"https:\\\\ops:{KEY}@api.example.com/v1", "has no host after its scheme"),
+        ("https://:443/v1", "has no host after its scheme"),
+    ],
+    ids=[
+        "api_key",
+        "access_token",
+        "key-value",
+        "bare-key",
+        "fragment",
+        "slash",
+        "backslash",
+        "no-host",
+    ],
+)
+def test_fleet_refuses_a_credential_anywhere_in_an_endpoint(
+    tmp_path: Path, endpoint: str, said: str
+) -> None:
+    """Pre-merge audit of A-82, MEDIUM 3: a query string and a URL urlsplit reads with no host
+    carried a key into scope.yaml and the target file, exit 0."""
+
+    for body, where in (
+        (f'version: "1"\ntargets:\n  - id: a\n    endpoint: "{endpoint}"\n', "targets.0.endpoint"),
+        (
+            'version: "1"\ntargets:\n  - id: a\n    endpoint: https://api.example.com/v1\n'
+            f'judge:\n  id: j\n  endpoint: "{endpoint}"\n',
+            "judge.endpoint",
+        ),
+    ):
+        result = _fleet(tmp_path, body)
+        assert result.exit_code == 3, result.output
+        assert f"{where}: Value error, " in result.output and said in result.output
+        _no_leak(result.output)
+        assert not (tmp_path / "o").exists()
+
+
+def test_fleet_keeps_a_query_that_carries_no_credential(tmp_path: Path) -> None:
+    """Azure OpenAI's endpoint carries its API version in the query."""
+
+    endpoint = (
+        "https://x.openai.azure.com/openai/deployments/d/chat/completions?api-version=2024-02-01"
+    )
+    result = _fleet(
+        tmp_path,
+        f'version: "1"\ntargets:\n  - id: a\n    endpoint: "{endpoint}"\n    api_key_env: AZ\n',
+    )
+    assert result.exit_code == 0, result.output
+    assert "api-version=2024-02-01" in (tmp_path / "o" / "target-a.yaml").read_text()

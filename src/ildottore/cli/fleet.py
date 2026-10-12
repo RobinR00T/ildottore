@@ -45,10 +45,11 @@ Point the ``mcp`` suite at such a target for the metadata-poisoning checks.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Literal
-from urllib.parse import SplitResult, urlsplit
+from urllib.parse import SplitResult, unquote_plus, urlsplit
 
 import yaml
 from pydantic import (
@@ -63,6 +64,7 @@ from pydantic import (
 from ildottore import safe_yaml
 from ildottore.cli.wiring import TARGET_PROVIDERS, shown_auth_ref
 from ildottore.policy.scope import SCOPE_VERSION
+from ildottore.redactor import Redactor
 from ildottore.shared.config_errors import (
     quoted,
     shown_endpoint,
@@ -114,24 +116,74 @@ def _known_provider(value: str | None) -> str | None:
     return value
 
 
-def _no_userinfo(value: str) -> str:
-    """An endpoint without a user name or password before its host (u12 A-82, M8).
+#: A query or fragment parameter whose name says it carries a credential (``api_key``,
+#: ``access_token``, ``client_secret``, an Azure SAS ``sig``), matched on its last word.
+_CREDENTIAL_PARAM = re.compile(
+    r"(?:^|[_.-])(?:key|apikey|token|secret|password|passwd|pwd|pass|auth|authorization|"
+    r"sig|signature|credential|credentials|session)$",
+    re.IGNORECASE,
+)
+#: A parameter name short and plain enough to print: the credential words above, never a value.
+_SHOWN_PARAM = re.compile(r"[A-Za-z0-9_.-]{1,64}")
+#: Why a credential in the URL is refused, for every refusal below.
+_ON_DISK = (
+    "which fleet would copy into scope.yaml and the target file; drop it and name the "
+    "credential's environment variable with api_key_env"
+)
 
-    ``https://user:<password>@host/...`` was copied into ``base_url`` in ``scope.yaml`` and into
-    the target file, a credential on disk twice. A URL this module cannot split is left to the
-    checks that read it (``_split``, ``_scope_endpoint``), which say so.
+
+def _looks_like_a_key(text: str) -> bool:
+    """Whether the redactor would mask ``text`` on its own (a key's shape, its entropy)."""
+
+    return Redactor().redact_text(text) != text
+
+
+def _query_credential(component: str) -> str | None:
+    """What of a query string or a fragment carries a credential, said without its value."""
+
+    for piece in re.split(r"[&;]", component):
+        if not piece:
+            continue
+        name, has_value, value = piece.partition("=")
+        name, value = unquote_plus(name), unquote_plus(value)
+        if _CREDENTIAL_PARAM.search(name):
+            shown = repr(name) if _SHOWN_PARAM.fullmatch(name) else "a parameter"
+            return f"the parameter {shown}"
+        if _looks_like_a_key(name) or (has_value and _looks_like_a_key(value)):
+            return "a value shaped like a key"
+    return None
+
+
+def _endpoint_holds_no_credential(value: str) -> str:
+    """An endpoint ``fleet`` can split, with no credential in it (u12 A-82, M8; pre-merge audit
+    of A-82, MEDIUM 3).
+
+    Each of these was copied into ``base_url`` in ``scope.yaml`` and into the target file, a
+    credential on disk twice: ``https://user:<password>@host/...``; a query or fragment that
+    carries one (``...?api_key=<key>``, or a value shaped like a key); and a URL ``urlsplit``
+    reads with no host, ``https:/ops:<key>@host/...`` or ``https:\\ops:<key>@...``, which the
+    scope's host was then built from. A query that carries none (Azure OpenAI's
+    ``?api-version=2024-02-01``) is kept. Nothing of the value is printed.
     """
 
     try:
-        netloc = urlsplit(value.strip()).netloc
-    except ValueError:
-        return value
-    if "@" in netloc:
+        parts = urlsplit(value.strip())
+        host = parts.hostname
+    except ValueError as exc:
+        raise ValueError("is not a URL that can be read (its host)") from exc
+    if not parts.netloc or not host:
         raise ValueError(
-            "carries a user name or password before its host (user:password@host), which "
-            "fleet would copy into scope.yaml and the target file; drop it and name the "
-            "credential's environment variable with api_key_env"
+            "has no host after its scheme (write scheme://host/path); a URL that cannot be split "
+            "into its host and path is refused rather than copied into scope.yaml"
         )
+    if "@" in parts.netloc:
+        raise ValueError(
+            f"carries a user name or password before its host (user:password@host), {_ON_DISK}"
+        )
+    for where, component in (("query string", parts.query), ("fragment", parts.fragment)):
+        found = _query_credential(component)
+        if found is not None:
+            raise ValueError(f"carries a credential in its {where} ({found}), {_ON_DISK}")
     return value
 
 
@@ -153,7 +205,7 @@ class FleetTarget(BaseModel):
     capabilities: Capabilities = Field(default_factory=Capabilities)
 
     _api_key_env_is_a_name = field_validator("api_key_env")(_variable_name)
-    _endpoint_has_no_userinfo = field_validator("endpoint")(_no_userinfo)
+    _endpoint_holds_no_credential = field_validator("endpoint")(_endpoint_holds_no_credential)
     _provider_is_known = field_validator("provider")(_known_provider)
 
     @model_validator(mode="after")
@@ -189,7 +241,7 @@ class FleetJudge(BaseModel):
     api_key_env: str | None = None  # env var NAME (never the key value)
 
     _api_key_env_is_a_name = field_validator("api_key_env")(_variable_name)
-    _endpoint_has_no_userinfo = field_validator("endpoint")(_no_userinfo)
+    _endpoint_holds_no_credential = field_validator("endpoint")(_endpoint_holds_no_credential)
     _provider_is_known = field_validator("provider")(_known_provider)
 
 
