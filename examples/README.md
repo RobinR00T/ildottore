@@ -118,6 +118,16 @@ dottore run --suite owasp:llm -sV \
   --fail-on high -oA reports/openai
 ```
 
+Without the `export`, nothing is sent: the run stops before its first request (exit 3) with
+
+```
+error: target 'openai-gpt-staging' auth_ref 'env://OPENAI_API_KEY' names the environment variable OPENAI_API_KEY, which is not set, so every request would go out without a credential; nothing was sent: export each variable before the run; a target that takes no credential leaves auth_ref out of its target file, and a scope identity that carries none writes env://NONE
+```
+
+and `--dry-run` prints the same as a `warning:` and goes on, so the wiring can be checked on a
+machine without the key. The local scenarios need none: `target.local.yaml` leaves `auth_ref`
+out, and `scope.local.yaml` writes `env://NONE`, a reference whose variable is never read.
+
 Note the scope: `scope.openai.yaml`, not the local one. A scope authorizes specific targets,
 and `openai-gpt-staging` is not in `scope.local.yaml`, so that pairing is refused (exit 3).
 This scenario used to be written against the local scope with a parenthetical asking the

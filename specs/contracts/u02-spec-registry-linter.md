@@ -433,6 +433,24 @@ that evaluator). `dottore lint specs/` is byte-identical to `6d5f7ae`'s. Checked
 provider shape, on every shipped fixture trace under every shipped spec that declares
 `tool_call`, and a bounded timing test) and `tests/evaluators/test_scene_not_destructive.py`.
 
+**A-82 (u12's clause; this unit's half, added 2026-10-11) A search path that yields nothing is a
+finding of its own, and a collision names both files.** `load_path` gives `PATH_NOT_FOUND` for a
+path that does not exist (it was a `PARSE_ERROR` with the same message) and `NO_SPECS` for one
+that yields no spec and no suite file (`LoadResult.files` counts what was read, loaded or not; a
+pack whose manifest failed has its own error). A directory with no `pack.yaml` is still read as
+loose specs, its own `*.yaml` and `*.yml` files only; its `NO_SPECS` names the YAML files in its
+subdirectories that it did not read (up to 1,000 files and directories scanned, without following
+links), and a loose tree that reads specs and leaves YAML below it gets `FILES_NOT_READ`, a warning.
+`registry.PATH_CODES` holds the two path codes: `cli.lint.run_lint` exits 3 on either, over 1, and
+the CLI refuses such a path in `run`, `registry ls`, `coverage` and `describe` (CLI audit M9, L7).
+`LoadedPack.spec_files` records the file of each spec as the search path reaches it, and
+`ID_COLLISION` names both files (`spec id 'X' already declared by <file> (pack '<id>'); <file>
+(pack '<id>') re-declares it without an explicit 'extends'`), which `run` now refuses on (L2). A
+spec schema error that opens with an integer writes it with thousands separators
+(`99,999,999,999,999,999,999 is greater than the maximum of 4`), which the CLI's redactor does not
+read as a phone number (L8). Checked by `tests/cli/test_spec_paths_that_hold_nothing.py`,
+`tests/cli/test_spec_id_collisions.py` and `tests/cli/test_cli_messages_read_right.py`.
+
 ## §8 Out of scope / forbidden
 - MUST NOT execute spec/plugin code or open any socket at load (parse + validate + register only).
 - MUST NOT author, mutate, or "fix" spec/suite/pack YAML (u13 owns content).

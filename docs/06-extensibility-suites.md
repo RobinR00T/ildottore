@@ -23,7 +23,10 @@ The design goal: **95% of "new techniques" are L1/L2 (pure declarative), zero co
   digest, so the lint proof, the resume binding and a reviewer's diff cover it with the spec).
 - Packs are discovered from configured search paths (`--spec-path`, env, config) and merged
   into the **Attack Spec Registry** at startup. Later packs can extend but not silently
-  override earlier ids (id collisions are a lint error).
+  override earlier ids: an id collision is a lint error naming both files, and it refuses a run
+  (A-82). A directory with no `pack.yaml` anywhere below it is read as loose specs, its own
+  `*.yaml` and `*.yml` files only; a search path that yields no spec and no suite is refused
+  (`NO_SPECS`, lint exit 3), naming the YAML files in its subdirectories it did not read.
 - Loading a pack **executes no code and makes no network calls** (S-threat-model): it is parse
   + schema-validate + register only.
 - Every pack is versioned. The design has the registry record which pack/version a finding

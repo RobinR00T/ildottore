@@ -399,6 +399,15 @@ canary's occurrence covers. Avoid it all the same: A's `ZZ-1` leaking into B's r
 before `-b` reads as B's own canary. Plain `http` is allowed only to loopback hosts; everything
 else must be `https`. Template: [`../specs/scope.example.yaml`](../specs/scope.example.yaml).
 
+`version` is `"1.0"` (`"1"` and `"1.<minor>"` are read too); another value, `"2.0"` or `"latest"`,
+is refused (`scope file scope.yaml has version '2.0'; this build reads scope version 1`, exit 3),
+where until 2026-10-11 any text was read as this format. An identity's `auth_ref` names an
+environment variable as a target file's does (§4.2): after `env://`, letters, digits and `_`, not
+starting with a digit, or the scope is refused without the value being quoted. An identity that
+carries no credential (a local model behind a scope that needs at least one identity) writes
+`env://NONE`, whose variable is never read; it is what `dottore fleet` writes for an entry with no
+`api_key_env`.
+
 **Signing a scope (out of band).** The tool verifies no signature (OD-2): checking one would need
 a list of trusted keys, a rule for who signs and a way to revoke a key, which is key management it
 does not have. Sign the scope with tooling whose keys you already manage, verify it before
@@ -481,7 +490,10 @@ valid boolean, unable to interpret input`. The field is printed from the key you
 and format characters written out (a line break as `␊`), and a key that is not text is printed as
 pydantic renders it (`on:` as `1`). What can be read
 is taken as read (`tools: 'off'` is false, `temperature: '0.5'` is 0.5) and `temperature` and
-`top_p` have no range check. `capabilities` knows `tools`, `rag`, `memory`, `streaming`, `seed`,
+`top_p` have no range check, but each is a finite number: `.nan`, `.inf` and `-.inf` are refused
+(`temperature: Input should be a finite number`), as a spec's `sampling` refuses them. Until
+2026-10-11 they loaded, a mock run wrote bare `NaN` and `Infinity` into the JSON report, and a
+live run sent them. `capabilities` knows `tools`, `rag`, `memory`, `streaming`, `seed`,
 `logprobs`, `multi_identity`, `multimodal` and `audio`, each false unless set; `sampling`,
 which has a default rule of its own (below, "Models that take no sampling"); and `mcp`, which you
 do not write: it is true exactly when `provider` is `mcp`, a spec that reads an MCP server's
@@ -766,9 +778,35 @@ Worked file: [`../examples/target.app.yaml`](../examples/target.app.yaml).
 supports only `env://NAME`. Any other scheme is refused before anything is sent, `--dry-run`
 included (`unsupported auth_ref scheme in 'vault://kv/live'; only 'env://NAME' is supported`,
 exit 3): a `vault://` resolver is not built. A literal key pasted as the `auth_ref` is refused
-too, and the error says `a literal value (not shown)` instead of quoting it. The secret itself
-is never written to a file. A `provider` other than `openai`, `anthropic`, `mcp` or
-`websocket` routes to the generic REST adapter. Template:
+too, and the error says `a literal value (not shown)` instead of quoting it. `NAME` is an
+environment variable's name, letters, digits and `_`, not starting with a digit (POSIX's portable
+shape): anything else after `env://`, a key pasted there or a name with a space included, is
+refused when the file loads, without being quoted (`target file target.yaml 'auth_ref' names no
+environment variable after env:// ...`, exit 3). The variable is read at send time, and a live
+`run` or `fingerprint` refuses one that is not set, or set to nothing but spaces, before anything
+is sent, naming it and never a value: `target 'live' auth_ref 'env://OPENAI_API_KEY' names the
+environment variable OPENAI_API_KEY, which is not set, so every request would go out without a
+credential; nothing was sent` (exit 3). The same holds for the `--judge` model's `auth_ref`, and
+for each scope identity's when a selected spec sweeps identities (`multi_identity`).
+`--dry-run`, `--estimate` and `-sn` send nothing, so they say it on stderr (`warning: ...: a live
+run refuses this before sending anything`) and go on: a dry run on a machine without the key is
+how a pipeline is checked. Until 2026-10-11 an unset variable read as "no credential", every
+request went out without one, and the run stopped on `non-retryable HTTP 401` naming nothing.
+**A target that takes no credential** leaves `auth_ref` out (as
+[`../examples/target.local.yaml`](../examples/target.local.yaml) does). `env://NONE` says the
+same wherever a reference is required, a scope identity's `auth_ref` above all: its variable is
+never read, even when something has set `NONE`. The secret itself is never written to a file.
+
+`provider` is one of `openai` (and every OpenAI-compatible API), `anthropic`, `mcp`,
+`websocket` and `rest` (the generic REST adapter), read with case and surrounding spaces ignored;
+left out, a live endpoint routes to the REST adapter, as `rest` does. Any other value is refused
+when the file loads, naming the field and the values it takes (`target file target.yaml has
+invalid provider 'opnai'; expected one of anthropic, mcp, openai, rest, websocket`, exit 3).
+`transport` is `http` (the default) or `stdio`, which launches a local MCP server and is for
+`provider: mcp` only. Until 2026-10-11 any other value was read as written: `provider: skynet`
+sent an OpenAI endpoint the REST adapter's `{"prompt": ...}` bodies after a green dry run,
+`transport: carrier-pigeon` read as `http`, and a stdio MCP target with `transport: stido` or
+`provider: mpc` ran on the offline mock and passed. Template:
 [`../specs/targets/example-openai.yaml`](../specs/targets/example-openai.yaml).
 
 An **MCP server** target uses `provider: mcp`. Over the wire it declares the Streamable-HTTP
@@ -991,6 +1029,19 @@ gets `tools: false` (`true` for an `mcp` entry) and `rag: false` unless the entr
 every key the entry sets; a key `capabilities` does not know is refused before anything is
 written (exit 3).
 
+Each of these is refused before anything is written too (exit 3), naming the field and never the
+value (since 2026-10-11; the first two were copied into `scope.yaml` and the target file, exit 0):
+
+* an `api_key_env` that is not an environment variable's name (letters, digits and `_`, not
+  starting with a digit): the key itself pasted there was written as `auth_ref: env://<the key>`;
+* an `endpoint` with a user name or password before its host (`https://user:<password>@host/...`):
+  name the credential's variable with `api_key_env` instead;
+* a `provider` other than those a target file takes (§4.2), or left out to be inferred;
+* a `version` other than `"1"` or `"1.<minor>"`.
+
+An entry with no `api_key_env` gets `auth_ref: env://NONE` in the scope (an identity is
+required there) and no `auth_ref` in its target file: no credential is sent.
+
 ## 5. Command reference
 
 `dottore` is the command; `dott` is a shorter alias. There is no default subcommand: always
@@ -1035,8 +1086,8 @@ required.
 | `--rate FLOAT` | max requests/sec, enforced across the whole campaign (one shared gate, so concurrency does not multiply it). Every send passes it: the battery, each retry (a campaign's adapters do not retry on their own; the runner retries, paced and debited, so a 429 storm is not a burst), the `-sV` probes, the multi-identity sweep and the `--judge` model. Must be greater than 0: `0` or a negative rate is refused (exit 3) instead of silently switching pacing off. **Not applied to an offline mock run**, where nothing leaves the process: the resolved plan says so explicitly rather than dropping the flag |
 | `--concurrency INT` | max concurrent specs |
 | `--budget-tokens INT` / `--budget-requests INT` / `--budget-wall INT` | hard ceilings, overriding the ones derived from the plan. They bind every request the tool makes: the target's, the identity sweep's and the `--judge` model's (which sat outside them until 2026-10-03, so `--budget-requests 5` with a judge sent 15). Every send of the battery reserves its tokens before it goes out: input estimated as text length / 4, plus the `max_tokens` the send goes out with (the spec's own, else the target file's `sampling_defaults`, OD-39) or, with none, 512 (the same figures `--estimate` prints; a default larger than the whole token ceiling is clamped to what is left). The reservation is trued up to the usage the provider reports, up or down (`total_tokens`; input plus output, prompt-cache tokens included, when only those are reported, as Anthropic does; a single integer `tokens` field, from a REST template configured in code (a REST target from `target.yaml` reports no usage, so its reservation stands); an MCP discovery reports 0). A figure is read only when it is a JSON integer from 0 to 2^53, past which a float no longer holds every integer: one that is negative, larger, or written with a fraction or an exponent is skipped like an absent one and the next shape is read (`total_tokens`, then `tokens`, then input plus output, then prompt plus completion); a sum past 2^53 is no usage, and with no readable shape the reservation stands. A prompt-cache figure is summed only into a pair, and one that is there and unreadable makes the pair a floor: the reservation is trued up to it, never down. (A 400-digit figure made `run` exit 1 with no report, and one past 2^53 halted the campaign on the token ceiling, until 2026-10-07.) Up to 2^53 a figure is believed, as a bill is: a target can report more than it used and halt the run on the ceiling (one reply of 2^53 fills even the largest ceiling these flags take, 2^53 too). Tokens reported after a reply are recorded even when they cross the ceiling (they were billed), and a send that failed releases its reservation. The 512 is an accounting figure, not a limit sent to the provider: a longer reply still overshoots, and is recorded (the Anthropic adapter itself sends `max_tokens` 1024 for a request that has none). Under a small ceiling, concurrent reservations can halt a run with most of the ceiling unspent: lower `--concurrency` or raise the ceiling. The judge, the identity sweep and the `-sV` probes charge requests, not tokens: their usage is not recorded against `--budget-tokens`. The derived values are clamped (`BUDGET_DERIVATION_CAP`) so a spec pack cannot set the scanner's own limit; these flags are how a human authorizes more |
-| `--timeout FLOAT` | per-attempt timeout (s) |
-| `--dry-run` | resolve + validate the whole plan, print it, send nothing. Loads and authorizes the target too, so a target missing from the scope fails here (exit 3) instead of looking fine. A target file with `sampling_defaults` gets `sampling:` lines: what the block fills and what of it does not go out, and an Anthropic target the specs' own `top_p` it does not get; a target that takes no sampling, a line that says so and that its replies are not temperature-0 deterministic; a `--judge` file, `judge sampling:` lines (§4.2); a target file that declares one of its granted tools not destructive, an `operator:` line naming it (OD-43, §4.2) |
+| `--timeout FLOAT` | per-attempt timeout (s), at least 1 and at most 86,400 (a day, the longest a spec's own `budget.timeout_s` asks for). `--timeout 1e-300` used to time every attempt out at once, and the run ended `TimeoutError: ` with nothing after it; an attempt that times out now says `no reply within the per-attempt timeout of <N> s` |
+| `--dry-run` | resolve + validate the whole plan, print it, send nothing. Loads and authorizes the target too, so a target missing from the scope fails here (exit 3) instead of looking fine. A credential variable that is not set (the target's `auth_ref`, the `--judge` model's, a swept identity's) is a `warning:` line naming it: a live run refuses it (§4.2). A target file with `sampling_defaults` gets `sampling:` lines: what the block fills and what of it does not go out, and an Anthropic target the specs' own `top_p` it does not get; a target that takes no sampling, a line that says so and that its replies are not temperature-0 deterministic; a `--judge` file, `judge sampling:` lines (§4.2); a target file that declares one of its granted tools not destructive, an `operator:` line naming it (OD-43, §4.2) |
 | `--resume RUN_ID` | finish a campaign that halted: reuses that run id, skips every attempt the target already answered (one that ended in an environment error is sent again, under the same attempt id; the failed try stays cited as evidence), and merges them with the fresh ones so a resumed spec is scored over its full `--runs`, not over the remainder. One run id names one target, and the run store (`--run-db`) is consulted to **refuse** a resume whose stored run belongs to a different target. The id is the JSON report's `run.run_id` (the SARIF, JUnit and HTML reports carry it too) and the name of the run's directory under `--evidence-root`; neither the halt message nor `summary.status.reason` names it. A resume is **refused** (exit 3) when the battery changed since the halt (per-spec digests over the loaded model, so reformatting or a comment is not a change), and the hard budget binds the **campaign**: the prior invocation's spend is carried, so `--budget-requests N` twice does not send 2N. That it is the same campaign (target, route, judge, planning mode, `--runs`, battery, evidence) is checked first, the budget after (against the campaign's `--runs`), and a resume refused before it sends anything writes nothing. A resume whose campaign already spent its wall-clock ceiling is refused (exit 3) before anything is sent, since it would halt again at once: raise `--budget-wall` for the campaign, or start a fresh run. The planning mode is adaptive when the campaign ran with `-sV`, `-A` or `--deep`, and a resume has to keep it: the refusal names those flags, to leave out or to put back (the run store does not record which of them set it). So a campaign run with `-sV` and resumed with `--deep` alone keeps the mode and goes through, and the rest is planned in declared order: the same attempts are sent and scored, since an attempt is named by its spec, mutation and run, only perhaps in another order (OD-5, signed off 2026-10-11). What each invocation planned with is recorded: `context_json.mutator_orders` in the run store holds one entry per invocation, `fingerprint` when it planned with a `-sV` fingerprint (whether or not that moved a mutator: with no hint in the fingerprint the declared order stands) and `declared` otherwise (`"unrecorded"` first for a run recorded before 2026-10-11). A resume that plans in declared order after an earlier part planned with a fingerprint says so on stderr: `note: <run id> plans in each spec's declared mutator order: an earlier part planned with a fingerprint and this invocation has none (no -sV or -A); which attempts are sent does not change, only the order may (mutator_orders: fingerprint, declared)`. A campaign that never had a fingerprint (a `--deep` campaign resumed with `--deep`) prints no note. The reports carry no planning field. With `-sV`, a request ceiling the campaign's spend leaves too small for the 18 probes is refused before they are sent, and the refusal offers dropping `-sV` (or the `-A` that implies it) only when the campaign did not plan adaptively and the ceiling holds the rest of it without the probes, priced as `--estimate` prices it; otherwise it says to raise `--budget-requests`. A halt keeps every reply the target gave: the attempts a batch had answered when the ceiling stopped it are stored (they were lost until 2026-10-07, and the resume sent them and paid for them again), and a reply whose evaluation the ceiling stopped (the judge's request refused) keeps a deterministic check's fail when it has one (that decides without the judge, and the verdict says the judge was not consulted) and is otherwise stored without a verdict, then sent again and judged by the resume. With `--judge`, a reply stored without a verdict is paid for twice: the resume sends it again rather than judging the stored one (a design choice; re-judging is a possible follow-up). A run that spent requests and stored no reply (for example an identity sweep, a `-sV` probe pass, a conversation cut mid-way, a first request that failed, or a Ctrl-C) is resumed from the start with its spend carried; one whose run store records no request spent is refused, and so is an `--evidence-root` that holds none of the artifacts the run store journals for the run, or an empty tree for a run that predates that journal. A run an older version started, which sent none of its target files' `sampling_defaults`, resumes without them, and stderr says so (§4.2, OD-39) |
 | `--resume-unverified` | resume a run whose integrity record is missing; its ceiling then covers this invocation only |
 | `--estimate` | print a pre-run cost estimate (requests + tokens), **per target and totalled**; no sends. Computed from the same per-target plan the run uses (capability filter + policy gate), so the number is what would really be sent. With `--judge` it adds the requests to the judge model on their own line (two per evaluated attempt of a spec that uses `semantic_judge`), and the derived ceilings make room for them. On a live target whose scope gives it two or more identities it also prices the identity sweep: one request per identity for each spec that sweeps them (`DL-XTENANT-001`, and `EMB-XTENANT-RETRIEVAL-001` when the target declares `multi_identity` and its scene is not sent in-band), which it left out until PR #60 (merged 2026-10-09). Its output tokens are each send's `max_tokens` (the spec's own, else the target file's `sampling_defaults`, OD-39) or 512. With `--resume` it subtracts the requests already done, the sweep of a spec whose attempts are all kept (answered and judged, or failed in a way a retry would repeat), which the runner does not sweep again, and, with `--judge`, the judge's two requests for each kept attempt of a spec that uses `semantic_judge`, so it prices what the resume sends. Like `--dry-run` it loads and authorizes every target first, so a bad scope fails here (exit 3) |
@@ -1061,7 +1112,12 @@ required.
 **Exit codes:** `0` clean · `1` findings below `--fail-on` · `2` findings at/above · `3`
 error. Only an exploited (`fail`) finding trips the gate; `pass`/`inconclusive` never do. A
 usage error (an unknown option, a value of the wrong type) is `3` too: the command-line library
-defaults to `2`, which here would read as "findings". Options that can only be wrong are
+defaults to `2`, which here would read as "findings". The usage error goes through the same mask
+as every other error line: `dottore run --runs "$KEY"` printed `Invalid value for '--runs':
+'sk-ant-api03-...' is not a valid integer.` with the key in clear until 2026-10-11, since the
+command-line library printed it before any masking ran; it now reads `error: Invalid value for
+'--runs': '«REDACTED:...»' is not a valid integer.` (the installed `dottore` and `dott` run
+`ildottore.cli.main:main`). Options that can only be wrong are
 refused (exit 3) before anything is sent: `--fail-on bogus`, `--timeout 0`, `--concurrency 0`,
 `--top-tests 0`, `--runs 0`, `--rate 0`, a negative `--budget-tokens`, `--budget-requests` or
 `--budget-wall`, any of those six integer flags past 9,007,199,254,740,992 (`2**53`; `--runs` of
@@ -1079,6 +1135,11 @@ checked the same way: a spec file that fails to load, and a selected spec whose 
 compile (a `regex_absence` or `regex_presence` pattern, a `step_arg_patterns` entry, whose
 evaluator could never decide), refuse the run (exit 3) naming them (five at most, then how many
 more) and pointing at `dottore lint`; `--exclude <id>` leaves such a spec out and runs the rest.
+So does a `--spec-path` that does not exist or yields no spec and no suite (`a spec path gives
+nothing to run: ...`, see `dottore lint`), and a spec id two loaded files declare (`spec id
+'PI-DIRECT-001' is declared twice: by specs/attacks/PI-DIRECT-001.yaml and by mine/x.yaml`):
+until 2026-10-11 the first file loaded won without a word, a `--spec-path` pack that redeclared
+a shipped id included. One file read twice (a spec path given twice) is no collision.
 
 Ctrl-C, SIGTERM (what `timeout`, `docker stop`, systemd and CI timeouts send) and SIGHUP all stop a
 run the same way: the requests in flight are cancelled, the spend is recorded and the process exits
@@ -1166,7 +1227,9 @@ dottore fingerprint TARGET --scope scope.yaml --offline    # deterministic mock,
 A target declaring a real endpoint is probed **over the wire** (scope-gated, through its
 allowlisted endpoint, with the scope-authorized credential), because a fingerprint of a mock
 says nothing about the model you are about to attack. `--offline` keeps the deterministic
-mock, which is what CI and a target whose endpoint is not up both want.
+mock, which is what CI and a target whose endpoint is not up both want. A live target whose
+`auth_ref` names a variable that is not set is refused before the first probe, naming it, as
+`run` refuses it (§4.2).
 
 `TARGET` is positional (a `target.yaml`). Attacks nothing; reports the best-effort model and
 guardrail fingerprint. See [`10-fingerprint.md`](10-fingerprint.md).
@@ -1278,6 +1341,21 @@ dottore lint [PATHS]... [--json]
 
 Schema + policy + fixtures-prove-detection lint. `specs/` resolves as a pack (via
 `pack.yaml`) so discovery loads `attacks/` + `suites/` and skips the loose example YAMLs.
+A directory without a `pack.yaml` anywhere below it is read as **loose specs**: the `*.yaml`
+and `*.yml` files directly in it, not those in its subdirectories. A path that yields no spec and
+no suite file is a `NO_SPECS` error, which names the YAML files in its subdirectories that it
+did not read (`spec path sp holds no attack spec or suite to read: a directory without a
+pack.yaml is read as loose specs, ... and it has none; 2 YAML file(s) in its subdirectories
+(attacks/) are not read: add a pack.yaml to it (docs/06 §2) ...`); a path that does not exist is
+`PATH_NOT_FOUND`; a loose tree that reads specs and leaves YAML files in its subdirectories gets a
+`FILES_NOT_READ` warning naming them. Until 2026-10-11 `lint sp`, with the specs under
+`sp/attacks/` and no `pack.yaml`, printed `lint OK ... across 0 spec(s)` and exited 0, an invalid
+spec there included, an empty directory passed the same way, and `lint nonexistent` exited 1.
+
+**Exit codes:** `0` no error (warnings allowed) · `1` an error-severity finding in a spec, suite
+or pack · `3` a path that does not exist or yields nothing to lint (`PATH_NOT_FOUND`,
+`NO_SPECS`), the I/O code of every other command; `3` wins over `1`. `--json` prints the same
+report either way.
 A mutation must name a registered mutator (built-ins plus installed plugins), or lint reports
 `UNKNOWN_MUTATOR_TYPE`. The same code covers a `name:param` the mutator does not implement
 (§12). An installed mutator plugin that cannot be loaded is a `MUTATOR_PLUGIN_ERROR` warning,
@@ -1382,8 +1460,9 @@ dottore describe SPEC_ID [--spec-path PATH]
 
 A file that fails to load is in no answer: when the id is not found and the spec paths gave
 load errors, it says how many on stderr (``warning: the spec paths gave 1 load error(s); the
-specs, suites or packs they hit are left out (`dottore lint` lists them)``), and names a spec
-path that does not exist (`warning: spec path(s) not found: ...`).
+specs, suites or packs they hit are left out (`dottore lint` lists them)``). A spec path that
+does not exist or yields nothing to read is refused (`error: a spec path gives nothing to
+describe: ...`, exit 3), as `dottore lint` reports it.
 
 ### `dottore registry ls`, list the catalogue
 
@@ -1392,8 +1471,11 @@ dottore registry ls [--category ..] [--owasp ..] [--tag ..] [--suite ..] [--spec
 ```
 
 Read-only. The source of truth for what specs, suites and categories exist. When the spec
-paths give load errors, it prints the same warning as `describe` on stderr and still exits 0; a
-spec path that does not exist is named instead (`warning: spec path(s) not found: ...`).
+paths give load errors, it prints the same warning as `describe` on stderr and still exits 0. A
+spec path that does not exist or yields nothing to read is refused (`error: a spec path gives
+nothing to list: path not found: nonexistent`, exit 3), and so is a `--suite` that is not
+registered (`error: suite 'nope' is not registered. Registered suites: ...`); until 2026-10-11
+both printed `(no specs match)` and exited 0.
 
 ### `dottore new-spec`, scaffold a new attack
 
@@ -1401,7 +1483,13 @@ spec path that does not exist is named instead (`warning: spec path(s) not found
 dottore new-spec --id PI-NEW-001 --family prompt_injection [--category ..] [--out DIR] [--stdout]
 ```
 
-Writes a spec skeleton plus empty fixtures (or prints them with `--stdout`).
+Writes a spec skeleton plus empty fixtures (or prints them with `--stdout`). `--family` seeds the
+`name` and the `tags`: a value with a control or format character (a line break, an escape, a
+direction override such as U+202E) or nothing but spaces is refused (exit 3) and nothing is
+written; any other text is written as a YAML string that reads back as written (`tags: ["key:
+value"]`), a plain word as before (`tags: [jailbreak]`). Until 2026-10-11 the value went into the
+file raw, so a control character made a scaffold `lint` then refused, and a `: ` or a `]` one
+that did not parse.
 
 ### `dottore replay`, reproduce a past run from evidence
 
@@ -1491,7 +1579,13 @@ OD-43)`, with a line naming those specs: the pass may be the operator's word, no
 two reports about different targets, is refused (exit 3): indexing by spec id used to merge
 targets, so a PASS on one could replace a FAIL on another. A report of a run that did not
 complete is refused too, and so is one that cannot be read (not UTF-8, not JSON, or nested past
-what the JSON parser holds), with the file named. A finding that does not validate (a `status` that
+what the JSON parser holds), with the file named. A report is read when its `schema_version` is
+`1.0`, `1` or `1.<minor>` (report-1.0 grows additively, §10); one without `schema_version`, one of
+another major version (`2.0`), a SARIF log (`is a SARIF log (-oS), not the JSON run report (-oJ)
+that dottore diff compares`) and a document with no `findings` list are each refused on a line
+that says which (exit 3). A bare JSON list of findings is still read. Until 2026-10-11 the first
+two were compared as if they were this build's reports, and a SARIF log gave `error: 'findings'`.
+A finding that does not validate (a `status` that
 is not a verdict, a field of the wrong type, a key a finding does not have) is refused on one line
 that names the report and gives the place and the reason of each of its problems (the first such
 finding, by its index), never the value written: `error: the report /abs/bad.json failed validation:
@@ -1508,10 +1602,13 @@ undefined precision or recall as `n/a` and floors its percentages (99.6% is show
 ### `dottore schema export`, the JSON Schemas
 
 ```
-dottore schema export
+dottore schema export [--name suite|pack|test-plan|attack-spec|report]
 ```
 
-Prints the generated JSON Schemas that machine-validate every spec.
+Prints the generated JSON Schemas that machine-validate every spec, and the JSON report's
+(`report`, the hand-authored `report-1.0.schema.json` the reporter ships with, §10), all of them
+as one object keyed by name, or the one `--name` names. The report schema could not be printed
+until 2026-10-11.
 
 ### `dottore coverage`
 
@@ -1569,7 +1666,9 @@ installs) are a different target class: they act on the machine opening the proj
 the model's replies, so no request this tool sends can exercise them and none of these figures
 covers them. See `docs/REFERENCES.md` for a current survey of that class. Off-universe values never reach a numerator (a Responsible-AI
 `RAI0x` code is not an OWASP LLM category), so a percentage cannot exceed 100%, and a spec file
-that fails to load is named in a warning instead of quietly leaving the spec count.
+that fails to load is named in a warning instead of quietly leaving the spec count. A spec path
+that does not exist or yields nothing to read, and a `--suite` that is not registered, are
+refused (exit 3): until 2026-10-11 the first printed 0% on every axis and exited 0.
 
 **Why the AISVS figures are low, and should be.** OWASP AISVS lists 191 *controls* ("verify
 that a classifier screens every prompt"), not attacks. A black-box scanner never sees the
@@ -2128,6 +2227,16 @@ Cut by the provider's output filter: 8 attempt(s) in 2 spec(s) came back cut or 
   `open` (ran, could not decide) or `notApplicable` (nothing sent: a capability skip or a policy
   block); every kind other than `fail` has level `none`, as SARIF 3.27.10 requires. Its `state`
   property is the finding state of §9.
+- **The JSON report's schema** is `report-1.0.schema.json` (`dottore schema export --name
+  report` prints it). Since 2026-10-11 it constrains the run and each finding, not only the
+  summary: a finding has `spec_id`, `target_id`, `status` (`pass`, `fail` or `inconclusive`),
+  `risk` (impact and exploitability 1 to 4, reproducibility and confidence 0 to 1, risk 0 to 16,
+  a band) and `confirmed`, and its attempts and evidence the keys that identify them; the run has
+  its `run_id`, `targets` (each with an `id` and a `type`), `findings` and `summary`. Everything
+  else stays open (`additionalProperties: true`): report-1.0 grows additively, so a report an
+  earlier build wrote validates against this copy (every report written since `f12ba833` that the
+  CLI audit of 2026-10-11 kept does), and a consumer validating a newer report needs the newer
+  copy. `dottore diff` reads `schema_version` `1` and `1.<minor>`.
 - **Attempts the provider's input filter refused** (§9) are counted apart: the JSON summary's
   `blocked_by_provider_filter` (`{"attempts": 8, "specs": ["GUARD-INPUT-EVASION-001",
   "PI-DIRECT-001"]}` in §9's run; `0` and `[]` when none were), a `blocked_by_provider_filter`
@@ -2270,6 +2379,18 @@ mutator that does not declare its parameters is not checked. See [`06-extensibil
 |---------|-------------|
 | `target(s) not authorized by the scope` (exit 3) | The bracket says which: `endpoint '<url>' not on allowlist for '<id>'` (the target's endpoint host/path is not in that target's `endpoints`) or `target '<id>' not in scope` (the id is not among the scope's `targets`). Add it deliberately. `endpoint not allowed by scope` is the adapter's second check, met only if the first was bypassed. |
 | `selected spec(s) write a regex that does not compile` (exit 3) | A spec's `regex_absence` or `regex_presence` pattern, or a `step_arg_patterns` entry, is not a regex the engine compiles, so its evaluator could never decide. `dottore lint` lists them with the engine's reason (up to 10 per spec); fix it, or run the rest with `--exclude <id>`. |
+| `auth_ref 'env://NAME' names the environment variable NAME, which is not set, so every request would go out without a credential; nothing was sent` (exit 3) | The variable the target file's `auth_ref` (or the `--judge` model's, or a swept scope identity's) names is not exported in this shell, or is set to nothing but spaces. Export it; a target that takes no credential leaves `auth_ref` out, and a scope identity that carries none writes `env://NONE`, which is never read. `--dry-run`, `--estimate` and `-sn` print the same as a `warning:` and go on (§4.2). |
+| `'auth_ref' names no environment variable after env://` (exit 3), or `api_key_env: Value error, is not an environment variable's name` from `dottore fleet` | What follows `env://` (or `api_key_env:`) is not a variable's name, letters, digits and `_`, not starting with a digit: usually the key itself pasted there, or a name with a space. Write the variable's name and export the key into it; the value is never printed. |
+| `api_key_env` is right but `dottore fleet` says `endpoint: Value error, carries a user name or password before its host` | The endpoint holds `user:password@`, which fleet would copy into two files. Drop it and put the credential in a variable named by `api_key_env` (§4.3). |
+| `has invalid provider '...'` or `has invalid transport '...'` (exit 3) | The value is not one the tool has. `provider`: `openai`, `anthropic`, `mcp`, `websocket` or `rest` (or leave it out for REST); `transport`: `http` or `stdio`, and `stdio` only with `provider: mcp` (§4.2). |
+| `'sampling_defaults' failed validation: temperature: Input should be a finite number` (exit 3) | The block writes `.nan`, `.inf` or `-.inf`, which no provider takes and JSON cannot hold. Write a number. |
+| `lint` exits 3 with `NO_SPECS` | The path holds no spec and no suite file that lint reads. A directory without a `pack.yaml` is read as loose specs, its own `*.yaml` and `*.yml` files only: add a `pack.yaml` to load `attacks/` and `suites/` (docs/06 §2), or point lint at the directory that holds the specs. `PATH_NOT_FOUND` (also exit 3) is a path that does not exist; `FILES_NOT_READ` is a warning naming YAML files a loose tree did not read. |
+| `a spec path gives nothing to run` (or `to list`, `to measure`, `to describe`; exit 3) | A `--spec-path` (or a `coverage` path) does not exist or yields nothing to read; `dottore lint <path>` says which. With no `--spec-path`, the default is `specs/` in the working directory: run from the repository root or pass it. |
+| `spec id '<id>' is declared twice: by <file> and by <file>` (exit 3) | Two loaded files declare one id (two copies in one directory, or a `--spec-path` pack that redeclares a shipped spec). Give one another id, or leave one spec path out; `dottore lint` lists every collision. |
+| `dottore diff` says `has schema_version '...'; this build reads report schema 1`, `has no schema_version` or `is a SARIF log (-oS)` (exit 3) | Pass two `-oJ` reports this tool wrote (or a bare JSON list of findings). A report of another major version may mean something else, and a SARIF log is not a run report. |
+| `scope file ... has version '...'; this build reads scope version 1` (exit 3) | Write `version: "1.0"` (a fleet file: `version: "1"`). |
+| `--timeout must be at least 1 second and at most 86,400` (exit 3) | A per-attempt timeout below a second times every attempt out; leave `--timeout` out for the `-T` template's (20 to 120 s). |
+| `new-spec` says `--family holds a control or format character` (exit 3) | Give the family as plain text; nothing was written. |
 | Live findings all inconclusive | No `--judge`, so `semantic_judge` abstains. Pass a judge target; deterministic evaluators still fire. |
 | `Blocked by the provider's input filter: N attempt(s) in S spec(s) never reached the model` | The deployment's own input filter (Azure OpenAI's `content_filter`; through a `RestTemplate` built in Python, Gemini's `promptFeedback.blockReason`) refused those attack prompts, so the model was never tested on them (§9). To test the model itself, scan a deployment whose filter is configured to annotate rather than block (Azure's "Annotate only"), with its owner's authorization; a filtered deployment's result is a result about the deployment. Before 2026-10-10 the first such refusal stopped the run with `aborted on AdapterStatusError: ... non-retryable HTTP 400` (exit 3). |
 | `Cut by the provider's output filter: N attempt(s) in S spec(s) came back cut or replaced` | The deployment's output filter (Azure OpenAI's `content_filter`, Anthropic's `refusal` after some output; through a `RestTemplate` built in Python, Gemini's `SAFETY` or `RECITATION` and a Bedrock guardrail with its trace) cut or replaced what the model wrote for those attacks (§9). Read the attempts' replies and the spec: the model may have been exploited and the filter hid it. To test the model behind the filter, scan a deployment configured to annotate rather than block, with its owner's authorization. Before 2026-10-11 those replies passed the spec. |

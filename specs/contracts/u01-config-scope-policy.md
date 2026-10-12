@@ -684,6 +684,17 @@ adapters catch only `TimeoutException` and `TransportError`), websockets' `Inval
 `InvalidProxyMessage` (an `InvalidHandshake`, reworded without its class) and six of pydantic's
 (`PydanticSchemaGenerationError` among them); nor a plugin's own.
 
+**A-82 (u12's clause; this unit's half, added 2026-10-11) A scope is of version 1 and its
+identities name environment variables.** `load_scope` refuses a `version` other than `1` or
+`1.<minor>` (`SCOPE_VERSION`; any text was read as this format, CLI audit L7), and an identity
+whose `auth_ref` starts with `env://` and names no variable, `[A-Za-z_][A-Za-z0-9_]*`
+(`shared.credential_refs`), naming the target and the identity, never the value
+(`_refuse_unnamed_variables`; `dottore fleet` wrote `env://<the key>` for a key pasted as
+`api_key_env`, M8). Another scheme (`vault://`) is still a reference this loader keeps, refused
+where it is read. `env://NONE` is the identity that carries no credential: its variable is never
+read (`cli.wiring.resolve_auth_ref`). Checked by `tests/cli/test_credential_variables.py` and
+`tests/cli/test_report_and_file_versions.py`.
+
 ## §8 Out of scope / forbidden
 - MUST NOT execute attacks, send requests, or import adapters/evaluators/core/store/reporting.
 - MUST NOT persist or print raw secrets/PII (redactor is the only path).

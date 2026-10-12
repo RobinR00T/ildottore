@@ -995,7 +995,7 @@ clause, and said so rather than pinned:
   `anthropic` and `mcp`), and a stdio MCP target, which has no endpoint, with `transport: stido`
   or `provider: mpc` runs on the offline mock, where the `mcp` suite's spec scores PASS with exit
   0 (measured here and on `2f6201a` alike): the outcome this clause closes for a key, left open
-  for a value;
+  for a value (closed for `provider` and `transport` by A-82, 2026-10-11);
 * the keys inside a block are its reader's: a key `capabilities` does not know was dropped on
   `2f6201a` and is refused by A-50 since #78; `sampling_defaults` and `seeded_setup` already
   refuse theirs;
@@ -1181,6 +1181,121 @@ LOW 1), and one that keeps none says so (`keeps none of the <n> attempt(s) it st
 spec(s) (none was answered, or failed in a way a retry would repeat)`; it said `keeps 0
 attempt(s)`, verification of `07aa0b3a`, LOW 2). The report schema's `status` description names `aborted` and the wider `unreachable`.
 Checked by `tests/cli/test_malformed_reply_campaign.py`.
+
+**A-82 What the operator gives the CLI is a value the tool has, or it is refused before anything is
+sent, naming the field and never a secret; and a check that checked nothing does not pass (added
+2026-10-11, from the full CLI audit of `de122e26`, findings M4 to M9, L2, L4, L5, L7, L8 and L10;
+amends u01, u02, u11 and u00 where noted).** Each item below was measured on `de122e26` by the
+audit's harness (`scratch/audit-cli/`, `fuzz.py`, `fuzz2.py`, `fuzz3.py`, `stub.py`) and again on
+this branch by `scratch/fixcli3/repro.sh`:
+
+* **Usage errors (M7).** `dottore run --runs "$KEY"` printed click's `Invalid value for '--runs':
+  'sk-ant-api03-...' is not a valid integer.` with the key in clear, and so did `-T`, `--rate`,
+  `--timeout`, `--concurrency`, `--top-tests`, the `--budget-*` flags and `fleet --runs`: click
+  printed the error before any of this tool's masking ran. `[project.scripts]` now points `dottore`
+  and `dott` at `ildottore.cli.main:main`, which runs the command tree in click's non-standalone
+  mode and prints the usage line, the help hint and `error: <message>` through `_masked`, exit 3;
+  a bare `dottore` keeps printing the help with exit 3, `--help` and `--version` exit 0, another
+  click error is printed masked with its own code, an abort exits 1 and Ctrl-C 130. Typer's own
+  exception hook (which can print a traceback's locals) is no longer on the console path. The
+  in-process `app` is unchanged (`_usage_errors_exit_3` still sets the code). Every typed option of
+  every command is tried with a key-shaped value, found by walking the command tree.
+* **Credential variables (M4, M8).** `shared.credential_refs`: after `env://` a reference names an
+  environment variable, `[A-Za-z_][A-Za-z0-9_]*` (POSIX's portable name), in a target file's
+  `auth_ref` (`cli.wiring._check_env_reference`), a scope identity's (`policy.scope`,
+  `_refuse_unnamed_variables`, u01's half) and a fleet's `api_key_env` (target and judge), refused
+  without the value being quoted; `resolve_auth_ref` refuses such a reference built in code. A
+  fleet `endpoint` with user info (`user:password@`) is refused before anything is written (it was
+  copied into `base_url` in `scope.yaml` and into the target file). `env://NONE` is the one
+  reference that names no credential: `resolve_auth_ref` returns `None` for it without reading a
+  variable. A live `run` refuses, after the scope and credential authorization and before the
+  resume block, the `-sV` pass and any traffic, a variable that is not set or holds only spaces:
+  the target's `auth_ref`, the `--judge` model's when it is live, and each identity of the scope
+  entry when it has two or more and a selected spec sweeps identities (`unset_credentials`), one
+  phrase per variable (`target '<id>' auth_ref 'env://NAME' names the environment variable NAME,
+  which is not set, so every request would go out without a credential; nothing was sent: <advice>`,
+  exit 3); `fingerprint` refuses the same before its first probe. `--dry-run`, `--estimate` and
+  `-sn` print it as a `warning:` on stderr and go on: the variable is the environment's, and a dry
+  run on a machine without the key is how a pipeline is checked. Measured: `auth_ref:
+  env://STUB_KEY_TYPO` against a loopback stub that answers 401 without a credential, dry run exit 0
+  silent, run exit 3 `aborted on AdapterStatusError: ... non-retryable HTTP 401` after a request;
+  now exit 0 with the warning, and exit 3 with the stub serving nothing. A target that takes no
+  credential leaves `auth_ref` out; the examples' `env://NONE` in a scope identity keeps working.
+* **Provider and transport (M5).** A-53's open item (a misspelled value): `provider` is one of
+  `cli.wiring.TARGET_PROVIDERS` (`anthropic`, `mcp`, `openai`, `rest`, `websocket`) and
+  `transport` one of `http` and `stdio`, read stripped and case-folded, refused when the file loads
+  (`target file <path> has invalid provider '<value>'; expected one of ...`), and `stdio` is for
+  `provider: mcp` only; an absent provider is still the REST adapter. `build_real_adapter` raises on
+  an unknown provider instead of falling back to REST, and `dottore fleet` refuses one before it
+  writes. Measured: `provider: skynet` on `/v1/chat/completions`, dry run exit 0 and three
+  `{"prompt": ...}` bodies sent; a stdio MCP target with `provider: mpc` ran on the mock and passed.
+* **Finite numbers (M6).** `Sampling` refuses a non-finite value however it is built
+  (`allow_inf_nan=False`, u00's half), so a target file's `sampling_defaults` of `.nan` or `.inf`
+  is refused (`'sampling_defaults' failed validation: temperature: Input should be a finite
+  number`) where it loaded and reached the JSON report as bare `NaN` and `Infinity`; so do a
+  fingerprint signature pack's centroids and weights and, built in code, a WebSocket block's
+  `timeout_seconds` and `final_value` (the loader already refused those as values JSON cannot hold).
+* **Spec paths (M9, L7; u02's half).** A search path that does not exist is `PATH_NOT_FOUND`, one
+  that yields no spec and no suite file `NO_SPECS`, which names the YAML files in its
+  subdirectories a loose tree does not read (a directory without a `pack.yaml` still reads its own
+  `*.yaml` and `*.yml` only, docs/06 §2), and a loose tree that reads specs and leaves YAML below it
+  gets the `FILES_NOT_READ` warning. `lint` exits 3 on either code (`cli.lint.EXIT_IO`), over 1;
+  `run`, `registry ls`, `coverage` and `describe` refuse such a path (`a spec path gives nothing to
+  <verb>: ...`, exit 3; `wiring.refuse_spec_paths_that_hold_nothing`), and `registry ls --suite
+  nope` is refused as `run` and `coverage` refuse it. Measured: `lint sp` with the specs under
+  `sp/attacks/` and no `pack.yaml`, `lint OK ... across 0 spec(s)` exit 0 (an invalid spec there
+  included); an empty directory the same; `lint nonexistent` exit 1; `registry ls --spec-path
+  nonexistent` and `coverage` of an empty path exit 0.
+* **Collisions (L2; u02's half).** The loader records the file of each spec
+  (`LoadedPack.spec_files`), `ID_COLLISION` names both files, and `run` refuses a spec id two
+  loaded files declare, naming them, before anything is sent (`wiring.spec_id_collisions`); one file
+  read twice (a spec path given twice, `specs` and `specs/attacks`) is no collision. Measured: the
+  first file loaded won without a word, a `--spec-path` pack that redeclared a shipped id included.
+* **Reports (L4, L5; u11's half).** `dottore diff` and `calibrate` read a JSON run report whose
+  `schema_version` is `1` or `1.<minor>`, or a bare list of findings; one without `schema_version`,
+  of another major version, a SARIF log and a document with no `findings` list are each refused on a
+  line that says which (they were compared, and the SARIF log gave `error: 'findings'`).
+  `report-1.0.schema.json` now constrains `run` (`run_id`, `targets` with `id` and `type`,
+  `findings`, `summary`) and each finding (`definitions.finding`: `spec_id`, `target_id`, `status`,
+  `risk` with its ranges and band, `confirmed`, attempts and evidence by what identifies them),
+  types and values as the models enforce them and `additionalProperties` open, with the version
+  note in its description; each of the 89 JSON reports the audit wrote with `f12ba833`,
+  `6d5f7ae3` and `de122e26` validates (two kept as fixtures, `tests/fixtures/reports/`, the rest
+  through `DOTTORE_REPORT_CORPUS`), and so does every report this build writes. `schema export`
+  prints it (`--name report`, `reporting.report_schema`).
+* **Versions (L7; u01's half).** A scope's `version` and a fleet file's are `1` or `1.<minor>`
+  (`policy.scope.SCOPE_VERSION`); any text was read as this format.
+* **Messages (L8).** A figure the tool prints is written with thousands separators (`-T`, the
+  `--rate` and `--timeout` refusals, an integer a spec schema error opens with), which the redactor
+  does not read as a phone number, and an `OSError` for a file name too long to open gives its
+  length, not the name (`_masked`). The unknown-suite refusal has one wording (`flags.unknown_suite`),
+  naming the resolved id only for an alias: after a name ending in `passwd`, `(resolved` read as the
+  password of a label and was masked. `--timeout` is at least 1 second and at most 86,400
+  (`MIN_TIMEOUT_S`, `MAX_TIMEOUT_S`; NaN and infinity refused); the per-attempt timeout raises
+  `TimeoutError: no reply within the per-attempt timeout of <N> s`, and an exception with no message
+  is written `<Class> (no detail given)` (`shared.error_text`, in the engine's attempt errors, the
+  runner's abort reason and the adapters' last transport error): `--timeout 1e-300` ended a run
+  `TimeoutError: ` with nothing after. `127.0.0.1`, one of the allowlist's own loopback hosts, is
+  kept readable in a URL's authority (`_LOOPBACK_IN_URL`), unless a registered credential holds it.
+* **Scaffolds (L10).** `new-spec --family` refuses a control or format character (Cc, Cf, Zl, Zp)
+  and blank text, never echoing it, and writes any other value as a YAML string that reads back as
+  written (a plain word as before); nothing is created for a refused scaffold.
+
+Tests (193 in 8 files, one skipped without `DOTTORE_REPORT_CORPUS`): `tests/cli/
+test_usage_errors_masked.py`, `test_credential_variables.py`, `test_provider_transport_values.py`,
+`test_non_finite_values.py`, `test_spec_paths_that_hold_nothing.py`, `test_spec_id_collisions.py`,
+`test_report_and_file_versions.py` and `test_cli_messages_read_right.py`; on `de122e26` 68 of the 92
+in the five files that import there fail, and the other three import `shared.credential_refs`,
+`shared.error_text` and `reporting.report_schema`, which `de122e26` does not have (with the first
+two modules alone added, 45 of their 58 tests fail there). Tests that pinned the old behaviour now
+pin the new one: `test_real_target_routing` (an unknown provider routed to REST), `test_commands`
+(an unknown suite listed nothing), `test_loader` and `test_pr45_followups` (a missing path was a
+`PARSE_ERROR` and a warning), `test_audit_block6_cli_reports` (`--timeout` wording) and the reports
+hand-built without `schema_version` in five test files. Outside the clause, said rather than pinned:
+a literal key in a scope identity's `auth_ref` is still loaded (it is refused when a target names
+it, and `vault://` references stay a u01 shape); a target file's endpoint with user info is still
+read (its password masked by value, SEC-02); `--rate inf` is still taken; a per-file read error in a
+spec tree (permission, link loop) is still a `PARSE_ERROR`, exit 1.
 
 ## §8 Out of scope / forbidden
 - MUST NOT implement attack/mutation/evaluation/scoring/reporting/fingerprint logic (u05-u11,

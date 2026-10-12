@@ -5,6 +5,57 @@ versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed (CLI input validation, from the full CLI audit of 2026-10-11; u12 A-82)
+
+- **A usage error no longer prints a secret.** `dottore run --runs "$KEY"` printed `Invalid value
+  for '--runs': 'sk-ant-api03-...' is not a valid integer.` with the key in clear, and so did `-T`,
+  `--rate`, `--timeout`, `--concurrency`, `--top-tests`, the `--budget-*` flags and `fleet --runs`.
+  The `dottore` and `dott` scripts now run `ildottore.cli.main:main`, which prints the usage block
+  and `error: <message>` through the CLI's redactor (exit 3, as before). **Reinstall** (`pip install
+  -e .` or your pinned install) to pick up the new entry point.
+- **An unset credential variable is refused, not sent as nothing.** `auth_ref: env://TYPO` with
+  `TYPO` unset sent every request without a credential and ended on a bare `non-retryable HTTP
+  401`. A live `run` or `fingerprint` refuses it before anything is sent, naming the variable (the
+  target's, the `--judge` model's, a swept identity's); `--dry-run`, `--estimate` and `-sn` warn and
+  go on. `env://NONE` names no credential and is never read; a target that takes none leaves
+  `auth_ref` out.
+- **A reference names a variable.** After `env://`, a target file's `auth_ref`, a scope identity's
+  and a fleet's `api_key_env` take a variable's name (`[A-Za-z_][A-Za-z0-9_]*`), refused without
+  being quoted: `api_key_env: "sk-ant-..."` was written into `scope.yaml` and the target file as
+  `env://sk-ant-...`, exit 0. A fleet endpoint with `user:password@` is refused before anything is
+  written.
+- **Unknown values are refused.** `provider` (`anthropic`, `mcp`, `openai`, `rest`, `websocket`)
+  and `transport` (`http`, `stdio`, the latter for `provider: mcp` only): `provider: skynet` sent an
+  OpenAI endpoint REST bodies after a green dry run, and `transport: carrier-pigeon` read as
+  `http`. A scope's and a fleet file's `version` is `1` or `1.<minor>`. `sampling_defaults` values
+  are finite: `.nan` and `.inf` reached the JSON report as bare `NaN` and `Infinity`.
+- **A check that checked nothing fails.** `lint` exits 3 on a path that does not exist
+  (`PATH_NOT_FOUND`) or yields no spec and no suite (`NO_SPECS`, naming the YAML files in the
+  subdirectories of a directory without a `pack.yaml`, which is read as loose specs, its own files
+  only), and warns `FILES_NOT_READ` when a loose tree leaves YAML below it: `lint sp` with the specs
+  under `sp/attacks/` printed `lint OK ... across 0 spec(s)`, exit 0. `run`, `registry ls`,
+  `coverage` and `describe` refuse such a path, and `registry ls --suite nope` is refused.
+  **Breaking for a pipeline** that ran `lint` on a path that held nothing, or relied on `lint
+  nonexistent` exiting 1.
+- **A spec id two files declare refuses a run**, naming both files (lint names them too); the first
+  file loaded used to win without a word.
+- **`dottore diff` reads report schema 1 only** (`1`, `1.0`, `1.<minor>`) and says so of a report
+  without `schema_version`, of another major version, of a SARIF log (it gave `error: 'findings'`)
+  and of a document with no `findings` list. A report hand-built without `schema_version` is refused:
+  add `"schema_version": "1.0"`, or pass a bare list of findings.
+- **The report schema constrains the run and each finding** (required keys, types, the verdict's
+  values and the risk's ranges, `additionalProperties` left open by the version note), and
+  `dottore schema export --name report` prints it; every report written since `f12ba833` that the
+  audit kept still validates.
+- **Messages say what happened.** The tool's own figures are written with thousands separators, so
+  the redactor no longer masks them as phone numbers (`invalid -T template 12,345,678,901`, a
+  spec's out-of-range integer, a file name too long to open described by its length); `--suite
+  ../../etc/passwd` keeps its words; `--timeout` takes 1 to 86,400 seconds (`1e-300` timed every
+  attempt out and ended `TimeoutError: ` with nothing after), a per-attempt timeout says so, and an
+  error with no message reads `<Class> (no detail given)`; `127.0.0.1` stays readable in an
+  allowlist refusal's URL. `new-spec --family` refuses a control or format character and writes
+  any other text as a YAML string that reads back as written.
+
 ### Added (a target file may declare one of its own granted tools not destructive, OD-43)
 
 - **A `seeded_setup.granted_tools` entry may be `{name: <tool>, destructive: false}`.** A tool a

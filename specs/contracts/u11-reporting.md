@@ -239,6 +239,21 @@ control, L4), so the golden JSON snapshot gains the key and the SARIF, JUnit and
 move. Checked by `tests/cli/test_operator_declaration_campaign.py` (every format of one run, the
 JSON against the schema, and the same run without the declaration).
 
+**A-82 (u12's clause; this unit's half, added 2026-10-11) The report schema says what a run and a
+finding hold.** `report-1.0.schema.json` constrained only `summary`; `run` and each item of
+`findings` were bare objects (CLI audit L5). `run` now requires `run_id`, `targets` (each with an
+`id` and a `type`), `findings` and `summary`, and each finding (`definitions.finding`) `spec_id`,
+`target_id`, `status`, `risk` (`definitions.riskScore`: impact and exploitability 1 to 4,
+reproducibility and confidence 0 to 1, risk 0 to 16, a band) and `confirmed`, with its attempts and
+evidence by the keys that identify them; types and values as the models enforce them, nothing
+stricter (an evidence `sha256` and the run's `scope_sha256` stay any text or null, as the models
+allow), and `additionalProperties` true throughout, per the version note now in the schema's
+description: report-1.0 grows additively, an older report validates against a newer copy, and a
+newer report may need the newer copy. Each of the 89 JSON reports the CLI audit wrote with
+`f12ba833`, `6d5f7ae3` and `de122e26` validates. `reporting.report_schema()` returns it, which
+`dottore schema export --name report` prints. Checked by `tests/cli/test_report_and_file_versions.py`
+and `tests/reporting/test_json_reporter.py`.
+
 ## §8 Out of scope / forbidden
 - MUST NOT compute risk scores, bands, or confirmed/needs-review state (that is u07): only read.
 - MUST NOT read/persist to the run or evidence store beyond the injected read interface (u10).
