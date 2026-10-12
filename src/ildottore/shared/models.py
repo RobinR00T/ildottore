@@ -552,12 +552,15 @@ class Target(_Frozen):
         ``shared.filter_stops.target_filter_stops``, the loader's rule: until the pre-merge audit
         of ``10cb526b`` (LOW) only the loader applied it, so ``Target(provider="openai",
         filter_stops=["refusal", "guardrail_intervened"])`` built an adapter that read those two
-        as OpenAI's filter. ``provider`` is declared above, so it is validated before this.
+        as OpenAI's filter. ``provider`` is declared above, so it is validated before this; when
+        it failed, it is not in ``info.data`` and this check is left out, so its own error is the
+        only one (pre-merge audit of ``e1a8aacf``, LOW 3: a second, misleading one said the field
+        was for an openai or anthropic target).
         """
 
-        if value is None:
-            return None
-        return sorted(target_filter_stops(info.data.get("provider"), value))
+        if value is None or "provider" not in info.data:
+            return value
+        return sorted(target_filter_stops(info.data["provider"], value))
 
     @model_serializer(mode="wrap")
     def _without_an_undeclared_filter(

@@ -550,8 +550,8 @@ def test_an_openai_target_file_can_switch_the_providers_filter_reading_off(
     assert (
         "  filters: tgt's target file declares filter_stops: [], so no HTTP 400 is read as its "
         "provider's filter and a reply with text or a tool call is scored as the model's, whatever "
-        "its stop; an empty reply that ends on content_filter is still the filter's withheld one, "
-        "never a pass"
+        "its stop; a reply with no text and no tool call that ends on content_filter is still the "
+        "filter's withheld one, never a pass"
     ) in planned.output
     assert state["attack"] == 0
 
@@ -668,6 +668,37 @@ def test_a_hand_built_target_may_declare_only_its_providers_own_word(
         Target(id="t", type=TargetType.CHATBOT, provider=provider, filter_stops=declared)
     assert "sk-123456789" not in str(info.value)
     assert "input_value" not in str(info.value)
+
+
+def test_a_provider_that_failed_is_the_only_error_beside_a_declaration() -> None:
+    """Pre-merge audit of ``e1a8aacf``, LOW 3: a provider that failed validation is not in
+    ``info.data``, and the declaration's check read it as missing, adding a second, misleading
+    error ("'filter_stops' is for a provider: openai or anthropic target")."""
+
+    from pydantic import ValidationError
+
+    from ildottore.shared.enums import TargetType
+    from ildottore.shared.models import Target
+
+    with pytest.raises(ValidationError) as info:
+        Target(id="t", type=TargetType.CHATBOT, provider=5, filter_stops=["content_filter"])  # type: ignore[arg-type]
+    assert [error["loc"] for error in info.value.errors()] == [("provider",)]
+
+
+def test_the_plan_line_for_an_anthropic_declaration_names_no_http_400() -> None:
+    """Pre-merge audit of ``e1a8aacf``, LOW 4: an ``anthropic`` adapter never reads an HTTP 400 as
+    its filter's, so the line does not say it no longer does."""
+
+    from ildottore.cli.run import _filter_stops_line
+    from ildottore.shared.enums import TargetType
+    from ildottore.shared.models import Target
+
+    target = Target(id="a", type=TargetType.CHATBOT, provider="anthropic", filter_stops=[])
+    assert _filter_stops_line(target) == (
+        "a's target file declares filter_stops: [], so a reply with text or a tool call is scored "
+        "as the model's, whatever its stop; a reply with no text and no tool call that ends on "
+        "refusal is still the filter's withheld one, never a pass"
+    )
 
 
 def test_a_hand_built_targets_own_word_is_written_as_the_loader_writes_it() -> None:

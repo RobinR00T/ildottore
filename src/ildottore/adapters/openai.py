@@ -66,7 +66,8 @@ class OpenAIAdapter(BaseAdapter):
     #: False when the target file says ``sampling: false`` (u12 A-68): no temperature, no top_p.
     sampling_enabled: bool = True
     #: The target file's ``filter_stops`` (u04 A-79), ``None`` when it declares none: ``[]`` reads
-    #: no stop, and no HTTP 400, as the provider's filter.
+    #: no HTTP 400, and no stop on a reply with text or a tool call, as the provider's filter; a
+    #: reply with neither that ends on ``content_filter`` is still its filter's (``filter_stops``).
     declared_filter_stops: frozenset[str] | None = None
     #: A 400 that names a sampling parameter is refused in words that name the capability.
     sends_sampling: ClassVar[bool] = True

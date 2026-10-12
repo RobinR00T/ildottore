@@ -78,7 +78,7 @@ from ildottore.reporting import RunStatus
 from ildottore.shared.config_errors import cut, listed, quoted
 from ildottore.shared.digest import spec_digests, target_digest
 from ildottore.shared.enums import Category, EvaluatorType
-from ildottore.shared.filter_stops import PROVIDER_FILTER_STOPS
+from ildottore.shared.filter_stops import OPENAI_FILTER_STOPS, PROVIDER_FILTER_STOPS
 from ildottore.shared.models import (
     AttackSpec,
     Attempt,
@@ -1309,18 +1309,22 @@ def _filter_stops_line(target: Target) -> str | None:
     if declared is None:
         return None
     if not declared:
-        # Its own word still reads on an empty reply (pre-merge audit of 10cb526b, MEDIUM).
+        # Its own word still reads on a reply with no text and no tool call (pre-merge audit of
+        # 10cb526b, MEDIUM); the HTTP 400 is said only where one is read, Azure's (OD-41), since
+        # an anthropic adapter never reads one (e1a8aacf audit, LOW 4).
         own = PROVIDER_FILTER_STOPS.get((target.provider or "").strip().lower(), frozenset())
+        no_400 = (
+            "no HTTP 400 is read as its provider's filter and " if own & OPENAI_FILTER_STOPS else ""
+        )
         withheld = (
-            f"; an empty reply that ends on {', '.join(sorted(own))} is still the filter's "
-            "withheld one, never a pass"
+            f"; a reply with no text and no tool call that ends on {', '.join(sorted(own))} is "
+            "still the filter's withheld one, never a pass"
             if own
             else ""
         )
         return (
-            f"{visible_controls(target.id)}'s target file declares {where}: [], so no HTTP 400 is "
-            "read as its provider's filter and a reply with text or a tool call is scored as the "
-            f"model's, whatever its stop{withheld}"
+            f"{visible_controls(target.id)}'s target file declares {where}: [], so {no_400}a "
+            f"reply with text or a tool call is scored as the model's, whatever its stop{withheld}"
         )
     return (
         f"{visible_controls(target.id)}'s target file declares {where}: "
