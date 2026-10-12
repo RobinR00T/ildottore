@@ -261,6 +261,17 @@ control, L4), so the golden JSON snapshot gains the key and the SARIF, JUnit and
 move. Checked by `tests/cli/test_operator_declaration_campaign.py` (every format of one run, the
 JSON against the schema, and the same run without the declaration).
 
+**A-79 (u08's clause; this unit's half, added 2026-10-11, the amendment to OD-41 and OD-42) A run
+the provider's filter answered every time carries the state `filtered`.** The CLI sets it (u12
+A-79) and every format reports it as it reports `unreachable`: the JSON summary's `status`
+(`{"state": "filtered", "complete": false, "reason": ...}`, the schema's description naming it),
+SARIF's `run_status` and its notification, JUnit's `run-filtered` error case, the HTML banner.
+No key is added. An attempt whose reply carries `foreign_stop: true` (u00, u04 A-79) is counted as
+any reply: it is not a cut, and the evidence keeps the word as the target sent it. A cut attempt
+the judge's fail decided (u08 A-79) is a `fail`, needing review, and no longer counted under
+`cut_by_provider_output_filter`, as a cut a deterministic fail decided was not. Checked by
+`tests/cli/test_filter_stop_provenance_campaign.py` (the JSON state).
+
 ## §8 Out of scope / forbidden
 - MUST NOT compute risk scores, bands, or confirmed/needs-review state (that is u07): only read.
 - MUST NOT read/persist to the run or evidence store beyond the injected read interface (u10).
