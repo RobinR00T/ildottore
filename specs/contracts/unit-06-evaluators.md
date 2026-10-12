@@ -285,7 +285,9 @@ verdict and nothing of the judge's exchange is persisted, `docs/04 §5`.) PII/se
   judge read a reply to a scene that never reached the model (LOW 2, u08's half); `run --help`
   names it among the fails `--include-needs-review` gates (LOW 3: the help listed every other
   kind); and SARIF gives a fail that needs review at most `warning`, not its band's `error`
-  (LOW 4, u11's half), so code scanning does not fail a check `dottore` passes.
+  (LOW 4, u11's half), so code scanning does not fail a check `dottore` passes; under
+  `--include-needs-review`, which makes it gate, it keeps its band's level (the pre-merge audit
+  of `d07a1088`, LOW 3, u11's half).
 - **A-74's u06 half (amended 2026-10-12 after the pre-merge audit of `d07a1088`, MEDIUM 2): an
   `authz_leak` with fewer than two replies still reads the owner map.** It returned
   `capability_unavailable` before reading anything, so with two identities, the owner's send

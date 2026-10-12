@@ -126,3 +126,34 @@ def test_a_fail_that_needs_review_is_at_most_a_warning(
     assert result["level"] == level
     assert result["properties"]["state"] == ("confirmed" if confirmed else "needs_review")
     assert result["properties"]["band"] == band.value
+
+
+@pytest.mark.parametrize(
+    ("band", "level"),
+    [
+        (ScanBand.CRITICAL, "error"),
+        (ScanBand.HIGH, "error"),
+        (ScanBand.MEDIUM, "warning"),
+        (ScanBand.LOW, "note"),
+    ],
+)
+def test_under_include_needs_review_a_fail_that_needs_review_keeps_its_bands_level(
+    band: ScanBand, level: str
+) -> None:
+    """Pre-merge audit of ``d07a1088``, LOW 3: with the flag such a fail trips ``--fail-on``,
+    and ``dottore`` exited 2 while code scanning, reading a ``warning``, passed the check."""
+
+    run = make_run(findings=[make_finding(band=band, confirmed=False)])
+    reporter = SarifReporter(specs={"PI-DEMO-001": make_spec()}, include_needs_review=True)
+    doc = _doc(reporter, run)
+    jsonschema.validate(doc, load_sarif_schema())
+    result = doc["runs"][0]["results"][0]
+    assert (result["level"], result["properties"]["state"]) == (level, "needs_review")
+    assert doc["runs"][0]["properties"]["include_needs_review"] is True
+
+
+def test_without_include_needs_review_the_run_does_not_claim_it() -> None:
+    run = make_run(findings=[make_finding(confirmed=False)])
+    doc = _doc(SarifReporter(specs={"PI-DEMO-001": make_spec()}), run)
+    assert "include_needs_review" not in doc["runs"][0]["properties"]
+    assert doc["runs"][0]["results"][0]["level"] == "warning"

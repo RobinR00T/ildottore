@@ -87,7 +87,8 @@ OUTPUT
                                            prefix ending in one of those has it dropped first)
   --fail-on <info|low|medium|high|critical> CI gate (confirmed findings; default high)
   --include-needs-review                   also gate on unconfirmed fails (never on an
-                                           inconclusive or a pass)
+                                           inconclusive or a pass); SARIF gives them their
+                                           band's level
   --compare                                model-comparison matrix (two or more targets)
   -v, -vv, -q, --no-color
   --evidence-root <dir>  --run-db <path>  --spec-path <dir>

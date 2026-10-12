@@ -56,7 +56,10 @@ versioning: [SemVer](https://semver.org/).
 - **`--include-needs-review`'s help names a fail only the judge reported (LOW 3).**
 - **A SARIF fail that needs review is at most a `warning` (LOW 4, u11 A-73).** A judge-only
   critical fail was an `error`, which GitHub code scanning fails a check on, while `dottore` exited
-  0. Its band stays in `properties.band`; a confirmed fail keeps its level.
+  0. Its band stays in `properties.band`; a confirmed fail keeps its level. Under
+  `--include-needs-review`, which makes it gate, it keeps its band's level too, and the SARIF run's
+  `properties` say `"include_needs_review": true` (pre-merge audit, LOW 3: the writer never saw
+  the flag, so `dottore` exited 2 while code scanning read a `warning` and passed the check).
 - **A Bedrock guardrail's replacement is read by the trace evaluators and by those configured words
   cannot fail (LOW 5, u08 A-70).** Its text is the operator's configured message or the model's
   reply with its PII masked, which the trace does not tell apart, and a configured message that

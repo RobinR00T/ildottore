@@ -3195,7 +3195,11 @@ def _write_reports(
     written: list[Path] = []
     for fmt, path in outputs.items():
         reporter = wiring.build_reporter(
-            fmt, specs=specs_by_id, planned_specs=planned_specs, run_status=run_status
+            fmt,
+            specs=specs_by_id,
+            planned_specs=planned_specs,
+            run_status=run_status,
+            include_needs_review=opts.include_needs_review,
         )
         payload = reporter.render(run, findings)
         path.parent.mkdir(parents=True, exist_ok=True)

@@ -135,7 +135,10 @@ today.
 A `fail` whose state is `needs_review` (not confirmed, §2) is at most `warning` in SARIF: it does
 not trip `--fail-on` without `--include-needs-review`, and code scanning fails a check on an
 `error` (since 2026-10-11; a judge-only critical fail used to be an `error` while `dottore`
-exited 0). Its band stays in the result's `properties.band`. Every other kind is `none`.
+exited 0). Its band stays in the result's `properties.band`. With `--include-needs-review` it
+trips the gate, so it keeps its band's level and the run's `properties` carry
+`include_needs_review: true` (since 2026-10-12: it stayed a `warning` while `dottore` exited 2).
+Every other kind is `none`.
 
 Bands apply to the raw float, with no rounding: 11.99 is High. Info is not only "not
 reproduced": an exploit that succeeded once in five attempts (reproducibility 0.2) with impact 1

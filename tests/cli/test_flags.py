@@ -12,6 +12,7 @@ import ast
 import re
 from pathlib import Path
 
+import pytest
 import typer
 from typer.testing import CliRunner
 
@@ -63,6 +64,32 @@ def test_include_needs_review_names_a_fail_only_the_judge_reported() -> None:
 
     out = " ".join(_help_text(["run", "--help"]).replace("│", " ").split())
     assert "or reported by the judge alone" in out
+
+
+@pytest.mark.parametrize(("flag", "level", "code"), [(False, "warning", 0), (True, "error", 2)])
+def test_the_sarif_level_of_a_fail_that_needs_review_follows_the_exit_code(
+    tmp_path: Path, flag: bool, level: str, code: int
+) -> None:
+    """The run's ``--include-needs-review`` reaches the SARIF writer: a critical fail that needs
+    review is an ``error`` exactly when it makes ``dottore`` exit 2 (pre-merge audit of
+    ``d07a1088``, LOW 3: the writer never saw the flag, so it was a ``warning`` either way)."""
+
+    import json
+
+    from ildottore.cli.exit_codes import exit_code_for
+    from ildottore.cli.run import RunOptions, _write_reports
+    from ildottore.core.runner import CampaignResult
+    from tests.reporting.conftest import make_finding, make_run
+
+    finding = make_finding(confirmed=False)
+    result = CampaignResult(plan=None, run=make_run(findings=[finding]), findings=[finding])  # type: ignore[arg-type]
+    out = tmp_path / "r.sarif"
+    opts = RunOptions(targets=[], scope=None, outputs={"sarif": out}, include_needs_review=flag)
+    _write_reports(opts, [result], [finding], {})
+
+    (written,) = json.loads(out.read_text())["runs"][0]["results"]
+    assert written["level"] == level
+    assert exit_code_for([finding], fail_on="high", include_needs_review=flag) == code
 
 
 def test_estimate_plan_counts_requests_and_tokens() -> None:

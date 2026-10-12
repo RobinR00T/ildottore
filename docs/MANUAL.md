@@ -1055,7 +1055,7 @@ required.
 | `-oJ/-oH/-oS/-oX PATH` | write JSON / HTML / SARIF / JUnit |
 | `-oA PATH` | write all four to `<prefix>.json`, `.html`, `.sarif` and `.xml`. The prefix is extended, never cut: `-oA report.v2` writes `report.v2.json`, `report.v2.html` and so on. A prefix that already ends in one of those four extensions (any case) drops it first, so `-oA report.json` writes `report.json`, `report.html`, `report.sarif`, `report.xml`. An explicit `-oJ`/`-oH`/`-oS`/`-oX` replaces that one format's `-oA` path |
 | `--fail-on BAND` | CI gate: `info\|low\|medium\|high\|critical` (default `high`; `info` gates on any confirmed finding). A fail only the judge reported is never confirmed (OD-19, since 2026-10-11), so it does not trip this gate; `--include-needs-review` makes it, and also every intermittent fail (a variant that did not fail on every attempt). `dottore diff` reads statuses, not confirmation, so it counts a judge-only fail as `NEW_FAIL` either way |
-| `--include-needs-review` | also gate unconfirmed exploits: a `fail` that is not confirmed, because no mutation variant failed on every attempt, its mean confidence is below the spec's `confidence_threshold`, or only the judge reported its fails (§9). Undecided (`inconclusive`) results never gate, with or without it |
+| `--include-needs-review` | also gate unconfirmed exploits: a `fail` that is not confirmed, because no mutation variant failed on every attempt, its mean confidence is below the spec's `confidence_threshold`, or only the judge reported its fails (§9). Undecided (`inconclusive`) results never gate, with or without it. With it, the SARIF report gives such a fail its band's level, as for a confirmed one (§11) |
 | `--evidence-root PATH` | evidence store root (default `.dottore/evidence`) |
 | `--run-db PATH` | run store SQLite path |
 | `--spec-path PATH` | spec search path (default `specs/`) |
@@ -2157,7 +2157,8 @@ Cut by the provider's output filter: 8 attempt(s) in 2 spec(s) came back cut or 
 - **Formats.** `-oJ` JSON, `-oH` HTML (a complete UTF-8 document), `-oS` SARIF (for
   code-scanning), `-oX` JUnit (for CI test reporting), `-oA <prefix>` writes all four. In
   SARIF a result's `kind` says what was concluded: `fail` (with a level from the band, at most
-  `warning` for a fail that needs review, since 2026-10-11, §11), `pass`,
+  `warning` for a fail that needs review unless the run passed `--include-needs-review`, since
+  2026-10-11, §11), `pass`,
   `open` (ran, could not decide) or `notApplicable` (nothing sent: a capability skip or a policy
   block); every kind other than `fail` has level `none`, as SARIF 3.27.10 requires. Its `state`
   property is the finding state of §9.
@@ -2265,7 +2266,10 @@ fail (a variant that did not fail on every attempt), the trade-off to weigh befo
 baseline is a `NEW_FAIL` regression whatever the flag. In the SARIF a fail that needs review is at
 most a `warning` (since 2026-10-11), so GitHub code scanning, which by default fails a pull
 request's check on an `error`, does not fail one `dottore` exits 0 for; its band stays in the
-result's `properties.band`, and `properties.state` says `needs_review`.
+result's `properties.band`, and `properties.state` says `needs_review`. With
+`--include-needs-review` that fail gates, so it keeps its band's level (`error` for critical and
+high) and the SARIF run's `properties` say `"include_needs_review": true`: the check fails when
+`dottore` exits 2 (until 2026-10-12 it stayed a `warning`, and code scanning passed it).
 
 A ready-made GitHub Actions workflow is in
 [`../examples/ci-github-actions.yml`](../examples/ci-github-actions.yml).

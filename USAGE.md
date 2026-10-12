@@ -134,7 +134,7 @@ dottore calibrate report.json labels.yaml
 | `--hardened` | replay hardened fixtures (clean-run smoke) on a mock target; refused on a live one |
 | `-oJ/-oH/-oS/-oX/-oA` | JSON / HTML / SARIF / JUnit / all four to `<prefix>.json`, `.html`, `.sarif`, `.xml` (`-oA report.v2` keeps its name: `report.v2.json`; `-oA report.json` is not doubled: `report.json`, `report.html`, ...). Two formats pointed at the same file are refused before anything is sent |
 | `--fail-on <band>` | CI gate on confirmed findings (`info\|low\|medium\|high\|critical`, default `high`; `info` gates on any confirmed finding) |
-| `--include-needs-review` | also gate unconfirmed exploits (an unconfirmed `fail`, a fail only the judge reported among them); an `inconclusive` result never gates. Such a fail is at most a `warning` in the SARIF, whatever its band |
+| `--include-needs-review` | also gate unconfirmed exploits (an unconfirmed `fail`, a fail only the judge reported among them); an `inconclusive` result never gates. Without the flag such a fail is at most a `warning` in the SARIF, whatever its band; with it, it gates, and keeps its band's level (`error` for critical or high) |
 | `--spec-path` | spec search path (default `specs/`) |
 
 **Exit codes:** `0` clean · `1` findings below `--fail-on` · `2` findings at/above · `3` error

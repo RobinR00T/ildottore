@@ -182,6 +182,16 @@ fail was an `error`, which GitHub code scanning fails a pull request's check on 
 `properties.band`; a confirmed fail keeps its band's level, and every other kind keeps `none`.
 The golden SARIF snapshot does not move (its fail is confirmed). Checked by
 `tests/reporting/test_sarif_reporter.py` (6 cases; the critical and high ones fail on `de122e26`).
+**Amended 2026-10-12 after the pre-merge audit of `d07a1088` (LOW 3):** the cap holds only
+without `--include-needs-review`. With it such a fail trips `--fail-on`, and capped at `warning`
+it let code scanning pass the check `dottore` exited 2 on. The flag reaches the writer as
+`include_needs_review` (`BaseReporter`, `get_reporter`, `cli.wiring.build_reporter`, from
+`RunOptions` in `cli.run._write_reports`); with it a needs-review fail keeps its band's level and
+the SARIF run's `properties` carry `"include_needs_review": true` (absent without it, so the
+golden snapshot does not move). The other formats take the flag and do not read it. Checked by
+`tests/reporting/test_sarif_reporter.py` (5 more cases, the 4 with the flag failing on
+`d07a1088`) and `tests/cli/test_flags.py` (2 cases through `_write_reports` beside
+`exit_code_for`, the one with the flag failing on `d07a1088`).
 
 **A-74 (u08's clause; this unit's half, added 2026-10-11, OD-21; pre-merge audit of `598f0858`,
 HIGH 1) The replies the adapter could not read are counted apart in every format.** Such an attempt

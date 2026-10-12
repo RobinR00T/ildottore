@@ -30,6 +30,9 @@ The carryover ledger. Every agent session updates this so context survives even 
   merge, loudly), so with two or more answers beside one left out the note reads `authz_leak
   kept: 2 identities answered the identity sweep, and it did not hear from every identity`
   (`repro_corroborate_note.py`, `EMB-XTENANT-RETRIEVAL-001`, said "fewer than two").
+- LOW 3: the run's `--include-needs-review` reaches the reporters (`include_needs_review` on
+  `BaseReporter`, `get_reporter`, `wiring.build_reporter`); with it a SARIF fail that needs review
+  keeps its band's level (it exits 2), and the run's `properties` say so.
 
 ## State, 2026-10-11 (night): the audit of the scoring, fixed
 
