@@ -150,6 +150,29 @@ option (`--fail-on bogus`, `--timeout 0`, two formats writing one file) is refus
 `3` before anything is sent. For regression-only gating, compare against a baseline with
 `dottore diff baseline.json current.json`. See [`examples/ci-github-actions.yml`](../examples/ci-github-actions.yml).
 
+`1` means findings below the band and nothing else. Until 2026-10-12 a crash (a run store that
+could not be opened, a lock, any exception no command handled) was a traceback with exit `1`, so
+a gate that lets `1` through read it as an almost clean scan. It is exit `3` now, with one line
+(`error: unexpected <Class>: ...` for an internal error; `dottore -v <command>` prints its
+traceback). A gate should still fail on anything above `1` it does not expect.
+
+### Can several runs share one `--run-db`?
+
+Yes, a new one included: a connection waits up to 30 s for a lock another holds, and two runs
+creating the store together set it up once. Until 2026-10-12, five of six runs started together
+on a new store died with `database is locked` (exit 1). A store path that cannot be one (a
+directory, a file that is not SQLite) is refused with exit `3` before anything is sent, as is an
+`--evidence-root` that is a regular file; `--dry-run` and `--estimate` say so too, writing
+nothing.
+
+### Why did `--budget-requests` not let my campaign finish past 20,000 attempts?
+
+Before 2026-10-12 the attempts ceiling was derived on its own and capped at 20,000, and no flag
+raised it: `--runs 200` over the battery halted on `max_attempts` with requests to spare. The
+attempts ceiling is the request ceiling now (an attempt is at least one request, and it counts
+only once its first request is accepted), so `--budget-requests` raises both. `--estimate` prints
+the ceilings a run will have.
+
 ### What is "confirmed" vs "needs-review"?
 
 Risk and confidence are separate. Every report puts a finding in one of four states:
@@ -406,4 +429,6 @@ off.
 ### Where does evidence live, and is it safe to keep?
 
 Under `.dottore/` (evidence store + run SQLite) by default; override with `--evidence-root`
-and `--run-db`. Secrets and PII are redacted at rest. Do not commit `.dottore/`.
+and `--run-db` (`dottore fleet --run` takes both too). Secrets and PII are redacted at rest. Do not
+commit `.dottore/`. A report (`-oJ` and the others) is never written over the scope, a target, the
+judge, the fleet file, the run store or a spec file: such a path is refused before the run sends.

@@ -192,7 +192,15 @@ and scan them all:
 dottore fleet examples/fleet.yaml --run
 # or expand only (review the generated files first):
 dottore fleet examples/fleet.yaml --out .dottore/fleet
+# run's store and report options work here too, and are carried into the printed command:
+dottore fleet examples/fleet.yaml --out .dottore/fleet -oJ fleet.json --run-db .dottore/runs.sqlite
 ```
+
+The last line prints `Run it:` followed by `dottore run <the two target files> --scope
+".dottore/fleet/scope.yaml" --judge ".dottore/fleet/judge.yaml" --run-db ".dottore/runs.sqlite" -oJ
+"fleet.json"` (checked 2026-10-12 from a directory outside the repository: `fleet` and `run` read
+`specs/` there when it exists, else the battery beside the installed package, so neither needs the
+repository root any more; `fleet --run` used to fail with `path not found: specs` anywhere else).
 
 `examples/fleet.yaml` declares its judge in a `judge:` block, so the generated scope
 authorizes it and `fleet` writes it to `.dottore/fleet/judge.yaml`. Passing

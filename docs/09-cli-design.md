@@ -72,13 +72,15 @@ EXECUTION
   --timeout <s>                     per-attempt timeout
   --budget-tokens / --budget-requests / --budget-wall
                                     hard ceilings; each overrides the one derived from the plan
+                                    (the attempts ceiling is the request ceiling)
   --resume <run-id>                 finish a halted run; answered, judged attempts are kept
   --resume-unverified               resume a run whose integrity record is missing
 
 SAFETY / SCOPE
   --scope scope.yaml                REQUIRED authorization record (default-deny)
   --dry-run                         resolve + validate, send nothing
-  --estimate                        pre-run cost estimate (requests + tokens), send nothing
+  --estimate                        pre-run cost estimate (requests + tokens) and the
+                                    ceilings, send nothing (one line under -q)
   --hardened                        replay the hardened fixtures (clean-run smoke)
 
 OUTPUT
@@ -89,12 +91,16 @@ OUTPUT
   --include-needs-review                   also gate on unconfirmed fails (never on an
                                            inconclusive or a pass)
   --compare                                model-comparison matrix (two or more targets)
-  -v, -vv, -q, --no-color
+  -v, -vv, -q, --no-color                  (-v also prints an internal error's traceback)
   --evidence-root <dir>  --run-db <path>  --spec-path <dir>
+                                           checked before anything is sent; the spec path
+                                           defaults to specs/ here, else the packaged battery
 
 OTHER COMMANDS
   dottore fingerprint <target.yaml> --scope <scope.yaml> [--offline]
   dottore fleet <fleet.yaml> --out <dir> [--run] [--judge ..] [--runs N] [-p ..]
+                [--spec-path ..] [--evidence-root ..] [--run-db ..] [-oJ/-oH/-oS/-oX/-oA ..]
+  dottore -v <command> ...                  any command, with an internal error's traceback
   dottore coverage [--framework all|owasp|atlas|iopc|aisvs] [--suite ..] [--gaps] [--json]
   dottore registry ls [--category ..] [--owasp ..] [--tag ..] [--suite ..]
   dottore describe <spec-id>
@@ -140,8 +146,18 @@ run of whole numbers a float holds exactly ends: `--runs` of a few hundred digit
 plan's float arithmetic with exit 1, A-55); a report path whose directory does not exist; and two
 report formats that would write the same
 file (paths compared after resolving, Unicode-normalized and case-folded, because a
-case-insensitive volume treats `R.json` and `r.json` as one file). These used to be accepted,
-and some failed only after the whole campaign had run.
+case-insensitive volume treats `R.json` and `r.json` as one file), or a report path that is an
+input of the run (the scope, a target, the judge, the fleet file, the run store and SQLite's
+files beside it, a spec file: compared as files, so a symlink or a hard link is caught, A-80).
+These used to be accepted, and some failed only after the whole campaign had run.
+
+**The stores are checked before the first send, and nothing but findings exits 1 (A-80).** Every
+mode checks the `--run-db` and `--evidence-root` paths without writing (a directory as the store,
+a file that is not SQLite, a root that is a regular file, a path under one: exit 3); a sending run
+opens the run store and proves each run's evidence directory writable before its first request,
+the `-sV` probes included. Any exception no command handles is exit 3 with one line (`error:
+unexpected <Class>: ...`), its traceback under `-v`; exit 1 is findings below `--fail-on`, and for
+`lint`, lint findings.
 
 Once the scope, the targets and the specs are loaded, and before anything is sent (the resume
 block and the `-sV` probe pass included), a live run whose pace (`--rate`, or the `-T`

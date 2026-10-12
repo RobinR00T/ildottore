@@ -90,3 +90,11 @@ cover the host, or the run refuses to send (default-deny).
   the model is not pulled (`ollama pull …`).
 - **A run does nothing but validates**, you passed `--dry-run` (resolve + validate, send
   nothing). Drop it to actually scan.
+- **`spec path not found: specs`** (exit 3), no `--spec-path` was given and there is neither a
+  `specs/` directory where you run nor a battery beside the installed package. Every command
+  (`fleet --run` included) reads `specs/` in the working directory, else the `specs/` of the
+  source checkout the package was installed from (the editable install above). Pass
+  `--spec-path <checkout>/specs` otherwise.
+- **`cannot open the run store at <path>`** or **`cannot write evidence under <root>`** (exit 3,
+  before anything is sent), `--run-db` names a directory or a file that is not SQLite, or
+  `--evidence-root` is a regular file. Point them at a new path.
