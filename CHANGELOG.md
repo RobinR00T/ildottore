@@ -104,7 +104,7 @@ the file, schema copy, build or pipeline it names.
   `tests/cli/test_operator_declaration_campaign.py` (16, all fail there); the golden JSON report
   snapshot gains the empty key.
 
-### Changed (breaking for an older copy of the report schema: a reply the adapters cannot read fails its attempt, not the campaign, OD-21)
+### Changed (breaking for an older copy of the report schema and an older build reading the run: a reply the adapters cannot read fails its attempt, not the campaign, OD-21)
 
 - **One hostile reply no longer ends a scan.** A 200 whose body is not JSON (brackets that do not
   balance, an integer of more than 4,300 digits, bytes that are not text), not a JSON object, or
@@ -160,7 +160,10 @@ the file, schema copy, build or pipeline it names.
   fails validation against an older copy of `report-1.0.schema.json` (measured: a report of
   `de122e26` against the schema of `6837a71d`'s parent fails with `unreadable_reply` among the
   unexpected keys), while older reports validate against the new one. Validate with the copy
-  shipped in this version.
+  shipped in this version. An older build cannot read such a run either: the new reason is not
+  in its `InconclusiveReason` (measured on 2026-10-12: `dottore replay` of a run this version
+  stored against an HTML stub, with the code of `6837a71d`'s parent, exits 3 with `1 validation
+  error for Attempt` at `verdict.inconclusive_reason`).
 - Decided under the owner's delegation (best practice), revisable: OD-21 in u04 and u08 §9 and its
   00-INDEX row, the new clause A-74 (u08, with u04's, u10's, u11's and u12's halves), ADR-0012,
   u00, u09 A-35 (a 200 that is not JSON was out of it), the MANUAL (§3 "A reply the adapter cannot
@@ -790,7 +793,7 @@ the alternative not taken and how to reverse it, in its `00-INDEX` row and its u
   Event and aborts the transport in a `finally`, and the test sets the Event before `wait_closed()`:
   3.5 s and 1.0 s on 3.14.7.
 
-### Changed (breaking for an older copy of the report schema: a prompt the provider's input filter refuses no longer stops the campaign, OD-41)
+### Changed (breaking for an older copy of the report schema and an older build reading the run: a prompt the provider's input filter refuses no longer stops the campaign, OD-41)
 
 - **The first prompt a provider's filter refused ended the scan.** Azure OpenAI's prompt filter
   answers a prompt it blocks with HTTP 400 and the error code `content_filter`; the adapters read
@@ -851,7 +854,10 @@ the alternative not taken and how to reverse it, in its `00-INDEX` row and its u
   other key, and `schema_version` stays `1.0`, as with `edition` and `status` before it (report-1.0
   grows additively): a report from this version fails validation against an older copy of
   `report-1.0.schema.json`, while reports from earlier versions still validate against the new
-  one. Validate with the copy shipped in this version.
+  one. Validate with the copy shipped in this version. An older build cannot read such a run
+  either (added 2026-10-12, measured: `dottore replay` of a run with 8 blocked attempts, with the
+  code of `fcdf9860`'s parent, exits 3 with `1 validation error for Attempt` at
+  `verdict.inconclusive_reason`).
 - **The judge path is unchanged.** A judge request its own provider's filter refuses is an unusable
   judge (`capability_unavailable`), as any judge adapter error is: the attempt is `inconclusive`
   unless a deterministic evaluator fails, the attempt is not counted as blocked (the attack prompt
@@ -4324,7 +4330,7 @@ USAGE, MANUAL, FAQ, man pages, AGENTS.md, examples) and design docs (docs/00 to 
 SUPPLY-CHAIN.md, the unit contracts and the OD ledger) now describe what is built and mark
 what is not, and the residual behaviour above is documented where each topic lives.
 
-### Fixed (full audit of 2026-10-03: CLI and reports)
+### Fixed (breaking for a CI gate and a SARIF reader: full audit of 2026-10-03, CLI and reports)
 
 - **`--hardened` against a live target** replayed the offline fixtures, sent nothing, and
   published ten passes, `complete` and exit 0 under the live target's name. It is refused
@@ -4950,7 +4956,7 @@ did. The pattern held: the defects were in the **claims**, not only in the code.
   ceiling as attack traffic (they bypassed it entirely before, since they do not travel
   through the runner), and `--dry-run` / `--estimate` / `-sn` still send none of them.
 
-### Fixed (second audit round, on the first round's own work)
+### Fixed (breaking for a CI gate: second audit round, on the first round's own work)
 
 Four more adversarial audits were run against the commit above. They found that its headline
 diagnosis was **wrong**, and that the fix had reintroduced the defect it was written to remove.
@@ -5057,7 +5063,7 @@ Both corrections are below, and so is the number the first round got wrong.
   and `parked`, documented as a run state in three places and produced by nothing, is marked
   reserved.
 
-### Fixed (a run that does not finish exits 3, and flags that were parsed and never read)
+### Fixed (breaking for a CI gate: a run that does not finish exits 3, not 0, and flags that were parsed and never read)
 - **A run that does not finish is no longer reported as a clean one (exit 3).** The default
   battery **did not fit the engine's own default token ceiling**: `DEFAULT_PLAN_BUDGETS`
   pinned `max_tokens = 500_000` while the default plan needs about 537_000 (the figure
