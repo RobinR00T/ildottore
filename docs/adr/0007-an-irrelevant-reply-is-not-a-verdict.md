@@ -2,8 +2,9 @@
 
 * **Status:** accepted on 2026-10-11: **B**, decided under the owner's delegation of the same
   day, 10:09 ("arreglalo todo según mejores prácticas", fix everything according to best
-  practice), and revisable by the owner (the reversal is at the end)
-* **Date:** 2026-09-23 (proposed), 2026-10-11 (accepted and built)
+  practice), and revisable by the owner (the reversal is at the end); amended 2026-10-11 (OD-44):
+  an MCP spec runs against an MCP server only, below
+* **Date:** 2026-09-23 (proposed), 2026-10-11 (accepted and built, then amended)
 * **Context:** OD-16 in `specs/contracts/00-INDEX.md`
 
 ## The problem, measured

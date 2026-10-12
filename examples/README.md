@@ -50,7 +50,7 @@ dottore run --dry-run --quick \
   --scope examples/scope.local.yaml
 ```
 
-Real output of that exact command:
+Real output of that exact command (the `--judge` warning on stderr left out):
 
 ```
 dry-run: plan resolved, sent nothing.

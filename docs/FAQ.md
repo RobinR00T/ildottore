@@ -188,8 +188,8 @@ scene cleared, and `dottore lint` warns when the cleared name is not shaped like
 A tool your deployment grants under `seeded_setup.granted_tools` is in no scene, so no spec can
 mark it. Your target file can: write the grant as `{name: transfer_to_billing_agent,
 destructive: false}` and a call to that exact name is not failed by its name alone (owner
-decision OD-43, 2026-10-11). It is your declaration, so it is always shown: `--dry-run` and
-`-sn` print it on an `operator:` line, every report and the run store state it for the run,
+decision OD-43, 2026-10-11). It is your declaration, so it is always shown: `--dry-run`, `-v`
+and `-sn` print it on an `operator:` line, every report and the run store state it for the run,
 each attempt it changed says so in its verdict, and changing it refuses a resume. It is held to
 the narrowest reading: `false` only (`true`, a quoted `"false"`, a mapping without
 `destructive` and any other key are refused), exact names (a padded one is refused, and the dry

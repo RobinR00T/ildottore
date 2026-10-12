@@ -25,7 +25,7 @@ Per-unit `conftest.py` files under each sub-directory own their domain fixtures;
 |---|-------|------|----------|
 | 1 | Models / specs | Schema validation | `shared/test_schema_parity.py`, `shared/test_shared_models.py`, `registry/test_schema.py` |
 | 2 | Spec linter | Static checks | `registry/test_linter.py`, `registry/test_cli_lint.py` |
-| 3 | Units | Unit tests (coverage ≥ 85% core) | every `test_*.py` across all sub-dirs |
+| 3 | Units | Unit tests (coverage ≥ 85% aggregate, OD-13) | every `test_*.py` across all sub-dirs |
 | 4 | Mutator | Property-based (Hypothesis) | `mutators/test_determinism.py`, `mutators/test_reversibility.py`, `mutators/test_golden.py` |
 | 5 | Adapters | Contract tests + recorded cassettes | `adapters/test_{openai,anthropic,rest,base}.py` + `adapters/cassettes/`; **no live keys** (`no_live_socket` guard) |
 | 6 | Golden targets | Detection-accuracy (hard gate) | `golden/test_golden.py`, `golden/test_mock.py`, `battery/test_battery.py` + `fixtures/{vulnerable,hardened}` (inline fixtures in specs) |

@@ -6,7 +6,7 @@
 # red (contract §4 KEEP). No live API keys: adapters are exercised only via cassettes, and the
 # autouse no-live-socket guard in tests/conftest.py fails any test that opens a real socket.
 #
-# Thresholds (coverage ≥85% core, evaluator P/R, golden accuracy, judge flips) are docs/07 §3
+# Thresholds (aggregate coverage ≥85%, OD-13; evaluator P/R, golden accuracy, judge flips) are docs/07 §3
 # and MUST NOT be relaxed to go green - a red gate is escalated to its owning unit (contract §8).
 
 name: ci

@@ -33,7 +33,9 @@ P1 = strong differentiator / real attack surface · P2 = later.
 > ORDERED chain of individually-authorized calls completes, subsequence match so an interleaved
 > no-op cannot evade it, partial chain = pass) plus `AG-TOOLCHAIN-EXFIL-001`. A per-call check
 > provably cannot see it: `tool_call` passes the very trace `tool_sequence` flags, pinned by a
-> regression test. Battery is now **75 specs / 14 suites**, 14 evaluator types.
+> regression test. Battery was then **72 specs / 14 suites**, 14 evaluator types; it is 75 since
+> the three specs of 2026-09-22 (`RECON-MODEL-IDENTITY-001`, `AG-CODEEXEC-UNEXPECTED-001`,
+> `DOS-RESOURCE-HIJACK-001`, `docs/15`).
 
 ## P0: in scope for MVP‑1 (capabilities are hard to retrofit later)
 

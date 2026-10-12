@@ -164,7 +164,7 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   limit of a spec file (so are a policy pack and the signature pack, which the CLI does not take
   from the command line). A larger regular file is refused before any of it is read; anything
   else, such as a pipe (`--scope <(cat scope.yaml)`) or a device, is read up to one byte past
-  the limit and refused if that byte comes.  The error names the file and the sizes, written
+  the limit and refused if that byte comes. The error names the file and the sizes, written
   with thousands separators (`file is 1,073,741,824 bytes, over the 1,048,576-byte cap`), and
   the command exits 3. `dottore fleet` measures every file it would write and refuses, before
   writing any, one over the limit: the scope repeats each endpoint and is usually the largest,
@@ -986,7 +986,8 @@ documents, tools or memory is `setup_not_seeded` on a fleet entry that declares 
 those, scan with a target file (§4.2). Template:
 [`../specs/fleet.example.yaml`](../specs/fleet.example.yaml).
 
-An entry may declare `capabilities` with the keys a target file takes (§4.2). Its target file
+An entry may declare `capabilities` with the keys a target file takes (§4.2), except `mcp`
+(`kind: mcp` sets it, and an entry that declares it is refused). Its target file
 gets `tools: false` (`true` for an `mcp` entry) and `rag: false` unless the entry sets them, plus
 every key the entry sets; a key `capabilities` does not know is refused before anything is
 written (exit 3).

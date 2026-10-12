@@ -140,7 +140,7 @@ the file, schema copy, build or pipeline it names.
   `tests/cli/test_input_filter_probe.py`), and the golden JSON report snapshot gains
   `summary.unreadable_reply`.
 
-### Fixed (what the verification of `07aa0b3a` found in OD-21, before it lands)
+### Fixed (what the verification of `07aa0b3a` found in OD-21, before it landed)
 
 - LOW (verification of `da16f219`): at the request ceiling the benign check's debit raised in place
   of the fifth unreadable reply, which was never stored, its token reservation kept
@@ -166,7 +166,7 @@ the file, schema copy, build or pipeline it names.
   none of the 8 attempt(s) it stored across 4 spec(s) (none was answered, or failed in a way a
   retry would repeat)" and what it sends again.
 
-### Fixed (what the pre-merge audit of `598f0858` found in OD-21 and OD-20, before it lands)
+### Fixed (what the pre-merge audit of `598f0858` found in OD-21 and OD-20, before it landed)
 
 - HIGH 1: an unreadable reply got the generic environment verdict, which a strict majority of passes
   outvoted: the auditor's `PI-DIRECT-001 --runs 3`, its first reply a wrapper broken by the quotes
@@ -706,7 +706,7 @@ the alternative not taken and how to reverse it, in its `00-INDEX` row and its u
   is done, even inside `loop.close()`, is kept and raised then, which raising from a loop callback
   of its own could not do. Measured on the same path: one SIGTERM, exit 130, 0.99 to 1.11 s after
   the start, the spend of 6 requests written inside the loop, with Ctrl-C ignored or at its default.
-- **What the fix's pre-merge audit found, fixed before it lands.** A Ctrl-C in the campaign's first
+- **What the fix's pre-merge audit found, fixed before it landed.** A Ctrl-C in the campaign's first
   step cancelled only the coroutine that awaited it, and a second one during the stop left the task
   pending, its spend written outside any loop (the task was made before the loop started; it is made
   inside that coroutine now). Ctrl-C then SIGTERM, or SIGTERM then Ctrl-C, was one more cancellation
@@ -4786,7 +4786,7 @@ did. The pattern held: the defects were in the **claims**, not only in the code.
   intermediate build gains its third column, `make live-estimate` guards `SCOPE` and quotes paths
   with spaces, and five stale "72 specs" counts in live comments are now 75.
 
-### Added
+### Added (the Nova IoPC, structured-output and multimodal specs, `tool_sequence`, `dottore coverage`, and `-sV` traffic as evidence)
 - **Three specs, and a coverage report that says which gaps are gaps.** The uncovered codes
   were printed as one list, so "8 of 10" read as two items of pending work when both are
   properties a black-box runtime scanner cannot observe at all. Gaps now print in two groups,
@@ -4879,7 +4879,7 @@ did. The pattern held: the defects were in the **claims**, not only in the code.
   run (and before a purchase): "covered, of what?". Names the uncovered codes rather than only
   counting them, supports `--framework`, `--suite` and `--json`.
 
-### Added
+### Added (`dottore run --resume`, and `-sV` that changes the battery)
 - **`dottore run --resume <run-id>`: a halted campaign can be finished.** The engine has
   supported resume since u08 (`CampaignRunner.run(resume_from=...)` skips persisted attempt
   ids and merges a spec's prior attempts with the fresh ones) and **no command reached it**,
@@ -5021,7 +5021,7 @@ Both corrections are below, and so is the number the first round got wrong.
   and `parked`, documented as a run state in three places and produced by nothing, is marked
   reserved.
 
-### Fixed
+### Fixed (a run that does not finish exits 3, and flags that were parsed and never read)
 - **A run that does not finish is no longer reported as a clean one (exit 3).** The default
   battery **did not fit the engine's own default token ceiling**: `DEFAULT_PLAN_BUDGETS`
   pinned `max_tokens = 500_000` while the default plan needs about 537_000 (the figure
@@ -5106,7 +5106,7 @@ Both corrections are below, and so is the number the first round got wrong.
   mutations without repeating the baseline carrier was under-counted (one declared mutation
   is two attempts, not one).
 
-### Changed
+### Changed (the MITRE ATLAS universe re-diffed to 16 tactics, editions printed, percentages floored)
 - **The MITRE ATLAS tactic universe was re-diffed against upstream and is now 16 tactics,
   not 14.** Transcribed from `mitre-atlas/atlas-data`, `dist/v6/ATLAS-2026.09.yaml` (release
   2026.09, 2026-09-14), cross-checked against that repo's `CHANGELOG.md` ("1 matrix, 16
@@ -5138,12 +5138,12 @@ Both corrections are below, and so is the number the first round got wrong.
   printed was refused. The README quickstart named `target.yaml` / `scope.yaml`, which do not
   exist in this repository; it now uses the shipped example pair and `dottore coverage`.
 
-### Changed
+### Changed (the battery at 72 specs, and bandit's configuration)
 - Battery is now **72 specs / 14 suites / 1 pack**, 14 evaluator types.
 - `make bandit` runs with `-c pyproject.toml`; B105 is skipped as redundant with ruff's
   S105/S106/S107, which stay active.
 
-### Fixed
+### Fixed (the report masker and spec ids, the scope gate, and OWASP over-reporting)
 - **The report masker no longer destroys spec ids.** The interim global entropy fallback
   (OD-15) masked any 16+ char token scoring 3.7 bits/char or more, which a hyphenated
   uppercase identifier does: 15 of the 72 shipped spec ids (`JB-SEQUENTIAL-001`,
@@ -5199,7 +5199,7 @@ Both corrections are below, and so is the number the first round got wrong.
   LLM04 are untested; a third RAI code would have pushed it past 100%. ATLAS already filtered
   against its universe; OWASP now does too (real figure: 8/10).
 
-### Fixed
+### Fixed (10 spec oracles, `tool_sequence` name matching, an `anyio` floor)
 - Repaired 10 spec oracles that passed every gate while measuring something other than the
   attack they described (hedge-vocabulary checks, polarity-free keyword presence, denylists
   where a complement was needed, and oracles that failed the best possible secure answer).

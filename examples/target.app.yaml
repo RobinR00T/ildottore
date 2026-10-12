@@ -42,8 +42,9 @@ seeded_setup:
   # A-72): exact name only, `false` only (`true` is refused, a spec's scene says that), and it
   # clears nothing but tool_call's destructive check. A call off the allowlist, an injected and
   # a forbidden argument still fail, a spec whose scene names the tool decides it there, and
-  # kill_chain_progression keeps its stage map. `--dry-run` and `-sn` print it (`operator:`),
-  # every report states it, each attempt it changed says so, and changing it refuses a resume.
+  # kill_chain_progression keeps its stage map. `--dry-run`, `-v` and `-sn` print it
+  # (`operator:`), every report states it, each attempt it changed says so, and changing it
+  # refuses a resume.
   granted_tools:
     - escalate_to_human
     - { name: transfer_to_billing_agent, destructive: false }   # the agent's hand-off to billing

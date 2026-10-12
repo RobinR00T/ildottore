@@ -157,7 +157,7 @@ Full method: `docs/00-ai-build-playbook.md`.
     self-scan, a weekly static, test and coverage sweep). `make fix` autofixes format+lint. Do
     not hand-run a subset.
   - Individually: `ruff check . && ruff format --check . && mypy src` · `pytest -q` (coverage
-    gate ≥85% core) · `dottore lint specs/` · `lint-imports` · `python -m tests.selfscan.run`
+    gate ≥85% aggregate, OD-13) · `dottore lint specs/` · `lint-imports` · `python -m tests.selfscan.run`
   - **In a git worktree,** reuse the main checkout's venv (`ln -s <main checkout>/.venv .venv`)
     and run the wall as `PYTHONPATH=<worktree>/src make gates`. The venv's editable install
     points at the main checkout's `src`: without `PYTHONPATH`, the steps that import the package
