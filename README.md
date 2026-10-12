@@ -19,7 +19,8 @@ mapping the code checks).
 
 - **75 declarative attack specs across 14 suites** covering the OWASP LLM Top 10, MITRE
   ATLAS, agentic/OWASP-Agents-2026 abuse and the Nova IoPC taxonomy, plus the OWASP AISVS
-  controls a failure is evidence against (`dottore coverage --framework aisvs`). `dottore registry ls` lists them all.
+  controls a failure is evidence against (`dottore coverage --framework aisvs`).
+  `dottore registry ls` lists them all.
 - **Fingerprint** a target's model + guardrails before attacking (`-sV`).
 - **Multi-turn** attacks (Crescendo, Linear, Sequential, Bad-Likert, Tree) whose turns are
   pinned in the spec, so a conversation is as reproducible as a single shot.
@@ -48,7 +49,8 @@ quickstart named `target.yaml` and `scope.yaml`, which do not exist in this repo
 it could not be copied and pasted: a scan needs a target file and an authorization record,
 and the shipped examples are those two files.)
 
-Scanning something real, with a bill attached? [`docs/16-live-validation.md`](docs/16-live-validation.md)
+Scanning something real, with a bill attached?
+[`docs/16-live-validation.md`](docs/16-live-validation.md)
 is the runbook: what is and is not verified today, what it costs (measured, not guessed), and the
 order to run it in.
 

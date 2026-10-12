@@ -55,7 +55,8 @@ baseline, so "new" does not apply) and the coverage gate (`--cov-fail-under=85` 
 aggregate of `src/ildottore`; the threshold lives on the command line in the workflows and the
 Makefile, not in `pyproject.toml`). The scheduled `audit`
 workflow re-runs the golden snapshot, metamorphic, determinism and self-scan nightly, and the
-static checks, spec lint and full suite with coverage weekly. Every workflow runs with `permissions: contents: read`.
+static checks, spec lint and full suite with coverage weekly. Every workflow runs with
+`permissions: contents: read`.
 
 **Not in CI: `pip-audit` and `bandit`.** Neither workflow has a step for them, so CI enforces
 no vulnerability or bandit threshold at all. They exist only as `make audit` (`pip-audit` with
@@ -64,7 +65,8 @@ no options: it fails on any known vulnerability in the environment, whatever its
 that the `B105` skip does not cover), which the Makefile groups under an "advisory" heading.
 Both are part of `make gates`, so a local `make gates` on a fresh `pip install -e ".[dev]"`
 stops at `bandit` until the two tools are installed by hand. A known-vulnerable dependency or a
-bandit finding therefore does not fail the build today. Also not in place: a lock file (`pyproject.toml` sets
+bandit finding therefore does not fail the build today. Also not in place: a lock file
+(`pyproject.toml` sets
 lower bounds only) and a published SBOM.
 
 ## Secrets and credentials

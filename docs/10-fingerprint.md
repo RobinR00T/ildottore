@@ -131,7 +131,8 @@ other 4xx still does), `benign_refused` is `null`, and the pass and the run go o
 block (`promptFeedback.blockReason` in a success body, through a REST template) is read the same
 way. It is the one input-filter signal the pass can see, and since OD-40 was decided (2026-10-11,
 under the owner's delegation) the engine reads it as one: `input_filter` is `true` (an undocumented
-4xx stays a failed probe and claims nothing). The same refusal of a **carrier** probe costs that carrier, not the pass, since the
+4xx stays a failed probe and claims nothing). The same refusal of a **carrier** probe costs that
+carrier, not the pass, since the
 pre-merge audit of `3d739f3` (2026-10-10): a carrier is an instruction sent through an encoding,
 which Microsoft's Prompt Shields classes as a user prompt attack ("Encoding attacks"), so Azure's
 filter can refuse it after every other probe was answered. It is recorded as a failed probe
@@ -376,7 +377,8 @@ version is `null`.
   the probes go out with no temperature at all, so the fingerprint is only as repeatable as the
   model's own sampling, and the `-sV` line and `dottore fingerprint` say so. The block fills
   what `PROBE_SAMPLING` leaves unset (OD-39, 2026-10-09; its temperature and `max_tokens` never
-  reach a probe). `run -sV` stores its probes as evidence (`probes/`); a standalone `dottore fingerprint`
+  reach a probe). `run -sV` stores its probes as evidence (`probes/`); a standalone
+  `dottore fingerprint`
   stores none.
 - **Signature DB** is a versioned data pack, not code: it ships in-repo under
   `src/ildottore/fingerprint/signatures/`, validated by `fingerprint/signatures.py` on load, so

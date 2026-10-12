@@ -30,7 +30,8 @@ it is built, by the spec loader's own measure, A-37.) Provide
 `PolicyEngine.check(target, endpoint, spec)`
 → `allow` | `blocked_by_policy(reason)` answering: target in scope? endpoint on allowlist
 (default-deny, S3)? spec's category/id enabled by the active **policy pack**? dangerous payload
-marked `test_only` (S5; enforced from the category, A-29)? Layer-B / PII-elicitation specs **off unless the pack enables them**
+marked `test_only` (S5; enforced from the category, A-29)? Layer-B / PII-elicitation specs **off
+unless the pack enables them**
 (`docs/11 §5`, DL4/DL5). `config.py` sources scanner secrets from **env/vault**, never files.
 (A target's `auth_ref` resolves `env://` only; `vault://` is deferred and raises.)
 `redactor.py` is the single choke point masking secrets/keys/PII in logs, console, evidence and
@@ -59,7 +60,8 @@ reports (S6, DL2); it is import-cheap and dependency-free so every layer can cal
   and the operator signs out of band (§9).
 
 ## §5 Implementation plan (each step its own commit, green before next)
-1. `errors.py` + `config.py`: typed config model (Pydantic v2), env/vault sourcing, `--unsafe-render`
+1. `errors.py` + `config.py`: typed config model (Pydantic v2), env/vault sourcing,
+   `--unsafe-render`
    and `--allow-pii-elicitation` flag surface. (As built: the typed `SafetyFlags` carry both
    values, default off; neither is a CLI flag, so the DL4 run key cannot be turned on from
    `dottore`. OD-11, decided 2026-10-11: the run flag is added only together with a flag that

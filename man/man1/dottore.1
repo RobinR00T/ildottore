@@ -46,7 +46,8 @@ Identify the model and guardrails behind an endpoint; attack nothing.
 .B fleet
 Expand a fleet.yaml into an authorization scope plus one target file per model; with
 .B --run
-scan them all. Each http or https scope entry is pinned to its host and port. The judge is declared in the
+scan them all. Each http or https scope entry is pinned to its host and port. The judge is declared
+in the
 fleet file's
 .B judge:
 block, which the scope authorizes and
@@ -167,7 +168,8 @@ The T0 battery: selects the quick suite (18 specs) at -T0. Conflicts with --suit
 .TP
 .B --deep
 Timing template T2 (slower) over whatever the other flags select (with no selection flag,
-the whole registry minus what the target cannot run); it selects no larger suite. Mutator ordering needs a fingerprint, so on its own it tailors
+the whole registry minus what the target cannot run); it selects no larger suite. Mutator ordering
+needs a fingerprint, so on its own it tailors
 nothing: it is adaptive only with -sV (or -A).
 .TP
 .B -T \fI0..5\fR
@@ -392,7 +394,8 @@ Operational error (bad scope, unknown suite, I/O), a usage error (unknown option
 or a run that did not finish (a hard budget ceiling halted it, every attempt failed on
 transport or got a reply that could not be read, or an error stopped it: a non-retryable 4xx,
 or replies that could not be read, 5 in a row before any was read or 20 in a row after, aborted
-on UnreadableReplies). 3 takes precedence over 2: a run that did not finish exits 3 even when it found
+on UnreadableReplies). 3 takes precedence over 2: a run that did not finish exits 3 even when it
+found
 confirmed exploits, so read summary.status.reason before treating 3 as a retryable
 infrastructure error.
 .PP

@@ -37,5 +37,6 @@ permanent repercussions as determined by the project's maintainer.
 
 ## Attribution
 
-This Code of Conduct is adapted from the [Contributor Covenant](https://www.contributor-covenant.org),
+This Code of Conduct is adapted from the
+[Contributor Covenant](https://www.contributor-covenant.org),
 version 2.1.

@@ -42,7 +42,8 @@ combination and a vote nothing called, and a judge-only fail was `confirmed` whe
   cross-identity) ⇒ `needs-review`, never confirmed (`docs/11 §4`).
 - DECIDE (OD-3): default judge model + whether a 2nd judge runs for self-consistency. (As
   built: there is no default judge; the judge is the `--judge` target, or offline the scripted
-  judge of the `vulnerable` and `hardened` mocks (`bare` and `comprehending` have none), and self-consistency is two passes of that one model; no second judge model runs.
+  judge of the `vulnerable` and `hardened` mocks (`bare` and `comprehending` have none), and
+  self-consistency is two passes of that one model; no second judge model runs.
   Ledger OD-3 records the same.)
 
 ## §5 Implementation plan (each step its own commit, green before next)
@@ -64,9 +65,11 @@ combination and a vote nothing called, and a judge-only fail was `confirmed` whe
 ## §6 Data/wire shapes
 `Verdict = {status: "pass"|"fail"|"inconclusive", confidence: float[0,1], reasoning: str,
 matched: list[str], evaluator_type: str, inconclusive_reason: InconclusiveReason|None}` (set
-`inconclusive_reason` whenever status is `inconclusive`; closed StrEnum per u00/ADR-0006). Judge raw+parsed output persisted to evidence
+`inconclusive_reason` whenever status is `inconclusive`; closed StrEnum per u00/ADR-0006). Judge
+raw+parsed output persisted to evidence
 (masked). (Not built: a stored attempt carries only the aggregate verdict; no per-evaluator
-verdict and nothing of the judge's exchange is persisted, `docs/04 §5`.) PII/secret hits stored **typed + masked/hashed only** (`docs/11 §5`).
+verdict and nothing of the judge's exchange is persisted, `docs/04 §5`.) PII/secret hits stored
+**typed + masked/hashed only** (`docs/11 §5`).
 
 ## §7 Acceptance criteria (machine-checkable)
 - `pytest tests/evaluators -q` green; coverage ≥ 90% for this package.
@@ -130,7 +133,8 @@ verdict and nothing of the judge's exchange is persisted, `docs/04 §5`.) PII/se
   `AG-CONFIRM-BYPASS-001`'s `vulnerable` fixture now does (`confirm: true` on `delete_records`),
   so lint and the battery fail if the flag counts again; the four specs that described the old
   rule (`AG-CONFIRM-BYPASS-001`, `AG-DESTRUCTIVE-DBDROP-001`, `AG-AUTONOMY-SELFCORRECT-001`,
-  `AG-EXTORT-CHAIN-001`) now state this one. Checks: `tests/evaluators/test_self_set_confirmation.py`
+  `AG-EXTORT-CHAIN-001`) now state this one. Checks:
+  `tests/evaluators/test_self_set_confirmation.py`
   (67 tests, 45 failing on `f12ba83`; the 22 that pass there pin what did not change: a flag on
   a call that destroys nothing stays a pass, `kill_chain_progression` reads no flag, a flag
   already changed neither verdict on a call off the allowlist, which fails as unauthorized, and
@@ -180,7 +184,8 @@ verdict and nothing of the judge's exchange is persisted, `docs/04 §5`.) PII/se
   the flag. Out of reach of the flag: a tool a deployment grants under
   `seeded_setup.granted_tools` is in no scene, so a granted `transfer_to_<agent>` is still
   destructive by its name; whether a target file may declare one of its own tools not destructive
-  was the owner's question, not decided here (decided 2026-10-11: OD-43, A-72 below). (2) The lint stub (`registry/fixtures_engine._tool_call`,
+  was the owner's question, not decided here (decided 2026-10-11: OD-43, A-72 below). (2) The lint
+  stub (`registry/fixtures_engine._tool_call`,
   u02) was a copy of this evaluator that had drifted: the backtick pattern dropped here as
   quadratic (an unclosed backtick before 100,000 letters: about 4 s, against about 3 ms), injection
   markers read only in top-level argument values while this evaluator walks nested maps and lists,
@@ -233,7 +238,8 @@ verdict and nothing of the judge's exchange is persisted, `docs/04 §5`.) PII/se
   `Verdict.operator_cleared` naming the tools, which the reports count from instead of the text
   (a judge or a tool's name can echo it; pre-merge audit of `ed381359`, L1); the runner puts the
   same note and record on the stored aggregate, a conversation the input filter cut after such a
-  call and a reply the output filter cut included (u08 half, M1). A seeded name map cannot carry a call onto the
+  call and a reply the output filter cut included (u08 half, M1). A seeded name map cannot carry a
+  call onto the
   declaration (the A-71 audit's L1, for the operator's word): a map renames a call only to a
   scene tool, which the declaration never reaches, and a scene tool mapped onto a declared name is
   refused by the loader and by `seeding_gap`. And it gets the second look lint gives a scene's
@@ -274,10 +280,12 @@ verdict and nothing of the judge's exchange is persisted, `docs/04 §5`.) PII/se
   reasoning saying how many attempts the judge alone decided, and `--fail-on` gates it only with
   `--include-needs-review`; `scoring.confidence.gate_state`, which no production path calls,
   agrees (u07's half: all the verdicts judge-only fails is `needs-review`), and
-  `reporting/summary.finding_state` says so. No verdict and no confirmation of a shipped fixture changed (the
+  `reporting/summary.finding_state` says so. No verdict and no confirmation of a shipped fixture
+  changed (the
   vulnerable mock, every capability declared, `--runs 2`: 224 failing attempts, none decided by
   the judge alone; 67 confirmed fails before and after). Checks:
-  `tests/evaluators/test_one_combination_rule.py` and `tests/registry/test_deprecated_combination.py`
+  `tests/evaluators/test_one_combination_rule.py` and
+  `tests/registry/test_deprecated_combination.py`
   (48 tests: on `feb148f` the first does not import, `shared.combination` being new, and 6 of the
   second's 7 fail; with that module alone added, 17 of the 48 fail), the rewritten
   `tests/evaluators/test_combine.py`.

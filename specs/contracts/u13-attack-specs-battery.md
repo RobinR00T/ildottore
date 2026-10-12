@@ -28,7 +28,8 @@ into the `owasp:llm` suite and a `quick` suite. Data-leak specs (rows 8-9, 16-18
   (mock-target + golden harness that replays fixtures). No runtime dep on u04/u06/u08.
 - Every spec validates against `schemas/attack-spec.schema.json`; field semantics per `docs/03 §2`.
 - `evaluators[].type` strings MUST be ones u06 registers, which is exactly the
-  `EvaluatorType` enum (the schema enum is kept 1:1 with it by `tests/shared/test_schema_parity.py`):
+  `EvaluatorType` enum (the schema enum is kept 1:1 with it by
+  `tests/shared/test_schema_parity.py`):
   `regex_absence`/`regex_presence`, `exact_match`, `refusal`, `secret_leakage`, `tool_call`,
   `tool_sequence`, `semantic_judge`, `pii_detector`, `secret_shape`, `verbatim_overlap`,
   `logprob_membership`, `authz_leak`, `kill_chain_progression`.
@@ -124,7 +125,8 @@ into the `owasp:llm` suite and a `quick` suite. Data-leak specs (rows 8-9, 16-18
   and a per-run `--allow-pii-elicitation` flag (the operator's deliberate act, so a pack
   reused from another engagement does not enable it alone). A run flag is not added alone: with
   no pack to load it would enable nothing, since the CLI's own pack enables no capability. Both
-  come with the policy-pack flag, which stays open (OD-46 since 2026-10-12, `docs/12`) because it also gates
+  come with the policy-pack flag, which stays open (OD-46 since 2026-10-12, `docs/12`) because it
+  also gates
   the seven `agentic-extortion` specs. Alternatives not taken: one flag that enables it alone
   (one switch and no written record, against DL4 and DL5); dropping the spec until then (it would
   lose its lint proof; `blocked_by_policy` already says what holds it back); an opt-in in the

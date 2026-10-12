@@ -49,7 +49,8 @@ gate is never bypassable**: not by `-A`, not by any flag (`docs/09 §5`, `docs/0
 - KEEP: exit codes `0` clean · `1` findings below `--fail-on` · `2` at/above `--fail-on` · `>2`
   operational error (`docs/09 §4`). As built the operational code is `3`, and it also covers a
   run that did not finish and a command-line usage error (an unknown option exits 3, so it
-  cannot be read as "findings at/above"). `--fail-on` gates **confirmed** findings; `--include-needs-review`
+  cannot be read as "findings at/above"). `--fail-on` gates **confirmed** findings;
+  `--include-needs-review`
   extends the gate to the unconfirmed **fails** only (an inconclusive or a pass never gates,
   although an inconclusive that was sent reads `needs_review` in the reports, `docs/05 §2`).
 - KEEP: `-T0..-T5` expand to concrete rate/concurrency/timeout defaults in `flags.py` (documented
@@ -250,10 +251,12 @@ a claim about a whole campaign checked only against the invocation in front of i
   alone, which is timing template T2 over the same battery, records adaptive mode without
   changing any order; a resume must still match it.)
 
-**The target AND ITS ROUTE are the things with no opt-in.** `--resume-unverified` waives the battery, the
+**The target AND ITS ROUTE are the things with no opt-in.** `--resume-unverified` waives the
+battery, the
 context and the spend, and a second audit pointed it at a run row with no target id and resumed
 a vulnerable app's evidence into a hardened app's report with zero requests sent: one flag was
-disarming two checks, and its help text advertises a budget consequence. A run that does not record its target, **or its route**, is refused outright, with no flag. The
+disarming two checks, and its help text advertises a budget consequence. A run that does not record
+its target, **or its route**, is refused outright, with no flag. The
 first version made only the target ID unwaivable, and a third audit walked through the gap it
 left: a run row whose context column was absent still accepted `--resume-unverified --hardened`,
 which flips the offline replay, so one half's criticals were published as the other's. A context
@@ -345,7 +348,8 @@ clause and is not changed by it.
 
 Checked through the real CLI against a counting stub by `tests/cli/test_probe_pass_spend.py`: a
 503 and a 401 on the first and on the sixth probe (a 200 that is not JSON stopped the pass too
-until OD-21, 2026-10-11; it fails only its probe now, checked beside a reply nested too deeply); SIGINT and SIGTERM sent
+until OD-21, 2026-10-11; it fails only its probe now, checked beside a reply nested too deeply);
+SIGINT and SIGTERM sent
 to a subprocess with a probe on the wire (its Ctrl-C handler restored, since a shell that starts
 pytest with `&` passes SIGINT on ignored); an interruption at the write after a pass that
 succeeded; a write that fails; a stop after the write; a resume that completes; and the two cases
@@ -1179,7 +1183,8 @@ the provider's`; with transport failures only, the reason is as before. A resume
 sends again because they could not be read (`; <k> that could not be read will be sent again`,
 LOW 1), and one that keeps none says so (`keeps none of the <n> attempt(s) it stored across <s>
 spec(s) (none was answered, or failed in a way a retry would repeat)`; it said `keeps 0
-attempt(s)`, verification of `07aa0b3a`, LOW 2). The report schema's `status` description names `aborted` and the wider `unreachable`.
+attempt(s)`, verification of `07aa0b3a`, LOW 2). The report schema's `status` description names
+`aborted` and the wider `unreachable`.
 Checked by `tests/cli/test_malformed_reply_campaign.py`.
 
 ## §8 Out of scope / forbidden

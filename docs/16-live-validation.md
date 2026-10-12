@@ -187,7 +187,8 @@ Two things that table says out loud:
   deliberate act in the policy pack, and on someone else's system it needs their authorization
   in writing, not just a flag. Today it is not possible from the command line at all: `dottore`
   has no option to load a policy pack (and none for the PII run key), so none of these eight
-  sends on any CLI run. Whether to add one is an open decision (OD-46). On the fully capable target all
+  sends on any CLI run. Whether to add one is an open decision (OD-46). On the fully capable target
+  all
   eight reach the policy gate and are `blocked_by_policy`. On the bare model the capability
   filter runs first: the six offensive-simulation specs that require `tools` are among the 40
   capability skips (`inconclusive: capability_unavailable`), and only `DL-PII-ELICIT-001` and
