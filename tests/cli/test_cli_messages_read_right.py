@@ -276,3 +276,11 @@ def test_a_scope_name_too_long_says_its_length(tmp_path: Path) -> None:
     assert result.exit_code == 3, result.output
     assert "cannot read scope file, a name of 5,000 characters: File name too long" in result.output
     assert "REDACTED" not in result.output
+
+
+def test_new_spec_stdout_checks_the_id_too() -> None:
+    """`--stdout` printed a scaffold with any id, a key included, which lint then refused."""
+
+    result = runner.invoke(app, ["new-spec", "--id", _KEY, "--family", "f", "--stdout"])
+    assert result.exit_code == 3, result.output
+    assert "invalid spec id" in result.output and _KEY[:16] not in result.output

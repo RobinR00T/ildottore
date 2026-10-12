@@ -45,6 +45,7 @@ def scaffold_spec(spec_id: str, *, family: str, category: str = "prompt_injectio
             f"unknown category {category!r}; expected one of: "
             f"{', '.join(c.value for c in Category)}"
         ) from exc
+    _check_id(spec_id)
     _check_family(family)
     owasp = _CATEGORY_OWASP.get(cat, "LLM01")
     name = _scalar(f"TODO short human name for {family}")
@@ -95,6 +96,18 @@ _PLAIN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 _PLAIN_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9 ._-]*")
 
 
+def _check_id(spec_id: str) -> None:
+    """The schema's own id shape: the id becomes a file name (`--id ../evil` wrote outside --out,
+    audit 2026-10-03, low), and `--stdout` printed a scaffold with any id, which lint then refused
+    (u12 A-82)."""
+
+    if not re.fullmatch(r"[A-Z]+(-[A-Z0-9]+)+", spec_id):
+        raise ValueError(
+            f"invalid spec id {spec_id!r}: use the schema's shape, uppercase segments joined by "
+            "'-' (e.g. PI-XYZ-001)"
+        )
+
+
 def _check_family(family: str) -> None:
     """Refuse a ``--family`` the scaffold cannot carry (u12 A-82, CLI audit L10).
 
@@ -142,13 +155,6 @@ def write_scaffold(
     never targets the repo ``specs/`` tree - the operator chooses ``out_dir``.
     """
 
-    # The id becomes a file name, so it is checked against the schema's own id shape first:
-    # `--id ../evil` wrote outside --out (audit 2026-10-03, low).
-    if not re.fullmatch(r"[A-Z]+(-[A-Z0-9]+)+", spec_id):
-        raise ValueError(
-            f"invalid spec id {spec_id!r}: use the schema's shape, uppercase segments joined by "
-            "'-' (e.g. PI-XYZ-001)"
-        )
     # Built before anything is created: a refused --family or --category left an empty --out.
     text = scaffold_spec(spec_id, family=family, category=category)
     out_dir.mkdir(parents=True, exist_ok=True)
