@@ -67,7 +67,7 @@ dry-run: plan resolved, sent nothing.
   sampling: local-llama's sampling_defaults fills temperature 0.0 on 0 of 10, top_p 1.0 on 9 of 10 specs (a spec's own value wins)
   would send: 125 requests over 10 specs at runs=5
   pacing:  0.5 req/s ceiling (S8)
-  budgets: 500000 tokens, 2000 requests, 1800s wall (derived from this plan)
+  budgets: 500000 tokens, 2000 requests, 2000 attempts, 1800s wall (derived from this plan, or --budget-requests, --budget-tokens, --budget-wall)
 ```
 
 Three things in there are worth reading carefully, because the previous version of this
@@ -261,7 +261,7 @@ dry-run: plan resolved, sent nothing.
   sampling: support-agent-staging's sampling_defaults fills temperature 0.0 on 0 of 2 specs (a spec's own value wins)
   would send: 20 requests over 2 specs at runs=5
   pacing:  5.0 req/s ceiling (S8)
-  budgets: 500000 tokens, 2000 requests, 1800s wall (derived from this plan)
+  budgets: 500000 tokens, 2000 requests, 2000 attempts, 1800s wall (derived from this plan, or --budget-requests, --budget-tokens, --budget-wall)
 ```
 
 `PI-INDIRECT-RAG-001` needs a poisoned document in the knowledge base and is not declared, so
@@ -319,7 +319,7 @@ dry-run: plan resolved, sent nothing.
   not seeded: 1 spec(s) on ws-assistant-staging, their scene is not in the deployment as seeded_setup declares it, or their tool trace cannot be read through this adapter (-vv says which)
   would send: 125 requests over 10 specs at runs=5
   pacing:  0.5 req/s ceiling (S8)
-  budgets: 500000 tokens, 2000 requests, 1800s wall (derived from this plan)
+  budgets: 500000 tokens, 2000 requests, 2000 attempts, 1800s wall (derived from this plan, or --budget-requests, --budget-tokens, --budget-wall)
 ```
 
 The target declares `rag: true` and no tools, so six specs are skipped for capability and the
