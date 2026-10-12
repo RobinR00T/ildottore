@@ -1239,7 +1239,8 @@ are the same class.
 * **A tripwire that forces the bump.** `JUDGING_SOURCES` lists the code that decides a stored
   verdict: modules (the evaluators package, walked, so a new evaluator is covered; nine `shared`
   modules) and names (a function, a class, a method or a module-level assignment: the runner's
-  verdict functions and constants, `execute_attempt`, `_unreadable_result`, the conversation
+  verdict functions and constants, its spec loop (`_run_spec`) and identity sweep,
+  `execute_attempt`, `_unreadable_result`, the conversation
   executor, `setup_delivery`'s trace constants and tool-name mapping, the redactor's detectors the
   PII and secret evaluators import, `shared.nesting`, `shared.amounts.is_count`, the adapters'
   error classes and each adapter's mapping of a reply to text, tool calls, logprobs, a stop reason
@@ -1248,9 +1249,11 @@ are the same class.
   differs between Python versions; checked equal on 3.9, 3.12 and 3.14, and CI runs 3.11), to each
   version. A change to that code fails the test until the version is bumped and the new digest
   pinned. **The closure:** the same test walks every `ildottore` name each listed entry refers to
-  (a module's imports; a function's or a class's imports, module names and `self.<method>` calls),
+  (a module's imports; a function's or a class's imports, module names and `self.<member>`, a method
+  or a class attribute of the class or of a base it inherits),
   and fails on one that is neither listed nor exempted in `JUDGING_EXEMPT`, each exemption with its
-  reason (a data shape, an enumeration stored by value, an interface, money and pacing, the words
+  reason (a data shape, an enumeration stored by value, an interface, money and pacing, a rule
+  applied when a finding is scored, which specs are sent, the target's own configuration, the words
   of a message or the masking of what a verdict quotes, what is sent). The first list held the
   functions and not the constants and helpers they read: four one-line edits changed verdicts under
   an unchanged digest (the pre-merge audit's H-1: `runner.CUT_DECIDING_EVALUATORS`, the
@@ -1307,9 +1310,11 @@ with no record refused with and without `--resume-unverified`, exit 3 through th
 does not know, a selection key a later release adds left alone, eleven version shapes through the
 error redactor, a corrupt stored version, an unshaped package version recorded as `unknown`,
 the plugins recorded, a resume under others refused, and
-their entry points read, and `--version`) and `tests/shared/test_judging_rules.py` (12: the pin,
+their entry points read, and `--version`) and `tests/shared/test_judging_rules.py` (14: the pin,
 the history, the closure, the entries and exemptions resolve, an assignment can be listed, the
-normalization keeps code and drops comments and docstrings).
+walk naming a new module a listed one imports and a renamed helper, a new constant and an
+inherited class attribute in a synthetic tree, the normalization keeps code and drops comments
+and docstrings).
 
 ## §8 Out of scope / forbidden
 - MUST NOT implement attack/mutation/evaluation/scoring/reporting/fingerprint logic (u05-u11,

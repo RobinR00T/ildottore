@@ -16,7 +16,9 @@ The carryover ledger. Every agent session updates this so context survives even 
   detectors, each adapter's mapping of a reply to a stop reason, its side and an unreadable reply).
   A closure test walks every `ildottore` name each entry refers to (imports, module names,
   `self.<method>`): it must be listed or exempted in `JUDGING_EXEMPT` with its reason. The list
-  went from 29 entries to 151, with 39 exemptions, and the walk finds none uncovered. Plugin evaluators are recorded
+  went from 29 entries to 163, with 75 exemptions, and the walk finds none uncovered; it follows
+  `self.<member>` to a class attribute a base class sets, and, after the scoring branch's audit
+  named them, `_run_spec`, `_sweep_identities` and the reproduction functions are listed. Plugin evaluators are recorded
   (`evaluator_plugins`) and a resume under others is refused. The auditor's mut-a to mut-d, applied
   as patches to this tree, each fail the pin now; the digest is equal on Python 3.9, 3.12 and 3.14.
 - M-1: version 1 is "the rules as of the merge that introduced the version"; every run that
@@ -30,7 +32,7 @@ The carryover ledger. Every agent session updates this so context survives even 
   shaped, `judging_rules` at most 1,000,000; L-6 `tool_versions`, every invocation's; L-7 tests for
   the selection flags, the changed-field paths, an unrecorded selection, a live route and a run
   with no target fields; L-8 `in severity (2)` from a real run instead of `in evaluator_logic (75)`.
-- Tests: `tests/shared/test_judging_rules.py` 12, `tests/cli/test_resume_judging_rules.py` 26,
+- Tests: `tests/shared/test_judging_rules.py` 14, `tests/cli/test_resume_judging_rules.py` 26,
   `tests/cli/test_resume_refusal_advice.py` 15, `tests/cli/test_resume_corrupt_context.py` 31.
   GATES_PLACEHOLDER
 

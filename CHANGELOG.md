@@ -30,14 +30,17 @@ versioning: [SemVer](https://semver.org/).
 - **A tripwire forces the bump.** `tests/shared/test_judging_rules.py` pins a digest of the code
   that decides a stored verdict (`JUDGING_SOURCES`: the evaluators package, nine `shared` modules
   and names of three more, the redactor's own detectors the PII and secret evaluators import, the
-  runner's verdict functions and constants, `execute_attempt`, the conversation executor and each
+  runner's verdict functions and constants, its spec loop and identity sweep, `execute_attempt`,
+  the conversation executor and each
   adapter's reply-to-stop mapping; an entry may be a function, a class or a module-level
   assignment), with comments, docstrings and blank lines left out (the same digest on Python 3.9,
   3.12 and 3.14). A change to that code fails until the version is bumped and the new digest
   pinned. **A closure check** walks every `ildottore` name a listed entry refers to: it must be
   listed, or exempted in `JUDGING_EXEMPT` with its reason (a data shape, an enumeration, an
-  interface, money, the words of a message, what is sent), so a new verdict module or constant
-  cannot be left out unseen. The first list missed four one-line edits that each changed a verdict
+  interface, money, the words of a message, what is sent, a rule applied when a finding is scored,
+  which specs are sent, the target's own configuration); it follows imports, module names and
+  `self.<member>`, a class attribute a base class sets included, so a new verdict module, a
+  renamed helper or a new constant cannot be left out unseen. The first list missed four one-line edits that each changed a verdict
   (pre-merge audit of `22269e0c`, H-1: the runner's `CUT_DECIDING_EVALUATORS`, a line of
   `execute_attempt`, `setup_delivery.TRACE_EVALUATORS` and the redactor's `is_date_stamp`); each
   fails the pin now. **The pins are an append-only history** (`PIN_HISTORY`): a re-pin of a
@@ -116,7 +119,7 @@ versioning: [SemVer](https://semver.org/).
   five troubleshooting rows), FAQ, USAGE, `dottore(1)`, `docs/02` §3, `docs/09`, ADR-0007's OD-44
   note (corrected as below), PROGRESS; contracts u12 §7 A-81 (new) and A-24 (amended), u10 §6, the
   index rows. Where the docs say which runs are refused, they name `JUDGING_RULES_SINCE` rather
-  than a date, set once when the version lands. Tests: `tests/shared/test_judging_rules.py` (12),
+  than a date, set once when the version lands. Tests: `tests/shared/test_judging_rules.py` (14),
   `tests/cli/test_resume_judging_rules.py` (26), `tests/cli/test_resume_refusal_advice.py` (15) and
   `tests/cli/test_resume_corrupt_context.py` (31). On `de122e26` the first two do not import (the
   module is new), all 15 of the third fail and 28 of the 31 (the three that pass are the
