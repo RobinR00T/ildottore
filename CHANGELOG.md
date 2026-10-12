@@ -90,8 +90,8 @@ versioning: [SemVer](https://semver.org/).
   digests: 8 hex digits per field). An older version ignores the new keys and drops them on its
   rewrite. The spec and target digests are unchanged, byte for byte.
 - Docs: MANUAL (the `--resume` row and resume prose of `dottore run`, the `dottore replay` note,
-  four troubleshooting rows), FAQ, USAGE, `dottore(1)`, `docs/02` §3,
-  `docs/09`, PROGRESS; contracts u12 §7 A-81 (new) and A-24 (amended), u10 §6, the index row. Tests:
+  four troubleshooting rows), FAQ, USAGE, `dottore(1)`, `docs/02` §3, `docs/09`, ADR-0007's
+  OD-44 note (corrected as below), PROGRESS; contracts u12 §7 A-81 (new) and A-24 (amended), u10 §6, the index row. Tests:
   `tests/shared/test_judging_rules.py` (7), `tests/cli/test_resume_judging_rules.py` (8, all failing
   before the fix), `tests/cli/test_resume_refusal_advice.py` (9, all failing before) and
   `tests/cli/test_resume_corrupt_context.py` (31, 28 failing before: the three that pass are the
