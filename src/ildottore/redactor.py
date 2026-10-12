@@ -64,7 +64,7 @@ _ALREADY_MASKED: Final = re.compile(r"«REDACTED:([A-Za-z0-9_]+)(?::([0-9a-f]{8}
 #: the type hints the evaluators give ``mask_value`` (a test keeps this list complete).
 _OWN_MASK_TYPES: Final = frozenset(
     {
-        *("credential", "url_password", "labeled_secret", "high_entropy", "hex_token"),
+        *("credential", "url_password", "labeled_secret", "high_entropy"),
         *("canary", "shared_line", "tool_arg_injection", "ip", "private_key"),
     }
 )
@@ -410,6 +410,21 @@ LABELLED_CARD: Final = re.compile(
 # four-letter string everywhere would rewrite ordinary words in every report.
 _KNOWN_SECRETS: set[str] = set()
 _KNOWN_LOCK: Final = threading.Lock()
+
+# --- the masks of the A-78 types this process wrote ---------------------------------------
+# A mask is kept as written (``Redactor._redact_once``) when its type is one the tool writes, so
+# that a second pass, the evidence store's check and a report leave the tool's own masks alone. A
+# target can write one too: `password: «REDACTED:high_entropy»<secret>` is kept, and ends the
+# labelled value before the secret, since before A-78. The types A-78 added (the new key
+# formats, `uuid`, `hex_token`) do not extend that: a mask of one is kept only when this process
+# wrote it, which a target cannot tell from a digest it does not know (the salt is the
+# process's); any other is read as text, as the redactor before A-78 read it (pre-merge audit of
+# A-78, L3). Held as one integer a mask, the type's index and the digest, in two generations of
+# at most ``_EMITTED_CAP`` each: about 7 MB, and a mask from the last 262,144 written, more
+# than a reply at the 4 MiB cap holds.
+_EMITTED_CAP: Final = 1 << 18
+_EMITTED: list[set[int]] = [set(), set()]
+_EMITTED_LOCK: Final = threading.Lock()
 _KNOWN_MIN_LEN: Final = 8
 #: The same floor, for an adapter that refuses a shorter credential before sending it (u04 A-78).
 KNOWN_SECRET_MIN_LEN: Final = _KNOWN_MIN_LEN
@@ -1235,6 +1250,43 @@ def _default_patterns() -> list[Pattern]:
     ]
 
 
+#: The mask types A-78 added: kept as written only when this process wrote the mask (`_EMITTED`).
+_LATE_MASK_TYPES: Final = tuple(
+    sorted(
+        {_HEX_TOKEN.type, *(pattern.type for pattern in _late_patterns())}
+        - {pattern.type for pattern in _default_patterns()}
+    )
+)
+
+
+def _emitted_key(kind: str, digest: str) -> int | None:
+    """The registry's integer for a mask of type ``kind`` and digest ``digest``, if A-78's."""
+
+    if kind not in _LATE_MASK_TYPES:
+        return None
+    return int(digest, 16) * len(_LATE_MASK_TYPES) + _LATE_MASK_TYPES.index(kind)
+
+
+def _record_emitted(kind: str, digest: str) -> None:
+    key = _emitted_key(kind, digest)
+    if key is None or key in _EMITTED[0] or key in _EMITTED[1]:
+        return
+    with _EMITTED_LOCK:
+        if len(_EMITTED[0]) >= _EMITTED_CAP:
+            _EMITTED[1] = _EMITTED[0]
+            _EMITTED[0] = set()
+        _EMITTED[0].add(key)
+
+
+def _was_emitted(kind: str, digest: str | None) -> bool:
+    """True if this process wrote the A-78 mask of type ``kind`` with ``digest``."""
+
+    if digest is None:
+        return False
+    key = _emitted_key(kind, digest)
+    return key is not None and (key in _EMITTED[0] or key in _EMITTED[1])
+
+
 def _shannon_entropy(s: str) -> float:
     """Shannon entropy (bits/char) of ``s`` - 0.0 for empty strings."""
 
@@ -1281,10 +1333,11 @@ class Redactor:
             if self._late and all(pattern.hints for pattern in self._late)
             else None
         )
-        # The mask types kept as written (`_redact_once`), kept in step with `register`.
-        self._mask_types = _OWN_MASK_TYPES | {
-            pattern.type for pattern in (*self._patterns, *self._late)
-        }
+        # The mask types kept as written (`_redact_once`), kept in step with `register`; one of
+        # the A-78 types only when this process wrote it (`_EMITTED`).
+        self._mask_types = (_OWN_MASK_TYPES | {pattern.type for pattern in self._patterns}) - set(
+            _LATE_MASK_TYPES
+        )
         self._entropy_threshold = entropy_threshold
         self._entropy_min_len = entropy_min_len
         # The hex run is part of the entropy fallback (A-78): a redactor built without it
@@ -1329,8 +1382,27 @@ class Redactor:
 
     def _mask_token(self, pattern: Pattern, value: str) -> str:
         if pattern.hashed:
-            return _MASK_TEMPLATE_HASHED.format(type=pattern.type, digest=self._digest(value))
+            return self._hashed_mask(pattern.type, value)
         return _MASK_TEMPLATE.format(type=pattern.type)
+
+    def _hashed_mask(self, kind: str, value: str) -> str:
+        """The hashed mask of ``value``, typed ``kind``; recorded when of an A-78 type."""
+
+        digest = self._digest(value)
+        _record_emitted(kind, digest)
+        return _MASK_TEMPLATE_HASHED.format(type=kind, digest=digest)
+
+    def _kept_written(self, mask: str) -> bool:
+        """True if ``mask``, a mask written in the text, is of a type kept as written."""
+
+        found = _ALREADY_MASKED.fullmatch(mask)
+        return found is not None and self._kept(found)
+
+    def _kept(self, mask: re.Match[str]) -> bool:
+        """True if ``mask`` (an `_ALREADY_MASKED` match) is of a type kept as written."""
+
+        kind = mask.group(1)
+        return kind in self._mask_types or _was_emitted(kind, mask.group(2))
 
     def redact_text(self, text: str) -> str:
         """Mask every secret/PII occurrence in ``text`` (idempotent).
@@ -1418,8 +1490,8 @@ class Redactor:
 
         def _keep_mask(m: re.Match[str]) -> str:
             nonlocal known
-            kind, digest = m.group(1), m.group(2)
-            if kind not in self._mask_types:
+            digest = m.group(2)
+            if not self._kept(m):
                 return m.group(0)
             if digest is not None:
                 known = set(_known_secrets()) if known is None else known
@@ -1928,7 +2000,7 @@ class Redactor:
             if index is None:  # a mask a pattern wrote, or text in that shape (`_keep_mask`)
                 if kind == "email":  # it took an `@`: the password's, past a dotted host
                     return _EMAIL_AS_WRITTEN
-                return _NEUTRAL if kind in self._mask_types else None
+                return _NEUTRAL if self._kept_written(m.group(0)) else None
             return written[int(index)] if int(index) in credentials else _NEUTRAL
 
         def _readable(stretch: str) -> bool:
@@ -1939,7 +2011,7 @@ class Redactor:
             )
 
         def _as_token(m: re.Match[str]) -> str | None:
-            return _NEUTRAL if m.group(1) or m.group(2) in self._mask_types else None
+            return _NEUTRAL if m.group(1) or self._kept_written(m.group(0)) else None
 
         read = _AsWritten(text, _shown)
         # The `:` after the user of each URL the next pass can read, once this pass's masks are
@@ -2187,7 +2259,7 @@ class Redactor:
             (late.type for late in self._late if hinted and _matches(late, token)),
             "high_entropy",
         )
-        return _MASK_TEMPLATE_HASHED.format(type=kind, digest=self._digest(token))
+        return self._hashed_mask(kind, token)
 
     def _hex_run_spans(
         self, token: str, taken: Sequence[tuple[int, int]]
