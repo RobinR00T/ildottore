@@ -27,6 +27,12 @@ The carryover ledger. Every agent session updates this so context survives even 
 - Tests, 13 new, all failing on `3f7b1254`: `tests/adapters/test_filter_stop_provenance.py`
   now 54 (52 fail on `de122e26`, 25 on `10cb526b`, 19 on `e1a8aacf`, 11 on `3f7b1254`),
   `tests/cli/test_filter_stop_provenance_campaign.py` now 44 (40, 15, 7 and 2).
+- Re-run: the auditor's `repro_declared.py` output is identical to round 3's, its `compat.py`
+  byte-identical to `main`. Gates on `d509befa` (`make gates`, worktree `src` first on
+  `PYTHONPATH`, `TMPDIR` at the system default, 10:24 to 10:33): all green, 5,601 tests passed
+  (5,588 on `3f7b1254`), coverage 97.86% (14,198 statements, 208 missed),
+  `shared/provider_filter.py` at 100%, `redactor.py` at 99%, lint OK across 75 specs, self-scan 0
+  high/critical, bandit and pip-audit clean.
 
 ## State, 2026-10-12 (morning): the pre-merge audit of `e1a8aacf` (A-79), fixed
 
