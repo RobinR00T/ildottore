@@ -1,7 +1,41 @@
 # PROGRESS: Il Dottore (living ledger)
 
 The carryover ledger. Every agent session updates this so context survives even a cold start
-(the method's observability/resume + "own the context" discipline). Newest on top.
+(the method's observability/resume + "own the context" discipline). Entries are in merge order,
+newest merge on top: a branch's entries land together when it merges, so the dates of
+neighbouring entries can interleave (an older branch merged later sits above a newer one).
+
+## State, 2026-10-12: the docs and contracts audit, fixed (`docs/audit-2026-10-12`)
+
+- From `main` at `de122e26`, one commit per finding group of the audit report
+  (`_ildottore-tren/scratch/audit-docs/REPORT.txt`), every figure re-measured on this branch
+  with `PYTHONPATH` at the worktree's `src`; decisions taken under the owner's delegation (best
+  practice) are recorded as such in each commit.
+- HIGH: `examples/ci-github-actions.yml` installed `@v0.1.0` by `pip install "git+https://..."`.
+  A wheel built with the selection `pyproject.toml` declares ships neither `specs/` nor
+  `schemas/` (measured with that selection assembled offline, hatchling being absent: `dottore
+  lint` stops on `schemas/attack-spec.schema.json`, `run --dry-run` exits 3, with or without
+  `--spec-path`), so the example now checks out a pinned SHA of `main` and installs it editable,
+  with `--spec-path`; the v0.1.0 gate differences are listed beside the pin. Packaging is left
+  for its own change.
+- MEDIUM, re-measured: 33 specs and 545 requests on `examples/target.local.yaml`; "34 of 75
+  specs never ran" against an HTML stub (9 requests, 8 attempts, 0 tokens); the `docs/16` §3
+  table (33/545, 58/1,255, 40/580, 61/735, 66/775; two identities 582, 737, 779; judge +700);
+  140 and 350 replay attempts on the vulnerable mock; `dottore fingerprint` exits 0 on a 200
+  that is not JSON (OD-21); the Bedrock item closed by OD-42; the scope checksum is integrity
+  only (OD-2).
+- Ledger and contracts: CHANGELOG "breaking for <whom>" labels (12 more headings, 14 in all),
+  the A-37 row, A-62, A-64 and A-75 reserved, OD rows in order, unit owners, ODs cited in each
+  §9, and three open decisions numbered for the owner: OD-45 (a judge's self-consistency
+  disagreement), OD-46 (a policy-pack flag), OD-47 (F9, `leetspeak` over `JB-ENCODING-001`'s
+  Base64).
+- CLI: no `--help` shows internal text, pinned by `tests/cli/test_help_text.py` (17 tests, 6 of
+  them fail on the old docstrings); `dottore(1)` documents every command's options.
+- Gates: `make --no-print-directory gates` green on this branch before the rewrap commit, 5493
+  tests (17 new), 97.84% coverage, 75 specs lint OK, four import contracts kept, self-scan 0 high/critical, bandit and pip-audit
+  clean. `main` itself after the merges of 2026-10-11, measured in a clean copy of `de122e26`
+  (`git archive`): 5476 passed, 97.84% coverage, a figure no entry recorded. Lines over 100
+  columns are rewrapped in the last commit, alone, so it can be redone after a rebase.
 
 ## State, 2026-10-11 (evening): the pre-merge audit of `ed381359` (OD-43), fixed
 
