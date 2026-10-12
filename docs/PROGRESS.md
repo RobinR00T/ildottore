@@ -34,6 +34,13 @@ The carryover ledger. Every agent session updates this so context survives even 
   (38, 15 and 7: d1 with U+200B, the WebSocket turn through `execute_run` on 3 fragments, the
   lone provider error, the Anthropic plan line, and the changed plan-line test), and
   `tests/adapters/test_malformed_replies.py` now 42 (3 fail on `e1a8aacf`, and a control).
+- Re-run on the fix: the auditor's `repro_declared.py` gives d1 to d6 as in round 2 (d1 exit 3,
+  `filtered`), its `compat.py` is byte-identical to `main`. Gates on `2288de00` (`make gates`,
+  worktree `src` first on `PYTHONPATH`, `TMPDIR` at the system default, 09:36 to 09:45): all
+  green, 5,588 tests passed (5,567 on `e1a8aacf`), coverage 97.86% (14,194 statements, 208
+  missed), `shared/filter_stops.py`, `shared/provider_filter.py` and `shared/models.py` at 100%,
+  `adapters/websocket.py` at 99%, lint OK across 75 specs, self-scan 0 high/critical, bandit
+  and pip-audit clean.
 
 ## State, 2026-10-12 (02:00): the pre-merge audit of `10cb526b` (A-79), fixed
 

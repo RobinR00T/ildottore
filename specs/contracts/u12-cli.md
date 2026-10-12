@@ -1233,8 +1233,9 @@ adapter never reads one (pre-merge audit of `e1a8aacf`, LOW 4). Until the audit 
 model's refusals among them, and 7 on `e1a8aacf`: d1 with a zero-width space, a WebSocket turn
 withheld after a blank delta through `execute_run` on `""`, `"  "` and a zero-width space, a
 failed provider's lone error, the Anthropic plan line, and the plan line's new words; the first
-13: the two ways a run is filtered, an `openai` target's foreign stops, an `anthropic` target answering Azure's 400, the judge's fail on
-cut text with and without `--include-needs-review`, a WebSocket file's declaration and its refusal,
+13: the two ways a run is filtered, an `openai` target's foreign stops, an `anthropic` target
+answering Azure's 400, the judge's fail on cut text with and without `--include-needs-review`, a
+WebSocket file's declaration and its refusal,
 and three controls: a genuine Azure 400 on some prompts, a genuine Anthropic refusal before and
 after output, the same text without a filter word; 9 fail on `de122e26`), and by the four tests of
 `test_provider_filter_campaign.py` and `test_provider_output_filter_campaign.py` whose every
