@@ -157,13 +157,15 @@ resume would mix the two. It keeps the attempts the halted half stored with the 
 version gave them and judges only what it sends; the stored replies are redacted (a leaked canary
 reads `«REDACTED:canary:…»`), so they cannot be judged again. A run halted on `f12ba83` and
 resumed after the filter-cut rule (OD-42) kept 4 attempts judged `pass` beside 2 judged cut, and
-its report said "6 of 10 attempts cut" where all 10 were. So each run records the version of the
-judging rules when it starts (`dottore --version` prints it: `dottore 0.1.0 (judging rules 1)`),
-and a resume under other rules, or of a run that records none (any run halted before
-2026-10-12), is refused with both named. Finish the run with the version that started it, or
-start a fresh run; no flag waives it. Other refusals name what changed and the flag that puts it
-back: the spec field and `--spec-path`, the selection flags the run was made with, or the route
-(`--hardened`).
+its summary said `Cut by the provider's output filter: 6 attempt(s) in 2 spec(s) came back cut or
+replaced` where all 10 were. So each run records the version of the judging rules when it starts
+(`dottore --version` prints it: `dottore 0.1.0 (judging rules 1)`), and a resume under other
+rules, or of a run that records none (any run a version from before
+`shared.judging_rules.JUDGING_RULES_SINCE` halted), is refused with both named. So is a resume
+under other evaluator plugins than the run was judged with. Finish the run with the version (and
+plugins) that started it, or start a fresh run; no flag waives it. Other refusals name what changed
+and the flag that puts it back: the spec field and `--spec-path`, the selection flags the run was
+made with, or the route (`--hardened`).
 
 ### What is "confirmed" vs "needs-review"?
 

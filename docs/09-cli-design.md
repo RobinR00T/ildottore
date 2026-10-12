@@ -165,8 +165,8 @@ written (schema v4, `pending` before the write and `written` after), so a resume
 mid-spec leaves no artifact the manifest does not know, and the next resume is not refused as
 tampered (it was, which is why the first attempt was withdrawn). A resume adopts into the
 journal the artifacts already on disk once they pass the check, so a run started by an older
-version kept resuming (until 2026-10-12: such a run is now refused for the rules that judged it,
-below).
+version kept resuming (until the judging-rules record: such a run is now refused for the rules
+that judged it, below).
 
 **A resume is bound to the rules that judged it (2026-10-12, u12 A-81).** The attempts a resume
 keeps carry the verdicts the version that judged them gave, and a resume judges only what it
@@ -174,12 +174,15 @@ sends, so a change to those rules between the halt and the resume made one repor
 kind of reply two ways (CLI audit H2: 4 attempts kept as `pass` beside 2 judged cut by the
 provider's filter, and "6 of 10 cut" where all 10 were). `shared.judging_rules.
 JUDGING_RULES_VERSION` names the rules; a test pins a digest of the code that decides a stored
-verdict to each version, so a change to that code fails until the version is bumped. A run records
+verdict to each version, so a change to that code fails until the version is bumped, and walks
+what that code refers to, so a constant or helper on the verdict path that is neither listed nor
+exempted with its reason fails too; the pins are an append-only history. The evaluator plugins a
+run loads are recorded and bound the same way. A run records
 it (`context_json.judging_rules`, beside `tool_version`) when it starts, `--version` prints it, and
 a resume under other rules, or of a run that records none, is refused before it sends, with no
 flag: the stored replies are redacted, so judging the kept ones again is not possible. The other
 refusals name what changed and the flag that restores it (M1): the field of a spec
-(`in evaluator_logic (75)`) and `--spec-path`, the selection flags the run was made with, the field
+(`in severity (2)`) and `--spec-path`, the selection flags the run was made with, the field
 of the target file, or only the route (`--hardened`); and a run-context value of the wrong shape is
 refused, naming its field (L6).
 

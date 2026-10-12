@@ -398,7 +398,7 @@ def test_the_pins_are_an_append_only_history_that_ends_at_the_current_version() 
         assert owners.setdefault(digest, version) == version, "one code pinned to two versions"
 
 
-def test_every_name_a_listed_entry_refers_to_is_listed_or_exempt() -> None:
+def test_the_closure_every_name_a_listed_entry_refers_to_is_listed_or_exempt() -> None:
     """The closure: a name on the verdict path cannot be left out of the digest unseen.
 
     The first list held the runner's ``_cut_verdict`` and not the ``CUT_DECIDING_EVALUATORS`` it

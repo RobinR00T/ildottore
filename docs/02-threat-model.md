@@ -30,8 +30,8 @@ build must satisfy it.
 - The tool assists **authorized** security testing only. The scope file *is* the
   authorization record. Runs are meant to be auditable (who/what/when/scope-hash). Today a run
   records the *what* (spec digests, target digest, judge digest, run count, planning mode, and
-  since 2026-10-12 the version of the rules that judged it and the package that started it, which
-  a resume is bound to, u12 A-81) and
+  since the judging-rules record, the version of the rules that judged it, the evaluator plugins
+  it loaded and the package of each invocation, which a resume is bound to, u12 A-81) and
   *when* (`started_at` / `finished_at`, UTC, in the run store and the JSON report, since
   2026-10-04; a resume keeps the start of the run it finishes) and *under which scope* (since
   2026-10-05: the run store keeps each scope the run went out under, in order, and a report

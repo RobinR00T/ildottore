@@ -3,6 +3,37 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-12 (later): the pre-merge audit of `22269e0c`, fixed (H-1, M-1, M-2, L-1 to L-8)
+
+- The audit (`_ildottore-tren/scratch/fixcli2-audit/`) confirmed H2, M1 and L6, and found the
+  tripwire blind to verdict code (H-1): four one-line edits each changed a verdict under an
+  unchanged digest (`runner.CUT_DECIDING_EVALUATORS`, the `filter_cut` line of `execute_attempt`,
+  `setup_delivery.TRACE_EVALUATORS`, the redactor's `is_date_stamp`).
+- H-1: an entry of `JUDGING_SOURCES` may name a module-level assignment, and the list now holds
+  what the auditor named (the runner's constants and `_tagged_seeded`, `execute_attempt`,
+  `_unreadable_result`, the conversation executor, `canonical_tool_calls`, `tool_name_map`,
+  `is_seeded`, `shared.nesting`, `shared.wellformed`, `shared.amounts.is_count`, the redactor's
+  detectors, each adapter's mapping of a reply to a stop reason, its side and an unreadable reply).
+  A closure test walks every `ildottore` name each entry refers to (imports, module names,
+  `self.<method>`): it must be listed or exempted in `JUDGING_EXEMPT` with its reason. The list
+  went from 29 entries to 151, with 39 exemptions, and the walk finds none uncovered. Plugin evaluators are recorded
+  (`evaluator_plugins`) and a resume under others is refused. The auditor's mut-a to mut-d, applied
+  as patches to this tree, each fail the pin now; the digest is equal on Python 3.9, 3.12 and 3.14.
+- M-1: version 1 is "the rules as of the merge that introduced the version"; every run that
+  records no version is refused, whatever halted it; the docs name `JUDGING_RULES_SINCE` instead of
+  the date. `scratch/fixcli2/LANDING.md` lists what the final rebase updates.
+- M-2: `PIN_HISTORY`, append-only; a re-pin is a new line that says `re-pin` and why. Version 1 is
+  re-pinned on the new list (one line), being unreleased.
+- L-1 `its capabilities field changed`; L-2 the MANUAL sentence; L-3 the quotes copied from the
+  real output and the three commits named; L-4 a record whose rules differ is refused for them
+  before its other fields are checked; L-5 versions written `v<version>`, stored ones PEP 440
+  shaped, `judging_rules` at most 1,000,000; L-6 `tool_versions`, every invocation's; L-7 tests for
+  the selection flags, the changed-field paths, an unrecorded selection, a live route and a run
+  with no target fields; L-8 `in severity (2)` from a real run instead of `in evaluator_logic (75)`.
+- Tests: `tests/shared/test_judging_rules.py` 12, `tests/cli/test_resume_judging_rules.py` 25,
+  `tests/cli/test_resume_refusal_advice.py` 15, `tests/cli/test_resume_corrupt_context.py` 31.
+  GATES_PLACEHOLDER
+
 ## State, 2026-10-12: a resume is bound to the rules that judged it (u12 A-81); its refusals say what changed; a corrupt context value is refused
 
 - On `fix/resume-judging-rules`, from `main` at `de122e26`: three findings of the CLI audit of
@@ -26,7 +57,7 @@ The carryover ledger. Every agent session updates this so context survives even 
 - M1: the run context records `selection`, `spec_fields`, `target_fields` and `route`, and the
   refusals name the field (`1 changed (PI-DIRECT-001), in attack`), the selection flags the run was
   made with (`Resume with --spec PI-DIRECT-001 --spec SP-LEAK-001`), the target field (`its
-  capabilities differ`), or the route and its flag (`... resolves the offline 'hardened' replay
+  capabilities field changed`), or the route and its flag (`... resolves the offline 'hardened' replay
   (--hardened forces it). The target file is otherwise unchanged ... Resume without --hardened`).
 - L6: `run_sqlite._check_context` checks every field of `context_json` where it is read (and the
   appends refuse rather than overwrite); `runs.started_at` is checked by the resume. On
