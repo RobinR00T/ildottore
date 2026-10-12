@@ -365,6 +365,42 @@ async def test_an_owner_whose_send_failed_still_has_its_canary_found_in_the_othe
         )
 
 
+async def test_a_sweep_that_left_one_out_beside_two_answers_says_so(
+    tmp_path, evaluators, mutators, scorer
+) -> None:  # type: ignore[no-untyped-def]
+    """Three identities, one down: two did answer, and the note says so.
+
+    It said ``fewer than two identities answered the identity sweep`` whenever an identity was
+    left out (``repro_corroborate_note.py``, pre-merge audit of ``d07a1088``, LOW 2)."""
+
+    spec = _battery()["EMB-XTENANT-RETRIEVAL-001"]
+    probes = [
+        IdentityProbe(
+            identity_id="tenant-a", adapter=_Counting("tenant-a", "Reset it."), canary=None
+        ),
+        IdentityProbe(
+            identity_id="tenant-b",
+            adapter=_Counting("tenant-b", f"my record {_OWNED}"),
+            canary=_OWNED,
+        ),
+        IdentityProbe(identity_id="tenant-c", adapter=_Down("tenant-c", ""), canary=None),
+    ]
+    runner = _runner(tmp_path, evaluators, mutators, scorer, _SECURE, probes=probes)
+    finding = await _finding(runner, _target(multi_identity=True), spec)
+
+    assert finding.status is VerdictStatus.INCONCLUSIVE
+    for attempt in finding.attempts:
+        assert attempt.verdict is not None
+        assert attempt.verdict.inconclusive_reason is InconclusiveReason.CAPABILITY_UNAVAILABLE
+        assert "fewer than two" not in attempt.verdict.reasoning
+        assert attempt.verdict.reasoning.endswith(
+            "; authz_leak kept: 2 identities answered the identity sweep, and it did not hear "
+            "from every identity; the identity sweep left out tenant-c (ConnectionError: identity "
+            "endpoint down): its send failed, so no reply was read, and the reply it would have "
+            "given may be the one that received another identity's data"
+        )
+
+
 async def test_every_identity_down_keeps_authz_leak(tmp_path, evaluators, mutators, scorer) -> None:  # type: ignore[no-untyped-def]
     """A sweep that got no answer at all is still a sweep: nothing is set aside."""
 

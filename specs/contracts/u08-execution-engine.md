@@ -679,7 +679,13 @@ as amended:
   provider's, and it may be the one that received another identity's data` or, for a failed send
   (the prompt the provider's input filter refused reads as A-70's), `...: its send failed, so no
   reply was read, and the reply it would have given may be the one that received another
-  identity's data`. The cost, accepted: a transient failure of one identity's send keeps the
+  identity's data`. On a spec that only corroborates with `authz_leak`, the clauses follow `;
+  authz_leak kept: <n> identities answered the identity sweep, and it did not hear from every
+  identity` (amended 2026-10-12 after the pre-merge audit of `d07a1088`, LOW 2: it said `fewer
+  than two identities answered the identity sweep` with two of three that had,
+  `repro_corroborate_note.py`; that note stays for a sweep with fewer than two answers; checked
+  by `tests/core/test_authz_leak_corroboration.py`, 1 test, failing on `d07a1088`). The cost,
+  accepted: a transient failure of one identity's send keeps the
   spec from passing (the sweep is not retried, and a resume of a spec it finished does not sweep
   again), visibly, where it used to let the others decide in silence. Checked by
   `tests/core/test_multi_identity.py` (6 tests, failing on `de122e26`) and the two changed in

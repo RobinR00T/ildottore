@@ -25,6 +25,11 @@ The carryover ledger. Every agent session updates this so context survives even 
   (`one_per_attempt_id`), not from any copy: an unreadable reply whose re-send was blocked was
   kept for good (`repro_unread_then_block.py`: the third run kept 5, sent 0, inconclusive); now
   it keeps 4, sends 1 and passes, and the summary's "a resume sends them again" holds.
+- LOW 2: `_combine_verdicts` takes the identities the sweep heard from (`swept`, a mapping, was a
+  bool; `fix/filter-stop-provenance`'s new `swept=identities is not None` calls fail mypy at the
+  merge, loudly), so with two or more answers beside one left out the note reads `authz_leak
+  kept: 2 identities answered the identity sweep, and it did not hear from every identity`
+  (`repro_corroborate_note.py`, `EMB-XTENANT-RETRIEVAL-001`, said "fewer than two").
 
 ## State, 2026-10-11 (night): the audit of the scoring, fixed
 

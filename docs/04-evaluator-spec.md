@@ -92,7 +92,10 @@ The values a spec can write:
   kept, its gap held that spec `inconclusive` on every single-identity target, a secure reply
   included (until PR #60, merged 2026-10-09). After a sweep that got fewer than two answers it is
   kept (`authz_leak kept: fewer than two identities answered the identity sweep`), since the
-  identity that answered may have shown a leak. A spec that requires `multi_identity`
+  identity that answered may have shown a leak; after one that got two or more beside an identity
+  it left out, it is kept too, and says so (`authz_leak kept: 2 identities answered the identity
+  sweep, and it did not hear from every identity`, followed by the identity and why: until
+  2026-10-12 that case said "fewer than two" as well). A spec that requires `multi_identity`
   (`DL-XTENANT-001`), or whose only evaluator is `authz_leak`, keeps it. Both notes sit in each
   attempt's verdict reasoning, which the JSON report carries and the HTML, SARIF, JUnit and
   terminal outputs do not.

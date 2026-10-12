@@ -38,7 +38,11 @@ versioning: [SemVer](https://semver.org/).
   owner left out had no canary, and tenant A's reply showing it was no crossing (three identities,
   the owner timing out: PASS on `de122e26`, `inconclusive` on the first version of this fix); it
   is a confirmed fail, and with two identities `authz_leak` reads the owner map on the one reply
-  left (u06's half of A-74).
+  left (u06's half of A-74). On a spec that only corroborates with `authz_leak`
+  (`EMB-XTENANT-RETRIEVAL-001`), the note says why it was kept (pre-merge audit, LOW 2): it read
+  `authz_leak kept: fewer than two identities answered the identity sweep` with two of three that
+  had; now `authz_leak kept: 2 identities answered the identity sweep, and it did not hear from
+  every identity`, before the identity left out and why.
 - **The resume note names each id it sends again once (LOW 1).** An id holding a reply stored
   without a verdict and its unreadable re-send read `-1 that ended in an environment error will
   be sent again; 1 that could not be read ...; 1 answered but not evaluated ...`; now `1 that
