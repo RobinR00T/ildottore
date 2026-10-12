@@ -113,10 +113,16 @@ def _report_unexpected(exc: Exception, *, verbose: int) -> None:
         # The reader of stdout went away (`dottore ... | head`). Python would print a second
         # error at exit, flushing into the closed pipe; the command-line library quiets that
         # the same way.
-        from typer._click.utils import PacifyFlushWrapper
+        import importlib
 
-        sys.stdout = PacifyFlushWrapper(sys.stdout)
-        sys.stderr = PacifyFlushWrapper(sys.stderr)
+        for name in ("typer._click.utils", "click.utils"):  # the vendored copy, else click's own
+            try:
+                pacify = importlib.import_module(name).PacifyFlushWrapper
+            except (ImportError, AttributeError):
+                continue
+            sys.stdout = pacify(sys.stdout)
+            sys.stderr = pacify(sys.stderr)
+            break
         _echo_err("error: the output stream closed before the command finished (broken pipe)")
         return
     try:
