@@ -11,8 +11,8 @@ The carryover ledger. Every agent session updates this so context survives even 
   `scratch/fixstop-fix2/`.
 - MEDIUM: `filter_stops: []` turned the filter's withheld reply into a pass. d1, `PI-DIRECT-001`
   answered with `content_filter` and no text: with `[]` 3 passes, exit 0 (6 judge requests on
-  the empty replies); without it, cut, `filtered`, exit 3. The docs recommended `[]` for "a gateway",
-  and a gateway in front of Azure relays Azure's filter. Now each adapter says what its provider
+  the empty replies); without it, cut, `filtered`, exit 3. The docs recommended `[]` for "a
+  gateway", and a gateway in front of Azure relays Azure's filter. Now each adapter says what its provider
   documents whatever is declared (`own_filter_stops`: OpenAI `content_filter`, Anthropic
   `refusal`, a REST template's `shape_filter_stops`), and `stop_provenance` never marks foreign a
   reply with no text and no tool call that ends on one of them. It goes through the existing path
@@ -34,6 +34,10 @@ The carryover ledger. Every agent session updates this so context survives even 
   10 on `10cb526b`: d1 for `openai` and `anthropic` with the exit code, the plan line, the model's
   6 refusals and its normalization). The auditor's `compat.py`: every example digests and dumps
   as on `main`.
+- Gates on `572094b9` (`make gates`, worktree `src` first on `PYTHONPATH`, 02:01 to 02:08): all
+  green, 5,567 tests passed (5,550 on `10cb526b`), coverage 97.86% (14,188 statements, 208
+  missed), `shared/filter_stops.py` and `shared/provider_filter.py` at 100%, lint OK across 75
+  specs, self-scan 0 high/critical, bandit and pip-audit clean.
 
 ## State, 2026-10-12 (night): the pre-merge audit of `a55710e9` (A-79), fixed
 

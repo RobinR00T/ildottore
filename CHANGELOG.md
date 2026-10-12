@@ -61,8 +61,8 @@ reply, exit 0 where without the declaration the run is `filtered`, exit 3; and a
 declaration keeps its shape's word on an empty reply the same way). `--dry-run`, `-v` and `-sn`
 print a `filters:` line for it (and for a WebSocket file's declaration). The declaration is
 checked by the `Target` model, so a `Target` built in Python is held to the same rule as the file
-(it took any provider's words), and the adapters only narrow their own words by it. A filtered run's error line adds what to
-check for the attempts that got no reply at all (the endpoint for a transport failure, the
+(it took any provider's words), and the adapters only narrow their own words by it. A filtered
+run's error line adds what to check for the attempts that got no reply at all (the endpoint for a transport failure, the
 adapter's advice for an unreadable reply), and `dottore replay` of a filtered run prints `run:
 filtered: ...`. The fingerprint's `guardrails.output_filter` does not believe a foreign stop.
 Still possible, and said: an endpoint that uses its own provider's word can withhold chosen

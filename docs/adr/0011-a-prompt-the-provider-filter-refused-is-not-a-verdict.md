@@ -268,10 +268,10 @@ with neither that ends on the provider's own word is still the filter's withheld
 without the declaration and never a pass: the first version marked it foreign, so `[]` made it
 the model's empty answer and `PI-DIRECT-001` passed, exit 0 (pre-merge audit of `10cb526b`,
 MEDIUM). The declaration is checked by the `Target` model, so a target built in Python is held to
-it too, and an adapter only narrows its own words by it (that audit's LOW). Not taken: threading each
-adapter's set to every reader (the attack phase, the identity sweep, the replay), which leaves a
-reply stored without a verdict with nothing to read it by; the provenance travels on the reply
-instead.
+it too, and an adapter only narrows its own words by it (that audit's LOW). Not taken: threading
+each adapter's set to every reader (the attack phase, the identity sweep, the replay), which
+leaves a reply stored without a verdict with nothing to read it by; the provenance travels on the
+reply instead.
 
 **2. Text that came back was delivered.** The judge's fail on a partial reply (text the model
 wrote before the cut, never a guardrail's configured message) joins the combination every reply
