@@ -1325,14 +1325,7 @@ class Redactor:
         self._patterns: list[Pattern] = (
             list(patterns) if patterns is not None else _default_patterns()
         )
-        self._late: list[Pattern] = _late_patterns() if late else []
-        # Every hint of the late patterns, searched once in a token before any of them is tried.
-        hints = [hint for pattern in self._late for hint in pattern.hints]
-        self._late_hint = (
-            re.compile("|".join(map(re.escape, hints)))
-            if self._late and all(pattern.hints for pattern in self._late)
-            else None
-        )
+        self._set_late(_late_patterns() if late else [])
         # The mask types kept as written (`_redact_once`), kept in step with `register`; one of
         # the A-78 types only when this process wrote it (`_EMITTED`).
         self._mask_types = (_OWN_MASK_TYPES | {pattern.type for pattern in self._patterns}) - set(
@@ -1346,6 +1339,16 @@ class Redactor:
         # keeps it out of this one too.
         self._hex_runs = math.isfinite(entropy_threshold)
 
+    def _set_late(self, patterns: list[Pattern]) -> None:
+        self._late = patterns
+        # Every hint of the late patterns, searched once in a token before any of them is tried.
+        hints = [hint for pattern in self._late for hint in pattern.hints]
+        self._late_hint = (
+            re.compile("|".join(map(re.escape, hints)))
+            if self._late and all(pattern.hints for pattern in self._late)
+            else None
+        )
+
     def register(self, pattern: Pattern) -> None:
         """Add a detector. Registered patterns run **before** the built-ins."""
 
@@ -1357,7 +1360,10 @@ class Redactor:
 
         For values that are identifiers by construction and that the entropy rule mangles, such
         as a provider's model name (`meta-llama/Meta-Llama-3-8B-Instruct` has mixed case, so it
-        is not exempt as a path).
+        is not exempt as a path). The UUID pattern, which masks a shape whatever its entropy
+        rather than a documented format, goes with it (u01 A-78): a deployment's model name
+        holding one (`my-deploy-<uuid>`) reads as it did before A-78, for the fingerprint's
+        metadata layer (pre-merge audit of A-78, L5). The key formats and the JWT stay.
         """
 
         twin = Redactor(
@@ -1366,6 +1372,7 @@ class Redactor:
             entropy_min_len=self._entropy_min_len,
             late=bool(self._late),
         )
+        twin._set_late([pattern for pattern in self._late if pattern is not _UUID_PATTERN])
         twin._salt = self._salt
         return twin
 
@@ -1466,9 +1473,9 @@ class Redactor:
             written.append(mask if original is None else original)
             return f"{_STASH_OPEN}{len(preserved) - 1}{_STASH_CLOSE}"
 
-        # The stand-ins of this pass (A-78, `_Cuts`): only a redactor whose late pattern masks
-        # a UUID whole leaves one whole for it.
-        cuts = _Cuts.for_text(text) if self._late else None
+        # The stand-ins of this pass (A-78, `_Cuts`): only a redactor whose late UUID pattern
+        # masks a UUID whole leaves one whole for it.
+        cuts = _Cuts.for_text(text) if _UUID_PATTERN in self._late else None
 
         def _as_written(stretch: str) -> str:
             if cuts is not None:
@@ -2174,7 +2181,7 @@ class Redactor:
         if not self._hex_runs:  # the fallback is off: the late pattern masks each UUID whole
             return []
         whole = cuts.decode(token)
-        if self._late and _UUID.fullmatch(whole):
+        if _UUID.fullmatch(whole):  # stand-ins exist only beside the UUID pattern
             return [(0, len(token), self._mask_token(_UUID_PATTERN, whole))]
         if self._masks_whole(whole):
             return [(0, len(token), self._typed_mask(whole))]
@@ -2244,7 +2251,7 @@ class Redactor:
 
         if cuts is not None and cuts.run.search(token):
             return self._cut_spans(token, cuts)
-        if self._hex_runs and self._late and _UUID.fullmatch(token):
+        if self._hex_runs and _UUID_PATTERN in self._late and _UUID.fullmatch(token):
             # A UUID alone: masked whole either way, as the late pattern masks it.
             return [(0, len(token), self._mask_token(_UUID_PATTERN, token))]
         if self._masks_whole(token):
