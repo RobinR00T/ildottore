@@ -1491,8 +1491,9 @@ dottore new-spec --id PI-NEW-001 --family prompt_injection [--category ..] [--ou
 
 Writes a spec skeleton plus empty fixtures (or prints them with `--stdout`). `--family` seeds the
 `name` and the `tags`: a value with a control or format character (a line break, an escape, a
-direction override such as U+202E) or nothing but spaces is refused (exit 3) and nothing is
-written; any other text is written as a YAML string that reads back as written (`tags: ["key:
+direction override such as U+202E), one shaped like a credential (a key or a token, not shown) or
+nothing but spaces is refused (exit 3) and nothing is written, and `--id` is checked for the
+schema's shape with `--stdout` too; any other text is written as a YAML string that reads back as written (`tags: ["key:
 value"]`, and `["yes"]` rather than the boolean YAML reads from `yes`), a plain word as before
 (`tags: [jailbreak]`). Until 2026-10-11 the value went into the
 file raw, so a control character made a scaffold `lint` then refused, and a `: ` or a `]` one

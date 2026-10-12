@@ -1322,7 +1322,11 @@ Amended after the pre-merge audit of `f9dbed49` (2026-10-12), each its own commi
   write version: "1.0" ("1" and "1.<minor>" are read too)`. LOW d: the report schema, the manual and
   u11 say a report written since `f12ba833` validates (a v0.1.0 report does not, as before). LOW h:
   `Sampling`'s docstring, the exported schema's description, is as before; the reason is a comment.
-  LOW c: docs/06's provider sentence.
+  LOW c: docs/06's provider sentence. The rerun of the audit's M7 fuzz found two more, fixed:
+  `new-spec --stdout` printed a scaffold with any `--id` (a key included; only the written path
+  checked its shape), and `--family <key>` printed the key into the scaffold: the id is checked on
+  both paths, and a family the redactor would mask is refused, never shown (none of the 205 tags
+  the shipped specs use is).
 * `shared.credential_refs.unset_variable` takes the environment as an argument; the wiring passes
   `os.environ`, as it alone reads the environment.
 

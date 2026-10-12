@@ -92,8 +92,9 @@ versioning: [SemVer](https://semver.org/).
   spec's out-of-range integer); a file name too long to open, `--scope` included, is described by
   its length; `--suite ../../etc/passwd` keeps its words; a per-attempt timeout says so, and an
   error with no message reads `<Class> (no detail given)`; `127.0.0.1` stays readable in an
-  allowlist refusal's URL. `new-spec --family` refuses a control or format character and writes
-  any other text as a YAML string that reads back as written (`yes` as `"yes"`, not a boolean).
+  allowlist refusal's URL. `new-spec --family` refuses a control or format character and a value
+  shaped like a credential, and writes any other text as a YAML string that reads back as written
+  (`yes` as `"yes"`, not a boolean); `--id` is checked with `--stdout` too.
 
 ### Added (a target file may declare one of its own granted tools not destructive, OD-43)
 
