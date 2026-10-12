@@ -740,7 +740,9 @@ class WebSocketAdapter:
             raise self._unreadable(
                 f"{self.id}: no frame of the turn carried text at path "
                 f"{quoted(reading.text_path)}, a tool call or a filter's stop; not evaluated",
-                json.dumps([e["frame"] for e in shown[TRANSCRIPT_FRAMES]], default=str),
+                json.dumps(
+                    [e["frame"] for e in shown[TRANSCRIPT_FRAMES]], default=str, ensure_ascii=False
+                ),
             )
         recorded = frames if whole else frames[start:]
         conversation.reported = len(frames)

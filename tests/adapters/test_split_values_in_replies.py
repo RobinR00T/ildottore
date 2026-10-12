@@ -9,7 +9,9 @@ value an HTTP target split over a list.
 
 from __future__ import annotations
 
+import contextlib
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -161,3 +163,54 @@ def test_an_event_stream_s_excerpt_does_not_rebuild_a_streamed_secret(
     assert excerpt.rstrip().endswith("data: [DONE]")
     clean = "".join(f"data: {json.dumps({'type': 'delta', 'text': c})}\n\n" for c in "a b c")
     assert reply_excerpt(clean, Redactor(salt="s"))[0] == clean
+
+
+#: Numbers grouped the French way, with a no-break space (U+00A0) or a narrow one (U+202F): the
+#: phone and card rules read them raw, never ``\u00a0``-escaped.
+_GROUPED = (
+    (
+        "phone, no-break spaces",
+        "Appelez le +33\u00a06\u00a012\u00a034\u00a056\u00a078 merci.",
+        "12",
+    ),
+    ("card, narrow no-break spaces", "Votre carte : 4111\u202f1111\u202f1111\u202f1111.", "1111"),
+    ("card, no-break spaces", "Votre carte : 4111\u00a01111\u00a01111\u00a01111.", "1111"),
+)
+
+
+def _digits(excerpt: str) -> str:
+    """The excerpt with every JSON string decoded and every space dropped, to read a number in."""
+
+    decoded = excerpt
+    for value in re.findall(r'"((?:[^"\\]|\\.)*)"', excerpt):
+        with contextlib.suppress(ValueError):
+            decoded += "\n" + json.loads('"' + value + '"')
+    return re.sub(r"[\s\u00a0\u202f\u2009]", "", decoded)
+
+
+@pytest.mark.parametrize(("name", "text", "group"), _GROUPED, ids=[g[0] for g in _GROUPED])
+def test_a_json_body_rewritten_for_its_logprobs_keeps_a_grouped_number_masked(
+    name: str, text: str, group: str
+) -> None:
+    """Rewritten with ``ensure_ascii``, the text outside the stream reached redaction escaped and
+    the phone and card rules missed it, where main masked it (second pre-merge audit, MEDIUM 1)."""
+
+    body = _openai_body(text, [{"type": "text", "text": text}])
+    excerpt, _ = reply_excerpt(body, Redactor(salt="s"))
+    digits = re.sub(r"\D", "", text)
+    assert digits[2:] not in _digits(excerpt), excerpt[:300]
+    assert "\\u00a0" not in excerpt and "\\u202f" not in excerpt
+
+
+@pytest.mark.parametrize(("name", "text", "group"), _GROUPED, ids=[g[0] for g in _GROUPED])
+def test_an_event_stream_rewritten_keeps_a_grouped_number_masked(
+    name: str, text: str, group: str
+) -> None:
+    deltas = "".join(
+        f"data: {json.dumps({'choices': [{'delta': {'content': c}}]})}\n\n"
+        for c in [KEY[i : i + 3] for i in range(0, len(KEY), 3)]
+    )
+    note = f"data: {json.dumps({'error': {'message': text}}, ensure_ascii=False)}\n\n"
+    excerpt, _ = reply_excerpt(note + deltas, Redactor(salt="s"))
+    assert KEY not in _digits(excerpt)
+    assert re.sub(r"\D", "", text)[2:] not in _digits(excerpt), excerpt[:300]

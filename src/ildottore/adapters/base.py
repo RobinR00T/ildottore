@@ -300,7 +300,7 @@ def _sse_masked(text: str, redactor: Redactor) -> str | None:
     frames = cast("dict[str, list[dict[str, Any]]]", masked)[TRANSCRIPT_FRAMES]
     for (index, _), frame in zip(events, frames, strict=True):
         ending = lines[index][len(lines[index].rstrip("\r\n")) :]
-        lines[index] = f"{_SSE_DATA} {json.dumps(frame['frame'])}{ending}"
+        lines[index] = f"{_SSE_DATA} {json.dumps(frame['frame'], ensure_ascii=False)}{ending}"
     return "".join(lines)
 
 
@@ -324,7 +324,10 @@ def _split_masked(body: bytes | str, redactor: Redactor) -> bytes | str:
         streamed = _sse_masked(text, redactor) if _SSE_DATA in text else None
         return body if streamed is None else streamed
     masked = mask_split(redactor, parsed)
-    return body if masked is parsed else json.dumps(masked)
+    # Written as the target wrote it, not ``\u``-escaped: the excerpt's own redaction reads the
+    # text outside any stream next, and a number grouped by a no-break space escaped is no phone
+    # and no card to the rules (second pre-merge audit of the branch, MEDIUM 1).
+    return body if masked is parsed else json.dumps(masked, ensure_ascii=False)
 
 
 def reply_excerpt(body: bytes | str, redactor: Redactor) -> tuple[str, int]:
