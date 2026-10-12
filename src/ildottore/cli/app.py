@@ -659,7 +659,7 @@ def fleet(
         Path | None,
         typer.Option(
             "--judge",
-            help="Judge target.yaml; must match the fleet file's `judge:` block, which is "
+            help="Judge target.yaml; must match the fleet file's 'judge:' block, which is "
             "used on its own when this is omitted.",
         ),
     ] = None,
