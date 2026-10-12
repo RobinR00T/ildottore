@@ -81,7 +81,10 @@ def timing_for_template(template: int) -> Timing:
         return TIMING_TEMPLATES[template]
     except KeyError:
         raise ValueError(
-            f"invalid -T template {template!r}; expected 0..{max(TIMING_TEMPLATES)}"
+            # Separated: the CLI's redactor masked 12345678901 as a phone number (u12 A-82).
+            f"invalid -T template {template:,}; expected 0..{max(TIMING_TEMPLATES)}"
+            if isinstance(template, int)
+            else f"invalid -T template {template!r}; expected 0..{max(TIMING_TEMPLATES)}"
         ) from None
 
 

@@ -12,6 +12,7 @@ widens the battery, never the authorization gate (``docs/09 §5``).
 
 from __future__ import annotations
 
+import errno
 import json
 import math
 import os
@@ -140,13 +141,13 @@ _SHA256 = re.compile(r"[0-9a-f]{64}")
 # An absolute filesystem path in an error message (`/` not preceded by a word character, `:`,
 # `/`, `]`, `@` or the `»` that closes a mask, so a URL's path is not one, after an IPv6 host,
 # credentials or a masked host included).
-_ABS_PATH = re.compile(r"(?<![\w:/\]@»])/[^\s'\"()\[\],;]+")
+_ABS_PATH = re.compile(r"(?<![\w:/\]@»\ue000])/[^\s'\"()\[\],;]+")
 #: Longer tokens are not checked (PATH_MAX): each parent costs a filesystem lookup.
 _MAX_PATH_LEN = 4096
 # Where a WHOLE path can start (A-38): an absolute one as above, and not right after `+`, `=` or
 # `-`, which the entropy rule joins into a token, with a name after the `/`; a relative one as
 # a word, after a space, a quote, a bracket, a comma or a semicolon, not starting with `/` or `«`.
-_WHOLE_ABS_START = re.compile(r"(?<![\w:/\]@»+=-])/(?=[^\s'\"()\[\],;/])")
+_WHOLE_ABS_START = re.compile(r"(?<![\w:/\]@»+=\ue000-])/(?=[^\s'\"()\[\],;/])")
 _RELATIVE_WORD = re.compile(r"(?<![^\s'\"(\[,;`])[^\s'\"()\[\],;`/«][^\s'\"()\[\],;`]*")
 # What the entropy rule could mask: a word without such a run is not worth a lookup.
 _ENTROPY_RUN = re.compile(r"[A-Za-z0-9+/_=-]{16,}")
@@ -294,6 +295,29 @@ def _entropy_masked(entropy: Redactor, part: str) -> str:
     return "/" + shown if part.startswith("/") and not shown.startswith("/") else shown
 
 
+#: The allowlist's own loopback hosts (``policy.allowlist``: plain http goes to these only), in a
+#: URL's authority: kept readable, as they are no one's address (u12 A-82, CLI audit L8). The
+#: IPv4 rule masked ``http://127.0.0.1:9/...`` in every allowlist refusal.
+_LOOPBACK_IN_URL = re.compile(r"(?<=://)127\.0\.0\.1(?=[:/'\"\s)\]]|$)")
+#: Stands in for a kept loopback host while the rules run: no rule reads a private-use character,
+#: and the path rules above read a `/` after it as a URL's path, as after a mask's `»`.
+_LOOPBACK_MARK = "\ue000"
+
+
+def _os_error_text(exc: BaseException) -> str:
+    """``str(exc)``, a file name too long to open described by its length (u12 A-82).
+
+    ``[Errno 63] File name too long: '<5,000 digits>'`` printed the name, which the redactor
+    then masked as a phone number: the length is what the operator needs.
+    """
+
+    if isinstance(exc, OSError) and exc.errno == errno.ENAMETOOLONG and exc.filename:
+        return (
+            f"[Errno {exc.errno}] {exc.strerror}: a name of {len(str(exc.filename)):,} characters"
+        )
+    return str(exc)
+
+
 def _masked(exc: BaseException) -> str:
     """An error's text through the redactor before it reaches the terminal.
 
@@ -338,7 +362,18 @@ def _masked(exc: BaseException) -> str:
     # it: `https://ops:P@ssw0rd!x@db.internal/v1` with `P@ssw0rd!x` registered printed
     # `ssw0rd!` (pre-merge audit of #96). The redactor's own URL rule runs after the registered
     # credentials are set aside.
-    text = plain.redact_text(str(exc))
+    raw = _os_error_text(exc)
+    parts = known_secret_parts()
+    # The loopback host stands aside while the rules run, unless a registered credential holds
+    # it (the rule below for a kept token), and comes back after the last of them.
+    loopback = (
+        "127.0.0.1"
+        if _LOOPBACK_MARK not in raw and not holds_known_secret_part("127.0.0.1", parts)
+        else None
+    )
+    if loopback is not None:
+        raw = _LOOPBACK_IN_URL.sub(_LOOPBACK_MARK, raw)
+    text = plain.redact_text(raw)
     paths = sorted({re.escape(p) for p in _existing_prefixes(text)}, key=len, reverse=True)
     keep = re.compile(
         r"(\b(?:"
@@ -358,7 +393,6 @@ def _masked(exc: BaseException) -> str:
     # kept is decided where the pattern matched, in context: re-matching each piece of a split
     # on its own let a piece equal to a name pass with the token it was glued to before it
     # (pre-commit audit of the spec file names).
-    parts = known_secret_parts()
     held: dict[str, bool] = {}
 
     def holds_secret(kept: str) -> bool:
@@ -385,7 +419,10 @@ def _masked(exc: BaseException) -> str:
         shown.append(CREDENTIAL_MASK if holds_secret(kept) else kept)
         done = end
     shown.append(_entropy_masked(entropy, text[done:]))
-    return visible_controls("".join(shown))
+    joined = "".join(shown)
+    if loopback is not None:
+        joined = joined.replace(_LOOPBACK_MARK, loopback)
+    return visible_controls(joined)
 
 
 @app.command()

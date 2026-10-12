@@ -54,6 +54,7 @@ from dataclasses import dataclass, field
 from ildottore.core.budgets import DEFAULT_COMPLETION_TOKENS, BudgetExhausted, BudgetLedger
 from ildottore.core.pacing import RateLimiter
 from ildottore.shared.amounts import is_count
+from ildottore.shared.error_text import error_text
 from ildottore.shared.models import Attempt, JsonDict, ModelRequest, ModelResponse, Sampling
 from ildottore.shared.protocols import TargetAdapter
 from ildottore.shared.provider_filter import (
@@ -274,7 +275,7 @@ def _unreadable_result(
     its size and its advice, under ``request.metadata.unreadable_reply`` for review.
     """
 
-    errors.append(f"{type(reply).__name__}: {reply}{UNREADABLE_MARK}")
+    errors.append(f"{error_text(reply)}{UNREADABLE_MARK}")
     kept = {
         key: value
         for key, value in (
@@ -374,7 +375,7 @@ async def execute_attempt(
                 # refused the same way. The request stays debited; no completion was billed.
                 if reserved:
                     ledger.refund_tokens(reserved)
-                errors.append(f"{type(exc).__name__}: {exc}{PROVIDER_FILTER_MARK}")
+                errors.append(f"{error_text(exc)}{PROVIDER_FILTER_MARK}")
                 return AttemptResult(
                     attempt=_attempt(
                         attempt_id,
@@ -424,9 +425,7 @@ async def execute_attempt(
             retryable = getattr(exc, "retryable", True) is not False
             # A failure that repeats identically is marked, so a resume does not send it again
             # either (it re-sends the other environment errors, F11).
-            errors.append(
-                f"{type(exc).__name__}: {exc}" + ("" if retryable else NOT_RETRYABLE_MARK)
-            )
+            errors.append(error_text(exc) + ("" if retryable else NOT_RETRYABLE_MARK))
             # ``retryable = False`` (the adapters' convention, read structurally like
             # ``is_env_error``): a failure that repeats identically, such as a reply over the
             # size cap, is recorded once instead of being sent three more times.
@@ -506,8 +505,17 @@ async def _send_with_timeout(
 
     if timeout_s is None:
         return await adapter.send(request)
-    async with asyncio.timeout(timeout_s):
-        return await adapter.send(request)
+    try:
+        async with asyncio.timeout(timeout_s) as deadline:
+            return await adapter.send(request)
+    except TimeoutError as exc:
+        # `asyncio.timeout` raises a TimeoutError with no message, which the attempt's error and
+        # the run's reason then ended on: `TimeoutError: ` (u12 A-82, CLI audit L8).
+        if deadline.expired():
+            raise TimeoutError(
+                f"no reply within the per-attempt timeout of {timeout_s:g} s"
+            ) from exc
+        raise
 
 
 #: Appended to an attempt's error when the failure would repeat identically (``retryable =

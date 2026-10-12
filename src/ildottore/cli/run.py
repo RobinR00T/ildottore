@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import fnmatch
 import json
+import math
 import os
 import shutil
 import signal
@@ -1374,6 +1375,22 @@ def _flag_figure(value: int) -> str:
     return f"a {'negative ' if value < 0 else ''}number of more than 21 digits"
 
 
+def _float_figure(value: float) -> str:
+    """A float flag's value as an error quotes it: with thousands separators (no phone number
+    to the CLI's redactor, u12 A-82), or as Python writes ``nan``, ``inf`` and an exponent."""
+
+    if not math.isfinite(value) or (value and not 1e-4 <= abs(value) < 1e21):
+        return repr(value)
+    return f"{value:,}"
+
+
+#: The per-attempt timeout a run takes, in seconds (u12 A-82, CLI audit L8). Below a second no
+#: model answers; `--timeout 1e-300` timed every attempt out at once and the run ended
+#: `TimeoutError: `. A day is the longest a spec's own `budget.timeout_s` may ask for.
+MIN_TIMEOUT_S = 1.0
+MAX_TIMEOUT_S = 86_400.0
+
+
 def _validate_options(opts: RunOptions) -> None:
     """Refuse an option the campaign would only trip over at the end, before anything is sent.
 
@@ -1383,8 +1400,12 @@ def _validate_options(opts: RunOptions) -> None:
     """
 
     fail_on_band(opts.fail_on)
-    if opts.timeout_s is not None and not opts.timeout_s > 0:
-        raise ValueError(f"--timeout must be greater than 0 seconds (got {opts.timeout_s})")
+    # Written so a NaN refuses too: no comparison holds for it.
+    if opts.timeout_s is not None and not MIN_TIMEOUT_S <= opts.timeout_s <= MAX_TIMEOUT_S:
+        raise ValueError(
+            f"--timeout must be at least 1 second and at most {MAX_TIMEOUT_S:,.0f} (a day; got "
+            f"{_float_figure(opts.timeout_s)})"
+        )
     # An upper bound too (A-55): a `--runs` of 306 digits was an OverflowError in the plan's
     # float arithmetic, a traceback with exit 1, and `--budget-tokens -1` passed the dry run and
     # the estimate with exit 0 while the run refused it.
@@ -1585,8 +1606,8 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
     # rate is a ceiling the operator authorizes; zero or less is not one (audit 2026-10-03, R8).
     if opts.rate is not None and not opts.rate > 0:
         raise ValueError(
-            f"--rate must be greater than 0 requests per second (got {opts.rate}); omit it to "
-            "use the timing template's rate"
+            f"--rate must be greater than 0 requests per second (got {_float_figure(opts.rate)}); "
+            "omit it to use the timing template's rate"
         )
     _validate_options(opts)
     if opts.scope is None:
