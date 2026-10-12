@@ -2734,23 +2734,28 @@ def _completed_attempt_ids(run: TestRun | None) -> set[str]:
     judge's request, so it was never judged. Kept, it would be scored as nothing; sent again, it
     is judged like the others (the request it costs is on the ledger). Every artifact written
     before this rule carries a verdict, so it changes nothing for them.
+
+    Each id is read from the artifact that is its attempt (``shared.resend``), the one the
+    report scores, never from any of its copies: an id was kept when any copy was blocked or
+    answered, so an unreadable reply whose re-send the provider's input filter refused was kept
+    forever while the unreadable copy, which outranks a block, stayed the attempt, and no resume
+    sent it again (pre-merge audit of ``d07a1088``, LOW 1).
     """
 
     if run is None:
         return set()
     ids: set[str] = set()
-    for finding in run.findings:
-        for attempt in finding.attempts:
-            if attempt.response is not None:
-                if attempt.verdict is not None:
-                    ids.add(attempt.attempt_id)
-            # An error that would repeat identically (a reply over the size cap) is kept too:
-            # re-sending it on every resume spends a request for the same refusal. So is a
-            # prompt the provider's input filter refused (OD-41): it would be refused again.
-            elif (attempt.error or "").endswith(NOT_RETRYABLE_MARK) or blocked_by_provider_filter(
-                attempt
-            ):
+    for attempt in one_per_attempt_id(a for finding in run.findings for a in finding.attempts):
+        if attempt.response is not None:
+            if attempt.verdict is not None:
                 ids.add(attempt.attempt_id)
+        # An error that would repeat identically (a reply over the size cap) is kept too:
+        # re-sending it on every resume spends a request for the same refusal. So is a
+        # prompt the provider's input filter refused (OD-41): it would be refused again.
+        elif (attempt.error or "").endswith(NOT_RETRYABLE_MARK) or blocked_by_provider_filter(
+            attempt
+        ):
+            ids.add(attempt.attempt_id)
     return ids
 
 

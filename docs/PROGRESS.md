@@ -21,6 +21,10 @@ The carryover ledger. Every agent session updates this so context survives even 
   PASS on `de122e26`, inconclusive on `d07a1088`). Mapped before the send now, and `authz_leak`
   reads the owner map on fewer than two replies too (u06's half of A-74), so the two-identity case
   fails as well. After: fail confirmed.
+- LOW 1: what a resume keeps (`_completed_attempt_ids`) is read from each id's attempt
+  (`one_per_attempt_id`), not from any copy: an unreadable reply whose re-send was blocked was
+  kept for good (`repro_unread_then_block.py`: the third run kept 5, sent 0, inconclusive); now
+  it keeps 4, sends 1 and passes, and the summary's "a resume sends them again" holds.
 
 ## State, 2026-10-11 (night): the audit of the scoring, fixed
 

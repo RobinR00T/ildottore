@@ -42,7 +42,11 @@ versioning: [SemVer](https://semver.org/).
 - **The resume note names each id it sends again once (LOW 1).** An id holding a reply stored
   without a verdict and its unreadable re-send read `-1 that ended in an environment error will
   be sent again; 1 that could not be read ...; 1 answered but not evaluated ...`; now `1 that
-  could not be read will be sent again`.
+  could not be read will be sent again`. What a resume keeps is read from that attempt too
+  (pre-merge audit, LOW 1): an id was kept when any of its copies was blocked, so an unreadable
+  reply whose re-send the provider's input filter refused stayed the attempt for good, and a
+  later resume against a healthy target kept 5 attempts and sent none; now it sends that one
+  again and the spec passes.
 - **A fail only the judge reported does not skip the `setup_not_reached` check (LOW 2, u08's half
   of u06 A-73).**
 - **`--include-needs-review`'s help names a fail only the judge reported (LOW 3).**

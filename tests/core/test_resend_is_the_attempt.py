@@ -27,7 +27,12 @@ import pytest
 from ildottore.adapters import ProviderFilterBlock, ResponseMalformed
 from ildottore.cli.resume import load_resume_run
 from ildottore.core.execute import RetryPolicy
-from ildottore.core.runner import CampaignResult, CampaignRunner
+from ildottore.core.runner import (
+    CampaignResult,
+    CampaignRunner,
+    answered_attempt_ids,
+    resume_progress,
+)
 from ildottore.evaluators import build_default_registry as build_evaluators
 from ildottore.mutators import build_default_registry as build_mutators
 from ildottore.scoring import DefaultRiskScorer
@@ -219,6 +224,32 @@ def test_a_block_on_the_re_send_of_an_environment_error_is_the_attempt(tmp_path:
         finding.reasoning
     )
     assert replay_run(tmp_path / "ev", RUN).blocked_by_provider_filter() == 1
+
+
+def test_an_unreadable_reply_whose_re_send_was_blocked_is_sent_again(tmp_path: Path) -> None:
+    """Unreadable, then the resume's re-send refused by the input filter: the unreadable copy is
+    still the attempt (rule 2), so the id is not answered and the next resume sends it again.
+
+    An id counted as answered when any of its copies was blocked, so on ``d07a1088`` the next
+    resume kept all 5 and sent none, and the spec stayed inconclusive however healthy the target
+    had become (``repro_unread_then_block.py``, pre-merge audit of ``d07a1088``, LOW 1).
+    """
+
+    endpoint, resumed = _first_then_resume(tmp_path, "unreadable", "block")
+
+    (finding,) = resumed.findings
+    assert finding.status is VerdictStatus.INCONCLUSIVE, finding.reasoning
+    prior = load_resume_run(tmp_path / "ev", RUN, make_target())
+    assert _FIRST not in answered_attempt_ids(prior)
+    assert resume_progress(prior) == (4, 1), "d07a1088: (5, 0)"
+    endpoint.outcome["again"] = "answer"
+    before = endpoint.sends
+    healthy = _campaign(tmp_path, endpoint, resume_from=prior)
+
+    assert endpoint.sends - before == 1
+    (finding,) = healthy.findings
+    assert finding.status is VerdictStatus.PASS, finding.reasoning
+    assert _scored(healthy).response is not None
 
 
 # --- the tie, in both file orders, for artifacts with and without the stamp -----------------

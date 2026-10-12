@@ -1120,7 +1120,9 @@ read, or that the provider's filter cut) over an environment error or a block, w
 first, so a network failure on the resume never turns that reply into a pass; then the later
 send, by the `send_number` every stored attempt carries in `request.metadata` (`1` for an id's
 first send, one more for each re-send). The resume's note names each id it sends again once, by
-that attempt. What a halted run keeps: every reply the target gave, stored when its batch
+that attempt, and whether an id is sent again is read from that attempt too: a reply that could
+not be read, whose re-send the provider's input filter then refused, is still that reply, so the
+next resume sends it again (until 2026-10-12 the block kept it for good). What a halted run keeps: every reply the target gave, stored when its batch
 returns or a halt stops it (a Ctrl-C still drops the batch in flight), a conversation whose last
 reply crossed the token ceiling included. Each is judged when the ceiling leaves room for the
 judge; when it does not, a reply a deterministic check already failed keeps that fail (it

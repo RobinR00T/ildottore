@@ -414,7 +414,9 @@ is recorded as blocked by the provider's filter and the campaign goes on. The cr
   filter before the model saw them` when `k` is not 0;
 - a resume keeps a blocked attempt (`_completed_attempt_ids`, by the verdict's reason or, without
   a verdict, by the error's mark) and does not send it again; `resume_progress` counts it as kept,
-  and so does `--estimate --resume`;
+  and so does `--estimate --resume`. It reads that from the artifact that is the id's attempt
+  (`shared.resend`, A-74), not from any of its copies: a block on the re-send of an unreadable
+  reply is not the attempt, so that id is sent again (pre-merge audit of `d07a1088`, LOW 1);
 - the judge path is unchanged: a judge request its provider's filter refuses raises in the judge's
   adapter and the evaluator reads it, as any `AdapterError`, as an unusable judge
   (`capability_unavailable`), which keeps the attempt `inconclusive` unless a deterministic
@@ -703,7 +705,13 @@ as amended:
   the target may have been fixed), its re-send scored in its place when the adapter reads it, or
   when it is unreadable again or cut (LOW 1); a re-send that ends in an environment error or a
   block says nothing of the reply, and does not replace it (amended after the audit of the
-  scoring, next bullet);
+  scoring, next bullet), so the id is still one a resume sends again: what a resume keeps is read
+  from each id's attempt, never from any copy (amended 2026-10-12 after the pre-merge audit of
+  `d07a1088`, LOW 1: an id was kept when any copy was blocked, so the unreadable reply stayed the
+  attempt for good; `repro_unread_then_block.py`, unreadable, then blocked, then a healthy
+  target, kept 5 and sent 0 on the third run and stayed `inconclusive`; now it keeps 4, sends 1
+  and passes. Checked by `tests/core/test_resend_is_the_attempt.py`, 1 test, failing on
+  `d07a1088`);
 - **which artifact of a re-sent id is the attempt is one rule (amended 2026-10-11 after the
   audit of the scoring, HIGH 1), `shared.resend.one_per_attempt_id`,** which the runner scores with
   and `ReplayResult.effective_attempts` counts with. Each had its own copy, ranking (answered and
