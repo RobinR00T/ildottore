@@ -2234,10 +2234,11 @@ Cut by the provider's output filter: 8 attempt(s) in 2 spec(s) came back cut or 
   `risk` (impact and exploitability 1 to 4, reproducibility and confidence 0 to 1, risk 0 to 16,
   a band) and `confirmed`, and its attempts and evidence the keys that identify them; the run has
   its `run_id`, `targets` (each with an `id` and a `type`), `findings` and `summary`. Everything
-  else stays open (`additionalProperties: true`): report-1.0 grows additively, so a report an
-  earlier build wrote validates against this copy (every report written since `f12ba833` that the
-  CLI audit of 2026-10-11 kept does), and a consumer validating a newer report needs the newer
-  copy. `dottore diff` reads `schema_version` `1` and `1.<minor>`.
+  else stays open (`additionalProperties: true`): report-1.0 grows additively, so a report written
+  since `f12ba833` (the earliest build checked; every one the CLI audit of 2026-10-11 kept
+  validates) validates against this copy, and a consumer validating a newer report needs the newer
+  copy. A report written by v0.1.0 does not: it has no `summary.coverage.iopc`, which this copy
+  requires, as the copy before it did. `dottore diff` reads `schema_version` `1` and `1.<minor>`.
 - **Attempts the provider's input filter refused** (§9) are counted apart: the JSON summary's
   `blocked_by_provider_filter` (`{"attempts": 8, "specs": ["GUARD-INPUT-EVASION-001",
   "PI-DIRECT-001"]}` in §9's run; `0` and `[]` when none were), a `blocked_by_provider_filter`

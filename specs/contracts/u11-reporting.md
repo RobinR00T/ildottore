@@ -248,9 +248,11 @@ reproducibility and confidence 0 to 1, risk 0 to 16, a band) and `confirmed`, wi
 evidence by the keys that identify them; types and values as the models enforce them, nothing
 stricter (an evidence `sha256` and the run's `scope_sha256` stay any text or null, as the models
 allow), and `additionalProperties` true throughout, per the version note now in the schema's
-description: report-1.0 grows additively, an older report validates against a newer copy, and a
-newer report may need the newer copy. Each of the 89 JSON reports the CLI audit wrote with
-`f12ba833`, `6d5f7ae3` and `de122e26` validates. `reporting.report_schema()` returns it, which
+description: report-1.0 grows additively, a report written since `f12ba833` (the earliest build
+checked) validates against a newer copy, and a newer report may need the newer copy; a v0.1.0
+report does not validate, here as against the copy before (it has no `summary.coverage.iopc`).
+Each of the 89 JSON reports the CLI audit wrote with `f12ba833`, `6d5f7ae3` and `de122e26`
+validates, and the pre-merge audit's 184. `reporting.report_schema()` returns it, which
 `dottore schema export --name report` prints. Checked by `tests/cli/test_report_and_file_versions.py`
 and `tests/reporting/test_json_reporter.py`.
 
