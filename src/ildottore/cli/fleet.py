@@ -261,7 +261,7 @@ class FleetConfig(BaseModel):
 
         if not SCOPE_VERSION.fullmatch(value):
             raise ValueError(
-                'this build reads fleet version 1 (1, or 1.<minor>: write version: "1")'
+                'this build reads fleet version 1: write version: "1" ("1.<minor>" is read too)'
             )
         return value
 

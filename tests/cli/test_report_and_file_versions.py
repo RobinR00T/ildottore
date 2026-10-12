@@ -256,7 +256,7 @@ def test_a_scope_of_another_version_is_refused(tmp_path: Path, version: str) -> 
         ],
     )
     assert result.exit_code == 3, result.output
-    assert "this build reads scope version 1 (1.0, or 1 or 1.<minor>: write" in (
+    assert 'this build reads scope version 1: write version: "1.0" ("1" and "1.<minor>"' in (
         result.output.replace("\n", "")
     )
 
@@ -290,7 +290,10 @@ def test_a_fleet_file_version_is_one(tmp_path: Path, version: str, ok: bool) -> 
         assert result.exit_code == 0, result.output
     else:
         assert result.exit_code == 3, result.output
-        assert "version: Value error, this build reads fleet version 1" in result.output
+        assert (
+            'version: Value error, this build reads fleet version 1: write version: "1"'
+            in result.output
+        )
         assert not (tmp_path / "o").exists()
 
 

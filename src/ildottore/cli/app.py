@@ -53,6 +53,7 @@ from ildottore.redactor import (
     visible_controls,
 )
 from ildottore.reporting import report_schema
+from ildottore.shared.files import read_failure
 from ildottore.shared.schema_export import export_schemas
 from ildottore.store.replay import TamperError
 
@@ -333,9 +334,7 @@ def _os_error_text(exc: BaseException) -> str:
     """
 
     if isinstance(exc, OSError) and exc.errno == errno.ENAMETOOLONG and exc.filename:
-        return (
-            f"[Errno {exc.errno}] {exc.strerror}: a name of {len(str(exc.filename)):,} characters"
-        )
+        return read_failure("the file", exc.filename, exc)
     return str(exc)
 
 

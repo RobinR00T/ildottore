@@ -106,7 +106,7 @@ def test_a_spec_figure_is_not_a_phone_number(tmp_path: Path) -> None:
 def test_a_file_name_too_long_says_its_length_not_a_phone_number(tmp_path: Path) -> None:
     result = _run(tmp_path, "-t", "9" * 5000)
     assert result.exit_code == 3, result.output
-    assert "File name too long: a name of 5,000 characters" in result.output
+    assert "cannot read the file, a name of 5,000 characters: File name too long" in result.output
     assert "REDACTED:phone" not in result.output
 
 
@@ -258,3 +258,21 @@ def test_a_key_typed_where_a_name_belongs_is_masked(argv: list[str]) -> None:
     assert result.exit_code == 3, result.output
     assert _KEY[:16] not in result.output and _KEY[-16:] not in result.output
     assert "«REDACTED" in result.output or "\\u00abREDACTED" in result.output
+
+
+def test_a_scope_name_too_long_says_its_length(tmp_path: Path) -> None:
+    """`--scope <5,000 digits>` printed «REDACTED:phone» twice (pre-merge audit of A-82, LOW e)."""
+
+    result = runner.invoke(
+        app,
+        [
+            "run",
+            "-t",
+            str(write_target(tmp_path, mock_scenario="vulnerable")),
+            "--scope",
+            "9" * 5000,
+        ],
+    )
+    assert result.exit_code == 3, result.output
+    assert "cannot read scope file, a name of 5,000 characters: File name too long" in result.output
+    assert "REDACTED" not in result.output

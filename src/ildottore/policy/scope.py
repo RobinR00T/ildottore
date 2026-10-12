@@ -24,7 +24,7 @@ from ildottore import safe_yaml
 from ildottore.policy.errors import ScopeChecksumError, ScopeError
 from ildottore.shared.config_errors import quoted, validation_problems, yaml_problem
 from ildottore.shared.credential_refs import ENV_NAME_RULE, env_name_of, is_env_name
-from ildottore.shared.files import read_text_capped
+from ildottore.shared.files import read_failure, read_text_capped
 
 
 class Endpoint(BaseModel):
@@ -231,7 +231,7 @@ def load_scope_with_digest(
     try:
         raw_text = read_text_capped(file_path)
     except OSError as exc:  # over the 1 MiB cap (A-43), or a filesystem error
-        raise ScopeError(f"cannot read scope file {file_path}: {exc}") from exc
+        raise ScopeError(read_failure("scope file", file_path, exc)) from exc
 
     try:
         data = safe_yaml.safe_load(raw_text)
@@ -257,7 +257,7 @@ def load_scope_with_digest(
     if not SCOPE_VERSION.fullmatch(scope.version):
         raise ScopeError(
             f"scope file {file_path} has version {quoted(scope.version)}; this build reads scope "
-            'version 1 (1.0, or 1 or 1.<minor>: write version: "1.0")'
+            'version 1: write version: "1.0" ("1" and "1.<minor>" are read too)'
         )
 
     # A duplicate id is refused, not resolved. ``Scope.target()`` returns the FIRST match,
