@@ -48,8 +48,7 @@ The carryover ledger. Every agent session updates this so context survives even 
   the worktree's `src`, `TMPDIR` the system default): 5531 tests (5476 on `main` at `de122e26`, 55
   new), 97.81% coverage (97.84% on `main`; `shared/judging_rules.py` and `shared/digest.py`
   100%, `cli/resume.py` 90%), 75 specs lint OK, four import contracts kept, mypy strict on 161
-  files, self-scan, bandit and pip-audit clean. The commits after it touch PROGRESS and the
-  CHANGELOG only.
+  files, self-scan, bandit and pip-audit clean. The commits after it touch documentation only.
 
 ## State, 2026-10-11 (evening): the pre-merge audit of `ed381359` (OD-43), fixed
 
