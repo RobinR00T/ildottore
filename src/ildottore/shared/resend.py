@@ -15,12 +15,16 @@ The rule, in order:
 1. an artifact answered and judged, then one with a verdict (an environment error's, a block's or
    an unreadable reply's inconclusive), then a bare reply: a verdict outranks a reply stored
    without one, whose re-send is the attempt whether it was judged or ended in an error;
-2. at the same rank, one whose reason never lets its spec pass (:data:`NEVER_A_PASS`: a reply the
-   adapter could not read, one the provider's filter cut or stopped on a side it did not report)
-   over one whose reason does not, whichever was sent first. At that rank the other is an
-   environment error or a block, which says nothing about the model's reply, and the reply that
-   could not be read may be the one an attack changed: a resume that met a network failure must
-   not turn it into a pass. A re-send the adapter reads outranks it under rule 1;
+2. at the same rank, one whose reason never lets its spec pass (:data:`NEVER_A_PASS`) over one
+   whose reason does not, whichever was sent first. Among artifacts with a verdict and no reply
+   that is a reply the adapter could not read over an environment error or a block, which say
+   nothing about the model's reply, while the reply that could not be read may be the one an
+   attack changed: a resume that met a network failure must not turn it into a pass. A reply the
+   provider's filter cut, or stopped on a side it did not report, is no part of that: it carries
+   its reply, so with its verdict it already ranks first under rule 1, and its stop reason counts
+   here only between two replies stored without a verdict (pre-merge audit of ``d07a1088``: the
+   docs said "an unreadable or cut reply over an environment error"). A re-send the adapter reads
+   outranks it under rule 1;
 3. then the later send: the runner stamps :data:`SEND_NUMBER_KEY` on the request of every artifact
    it stores, ``1`` for an id's first send in the run and one more for each re-send, so the
    re-send is the attempt in the place of the try it replaces. An artifact stored before the

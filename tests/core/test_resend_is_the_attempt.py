@@ -13,8 +13,9 @@ error and an unreadable reply tie, so on ``de122e26``:
   environment error and counted no unreadable reply (``repro_resume_reverse.py``).
 
 Now one helper in ``shared.resend`` decides for both: the rank, then an outcome that never lets
-its spec pass over an environment error or a block, whichever came first (rule 2), then the later
-send by the ``send_number`` the runner stamps on every artifact, then the first.
+its spec pass (an unreadable reply) over an environment error or a block, whichever came first
+(rule 2), then the later send by the ``send_number`` the runner stamps on every artifact, then the
+first.
 """
 
 from __future__ import annotations

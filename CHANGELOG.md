@@ -15,8 +15,9 @@ versioning: [SemVer](https://semver.org/).
   unreadable replies and exit 0 under `--fail-on info --include-needs-review`, while `dottore
   replay` counted 1; the reverse (unreadable, then a network error on the resume) kept the
   unreadable reply in the report and the error in the replay. Now `shared.resend` decides for both:
-  answered and judged, then a verdict, then a bare reply; at the same rank an outcome that never
-  lets its spec pass over an environment error or a block, whichever came first; then the later
+  answered and judged, then a verdict, then a bare reply; at the same rank an unreadable reply over
+  an environment error or a block, whichever came first (a cut reply, answered and judged, already
+  ranks first); then the later
   send, by the `send_number` now stamped in `request.metadata` of every stored attempt. The same
   run is `inconclusive`, `1/5 could not be read`, 1 unreadable reply in the summary and in the
   replay. A re-send is now always an artifact of its own.

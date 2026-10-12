@@ -728,8 +728,11 @@ as amended:
   reply, and the reverse dropped it from the replay only. The rule: answered and judged, then a
   verdict, then a bare reply; at the same rank, an outcome that never lets its spec pass
   (`NEVER_A_PASS`: unreadable, cut, side unknown) over one that does not, whichever was sent
-  first, since at that rank the other is an environment error or a block, which says nothing of
-  the model's reply (the later send alone was considered here and not taken: it turns an
+  first: in practice an unreadable reply over an environment error or a block, which say nothing
+  of the model's reply (a cut or side-unknown reply carries its reply, so with its verdict it
+  ranks first under the first step, and its stop reason counts here only between two replies
+  stored without a verdict; the pre-merge audit of `d07a1088` found the docs saying "an unreadable
+  or cut reply over an environment error", which never happens) (the later send alone was considered here and not taken: it turns an
   unreadable reply into a pass whenever the resume meets a network failure, the false pass this
   fixes, in the other order; reversal: swap the last two fields of `shared.resend._rank`); then
   the later send,

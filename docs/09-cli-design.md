@@ -159,8 +159,9 @@ undecodable body, a reply nested too deeply: recorded with `[not retryable]`). T
 stays in the evidence tree
 and is cited as evidence; the finding scores one attempt per id, the answered one, as `replay`
 counts. Since 2026-10-11 both read that from one rule (`shared.resend`, u08 A-74): between two
-artifacts of a rank, a reply that could not be read, or that the provider's filter cut, over an
-environment error or a block, whichever came first, then the later send by the `send_number`
+artifacts of a rank, a reply that could not be read over an environment error or a block,
+whichever came first (a reply the provider's filter cut is answered and judged, so it ranks first
+already), then the later send by the `send_number`
 every stored attempt carries; each kept the first at a tie in file-name order, so an unreadable
 re-send could be dropped and its spec published as a pass. The resume message names each id it
 sends again once, by that attempt, and what a resume keeps is read from that attempt too, so an

@@ -44,8 +44,9 @@ The carryover ledger. Every agent session updates this so context survives even 
   A-76 stay free).
 - HIGH 1: which artifact of a re-sent attempt id is the attempt is one rule in `shared.resend`,
   read by the runner and the replay (each had a copy that kept the first artifact at a tie, the
-  runner's prior ones in content-hash order). Rank, then an outcome that never lets its spec pass
-  over an environment error or a block whichever came first, then the later send by a
+  runner's prior ones in content-hash order). Rank, then an unreadable reply over an environment
+  error or a block whichever came first (a cut reply is answered and judged, so it ranks first
+  already), then the later send by a
   `send_number` stamped in `request.metadata` of every stored attempt, then the first. The fix the
   audit proposed put the later send at the second step; the never-a-pass step comes first because
   the later send alone turns an unreadable reply into a pass whenever the resume meets a network

@@ -1115,9 +1115,10 @@ cut is an answered attempt and is kept too, for review: §9), and a resumed spec
 over its full `--runs`,
 one attempt per id. Which artifact of an id is the attempt is one rule, the same for the report
 and `dottore replay` (since 2026-10-11): an answered and judged one, else one with a verdict, else
-a bare reply; between two of a rank, one that never lets its spec pass (a reply that could not be
-read, or that the provider's filter cut) over an environment error or a block, whichever came
-first, so a network failure on the resume never turns that reply into a pass; then the later
+a bare reply; between two of a rank, a reply that could not be read over an environment error or
+a block, whichever came first, so a network failure on the resume never turns that reply into a
+pass (a reply the provider's filter cut is answered and judged, so it already ranks first); then
+the later
 send, by the `send_number` every stored attempt carries in `request.metadata` (`1` for an id's
 first send, one more for each re-send). The resume's note names each id it sends again once, by
 that attempt, and whether an id is sent again is read from that attempt too: a reply that could
