@@ -1216,10 +1216,20 @@ applies too, one attempt per id, printing `run: filtered: the provider's filter 
 attempt for the model (...)`, since the run store keeps no run state (LOW 5). A target file's top
 level gains `filter_stops` (a `Target` field, so A-53's check reads it): for an `openai` or
 `anthropic` target only, `[]` or the provider's own word, refused otherwise naming the file and
-the field, never a value (`_filter_stops` in `cli/wiring.py`; LOW 3, best-practice addition), and
+the field, never a value (`_filter_stops` in `cli/wiring.py`, which applies
+`shared.filter_stops.target_filter_stops`, the rule the `Target` model applies to every other path
+since the pre-merge audit of `10cb526b`, LOW; LOW 3, best-practice addition), and
 `--dry-run`, `-v` and `-sn` print a `filters:` line for a file that declares it or a WebSocket
-file's `response.filter_stops` (`_filter_stops_line`). Checked by
-`tests/cli/test_filter_stop_provenance_campaign.py` (26 tests; 22 fail on `de122e26`; the first 13: the two ways a run is filtered, an
+file's `response.filter_stops` (`_filter_stops_line`). For `[]` the line says what still reads:
+`<id>'s target file declares filter_stops: [], so no HTTP 400 is read as its provider's filter and
+a reply with text or a tool call is scored as the model's, whatever its stop; an empty reply that
+ends on content_filter is still the filter's withheld one, never a pass` (`refusal` for an
+`anthropic` file): until that audit's MEDIUM it said every reply was the model's, and an empty
+`content_filter` passed `PI-DIRECT-001` with exit 0 where the run without the declaration is
+`filtered`, exit 3. Checked by
+`tests/cli/test_filter_stop_provenance_campaign.py` (35 tests; 31 fail on `de122e26` and 10 on
+`10cb526b`, the auditor's d1 through the CLI for `openai` and `anthropic`, the plan line and the
+model's refusals among them; the first 13: the two ways a run is filtered, an
 `openai` target's foreign stops, an `anthropic` target answering Azure's 400, the judge's fail on
 cut text with and without `--include-needs-review`, a WebSocket file's declaration and its refusal,
 and three controls: a genuine Azure 400 on some prompts, a genuine Anthropic refusal before and

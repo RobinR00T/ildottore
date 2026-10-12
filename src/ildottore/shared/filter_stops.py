@@ -166,11 +166,12 @@ def target_filter_stops(provider: object, values: Iterable[object]) -> frozenset
 
     Trimmed and in lower case, each one ``provider``'s own word (:func:`own_filter_stops_of`):
     the declaration may only narrow what the adapter reads, to its own word or to nothing, never
-    widen it to another provider's. One rule for every path a :class:`~ildottore.shared.models.
-    Target` is built by: the target file's loader and the Python API (pre-merge audit of
-    ``10cb526b``, LOW: ``Target(provider="openai", filter_stops=["refusal"])`` built an adapter
-    that read ``refusal`` as OpenAI's filter). Refused in words that name the field and the
-    provider's own word, never a value.
+    widen it to another provider's. One rule for every path a ``Target`` is built by: the target
+    file's loader and the Python API (pre-merge audit of ``10cb526b``, LOW:
+    ``Target(provider="openai", filter_stops=["refusal"])`` built an adapter that read
+    ``refusal`` as OpenAI's filter). Refused in words that name the field and the provider's own
+    word, never a value; ``[]`` is for an endpoint with no provider filter behind it (a gateway in
+    front of Azure relays Azure's, MEDIUM of the same audit).
     """
 
     own = own_filter_stops_of(provider)
@@ -181,7 +182,7 @@ def target_filter_stops(provider: object, values: Iterable[object]) -> frozenset
     if not stops <= own:
         raise ValueError(
             f"'filter_stops' may list only the provider's own filter stop "
-            f"({', '.join(sorted(own))}), or nothing ([]) for an endpoint that is not the "
-            "provider"
+            f"({', '.join(sorted(own))}), or nothing ([]) for an endpoint with no provider "
+            "filter behind it"
         )
     return stops

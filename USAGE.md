@@ -179,7 +179,9 @@ the model wrote, as a fail that needs review (`--include-needs-review` gates it)
 reads only its own provider's filter words (`content_filter` from `openai`, `refusal` from
 `anthropic`, what a WebSocket file lists under `response.filter_stops`, none by default): any other
 is an ordinary stop, so a target cannot hide its reply behind another provider's word; an
-`openai` or `anthropic` file declares `filter_stops: []` for an endpoint that is not the provider.
+`openai` or `anthropic` file declares `filter_stops: []` for an endpoint with no such filter behind
+it (never a gateway in front of Azure, which relays Azure's), and even then a reply with no text
+that ends on the provider's own word is the filter's, never a pass.
 An endpoint can still withhold chosen attacks with its own provider's word and keep `--fail-on`
 green, so read the counts below if your pipeline should stop on them. The summary counts them (`Cut by
 the provider's output filter: N attempt(s) in S spec(s) came back cut or replaced`, and

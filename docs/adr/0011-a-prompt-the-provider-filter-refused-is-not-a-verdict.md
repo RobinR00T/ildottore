@@ -261,8 +261,14 @@ Any other filter word keeps its spelling in the stored reply with `foreign_stop:
 as an ordinary stop, so the reply is the model's answer. The WebSocket declaration sits in the
 block, beside the `final_path` the stop is read at. An `openai` or `anthropic` file may declare a
 top-level `filter_stops`, `[]` or the provider's own word only, for an endpoint that speaks the
-provider's API and is not the provider: with `[]` none of its stops, and no Azure 400, is read as
-a filter's (added after the pre-merge audit of `a55710e9`, LOW 3, as best practice). Not taken: threading each
+provider's API and has no such filter behind it (not a gateway in front of Azure, which relays
+Azure's filter): with `[]` no Azure 400, and no stop on a reply with text or a tool call, is read
+as a filter's (added after the pre-merge audit of `a55710e9`, LOW 3, as best practice). A reply
+with neither that ends on the provider's own word is still the filter's withheld one, read as
+without the declaration and never a pass: the first version marked it foreign, so `[]` made it
+the model's empty answer and `PI-DIRECT-001` passed, exit 0 (pre-merge audit of `10cb526b`,
+MEDIUM). The declaration is checked by the `Target` model, so a target built in Python is held to
+it too, and an adapter only narrows its own words by it (that audit's LOW). Not taken: threading each
 adapter's set to every reader (the attack phase, the identity sweep, the replay), which leaves a
 reply stored without a verdict with nothing to read it by; the provenance travels on the reply
 instead.
@@ -312,5 +318,6 @@ inconclusive, never a pass.
   the exit code: they are inconclusive, `--fail-on` does not gate them, and a pipeline reads
   `summary.blocked_by_provider_filter` and `summary.cut_by_provider_output_filter` to stop on
   them; a gateway that maps moderation to `content_filter` is read as OpenAI's filter unless its
-  file declares `filter_stops: []`; a resume across the upgrade keeps verdicts made under the
+  file declares `filter_stops: []`, and its empty replies on that word even then (inconclusive,
+  never a pass); a resume across the upgrade keeps verdicts made under the
   earlier rules (open for the judging-rules version).

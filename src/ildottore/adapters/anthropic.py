@@ -162,9 +162,9 @@ class AnthropicAdapter(BaseAdapter):
         The Messages API documents no other filter stop, so ``content_filter`` or ``SAFETY`` in a
         reply is an ordinary stop, and so is Azure's HTTP 400 ``content_filter`` body: an
         undocumented 4xx, which stops the campaign as any other does. A target file that declares
-        ``filter_stops: []`` (an endpoint that speaks the API and is not Anthropic) reads none on
-        a reply with text or a tool call; an empty reply that ends on ``refusal`` is still the
-        filter's (:attr:`own_filter_stops`).
+        ``filter_stops: []`` (an endpoint that speaks the API and has no Anthropic filter behind
+        it) reads none on a reply with text or a tool call; an empty reply that ends on
+        ``refusal`` is still the filter's (:attr:`own_filter_stops`).
         """
 
         # Narrowed, never widened: a declaration built past the Target model's check (an

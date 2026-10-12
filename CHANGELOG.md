@@ -52,9 +52,16 @@ each measured against a loopback stub, `main` (`de122e26`) against this branch:
   the input side too (pre-merge audit of `a55710e9`, MEDIUM 1, under the owner's delegation).
 
 Added: an `openai` or `anthropic` target file may declare `filter_stops: []` (or the provider's
-own word only) for an endpoint that speaks the provider's API and is not the provider: none of its
-stops, and no HTTP 400, is then read as a filter's; `--dry-run`, `-v` and `-sn` print a `filters:`
-line for it (and for a WebSocket file's declaration). A filtered run's error line adds what to
+own word only) for an endpoint that speaks the provider's API and has no OpenAI, Azure or Anthropic
+filter behind it (never a gateway in front of Azure, which relays Azure's filter): no HTTP 400,
+and no stop on a reply with text or a tool call, is then read as a filter's, while a reply with no
+text that ends on the provider's own word is still the filter's withheld one, never a pass (the
+pre-merge audit of `10cb526b` found `[]` made it a pass: `PI-DIRECT-001` against Azure's withheld
+reply, exit 0 where without the declaration the run is `filtered`, exit 3; and a `RestTemplate`'s
+declaration keeps its shape's word on an empty reply the same way). `--dry-run`, `-v` and `-sn`
+print a `filters:` line for it (and for a WebSocket file's declaration). The declaration is
+checked by the `Target` model, so a `Target` built in Python is held to the same rule as the file
+(it took any provider's words), and the adapters only narrow their own words by it. A filtered run's error line adds what to
 check for the attempts that got no reply at all (the endpoint for a transport failure, the
 adapter's advice for an unreadable reply), and `dottore replay` of a filtered run prints `run:
 filtered: ...`. The fingerprint's `guardrails.output_filter` does not believe a foreign stop.

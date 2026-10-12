@@ -423,10 +423,23 @@ reads as U+FFFD, since httpx decodes the stream as text.
     Gemini's `promptFeedback.blockReason` is read only by a template that honours one of Gemini's
     stops (a template in Gemini's shape does, unless its `filter_stops` says otherwise);
   - an `openai` or `anthropic` target file may declare `filter_stops` (u00 `Target`, u12): `[]`
-    for an endpoint that speaks the provider's API and is not the provider, or the provider's own
-    word only. The composition root passes it as the adapter's `declared_filter_stops`, which
-    `filter_stops` returns in place of the provider's: with `[]` no stop and no Azure 400 is read
-    as a filter's (pre-merge audit of `a55710e9`, LOW 3, best-practice addition);
+    for an endpoint that speaks the provider's API and has no such filter behind it (not a gateway
+    in front of Azure OpenAI, which relays Azure's), or the provider's own word only, checked by
+    the `Target` model on every path (`shared.filter_stops.target_filter_stops`). The composition
+    root passes it as the adapter's `declared_filter_stops`, which `filter_stops` returns
+    intersected with the provider's own words, so a declaration built past the model (by hand, a
+    `model_copy`) narrows and never widens them (pre-merge audit of `10cb526b`, LOW): with `[]` no
+    Azure 400, and no stop on a reply with text or a tool call, is read as a filter's (pre-merge
+    audit of `a55710e9`, LOW 3, best-practice addition);
+  - every adapter also says what its provider documents whatever is declared,
+    `own_filter_stops`: `BaseAdapter` none (the WebSocket adapter none either), `OpenAIAdapter`
+    `content_filter`, `AnthropicAdapter` `refusal`, `RestAdapter` its template's
+    `shape_filter_stops` (the shape's, as above). `stop_provenance` never marks a reply with no
+    text and no tool call that ends on one of them: that is the filter's withheld reply, scored as
+    without the declaration, never a pass. A gateway in front of Azure relays Azure's empty
+    `content_filter`, and the first version marked it foreign under `[]`, so `PI-DIRECT-001`
+    passed and the run exited 0 where without the declaration it is `filtered`, exit 3 (pre-merge
+    audit of `10cb526b`, MEDIUM). A REST body with no text reads the shape's word too, as `""`;
   - the WebSocket adapter's `unreadable_advice` names `response.filter_stops`: a file written
     before A-79 whose server ends a withheld turn on a filter word gets an unreadable reply for it
     until the word is declared (LOW 2).
@@ -434,8 +447,10 @@ reads as U+FFFD, since httpx decodes the stream as text.
   harmful text and `finish_reason: refusal` gave three cut attempts and exit 0, and gives a
   confirmed fail, exit 2, as the same text with `stop` does; an `anthropic` stub answering every
   attack with Azure's 400 gave six blocked attempts and exit 0, and stops at the first, exit 3.
-  Checked by `tests/adapters/test_filter_stop_provenance.py` (24 tests; 22 fail on `de122e26`, the
-  two controls pass), `tests/adapters/test_provider_filter_block.py` (59: the Azure 400 from the
+  Checked by `tests/adapters/test_filter_stop_provenance.py` (33 tests; 31 fail on `de122e26`, the
+  two controls pass; 6 fail on `10cb526b`: the empty reply on the provider's own word under a
+  declaration, from OpenAI, Anthropic and a Gemini template, and an adapter given another
+  provider's word), `tests/adapters/test_provider_filter_block.py` (59: the Azure 400 from the
   adapters that do not read it, 2 of them failing on `de122e26`) and the WebSocket cases of
   `tests/adapters/test_malformed_replies.py`.
 

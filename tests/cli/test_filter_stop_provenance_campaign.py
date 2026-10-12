@@ -471,7 +471,7 @@ def test_a_websocket_target_file_refuses_an_undocumented_stop_without_quoting_it
     assert "sk-123456789" not in message
 
 
-# --- an openai or anthropic target file that is not the provider (pre-merge audit, LOW 3) -------
+# --- an openai or anthropic target file with no provider filter behind it (audits, LOW 3) ------
 
 
 def test_an_openai_target_file_can_switch_the_providers_filter_reading_off(

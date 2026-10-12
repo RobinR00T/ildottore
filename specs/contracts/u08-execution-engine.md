@@ -716,7 +716,11 @@ intent. Three rules, as built:
    honours its own provider's words (`filter_stops`: OpenAI's `content_filter`, Anthropic's
    `refusal`, a REST template's by its shape or its `filter_stops`, a WebSocket target file's
    `response.filter_stops`, default none), and marks any other filter word
-   `ModelResponse.foreign_stop` (u00) through `shared.provider_filter.stop_provenance`.
+   `ModelResponse.foreign_stop` (u00) through `shared.provider_filter.stop_provenance`, except
+   its provider's own word on a reply with no text and no tool call, the filter's withheld reply
+   whatever the file declares (u04; pre-merge audit of `10cb526b`, MEDIUM: under
+   `filter_stops: []` it was the model's empty answer, a pass). It reaches the runner as any cut
+   or block does, through `_cut_verdict` and `_evaluators_for_filtered_reply`: no second path.
    `filter_stop`, `filter_side`, `partial_reply` and `describe_filter_stop` read such a reply as
    one with an ordinary stop, so `execute_attempt` neither blocks nor cuts it, the identity sweep
    keeps it, and the runner scores it as the model's answer; the fingerprint's guardrail layer
@@ -764,7 +768,8 @@ intent. Three rules, as built:
 What it still leaves: a target that answers some attacks, not all, with its own provider's filter
 word and no text hides those attempts, which are inconclusive, never a pass, counted apart in
 every report and kept from confirming; a gateway that maps moderation to `content_filter` is read
-as OpenAI's filter (it speaks OpenAI's vocabulary), its text read as delivered. Measured on this
+as OpenAI's filter (it speaks OpenAI's vocabulary), its text read as delivered, and with
+`filter_stops: []` its empty replies on that word still are. Measured on this
 branch through the CLI: the harmful text with `refusal` from an `openai` target is a confirmed
 fail, exit 2 (`de122e26`: inconclusive, exit 0); `PI-DIRECT-001` with text cut by `content_filter`
 and a judge that says exploited is a fail that needs review, exit 0 and 2 with

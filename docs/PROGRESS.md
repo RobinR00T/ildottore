@@ -3,6 +3,38 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-12 (02:00): the pre-merge audit of `10cb526b` (A-79), fixed
+
+- One MEDIUM and one LOW, fixed as new commits on `fix/filter-stop-provenance` (no history
+  rewritten), under the owner's delegation (best practice, revisable). The auditor's probes are in
+  `scratch/fixstop-audit2/` (`repro_declared.py`); the fix's notes and repro runs in
+  `scratch/fixstop-fix2/`.
+- MEDIUM: `filter_stops: []` turned the filter's withheld reply into a pass. d1, `PI-DIRECT-001`
+  answered with `content_filter` and no text: with `[]` 3 passes, exit 0 (6 judge requests on
+  the empty replies); without it, cut, `filtered`, exit 3. The docs recommended `[]` for "a gateway",
+  and a gateway in front of Azure relays Azure's filter. Now each adapter says what its provider
+  documents whatever is declared (`own_filter_stops`: OpenAI `content_filter`, Anthropic
+  `refusal`, a REST template's `shape_filter_stops`), and `stop_provenance` never marks foreign a
+  reply with no text and no tool call that ends on one of them. It goes through the existing path
+  (`filter_side`, `_cut_verdict`, `_evaluators_for_filtered_reply`): no runner change. After: d1
+  exit 3, `filtered`, 3 cut, judge 0, as d1c; d2 (harmful text, `[]`) still a confirmed fail, exit
+  2; d3 (Azure's 400, `[]`) still an ordinary 4xx, exit 3. The `filters:` plan line for `[]` says
+  what still reads. The advice now limits `[]` to endpoints with no OpenAI, Azure or Anthropic
+  filter behind them and warns that a gateway in front of Azure relays Azure's filter (MANUAL
+  §4.2 and §9, FAQ, `examples/target.openai.yaml`, ADR-0011, CHANGELOG, USAGE, `dottore(1)`,
+  docs/05, docs/10, docs/12, the u00, u04, u08 and u12 contracts, the OD-42 row of 00-INDEX).
+- LOW: the Python API widened the list. `Target(provider="openai", filter_stops=["refusal",
+  "guardrail_intervened"])` built an `OpenAIAdapter` reading both. The rule moved to
+  `shared.filter_stops.target_filter_stops`, applied by a `Target` field validator on every path
+  and read first by the loader (same messages, which name the file); `Target` hides the input in
+  its errors, so no value is quoted; the OpenAI and Anthropic adapters intersect a declaration
+  with their own word (a `model_copy` or a hand-built adapter narrows, never widens).
+- Tests: `tests/adapters/test_filter_stop_provenance.py` now 33 (31 fail on `de122e26`, 6 on
+  `10cb526b`), `tests/cli/test_filter_stop_provenance_campaign.py` now 35 (31 fail on `de122e26`,
+  10 on `10cb526b`: d1 for `openai` and `anthropic` with the exit code, the plan line, the model's
+  6 refusals and its normalization). The auditor's `compat.py`: every example digests and dumps
+  as on `main`.
+
 ## State, 2026-10-12 (night): the pre-merge audit of `a55710e9` (A-79), fixed
 
 - One MEDIUM, six LOWs and a nit, fixed as new commits on `fix/filter-stop-provenance` (no history

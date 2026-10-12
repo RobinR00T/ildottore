@@ -113,7 +113,9 @@ each counts only from the provider that documents it: OpenAI's word from an `ope
 Anthropic's from an `anthropic` one, Gemini's or Bedrock's from a REST template in their shape,
 what a WebSocket file declares under `response.filter_stops`. Another provider's word (an
 OpenAI-compatible endpoint that says `refusal`) is marked `foreign_stop` by the adapter and does
-not make `output_filter` true: a target cannot claim a filter it does not have. A
+not make `output_filter` true: a target cannot claim a filter it does not have. An `openai` or
+`anthropic` file's `filter_stops: []` makes its own word on a reply with text foreign too, but not
+on an empty reply, which is still the filter's withheld one (pre-merge audit of `10cb526b`). A
 reply cut at the probe's own 512-token cap (`length`, `max_tokens`) is not a filter, and an empty
 reply with no such stop reason says nothing. When **no** reply carries a stop reason from the
 provider (a REST template with no `finish_path`, a WebSocket target whose final frame has none,

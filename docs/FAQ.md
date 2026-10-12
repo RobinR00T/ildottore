@@ -346,10 +346,14 @@ What it does not stop: an endpoint that uses its own provider's word can still w
 attacks, with an empty `content_filter` reply or Azure's 400, and keep CI green, because such an
 attempt is inconclusive, never a pass, and `--fail-on` does not gate it. A pipeline that should
 stop on one reads `summary.blocked_by_provider_filter` and `summary.cut_by_provider_output_filter`
-from the JSON report. An endpoint that speaks OpenAI's or Anthropic's API and is not the provider
-(a gateway that maps its own moderation to `content_filter`, a local server) can be told so:
-`filter_stops: []` in its target file reads none of its stops, and no 400, as a filter's
-([`MANUAL.md`](MANUAL.md) §4.2, §9).
+from the JSON report. An endpoint that speaks OpenAI's or Anthropic's API and has no OpenAI, Azure
+or Anthropic filter behind it (a local server, a gateway that maps its own moderation to
+`content_filter` in front of a model it hosts) can be told so: `filter_stops: []` in its target
+file reads no 400, and no stop on a reply with text or a tool call, as a filter's. Do not declare
+it for a gateway in front of Azure OpenAI: the gateway relays Azure's filter, so Azure's 400 would
+stop the run and a reply Azure cut after some text would be scored as the model's whole answer.
+Even with `[]`, a reply with no text that ends on the provider's own word is the filter's withheld
+one, inconclusive and never a pass (since 2026-10-12; [`MANUAL.md`](MANUAL.md) §4.2, §9).
 
 ### My target answered an attack with an HTML page. Does the scan stop?
 

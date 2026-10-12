@@ -110,21 +110,30 @@ must round-trip any schema-valid YAML and reject any schema-invalid one (schema 
   owner's delegation, revisable; reasoning in u04 §9). A reader of the scalars skips a nested value
   (the fingerprint's envelope layer does). Since A-79 (u08, the amendment to OD-42, 2026-10-11)
   `foreign_stop: bool = False`: `true` when `finish_reason` is some provider's filter word that
-  the target's own provider does not document, or its target file does not declare; the adapter
+  the target's own provider does not document, or its target file does not declare (never on a
+  reply with no text and no tool call that ends on the provider's own word, which is the filter's
+  withheld one whatever is declared: pre-merge audit of `10cb526b`, MEDIUM); the adapter
   that read the reply sets it (`shared.provider_filter.stop_provenance`, u04), the stop is kept as
   sent, and every reader takes it for an ordinary stop. `false` is left out of a dump by the same
   serializer, so every other reply is stored, reported and hashed as before.
 - `Target` gains `filter_stops: list[str] | None = None` (A-79, after the pre-merge audit of
   `a55710e9`): an `openai` or `anthropic` target file's declaration, `[]` or the provider's own
-  word, validated by the loader (u12); left out of a dump when `None`, so every existing file
-  dumps and digests as before.
+  word, validated by the model itself (a field validator applying
+  `shared.filter_stops.target_filter_stops`, stored trimmed, lower case, sorted, once) and by the
+  loader first, which names the file (u12); left out of a dump when `None`, so every existing file
+  dumps and digests as before. Until the pre-merge audit of `10cb526b` (LOW) only the loader
+  checked it, so `Target(provider="openai", filter_stops=["refusal", "guardrail_intervened"])`
+  built an adapter that read those two as OpenAI's filter. `Target`'s config sets
+  `hide_input_in_errors`, so a refusal, pydantic's own text included, never quotes a value (A-53).
 - `WebSocketResponse` gains `filter_stops: list[str]` (A-79): the provider filter words the
   endpoint writes at `final_path`, each one of `shared.filter_stops.FILTER_STOPS` (validated,
   stored trimmed, lower case, sorted, once), none by default, refused beside a `final_value`; an
   empty list is left out of a dump, so a target file without it digests as before.
 - `shared.filter_stops` (A-79) holds the stop vocabularies, each sourced: `OPENAI_FILTER_STOPS`,
   `ANTHROPIC_FILTER_STOPS`, `GEMINI_FILTER_STOPS`, `BEDROCK_FILTER_STOPS`, their union
-  `FILTER_STOPS`, `normalized_stop` and `documented_stops`. Apart from `shared.provider_filter` so
+  `FILTER_STOPS`, `normalized_stop` and `documented_stops`, and (after the pre-merge audit of
+  `10cb526b`) `PROVIDER_FILTER_STOPS`, `own_filter_stops_of` and `target_filter_stops`, the one
+  rule for a target's top-level declaration. Apart from `shared.provider_filter` so
   that `shared.models` can validate a declaration without importing the module that reads replies.
 - `Verdict = {status: VerdictStatus, confidence: float[0,1], reasoning: str, matched: list[str],
   evaluator_type: str, inconclusive_reason: InconclusiveReason | None}` (`docs/04 §1-§3`).
