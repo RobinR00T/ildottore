@@ -856,6 +856,19 @@ class _Cuts:
             for start in (False, True)
             for char in range(len(_STAND_IN_CHARS))
         }
+        # The stand-ins of each number type, hashed or not: one table for a number's first
+        # character, one for the rest (`str.translate`, so a number costs one pass in C).
+        self._encode = {
+            (kind, hashed): tuple(
+                {
+                    ord(c): chr(base + self._code(kind, hashed, start, char))
+                    for char, c in enumerate(_STAND_IN_CHARS)
+                }
+                for start in (True, False)
+            )
+            for kind in range(len(_STAND_IN_KINDS))
+            for hashed in (False, True)
+        }
         #: A run of stand-ins: one number or more, glued.
         self.run = re.compile(f"[{first}-{last}]++")
         #: The entropy rule's token, read on through stand-ins (each piece is judged on its own).
@@ -883,13 +896,10 @@ class _Cuts:
     def encode(self, number: str, pattern: Pattern) -> str | None:
         """``number``, read inside a UUID by ``pattern``, in stand-ins; None if it cannot be."""
 
-        if pattern.type not in _STAND_IN_KINDS or any(c not in _STAND_IN_CHARS for c in number):
+        if not number or pattern.type not in _STAND_IN_KINDS or number.strip(_STAND_IN_CHARS):
             return None
-        kind = _STAND_IN_KINDS.index(pattern.type)
-        return "".join(
-            chr(self._base + self._code(kind, pattern.hashed, at == 0, _STAND_IN_CHARS.index(c)))
-            for at, c in enumerate(number)
-        )
+        first, rest = self._encode[_STAND_IN_KINDS.index(pattern.type), pattern.hashed]
+        return number[0].translate(first) + number[1:].translate(rest)
 
     def decode(self, text: str) -> str:
         """``text`` with every stand-in read back: the same length, every UUID whole."""
