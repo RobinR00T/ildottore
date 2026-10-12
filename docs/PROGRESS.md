@@ -3,6 +3,41 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-12 (morning): the CLI audit of `de122e26`, fixed (u12 A-80)
+
+- Branch `fix/cli-store-budgets-paths` from `de122e26`, not pushed. Six findings of the full CLI
+  audit (H1, M2, M3, L1, L3, L9), each with tests that fail on `de122e26` (the new CLI tests run
+  against a `git archive` of it: 24 of 29 store and evidence tests, 11 of 14 attempts and
+  `--estimate -q` tests, 17 of 18 report-path and fleet tests fail there; the 5, 3 and 1 that pass
+  are guards that a good run still works). Clause A-80 in u12, with u10's and u08's halves; A-9
+  amended. No new open decision.
+- H1: a run store that cannot be used exits 3 before any send (`cannot open the run store at
+  <path>: <reason>`), in every mode (read-only in the ones that send nothing); concurrent opens
+  wait 30 s and retry the WAL switch, and a migration runs under the write lock (18 of 80
+  concurrent first opens failed on `de122e26`, 0 of 160 here; through the CLI 1 of 18 runs died
+  there, 0 of 30 here; the auditor saw 5 of 6). The root command group maps any exception no
+  command handles to exit 3 with one masked line, the traceback under the new root `dottore -v`.
+  Against a loopback stub, `-sV --run-db <garbage>`: 18 requests then exit 1 before, 0 and exit 3
+  now.
+- M2: the attempts ceiling is the request ceiling, and an attempt counts with its first accepted
+  request. `--runs 200` over the battery (`--budget-requests 60000`): exit 3 at `max_attempts`
+  20,000 with 2 specs unfinished before, exit 2 with 20,600 attempts now. Under
+  `--budget-requests 100`: 128 attempts for 100 requests and +43 per resume before, 85 and +0 now.
+  `--estimate` prints the ceilings. M3: an `--evidence-root` that is a regular file is refused
+  before any send (5 requests then `NotADirectoryError` against the stub before, 0 now). L1:
+  `--estimate -q` prints one line. L3: a report path that is an input is refused (the auditor's
+  `-oJ scope.yaml -oH target.yaml` overwrote both, exit 2). L9: one default spec path for every
+  command (`specs/` here, else the battery beside the package), and `fleet` takes `--spec-path`,
+  `--evidence-root`, `--run-db` and `-o*`.
+- Gates (`PYTHONPATH=<wt>/src:<wt>`, TMPDIR at the system default): green, 5,547 tests (5,476 on
+  `de122e26`, +71), coverage 97.63 %, `dottore lint` 0/0 over 75 specs, 14 suites, 1 pack, import
+  contracts 4 kept, self-scan 0 high/critical, bandit and pip-audit clean.
+- Seen and left open: a wheel built from this repository ships neither `specs/` nor `schemas/`
+  (`registry/schema.py` finds `<repo>/schemas` from the source tree), so the CI example's
+  `pip install git+https://...` cannot load a spec outside a checkout (not measured here); a report
+  path inside the evidence root is not refused; `replay --run-db <directory>` warns and goes on
+  without the manifest check, as before.
+
 ## State, 2026-10-11 (evening): the pre-merge audit of `ed381359` (OD-43), fixed
 
 - No bypass found; one MEDIUM and seven LOWs, fixed one commit each on
