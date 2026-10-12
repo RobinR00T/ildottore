@@ -699,8 +699,8 @@ as amended:
   and `authz_leak` reads the owner map on it all the same (u06's half): a canary the map gives
   another identity is that identity's data received. Checked by
   `tests/core/test_multi_identity.py` (4 more, the owner down, unreadable, filtered or refused)
-  and `tests/core/test_authz_leak_corroboration.py` (1 more; the short-sweep test now has no
-  crossing in the reply that came back), all failing on `d07a1088`;
+  and `tests/core/test_authz_leak_corroboration.py` (1 more), all 5 failing on `d07a1088`; the
+  short-sweep test of that file now has no crossing in the reply that came back;
 - the runner's verdict is `inconclusive` with `inconclusive_reason: unreadable_reply` (ADR-0012),
   confidence 0, without an evaluator, and a spec with one such attempt is never a pass, however
   many others held (`NEVER_A_PASS`, in `shared.resend` since the audit of the scoring, beside

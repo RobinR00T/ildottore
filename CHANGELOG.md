@@ -5,7 +5,7 @@ versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
-### Fixed (an audit of the scoring: two false passes, a silent sweep and four lows, 2026-10-11)
+### Fixed (an audit of the scoring and its pre-merge audit: three false passes, a silent sweep and five lows, 2026-10-11 and 2026-10-12)
 
 - **A resume's re-send is scored as the attempt it replaces, by one rule the report and `dottore
   replay` share (HIGH 1, u08 A-74).** The runner and the replay each kept the first artifact of an
@@ -72,8 +72,10 @@ versioning: [SemVer](https://semver.org/).
   confirmed fail to a cut needing review (pre-merge audit, MEDIUM 1); it is a confirmed fail
   again.
 - Docs: MANUAL §3, §5 (`--resume`, `dottore replay`), §9, §10, §11, §13, FAQ, USAGE,
-  `dottore(1)`, `docs/05` §2 and §3, `docs/09`, `docs/12`, `examples/ci-github-actions.yml`,
-  contracts u06, u08, u10, u11, u12 and the index. Tests: 44 new (28 failing on `de122e26`), 3 changed expectations.
+  `dottore(1)`, `docs/04` §1 and §2, `docs/05` §2 and §3, `docs/09`, `docs/12`,
+  `examples/ci-github-actions.yml`, contracts u06, u08, u10, u11, u12 and the index. Tests: 62 new
+  (44 failing on `de122e26`; 18 of them from the pre-merge audit of `d07a1088`, 15 failing
+  there), 4 changed expectations.
 
 ### Added (a target file may declare one of its own granted tools not destructive, OD-43)
 

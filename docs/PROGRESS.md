@@ -33,6 +33,20 @@ The carryover ledger. Every agent session updates this so context survives even 
 - LOW 3: the run's `--include-needs-review` reaches the reporters (`include_needs_review` on
   `BaseReporter`, `get_reporter`, `wiring.build_reporter`); with it a SARIF fail that needs review
   keeps its band's level (it exits 2), and the run's `properties` say so.
+- Wording: the resend tie-break never puts a cut reply over an environment error (a cut reply is
+  answered and judged, so it ranks first already); the docs now say an unreadable reply.
+- Nothing else moved: `rank_pairs.py` prints the same 28 pairs as on `d07a1088`, the
+  cross-version `cli_cross_version.py` matrix (phase 1 on `de122e26`, the resume here; env0 then
+  html, unread0 then env0, unread0 then ok, env0 then ok) the same lines with run ids masked, and
+  the auditor's four earlier scripts the same results.
+- Tests: 18 new, 15 failing on `d07a1088` (the 3 others are controls), 1 changed expectation (the
+  short-sweep test). Branch total against `main`: 62 new (44 failing on `de122e26`), 4 changed.
+  `make gates` green on `dd4f8648` (12/10/2026 10:12 to 10:20 CEST, `PYTHONPATH` set to the
+  worktree's `src`, `TMPDIR` the system default): 5538 tests (5520 on `d07a1088`), 97.86%
+  coverage (`evaluators/authz_leak.py`, `shared/provider_filter.py`, `shared/resend.py`,
+  `store/replay.py`, `reporting/base.py` and `reporting/sarif_reporter.py` 100%,
+  `core/runner.py` 97%), ruff, format, mypy strict on 161 files, four import contracts kept, 75
+  specs lint OK, self-scan 0 high/critical, bandit and pip-audit clean.
 
 ## State, 2026-10-11 (night): the audit of the scoring, fixed
 
