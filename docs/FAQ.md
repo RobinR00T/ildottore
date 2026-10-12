@@ -398,8 +398,8 @@ a target that lacks the capability they need skips them, and one that has it rep
 `blocked_by_policy` with zero sends. Selected on their own (`--suite agentic-extortion`), they
 end in `error: nothing would be sent` (exit 3), and the message says why: "Widen the selection
 or declare the capability on the target. A spec blocked by policy needs a policy pack that
-enables it, and the CLI cannot load one today (open decision OD-46), so it cannot run from
-`dottore`." For `DL-PII-ELICIT-001` the opt-in is decided (OD-11): the pack that enables it and a
+enables it, and the CLI cannot load one today (open decision), so it cannot run from
+`dottore`." That open decision is OD-46. For `DL-PII-ELICIT-001` the opt-in is decided (OD-11): the pack that enables it and a
 per-run `--allow-pii-elicitation` flag come together, never the flag alone; until then it stays
 off.
 
