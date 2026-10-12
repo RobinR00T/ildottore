@@ -17,47 +17,65 @@ jobs:
   scan:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4            # your application: ci/target.yaml, ci/scope.yaml
+
+      # Not on PyPI (`pip install ildottore` 404s), and not installable as a wheel either: a wheel
+      # (`pip install "git+https://...@<ref>"`, or `pip install` without `-e`) ships neither
+      # specs/ nor schemas/, so outside a checkout it cannot load the battery. Measured on
+      # 2026-10-12 with the wheel pyproject.toml selects, from a directory outside the repo:
+      # `dottore lint` fails with FileNotFoundError on schemas/attack-spec.schema.json, and
+      # `dottore run --dry-run` exits 3, with --spec-path pointing at a checkout or without it.
+      # So check Il Dottore out next to your code, install that checkout editable, and pass
+      # --spec-path to it.
+      - name: Check out Il Dottore at a pinned commit
+        uses: actions/checkout@v4
+        with:
+          repository: RobinR00T/ildottore
+          # Pinned to a full commit SHA so a pipeline gate cannot change meaning under you
+          # between runs. The SHA below is main on 2026-10-12.
+          # pin: update to the commit you have reviewed
+          ref: de122e266e5b067ca11bcfae394c1c0902ceff4b
+          # ref: v0.1.0
+          path: .ildottore
+          # The only tag, v0.1.0 (2026-09-03), predates most of what these gates rely on, as
+          # USAGE.md and docs/MANUAL.md describe them. Pinned to v0.1.0 (the commented line),
+          # the same scan gates differently; CHANGELOG.md ([Unreleased]) has each change:
+          # - exit codes: a run that did not finish (budget halt, unreachable target, a target
+          #   none of whose first replies could be read) does not exit 3, a usage error exits 2
+          #   (the findings code), an empty spec selection exits 0, and `dottore diff` does not
+          #   refuse an incomplete report;
+          # - confirmation (OD-19): a fail decided only by the judge is confirmed and trips
+          #   `--fail-on`; here it needs review and gates only with `--include-needs-review`;
+          # - scoring (the 2026-10-03 audit): one refused mutation variant un-confirms an
+          #   exploit that always worked, a judge outage reads as a pass, one passing attempt
+          #   passes a spec, and an inconclusive attempt leaves the reproducibility denominator;
+          # - agent tool calls (OD-38): a destructive call the model marks `confirm: true`
+          #   itself passes;
+          # - provider filters (OD-41, OD-42): the first prompt the provider's input filter
+          #   refuses stops the campaign, and an empty or canned reply from its output filter
+          #   can pass;
+          # - unreadable replies (OD-21): the first reply that is not JSON, or not the
+          #   provider's shape, stops the campaign;
+          # - MCP (OD-44): MCP-TOOLPOISON-001 goes to a chat target, where it can be a
+          #   confirmed Critical;
+          # - scenes (OD-18): a spec's documents, tools and memory never reach the target, so a
+          #   PASS on the specs that need them means nothing;
+          # - target files (OD-29, OD-31): a misspelled key is dropped without a word, and a
+          #   misspelled `endpoint` runs a live target on the offline mock.
+
       - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
 
-      - name: Install Il Dottore
-        # Not on PyPI (`pip install ildottore` 404s): install from the repository, pinned to a
-        # full commit SHA so a pipeline gate cannot change meaning under you between runs. The
-        # SHA below is main on 2026-10-12; replace it with the commit of main you have reviewed.
-        # The only tag, v0.1.0 (2026-09-03), predates most of what these gates rely on, as
-        # USAGE.md and docs/MANUAL.md describe them. Pinned to v0.1.0 (the commented line), the
-        # same scan gates differently; CHANGELOG.md ([Unreleased]) has each change:
-        # - exit codes: a run that did not finish (budget halt, unreachable target, a target none
-        #   of whose first replies could be read) does not exit 3, a usage error exits 2 (the
-        #   findings code), an empty spec selection exits 0, and `dottore diff` does not refuse
-        #   an incomplete report;
-        # - confirmation (OD-19): a fail decided only by the judge is confirmed and trips
-        #   `--fail-on`; here it needs review and gates only with `--include-needs-review`;
-        # - scoring (the 2026-10-03 audit): one refused mutation variant un-confirms an exploit
-        #   that always worked, a judge outage reads as a pass, one passing attempt passes a spec,
-        #   and an inconclusive attempt leaves the reproducibility denominator;
-        # - agent tool calls (OD-38): a destructive call the model marks `confirm: true` itself
-        #   passes;
-        # - provider filters (OD-41, OD-42): the first prompt the provider's input filter refuses
-        #   stops the campaign, and an empty or canned reply from its output filter can pass;
-        # - unreadable replies (OD-21): the first reply that is not JSON, or not the provider's
-        #   shape, stops the campaign;
-        # - MCP (OD-44): MCP-TOOLPOISON-001 goes to a chat target, where it can be a confirmed
-        #   Critical;
-        # - scenes (OD-18): a spec's documents, tools and memory never reach the target, so a
-        #   PASS on the specs that need them means nothing;
-        # - target files (OD-29, OD-31): a misspelled key is dropped without a word, and a
-        #   misspelled `endpoint` runs a live target on the offline mock.
-        run: pip install "git+https://github.com/RobinR00T/ildottore@de122e266e5b067ca11bcfae394c1c0902ceff4b"  # pin: update to the commit you have reviewed
-        # run: pip install "git+https://github.com/RobinR00T/ildottore@v0.1.0"
+      - name: Install Il Dottore (editable, from the checkout)
+        run: pip install -e ./.ildottore
 
       - name: Scan (fail the build on confirmed high/critical)
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}   # matches target auth_ref
         run: |
           dottore run --suite owasp:llm \
+            --spec-path .ildottore/specs \
             -t ci/target.yaml \
             --scope ci/scope.yaml \
             --fail-on high \

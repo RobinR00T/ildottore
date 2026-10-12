@@ -25,7 +25,13 @@ venv to run the whole wall:
 .venv/bin/python -m pip install bandit pip-audit
 ```
 
-For a runtime-only install, drop `[dev]`.
+For a runtime-only install, drop `[dev]`, but keep `-e` and the checkout: a non-editable
+install (`pip install .`, `pip install "git+https://..."`, a built wheel) ships neither `specs/`
+nor `schemas/`, so it cannot load the battery. Measured on 2026-10-12 with the wheel
+`pyproject.toml` selects, from a directory outside the repo: `dottore lint` stopped on a missing
+`schemas/attack-spec.schema.json` and `dottore run --dry-run` exited 3, with or without
+`--spec-path`. From outside the checkout, pass `--spec-path <checkout>/specs`, as
+`examples/ci-github-actions.yml` does.
 
 Two console scripts are installed: `dottore` and its short alias `dott`.
 
