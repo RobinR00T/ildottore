@@ -52,7 +52,12 @@ The carryover ledger. Every agent session updates this so context survives even 
   `_evaluators_for_filtered_reply` are one rule; fixstop's `partial_reply`, `replaced_reply`
   (`blank_text`) and A-79 judge rule (`weighed`) kept; its two new `_combine_verdicts` calls pass
   `swept=identities`; `_trace_before_block`'s local reply renamed `reply` (it shadowed the
-  `stopped` parameter). Merged gates: MERGED_GATES.
+  `stopped` parameter). `make gates` green on the merge, `c5460345` (12/10/2026 11:19 to
+  11:26 CEST): 5663 tests (5538 here, the rest fixstop's), 97.87% coverage (`core/runner.py`
+  98%), ruff, format, mypy strict on 162 files, four import contracts kept, 75 specs lint OK,
+  self-scan 0 high/critical, bandit and pip-audit clean. On the merged tree the auditor's four
+  repros print what they did on `38bc67b2`, and fixstop's `repro_declared.py` and `compat.py`
+  what they print on `ffec14ec`.
 
 ## State, 2026-10-11 (night): the audit of the scoring, fixed
 
