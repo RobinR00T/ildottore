@@ -1229,8 +1229,9 @@ replies that came back, `spoofing_flags` carries `probes_failed`, an evidence en
 <target>: N of 18 probe(s) got no usable reply (...)`, and the exit is 0. Before, it exited 3 on
 the first such reply. When every probe is refused there is no fingerprint: the line starts
 `error:`, nothing is printed on stdout, and the exit is 3. A probe that gets no answer at all (a
-closed port, a 503 or a timeout after the retries), a refusal by the scope or a 200 that is not
-JSON still exits 3, with the cause.
+closed port, a 503 or a timeout after the retries) or a refusal by the scope still exits 3, with
+the cause. A 200 that is not JSON or not the provider's shape fails only its probe (OD-21): the
+same `warning:` line names it as `ResponseMalformed` and the exit is 0.
 
 A target that takes no sampling (§4.2, "Models that take no sampling": a listed Claude model, or
 `capabilities.sampling: false`) is probed with no temperature, so its fingerprint is as repeatable

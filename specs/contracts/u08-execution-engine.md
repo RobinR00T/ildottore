@@ -763,10 +763,10 @@ every probe was unreadable after its probes (u09 A-35).
   one request. **Decided by the owner, 2026-10-10 17:33:** the attempt is recorded as blocked by
   the provider's filter and the campaign goes on. Built as §7 A-69: `inconclusive:
   blocked_by_provider_filter` (ADR-0011), scored as an attempt without a reply, not retried, kept
-  by a resume, counted in every report. Left open, not part of the decision: a Bedrock guardrail
-  intervention (an HTTP 200 whose output is the guardrail's message, read as a reply), OpenAI's
-  `invalid_prompt` 400 (in forum reports, not in its error-code reference) and Gemini's
-  OpenAI-compatible endpoint, for want of a documented shape; and the `-sV` pass, which still stops
+  by a resume, counted in every report. Left open then, closed by OD-42 (A-70): a Bedrock
+  guardrail intervention (an HTTP 200 whose output is the guardrail's message, read as a reply).
+  Still open, not part of the decision: OpenAI's `invalid_prompt` 400 (in forum reports, not in its
+  error-code reference) and Gemini's OpenAI-compatible endpoint, for want of a documented shape; and the `-sV` pass, which still stops
   on such a refusal of an attributing probe (the benign one, u09 A-67, and since the pre-merge
   audit of `3d739f3` the carriers, are failed probes instead). Owner: human.
 - **OD-42** (2026-10-11): a reply the provider's own filter cut or replaced came back as an HTTP
