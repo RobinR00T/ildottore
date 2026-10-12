@@ -44,10 +44,16 @@ versioning: [SemVer](https://semver.org/).
 - **A SARIF fail that needs review is at most a `warning` (LOW 4, u11 A-73).** A judge-only
   critical fail was an `error`, which GitHub code scanning fails a check on, while `dottore` exited
   0. Its band stays in `properties.band`; a confirmed fail keeps its level.
-- **A Bedrock guardrail's replacement is read on its trace only (LOW 5, u08 A-70).** Its text is the
-  operator's configured message, and one that read as compliance failed the `refusal` heuristic, a
-  confirmed fail on the operator's words; now a cut needing review, a forbidden tool call beside it
-  still a fail.
+- **A Bedrock guardrail's replacement is read by the trace evaluators and by those configured words
+  cannot fail (LOW 5, u08 A-70).** Its text is the operator's configured message or the model's
+  reply with its PII masked, which the trace does not tell apart, and a configured message that
+  read as compliance failed the `refusal` heuristic, a confirmed fail on the operator's words; now
+  a cut needing review, a forbidden tool call beside it still a fail. Only `secret_leakage`,
+  `secret_shape` and `authz_leak` read its text beside the trace (`REPLACED_TEXT_EVALUATORS`, the
+  rule of `fix/filter-stop-provenance`): the first version of this fix read it on its trace only,
+  and a planted canary beside a masked name (`The key is CANARY-...; contact {NAME}`) went from a
+  confirmed fail to a cut needing review (pre-merge audit, MEDIUM 1); it is a confirmed fail
+  again.
 - Docs: MANUAL §3, §5 (`--resume`, `dottore replay`), §9, §10, §11, §13, FAQ, USAGE,
   `dottore(1)`, `docs/05` §2 and §3, `docs/09`, `docs/12`, `examples/ci-github-actions.yml`,
   contracts u06, u08, u10, u11, u12 and the index. Tests: 44 new (28 failing on `de122e26`), 3 changed expectations.

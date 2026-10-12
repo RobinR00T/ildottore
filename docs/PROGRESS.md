@@ -35,7 +35,8 @@ The carryover ledger. Every agent session updates this so context survives even 
 - LOW 1 the resume note names each id once (was `-1 that ended in an environment error`); LOW 2
   `setup_not_reached` is asked of a judge-only fail too; LOW 3 the `--include-needs-review` help;
   LOW 4 a SARIF fail that needs review is at most `warning`; LOW 5 a Bedrock guardrail's
-  replacement is read on its trace only.
+  replacement is read by the trace evaluators plus `secret_leakage`, `secret_shape` and
+  `authz_leak` (the pre-merge audit's MEDIUM 1, below).
 - Tests: 44 new, 28 of them failing on `de122e26` (the tie test fails there in one of its two file
   orders for each of its six cases), 3 changed expectations (two sweep verdicts that now name the
   identity, one in-band metadata that now carries `send_number`).
