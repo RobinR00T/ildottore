@@ -1015,7 +1015,7 @@ required.
 | `--exclude TEXT` | exclude spec id/glob (repeatable) |
 | `--top-tests INT` | keep the N highest-signal specs |
 | `--quick` | the T0 battery: selects `--suite quick` (18 specs) and timing `-T0`. Conflicts with an explicit `--suite` (pass one) |
-| `--deep` | timing `-T2` (unless you pass `-T`) over whatever the other flags select (with no selection flag, the whole registry minus what the target cannot run). It does **not** select a larger suite (on the example target, `--dry-run` selects the same 34 specs with or without it, at 2.0 req/s instead of 5.0). By itself it tailors nothing: it switches adaptive planning on (a `--resume` of the run must ask for it too, with `--deep`, `-sV` or `-A`), but the planner orders mutators only from a fingerprint, which only `-sV` or `-A` produces (`run --help`: "adaptive only with -sV") |
+| `--deep` | timing `-T2` (unless you pass `-T`) over whatever the other flags select (with no selection flag, the whole registry minus what the target cannot run). It does **not** select a larger suite (on the example target, `--dry-run` selects the same 33 specs with or without it, at 2.0 req/s instead of 5.0). By itself it tailors nothing: it switches adaptive planning on (a `--resume` of the run must ask for it too, with `--deep`, `-sV` or `-A`), but the planner orders mutators only from a fingerprint, which only `-sV` or `-A` produces (`run --help`: "adaptive only with -sV") |
 
 **Discovery and aggression**
 
@@ -1458,10 +1458,11 @@ artifact(s) with a call to a tool the target file declares not destructive, not 
 Probes are hash-checked but not part of the manifest. The last line is the **pooled** rate
 over every attempt of the run, all specs and variants together; a report's reproducibility is
 per spec and takes the best variant, so the two can differ on the same run. On a `--runs 2`
-run against the `vulnerable` mock (the default `--runs 5` gives 355 attempts):
+run against the `vulnerable` mock (`type: chatbot`, no capability declared; the default
+`--runs 5` gives 350 attempts):
 
 ```
-attempts: 142  exploited: 142  pooled rate: 1.00 (every attempt of the run; a report's reproducibility is per spec, best variant)
+attempts: 140  exploited: 140  pooled rate: 1.00 (every attempt of the run; a report's reproducibility is per spec, best variant)
 ```
 
 A resume sends an attempt that ended in an environment error again under its id, so several

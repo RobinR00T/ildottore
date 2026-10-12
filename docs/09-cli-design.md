@@ -124,7 +124,7 @@ with `--deep` alone reads `["fingerprint", "declared"]`, and that resume prints 
 stderr saying it plans in each spec's declared order; a `--deep` campaign resumed with `--deep`
 reads `["declared", "declared"]` and prints none. Measured with `--dry-run` on
 `examples/target.local.yaml` (a chat model with no tools, RAG or memory): no flag, `--deep` and `-A`
-each select the same 34 specs and 550 requests; the pacing line reads 5.0 req/s with no flag and 2.0
+each select the same 33 specs and 545 requests; the pacing line reads 5.0 req/s with no flag and 2.0
 with `--deep` or `-A`, and `-A` adds `+18 probe(s) per target`.
 
 **`runs` comes from the command line.** A spec's own `runs:` and a suite's `default_runs:` are
