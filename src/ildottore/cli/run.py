@@ -1512,10 +1512,14 @@ def _check_outputs_spare_inputs(opts: RunOptions, spec_paths: Sequence[Path]) ->
 
     ``-oJ scope.yaml -oH target.yaml`` overwrote the authorization record and the target file
     with the reports, once the run had sent its traffic. An existing output is compared with
-    each existing input as a file (``samefile``: a symlink, a hard link, or another spelling on
-    a case-insensitive volume is the same file); the run store, which a fresh run creates, by
-    its resolved path and SQLite's ``-wal``, ``-shm`` and ``-journal`` beside it; a spec path,
-    by whether the output lies inside it. Another output is the duplicate check above.
+    each existing input, and with every file of the spec path, as a file (its device and inode:
+    a symlink, a hard link, or another spelling on a case-insensitive volume is the same file;
+    ``os.path.realpath`` keeps the case it is given, so comparing resolved paths let
+    ``-oJ SPECS/attacks/<spec>.yaml`` overwrite a spec, pre-merge audit of ``e6a1ab9b``); the run
+    store, which a fresh run creates, by its resolved path and SQLite's ``-wal``, ``-shm`` and
+    ``-journal`` beside it, for the path given and for the file a link names; a run directory of
+    the evidence store, by whether the output lies inside one. Another output is the duplicate
+    check above.
     """
 
     named: list[tuple[str, Path]] = []
@@ -1526,8 +1530,13 @@ def _check_outputs_spare_inputs(opts: RunOptions, spec_paths: Sequence[Path]) ->
         named.append((f"the --judge file {opts.judge}", opts.judge))
     named += [(f"{label} {path}", path) for label, path in opts.extra_inputs]
     store = Path(opts.run_db or DEFAULT_RUN_DB)
-    stores = {_folded_path(Path(f"{store}{suffix}")) for suffix in _STORE_SIBLINGS}
-    roots = [Path(os.path.realpath(root)) for root in spec_paths]
+    stores = {
+        _folded_path(Path(f"{base}{suffix}"))
+        for base in (store, Path(os.path.realpath(store)))
+        for suffix in _STORE_SIBLINGS
+    }
+    evidence_root = Path(opts.evidence_root or DEFAULT_EVIDENCE_ROOT)
+    spec_files: dict[tuple[int, int], Path] | None = None
     for fmt, output in _report_outputs(opts).items():
         report = f"the {_REPORT_NAMES.get(fmt, fmt)} report"
         if _folded_path(Path(output)) in stores or (
@@ -1537,6 +1546,13 @@ def _check_outputs_spare_inputs(opts: RunOptions, spec_paths: Sequence[Path]) ->
                 f"{report} would overwrite the run store (--run-db) {store}; "
                 "write the report elsewhere"
             )
+        run_dir = _run_directory_holding(Path(output), evidence_root, opts.resume)
+        if run_dir is not None:
+            raise ValueError(
+                f"{report} would write inside the evidence store, in {run_dir}: a run's "
+                "directory holds only what the run writes (a report over an artifact makes the "
+                "next resume refuse the run as tampered); write it elsewhere"
+            )
         if not Path(output).exists():
             continue  # every other input exists: a new file cannot be one of them
         for label, path in named:
@@ -1545,13 +1561,69 @@ def _check_outputs_spare_inputs(opts: RunOptions, spec_paths: Sequence[Path]) ->
                     f"{report} would overwrite {label}; a report never replaces an input of "
                     "the run, write it elsewhere"
                 )
-        real = Path(os.path.realpath(output))
-        for root, shown in zip(roots, spec_paths, strict=True):
-            if real == root or root in real.parents:
-                raise ValueError(
-                    f"{report} would overwrite a file of the spec path {shown} ({output}); "
-                    "write it elsewhere"
-                )
+        if spec_files is None:
+            spec_files = _file_identities(spec_paths)
+        shown = spec_files.get(_identity(Path(output)) or (-1, -1))
+        if shown is not None:
+            raise ValueError(
+                f"{report} would overwrite a file of the spec path {shown} ({output}); "
+                "write it elsewhere"
+            )
+
+
+def _identity(path: Path) -> tuple[int, int] | None:
+    """The device and inode ``path`` names (through links), or ``None`` when it cannot be read."""
+
+    try:
+        info = os.stat(path)
+    except OSError:
+        return None
+    return info.st_dev, info.st_ino
+
+
+def _file_identities(spec_paths: Sequence[Path]) -> dict[tuple[int, int], Path]:
+    """Every file and directory of each spec path, by device and inode, to the path it is under.
+
+    Read only when a report path exists already, once per run.
+    """
+
+    found: dict[tuple[int, int], Path] = {}
+    for root in spec_paths:
+        entries = [Path(root)]
+        if Path(root).is_dir():
+            for directory, dirs, files in os.walk(root):
+                entries += [Path(directory, name) for name in (*dirs, *files)]
+        for entry in entries:
+            identity = _identity(entry)
+            if identity is not None:
+                found.setdefault(identity, Path(root))
+    return found
+
+
+def _run_directory_holding(
+    output: Path, evidence_root: Path, resume: str | None = None
+) -> Path | None:
+    """The run directory of the evidence store ``output`` lies in, if any.
+
+    A run directory is a directory directly under the root that holds ``attempts/`` or
+    ``probes/``, or that is named after the run being resumed. Compared as files, as the inputs
+    are: through a link or another spelling of the root. A report beside the run directories,
+    in the root itself, is not inside one.
+    """
+
+    if not evidence_root.is_dir():
+        return None
+    absolute = Path(os.path.abspath(output))
+    ancestors = [*absolute.parents, *Path(os.path.realpath(absolute)).parents]
+    for ancestor in ancestors:
+        parent = ancestor.parent
+        if parent == ancestor or not ancestor.is_dir() or not _same_file(parent, evidence_root):
+            continue
+        if (ancestor / "attempts").is_dir() or (ancestor / "probes").is_dir():
+            return ancestor
+        if resume is not None and ancestor.name == resume:
+            return ancestor
+    return None
 
 
 def _interrupt_as_ctrl_c(signum: int, frame: FrameType | None) -> None:

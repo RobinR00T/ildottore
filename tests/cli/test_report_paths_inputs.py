@@ -175,3 +175,71 @@ def test_fleet_run_protects_its_own_inputs(tmp_path: Path, no_sends: list[str]) 
     assert result.exit_code == 3, result.output
     assert "would overwrite the fleet file" in result.output
     assert fleet.read_text() == before
+
+
+# --- the pre-merge audit of e6a1ab9b -------------------------------------------------------
+
+
+def test_a_spec_file_spelled_in_another_case_is_protected(
+    tmp_path: Path, no_sends: list[str]
+) -> None:
+    """MEDIUM 1: `os.path.realpath` keeps the case it is given, so on the macOS default volume
+    `-oJ SPECS/PI-DIRECT-001.yaml` beside `--spec-path specs` overwrote the spec (exit 2)."""
+
+    if not _case_insensitive(tmp_path):
+        pytest.skip("a case-sensitive volume: SPECS/ is another directory")
+    _, _, specs = _files(tmp_path)
+    spec = specs / "PI-DIRECT-001.yaml"
+    before = spec.read_text()
+    other = tmp_path / "SPECS" / "PI-DIRECT-001.YAML"
+    code, shown = _run(tmp_path, "-oJ", str(other))
+    assert code == 3, shown
+    assert "would overwrite a file of the spec path" in shown
+    assert spec.read_text() == before
+
+
+def test_a_hard_link_to_a_spec_file_outside_the_spec_path_is_protected(
+    tmp_path: Path, no_sends: list[str]
+) -> None:
+    _, _, specs = _files(tmp_path)
+    linked = tmp_path / "report.json"
+    os.link(specs / "PI-DIRECT-001.yaml", linked)
+    code, shown = _run(tmp_path, "-oJ", str(linked))
+    assert code == 3, shown
+    assert "would overwrite a file of the spec path" in shown
+
+
+def test_the_store_siblings_are_those_of_the_file_a_link_names(
+    tmp_path: Path, no_sends: list[str]
+) -> None:
+    """LOW 2: SQLite keeps `-wal` beside the file a symlinked `--run-db` names, not the link."""
+
+    real = tmp_path / "realdir"
+    real.mkdir()
+    (real / "real.sqlite").write_bytes(b"")
+    link = tmp_path / "link.sqlite"
+    link.symlink_to(real / "real.sqlite")
+    code, shown = _run(tmp_path, "-oJ", str(real / "real.sqlite-wal"), store=link)
+    assert code == 3, shown
+    assert "would overwrite the run store (--run-db)" in shown
+
+
+def test_a_report_inside_a_run_directory_of_the_evidence_store_is_refused(
+    tmp_path: Path, no_sends: list[str]
+) -> None:
+    """LOW 3: a report written over an artifact made the next resume refuse the run as
+    tampered; the run directories hold only what a run writes."""
+
+    run_dir = tmp_path / "ev" / "run-0123456789ab" / "attempts"
+    run_dir.mkdir(parents=True)
+    for target in (run_dir / "x.json", tmp_path / "ev" / "run-0123456789ab" / "r.json"):
+        code, shown = _run(tmp_path, "-oJ", str(target))
+        assert code == 3, shown
+        assert "would write inside the evidence store" in shown
+
+
+def test_a_report_beside_the_run_directories_is_still_written(tmp_path: Path) -> None:
+    (tmp_path / "ev").mkdir()
+    code, shown = _run(tmp_path, "-oJ", str(tmp_path / "ev" / "report.json"))
+    assert code == 2, shown
+    assert (tmp_path / "ev" / "report.json").is_file()
