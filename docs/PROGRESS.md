@@ -35,8 +35,10 @@ The carryover ledger. Every agent session updates this so context survives even 
   (the `--runs 200` command needs `--budget-tokens` and `--budget-wall` raised; the concurrency
   figures are 5 of 6 in the first audit, 1 and 2 of 18 in two re-measurements; a wheel ships
   neither the battery nor the schemas).
-- Gates on the merged tree (`PYTHONPATH=<wt>/src:<wt>`, TMPDIR at the system default): see the
-  report of this session for the figures of the final head.
+- Gates on the merged tree (`PYTHONPATH=<wt>/src:<wt>`, TMPDIR at the system default), at
+  `c7be4ed8`: green, 5,775 tests (5,663 on `main` `0be0be71`, +112), coverage 97.63 %, `dottore
+  lint` 0/0 over 75 specs, 14 suites, 1 pack, import contracts 4 kept, self-scan 0 high/critical,
+  bandit and pip-audit clean.
 
 ## State, 2026-10-12 (morning): the CLI audit of `de122e26`, fixed (u12 A-80)
 
