@@ -3,6 +3,26 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-13 (near midnight): the sixth pre-merge audit, of `31cf86bf` (A-77), fixed
+
+- `_main_reach` confirmed (`_quoted` AST-identical to `main`'s `reply_excerpt` tail; reach 0 of 15,
+  kept_fields 0 of 96, expand 12 of 12 equal). One narrow case against the parity bar: plain-text
+  data ending in a label (`password`, `password:`, `token=`), then the value on a line that is no
+  field of the format (a comment, after a blank line or not, a line starting with a space or
+  `=`): `main` masks it through the label, the cut excerpt emptied the label and showed it
+  (`r6/context_loss.py`, 5 of 17 forms).
+- Fixed (`ce8cd987`, the auditor's `patch-drop-nonfield-lines.diff`): a cut excerpt keeps only
+  blank lines, JSON lines and `data`, `event`, `id` and `retry` fields (`_a_field`). Now 0 of 17
+  forms show more than `main` (5 show less), reach 0 more of 15 (3 fewer), kept_fields 0 of 96,
+  window_attacks 36 of 36 clean, emptying check 0 mismatches, clean bodies that fit the window 0
+  of 1,498 differ, `cost3.py` 0.01 to 0.21 s.
+- The merge with main still waits for PR #113 (`scratch/fixfrag/MERGE-PLAN.md`).
+- Tests: 116 new against `main` (5476 there, 5592 here), 5 since `31cf86bf`. `make gates` green on
+  `ca458c4b` (`PYTHONPATH` set to the worktree's `src` and root, `TMPDIR` at the system default,
+  nothing under `/tmp`): ruff and format clean (423 files), mypy strict (161), four import
+  contracts kept, 75 specs lint OK, 5592 tests, 97.86% coverage, self-scan 0 high or critical,
+  bandit and pip-audit clean.
+
 ## State, 2026-10-13 (late night): the fifth pre-merge audit, of `6d7d990e` (A-77), fixed
 
 - Merge-ready on `6d7d990e` but for the parity bar (window_attacks 36 of 36 clean, the long
