@@ -554,9 +554,8 @@ def test_an_assignment_can_be_listed() -> None:
     path = _module_file("ildottore.core.runner")
     assert path is not None
     assert "CUT_DECIDING_EVALUATORS" in _function_source(path, "CUT_DECIDING_EVALUATORS")
-    assert ("ildottore.core.runner", "CUT_DECIDING_EVALUATORS") in _refs_of(
-        "ildottore.core.runner:CampaignRunner._cut_verdict"
-    )
+    # What reads a constant moves between branches (a function that reads it can be split): the
+    # walk naming one is the synthetic tests' to show; here, an import of the PII evaluator.
     assert ("ildottore.redactor", "is_date_stamp") in _refs_of("ildottore.evaluators")
 
 

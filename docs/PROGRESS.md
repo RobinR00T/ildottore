@@ -34,7 +34,13 @@ The carryover ledger. Every agent session updates this so context survives even 
   with no target fields; L-8 `in severity (2)` from a real run instead of `in evaluator_logic (75)`.
 - Tests: `tests/shared/test_judging_rules.py` 14, `tests/cli/test_resume_judging_rules.py` 26,
   `tests/cli/test_resume_refusal_advice.py` 15, `tests/cli/test_resume_corrupt_context.py` 31.
-  GATES_PLACEHOLDER
+  `make gates` green on `1a0b1b7a` (`PYTHONPATH` set to the worktree's `src`, `TMPDIR` the
+  system default): 5562 tests (5476 on `main` at `de122e26`, 86 new), 97.90% coverage
+  (`cli/resume.py` 95%, `shared/judging_rules.py` 100%), 75 specs lint OK, four import contracts
+  kept, mypy strict on 161 files, self-scan and bandit clean; pip-audit failed on a DNS error for
+  pypi.org in that run and was clean when run again (2026-10-13). A dry run of the closure on
+  `main` at `44a0ffb9` (fixstop landed) merged with this branch names the 13 names fixstop added,
+  each one the landing step lists (`scratch/fixcli2/LANDING.md`).
 
 ## State, 2026-10-12: a resume is bound to the rules that judged it (u12 A-81); its refusals say what changed; a corrupt context value is refused
 
