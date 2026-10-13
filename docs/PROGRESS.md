@@ -36,6 +36,14 @@ The carryover ledger. Every agent session updates this so context survives even 
   auditor's clean-grammar differential fuzz against `0be0be71`'s redactor, 8 x 60,000 texts, 0
   regressions and no stand-in in any output; the 3.8 MiB flood scan exit 0, no token readable (148
   on `0be0be71`, also exit 0).
+- CI of PR #113 (Gate 12, coverage on Python 3.11): a time-bound test of the evidence keys took
+  16.4 s against 15 s; a short text cost 1.7 times main's. A prefilter skips the late patterns and
+  the stand-ins where a text holds nothing they need (`d38580d2`, byte-identical output on 240,000
+  fuzz texts; 24,000 keys 0.74 s against main's 0.67 s, 1.12 s before), and that test and the
+  glued-UUID one assert the ratio of two sizes under 8 with a 120 s hang ceiling (`39fcf6f1`;
+  ratio 4.0 plain and under both of coverage's tracers, 2.5 s under the C tracer). Fuzz against
+  `de122e26`: clean 8 x 60,000 0, mixed 4 x 40,000 the same 52; against `0be0be71` clean 0.
+  `make gates` green on `5fb69556`, 23:08 to 23:16 CEST: 6397 tests, 97.91% coverage.
 
 ## State, 2026-10-12 (morning): the pre-merge audit of A-78 (`0b4b1f14`), fixed
 
