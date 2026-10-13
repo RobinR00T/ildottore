@@ -2234,14 +2234,15 @@ Cut by the provider's output filter: 8 attempt(s) in 2 spec(s) came back cut or 
   way: a body streamed as server-sent events is read as the format says, and so are JSON lines
   in Ollama's or OpenAI's chunk shape (any other JSON lines, a log, are quoted as they came); only
   the head the excerpt can show is read (36 KiB with no long registered credential). A longer body's
-  excerpt withholds the text it streams: the lines `main`'s excerpt would show whole are shown with
-  every streamed text value emptied, keys, structure, types, roles, ids and finish reasons kept,
-  under a first line that says so, since a secret streamed across the cut could not be masked whole.
-  A chunk streamed with logprobs has its masked tokens' alternatives and `bytes` masked too.
-  Evidence written before A-77 keeps an OpenAI or WebSocket target's reply in pieces as it came. The
-  keys of an attempt's free-form fields (a tool call's argument names, `usage`, a frame's fields)
-  are masked in the reports as in the evidence, two that mask alike numbered apart
-  (`«REDACTED:email»`, `«REDACTED:email», #2`).
+  excerpt withholds the text it streams: the lines `main`'s excerpt would show whole are shown,
+  comments and other lines that are no field of the format left out, with every streamed text value
+  emptied, keys, structure, types, roles, ids and finish reasons kept, under a first line that says
+  so, since a secret streamed across the cut could not be masked whole. A chunk streamed with
+  logprobs has its masked tokens' alternatives and `bytes` masked too. Evidence written before A-77
+  keeps an OpenAI or WebSocket target's reply in pieces as it came. The keys of an attempt's
+  free-form fields (a tool call's argument names, `usage`, a frame's fields) are masked in the
+  reports as in the evidence, two that mask alike numbered apart (`«REDACTED:email»`,
+  `«REDACTED:email», #2`).
 - **File permissions.** Attempt and probe files are readable by their owner only (0600), and
   so are a run store and a report file the tool creates. A report that already exists keeps
   its mode when it is rewritten, and so does an existing run store. A report another user must

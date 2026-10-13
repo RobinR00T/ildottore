@@ -5,6 +5,20 @@ versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed (what the sixth pre-merge audit, of `31cf86bf`, found in A-77, before it lands)
+
+- **A cut excerpt keeps no line whose mask came from the text it withholds (parity).** A line
+  that is no field of an event stream (a comment, a line starting with a space or `=`) can take
+  its mask in `main`'s excerpt from the text before it: plain-text data ending in `password:`,
+  `password` or `token=`, then the value as a comment, after a blank line or not, or on a line
+  starting with a space or `=`, is masked by `main` through the label, but the cut excerpt
+  emptied the label and showed `Tr0ub4dor-and-3` (`context_loss.py`, 5 of 17 forms). A cut
+  excerpt now keeps only blank lines, JSON lines and the format's `data`, `event`, `id` and
+  `retry` fields (the auditor's `patch-drop-nonfield-lines.diff`): 0 of 17 forms show more than
+  `main` (5 show less); `reach.py` 0 of 15 more (3 fewer: comment lines go), `kept_fields.py` 0 of
+  96, `window_attacks.py` 36 of 36 clean, clean bodies that fit the window 0 of 1,498 differ from
+  `main`; `cost3.py` 0.01 to 0.21 s on 4 MiB bodies.
+
 ### Fixed (what the fifth pre-merge audit, of `6d7d990e`, found in A-77, before it lands)
 
 - **A cut stream's excerpt reaches no further into the body than `main`'s (parity).** Its lines,
