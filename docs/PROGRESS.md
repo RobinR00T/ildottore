@@ -3,6 +3,31 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-13 (late night): the fifth pre-merge audit, of `6d7d990e` (A-77), fixed
+
+- Merge-ready on `6d7d990e` but for the parity bar (window_attacks 36 of 36 clean, the long
+  password 0, unrecognised shapes as `main`, only the excerpt changes; trial merges with main
+  `0be0be71` 5,773 passed, with fixkeys 6,507). The finding: a cut excerpt reached further into
+  the body than `main`'s, since its emptied lines are short, and showed more of a secret placed
+  outside the streamed text (`r5/reach.py`: 11 of 11 pieces, `main` 8; `kept_fields.py` more in 3
+  of 96).
+- Fixed (`18ba093a`): only the lines `main`'s excerpt of the body shows whole are kept
+  (`_main_reach`, by redacting them as `main` does, with `_quoted`, `reply_excerpt`'s tail). The
+  auditor's fixed 4 KiB bound was not enough where `main`'s own masks lengthen its text (short
+  emails in every event: `main` none of 11 pieces, 4 KiB 8; `scratch/fixfrag/r8/expand.py`).
+  Now `reach.py` 0 of 15 and `kept_fields.py` 0 of 96 more than `main`, none fewer; `expand.py`
+  equal to `main` in 12 of 12; window_attacks 36 of 36 clean; `emptying_check.py` 0 mismatches;
+  clean bodies that fit the window 0 of 1,498 differ, past it 240 of 320 differ only by the
+  withheld text and the notice (20,308 checked); `cost3.py` 0.01 to 0.20 s.
+- Merge with main: planned in `scratch/fixfrag/MERGE-PLAN.md`, to run once PR #113 (fixkeys) has
+  landed (the coordinator says when), with the auditor's resolutions and the `_clipped` wrap of
+  main's new `filtered[...]` note.
+- Tests: 111 new against `main` (5476 there, 5587 here), 1 since `6d7d990e`. `make gates` green on
+  `bd699191` (`PYTHONPATH` set to the worktree's `src` and root, `TMPDIR` at the system default,
+  nothing under `/tmp`): ruff and format clean (423 files), mypy strict (161), four import
+  contracts kept, 75 specs lint OK, 5587 tests, 97.86% coverage, self-scan 0 high or critical,
+  bandit and pip-audit clean.
+
 ## State, 2026-10-13 (night): a cut stream's excerpt fails closed (owner's decision)
 
 - The coordinator decided the case left open below, under the owner's delegation (best
