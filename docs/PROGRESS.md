@@ -3,6 +3,25 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-13 (evening): the round-2 audit of `e1824e99` (A-82, merge-ready), its LOWs fixed
+
+- LOW 1: the root command (`app._MaskedGroup`, Typer `cls=`) masks a usage error in place where
+  click raises it, so `typer.main.get_command(app)()`, a parent group and `python -m typer` print
+  it masked; `_MaskedTyper` is gone. LOWs 2 to 4: `cli.key_shape` (credential formats and entropy
+  outside hex ids and UUIDs, never PII; whole normalised credential names) for a fleet endpoint's
+  path, query and fragment and for `new-spec --family`. LOW 5: names printed as written, and a
+  long file name's wording for a write. LOW 6: `--spec-path` of a name no file system holds.
+- Reruns: the audit's fleet probe 32 of 32 legitimate endpoints accepted and 35 of 35 hostile ones
+  refused, nothing written or shown; its M7 fuzz through four entries (806 cases) leaks nothing but
+  `new-spec --family <32 hex>`, which is written as the family asked for (a hex id is no key, as in
+  a fleet endpoint); M4 live, query-key and family checks clean; `repro.sh` clean. `make gates`
+  green on `52fb9cce`: 5769 tests (293 new, 221 of which fail on `de122e26`), 97.82% coverage.
+- Merge plan (coordinator, 13-10): `fix/cli-store-budgets-paths` lands first; then `origin/main` is
+  merged here on the coordinator's word, keeping one missing-path mechanism
+  (`refuse_spec_paths_that_hold_nothing`, `PATH_NOT_FOUND`, exit 3, with fixcli1's wording for the
+  default fallback path), a strict `lint` with no path and no `specs/` (exit 3, no fallback to the
+  built-in battery), and `allow_inf_nan=False` on `timeout_seconds` in `shared/models.py`.
+
 ## State, 2026-10-12 (late morning): the pre-merge audit of `f9dbed49` (A-82), fixed
 
 - Three MEDIUM and eight LOW, one commit each on `fix/cli-input-validation`. MEDIUM 1: the exported
