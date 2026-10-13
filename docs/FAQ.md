@@ -422,6 +422,6 @@ matched. What the tool itself computed stays readable: the evidence file names a
 the media digests a multimodal request records, the scope digest, run and attempt ids. So does the
 id of the target you scanned, which every report masks by the rules it had before these, with a
 fixed salt: `tenant-6a1f0c2e-91b4-4d7a-8e3b-2f5c9d0a7b14` reads as written, and `dottore diff`
-compares two runs of it (a high-entropy id is masked, to the same text in every run). A mask of
-these types written in a reply (`«REDACTED:uuid»` followed by a password) is not taken for one of
-the tool's: it is read as text, and what follows it masked as any text.
+compares two runs of it (a high-entropy id is masked, to the same text in every run, and since the
+salt is public, in every user's reports). A mask of these types written in a reply after a label
+(`password: «REDACTED:uuid»` and a password) is read as text, and the value masked whole.

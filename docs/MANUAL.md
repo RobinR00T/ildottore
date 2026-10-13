@@ -296,15 +296,23 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   word glued to it is still masked whole, and named (`x_<sk-proj- key>` reads
   `«REDACTED:openai_key:<digest>»`). A UUID is masked whole even when its groups are all digits,
   which the phone and card rules take as numbers: what they read of it is held in stand-ins that
-  every later rule reads as their mask, so the text around it is judged as it was before. A mask
-  of one of these types that a target writes (`password: «REDACTED:uuid»<secret>`) is read as
-  text, not kept: only the masks of them this process wrote are. A report names its target by the
-  rules before A-78, with a fixed salt, so a target named `tenant-<uuid>` reads as written in
-  every report and `dottore diff` compares two runs of it; in a CLI error a UUID inside an
+  every later rule reads as their mask, so the text around it is judged as it was before (a text
+  holding one character of each of the 1,072 blocks of the Private Use Area those stand-ins come
+  from gets none, and its UUIDs are masked as before A-78, number by number). A mask of one of
+  these types is kept as written, as the tool's older masks are, so a report or a resume in
+  another process reads the tool's own masks the same; but after a label it is read as text, as
+  before A-78, so one a target writes there hides nothing (`password: «REDACTED:uuid»<secret>`
+  is masked whole). A report names its target by the rules before A-78, with a fixed salt, so a
+  target named `tenant-<uuid>` reads as written in every report and `dottore diff` compares two
+  runs of it. The salt is public: a high-entropy target id masks to the same text in every
+  report, of every user, and a guess of the id can be checked against its 8-digit digest, which
+  the per-run salt before A-78 prevented and which broke `diff`. In a CLI error a UUID inside an
   existing path stays readable, and one the phone or card rule reads a number in shows as before
   A-78 (the number masked); a provider's model name keeps its UUID. Each costs some time on a
-  text full of them (4 MB of UUIDs whose groups are all digits: 6.9 s, 2.8 s before, which left
-  most of each readable; glued into one token by `_`: 2.8 s, 2.1 s before).
+  text full of them: about 2.3 times main's time on 4 MB of UUIDs whose groups are all digits
+  (which main left mostly readable), 1.4 times when they are glued into one token by `_`, 1.2 to
+  1.3 times on prose and base64 (the ratios hold on the two machines measured; the seconds do
+  not).
   What the tool itself generated (a sha256, the store's own path for it, an attempt id, the spec
   id, and since A-78 the SHA-256 of each media part a request records, `media_sha256`) is left
   readable in every report, in both copies of a finding the JSON report carries, so

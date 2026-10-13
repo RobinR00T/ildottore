@@ -39,8 +39,11 @@ Found by the pre-merge security audit of 2026-10-11 (MEDIUM 4 and LOW 6).
   value took the next label, a URL password behind a mask's `:`, and a target writing
   `password: «REDACTED:uuid»<secret>`, a mask of a new type that was kept as the tool's own; and a
   token of glued UUIDs took quadratic time (32.8 s at 160 KB). All fixed: a mask of a new type is
-  kept only when this process wrote it, and the URL rule as written tells a URL its rule read with
-  every mask one neutral character. Differential fuzz against the redactor before A-78, five draws
+  read as text by the labelled rule, as before A-78, and the URL rule as written tells a URL its
+  rule read with every mask one neutral character. A mask of a new type is kept as written
+  elsewhere, as the older ones are, in every pass and every process: a second version kept one
+  only while the process remembered writing it, so a long campaign of large replies forgot the
+  first turn's, the evidence store's re-check failed and the scan stopped (exit 3; second audit). Differential fuzz against the redactor before A-78, five draws
   of 300,000 texts and the auditor's 1,100,000 texts and 300,000 tokens: what it hid and this one
   shows appears only in texts holding U+0000 or U+0001 (19 of the 1,500,000, 3 of them with 8 characters of a planted secret), whose redaction
   depends on whether anything else in them is masked, before A-78 too; none in any other text.

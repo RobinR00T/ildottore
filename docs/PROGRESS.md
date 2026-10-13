@@ -3,6 +3,29 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-13 (early morning): the second pre-merge audit of A-78 (`3a9a4dfa`), fixed
+
+- Round 2 found one HIGH and six LOW. R2-H1: the record of the A-78 masks the process had written
+  (two bounded generations) was overflowed by a campaign of 3.8 MiB replies; the first turn's
+  masks were forgotten, read as text when the evidence store checked the attempt again, changed,
+  and the write was refused (`RedactionLeakError`, exit 3, where main completes). Design chosen:
+  (c), a stateless rule. A mask of an A-78 type is kept as written, as the older types are; the
+  labelled rule alone reads one as text, as main did, so `password: «REDACTED:uuid»<secret>`
+  stays masked whole (L3 closed); the redactor writes none where that rule would take it (a
+  labelled value of 32 hex letters or more is masked as a labelled secret, `_plain_word`).
+  Chosen over (a) carrying the mask spans to the store and (b) a per-attempt record because only
+  a rule without state reads the same in a resume, a report or a replay in another process
+  (R2-L3), and it removes the forgeable record (R2-L1).
+- The auditor's 3.8 MiB scan (JB-CRESCENDO-001, loopback stub): exit 0 on the branch, on main and
+  on a trial merge with `fix/no-secret-in-fragments` at `06caf3c3`. Halt and resume in two
+  processes with the random salt: 0 broken masks in the resumed reports (8 of 20 before).
+- R2-L2: the Private Use Area block scan is one pass (all 137,468 characters: 0.025 s, was 2.2 s).
+  R2-L4: unreachable branches removed (a redactor without the entropy rule uses no stand-ins),
+  the guards tested. R2-L5: the public identity salt's linkability documented (MANUAL, S6, A-78).
+  R2-L6: the run row's `target_ids` use the identity mask; stale notes corrected.
+- The merge note in the entry below is stale: `fix/no-secret-in-fragments` changed its filler
+  itself (75ca00ac), and the trial merge passes without it.
+
 ## State, 2026-10-12 (morning): the pre-merge audit of A-78 (`0b4b1f14`), fixed
 
 - The audit found the branch NOT READY: H1, H2, M1, M2 and L1 to L5. Fixed on

@@ -178,7 +178,8 @@ across the change keeps one row a finding (it kept two). The spec, target and ju
 scope digests stay unredacted, and the evidence store keeps `request.metadata.media_sha256` as
 written, as before: the hex rule reads none of them. The reports name a target by the rules
 before A-78 (u11), while the store keeps its identity mask by the current ones, which the resume
-checks read. Checked by `tests/store/test_identity_masks_before_a78.py` (12 tests; on `de122e26` the
+checks read, in the run row's `target_id` and, since the round-2 audit (R2-L6), in its
+`meta_json.target_ids`, which took the store's per-process salt. Checked by `tests/store/test_identity_masks_before_a78.py` (12 tests; on `de122e26` the
 file stops at collection, which has no `identity_masks`, and 9 fail with the compatibility code
 taken out).
 
