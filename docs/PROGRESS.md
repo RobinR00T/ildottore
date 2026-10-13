@@ -43,7 +43,7 @@ The carryover ledger. Every agent session updates this so context survives even 
   glued-UUID one assert the ratio of two sizes under 8 with a 120 s hang ceiling (`39fcf6f1`;
   ratio 4.0 plain and under both of coverage's tracers, 2.5 s under the C tracer). Fuzz against
   `de122e26`: clean 8 x 60,000 0, mixed 4 x 40,000 the same 52; against `0be0be71` clean 0.
-  `make gates` green on `5fb69556`, 23:08 to 23:16 CEST: 6397 tests, 97.91% coverage.
+  `make gates` green on `5fb69556`, 23:09 to 23:16 CEST: 6397 tests, 97.91% coverage.
 
 ## State, 2026-10-12 (morning): the pre-merge audit of A-78 (`0b4b1f14`), fixed
 
