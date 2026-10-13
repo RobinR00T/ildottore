@@ -66,21 +66,20 @@ _VERBOSE_KEY = "ildottore.verbose"
 
 
 def _library_classes(name: str) -> tuple[type[BaseException], ...]:
-    """The command-line library's exception class ``name``, from each copy that is present.
+    """The exception class ``name`` of the command-line library Typer raises from.
 
-    Typer 0.26 raises from its vendored copy of click; a click installed beside it has its own
-    classes, so both are listed when present (as ``_click_errors_exit_3`` does below).
+    Typer 0.26 raises from its vendored copy of click, and only that copy's exceptions does it
+    catch itself. A click installed beside it is never imported here: a plugin that raises one
+    of its exceptions has imported it already, and :func:`_installed_click_kind` reads it from
+    ``sys.modules`` when one arrives.
     """
 
     import importlib
 
-    found: list[type[BaseException]] = []
-    for module_name in ("typer._click.exceptions", "click.exceptions"):
-        try:
-            found.append(getattr(importlib.import_module(module_name), name))
-        except (ImportError, AttributeError):
-            continue
-    return tuple(found)
+    try:
+        return (getattr(importlib.import_module("typer._click.exceptions"), name),)
+    except (ImportError, AttributeError):  # a Typer without the vendored copy
+        return ()
 
 
 #: An exit asked for: let through with its code.
@@ -91,6 +90,24 @@ _CLICK_ERRORS = _library_classes("ClickException")
 #: The library's "Aborted!", exit 1 by default.
 _ABORTS = _library_classes("Abort")
 _PASS_THROUGH: tuple[type[BaseException], ...] = (*_EXITS, *_CLICK_ERRORS)
+
+
+def _installed_click_kind(exc: BaseException) -> str | None:
+    """``"exit"``, ``"abort"`` or ``"error"`` for an exception of the separately installed click.
+
+    Typer does not catch that copy's classes, so a plugin's ``click.ClickException`` exited 1
+    with a traceback (round-2 audit of f51a7d07, LOW 2). Read from ``sys.modules``, so click is
+    never imported for it, and ``None`` when it is not loaded or is the copy Typer raises from.
+    """
+
+    module = sys.modules.get("click.exceptions")
+    if module is None or getattr(module, "Exit", None) in _EXITS:
+        return None
+    for kind, name in (("exit", "Exit"), ("abort", "Abort"), ("error", "ClickException")):
+        cls = getattr(module, name, None)
+        if isinstance(cls, type) and isinstance(exc, cls):
+            return kind
+    return None
 
 
 class OperationalErrorGroup(TyperGroup):
@@ -151,7 +168,24 @@ class OperationalErrorGroup(TyperGroup):
                 )
             raise typer.Exit(int(ExitCode.ERROR)) from exc
         except Exception as exc:
-            _report_unexpected(exc, verbose=int(ctx.meta.get(_VERBOSE_KEY, 0) or 0))
+            kind = _installed_click_kind(exc)
+            if kind == "exit":
+                # As a stray SystemExit: 1 and 2 are the findings' codes here.
+                code = getattr(exc, "exit_code", 0)
+                if code not in (1, 2):
+                    raise typer.Exit(code) from exc
+                _echo_err(
+                    f"error: unexpected exit with status {code!r} (an internal error, not a "
+                    "scan result; rerun as `dottore -v ...` for the traceback)"
+                )
+            elif kind == "abort":
+                _echo_err("error: aborted")
+            elif kind == "error":
+                format_message = getattr(exc, "format_message", None)
+                message = format_message() if callable(format_message) else str(exc)
+                _echo_err(f"error: {_masked(RuntimeError(message))}")
+            else:
+                _report_unexpected(exc, verbose=int(ctx.meta.get(_VERBOSE_KEY, 0) or 0))
             raise typer.Exit(int(ExitCode.ERROR)) from exc
 
 
@@ -262,17 +296,19 @@ app.add_typer(schema_app, name="schema")
 # typo in its flags reported a finding the scan never made (audit 2026-10-03, R17 / A-9). Any
 # other error of the library (`ClickException`, `FileError`) exited 1, which means findings
 # below --fail-on (pre-merge audit of e6a1ab9b, LOW 5). Typer 0.26 raises from its own vendored
-# copy of click, so both copies' classes are set; a Typer without the copy simply skips it.
+# copy of click, whose classes are set here; a separately installed click's are mapped where
+# one arrives (`_installed_click_kind`), and a Typer without the vendored copy skips this.
 def _click_errors_exit_3() -> None:
     import importlib
 
-    for name in ("click.exceptions", "typer._click.exceptions"):
-        try:
-            module = importlib.import_module(name)
-        except ImportError:
-            continue
-        module.UsageError.exit_code = int(ExitCode.ERROR)
-        module.ClickException.exit_code = int(ExitCode.ERROR)
+    # The vendored copy only: importing a separately installed click here would load it for
+    # nothing, and its exceptions are mapped where one arrives (`_installed_click_kind`).
+    try:
+        module = importlib.import_module("typer._click.exceptions")
+    except ImportError:
+        return
+    module.UsageError.exit_code = int(ExitCode.ERROR)
+    module.ClickException.exit_code = int(ExitCode.ERROR)
 
 
 _click_errors_exit_3()

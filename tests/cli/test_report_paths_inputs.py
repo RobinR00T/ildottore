@@ -320,8 +320,6 @@ def test_a_media_asset_the_loader_read_is_protected(tmp_path: Path, no_sends: li
             asset = line.split("asset:", 1)[1].strip().strip("'\"")
             (pack / "attacks" / asset).parent.mkdir(parents=True, exist_ok=True)
             shutil.copy(audio.parent / asset, pack / "attacks" / asset)
-    code, shown = _run_in(
-        tmp_path, "--spec-path", str(pack), "-oJ", str(pack / "attacks" / asset)
-    )
+    code, shown = _run_in(tmp_path, "--spec-path", str(pack), "-oJ", str(pack / "attacks" / asset))
     assert code == 3, shown
     assert "would overwrite a file of the spec path" in shown

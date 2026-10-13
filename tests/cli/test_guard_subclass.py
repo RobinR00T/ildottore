@@ -99,3 +99,64 @@ def test_the_group_keeps_no_state_of_its_own() -> None:
 
     own = {name for name in vars(OperationalErrorGroup) if not name.startswith("_")}
     assert own == {"main", "invoke"}
+
+
+# --- round-2 audit of f51a7d07, LOW 2: the separately installed click -----------------------
+
+
+click = pytest.importorskip("click")
+
+
+@pytest.mark.parametrize(
+    ("raised", "code"),
+    [
+        (lambda: click.ClickException("boom"), 3),
+        (lambda: click.UsageError("bad option"), 3),
+        (lambda: click.FileError("x.yaml"), 3),
+        (lambda: click.exceptions.Abort(), 3),
+        (lambda: click.exceptions.Exit(1), 3),
+        (lambda: click.exceptions.Exit(2), 3),
+        (lambda: click.exceptions.Exit(0), 0),
+    ],
+    ids=["click-exception", "usage", "file-error", "abort", "exit-1", "exit-2", "exit-0"],
+)
+def test_the_installed_clicks_exceptions_exit_as_the_vendored_ones(raised: Any, code: int) -> None:
+    """Only a plugin importing click reaches these: Typer catches its vendored copy only, so a
+    `click.ClickException` exited 1 with a traceback."""
+
+    result = CliRunner().invoke(_app(raised()), ["fail"])
+    assert result.exit_code == code, result.output
+    assert "Traceback" not in result.output
+
+
+def test_a_click_exception_says_its_message() -> None:
+    result = CliRunner().invoke(_app(click.ClickException("cannot read x.yaml")), ["fail"])
+    assert "error: cannot read x.yaml" in result.output
+
+
+def test_the_cli_runs_with_no_click_installed() -> None:
+    """Nothing of the CLI imports a separately installed click: with it unimportable, the app
+    loads, a command runs, and a crash still exits 3 (httpx imports click itself when it is
+    there, so its absence is what is tested)."""
+
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    repo = Path(__file__).resolve().parents[2]
+    probe = (
+        "import sys\n"
+        "sys.modules['click'] = None\n"
+        "sys.modules['click.exceptions'] = None\n"
+        "sys.path[:0] = [sys.argv[1]]\n"
+        "from typer.testing import CliRunner\n"
+        "from ildottore.cli import app as m\n"
+        "ok = CliRunner().invoke(m.app, ['schema', 'export', '--name', 'suite']).exit_code\n"
+        "m.export_schemas = lambda: 1 / 0\n"
+        "crash = CliRunner().invoke(m.app, ['schema', 'export']).exit_code\n"
+        "print(ok, crash, m._installed_click_kind(RuntimeError()))\n"
+    )
+    out = subprocess.run(  # noqa: S603 - this interpreter, fixed arguments
+        [sys.executable, "-c", probe, str(repo / "src")], capture_output=True, text=True
+    )
+    assert out.stdout.strip() == "0 3 None", out.stderr
