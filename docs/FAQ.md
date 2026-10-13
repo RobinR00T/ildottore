@@ -326,8 +326,9 @@ The spec it belongs to never passes: a wrapper that pastes the model's output in
 on the quotes a jailbreak that worked writes, so the reply that broke may be the exploit. The
 attempt keeps a redacted excerpt of what came back under `request.metadata.unreadable_reply` (a
 reply streamed as events or JSON lines and longer than 36 KiB keeps its structure only: the text it
-streams is withheld, and the excerpt's first line says so), and the summary says how many (`Unreadable replies: 1 attempt(s) in 1 spec(s) (...)`, never silenced by
-`-q`; `summary.unreadable_reply` in the JSON report, and SARIF, JUnit and HTML). A spec with one and
+streams is withheld, and the excerpt's first line says so), and the summary says how many
+(`Unreadable replies: 1 attempt(s) in 1 spec(s) (...)`, never silenced by `-q`;
+`summary.unreadable_reply` in the JSON report, and SARIF, JUnit and HTML). A spec with one and
 no fail is `inconclusive`, so it does not trip `--fail-on`; a pipeline that should stop on one reads
 `summary.unreadable_reply.attempts`.
 

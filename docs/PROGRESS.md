@@ -3,6 +3,35 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-13 (night): a cut stream's excerpt fails closed (owner's decision)
+
+- The coordinator decided the case left open below, under the owner's delegation (best
+  practice): fail closed, an excerpt may show less than `main`, never more. A body streamed as
+  events or JSON lines in a known shape and longer than the window (36 KiB with no long
+  registered credential) keeps in its excerpt the lines before the window's midpoint, every
+  streamed text value emptied (content, text, `response`, tokens, alternatives, a `data:` line's
+  text; `bytes` and Ollama's `context` nulled), keys, structure, numbers, protocol fields, roles,
+  finish and stop reasons kept, under one notice (`adapters/base.py` `_withheld_units`,
+  `_without_text`, `_withheld_notice`). A body that fits the window is masked as before; other
+  shapes are quoted as before. `withhold_open_ends` and the open tail are gone, and so is the
+  test that pinned the tail's floor.
+- Figures (`scratch/fixfrag/r7`): `window_attacks.py` case A 0 of 36 rows, case B 0 of 36 (16 on
+  `5646b218`); the 600-character URL password of words 0 characters at all 8 starts (20 to 61);
+  long-span and glued probes 0 of 16; clean bodies that fit the window 0 of 1,498 differ from
+  `main`; clean bodies past it 240 of 320 differ (the six shapes that stream; JSON bodies with
+  logprobs and JSON Lines logs 0 of 80), and every event or line they show equals the body's with
+  its text emptied under an independent emptying (27,226 checked, 0 mismatches).
+  `clean_excerpts.py`: 0 of 217 clean texts per shape differ from `main`, but 60 OpenAI SSE bodies
+  longer than the window, now withheld. Unchanged against `5dd87b42`: `diff_main.py` 0 of 1,500
+  summaries differ (replay 1500/781), every earlier round's script but for the digests the salt
+  sets, `cost3.py` 0.01 to 0.20 s on 4 MiB (0.01 to 0.21 there). `e2e_bigsse.py`: inconclusive
+  `unreadable_reply`, bytes 376515, the notice first, no raw key or canary.
+- Tests: 110 new against `main` (5476 there, 5586 here): since `5646b218` two new and one removed
+  (the tail's floor). `make gates` green on `cad92051` (`PYTHONPATH` set to the worktree's `src` and
+  root, `TMPDIR` at the system default, nothing written under `/tmp`): ruff and format clean (423
+  files), mypy strict (161), four import contracts kept, 75 specs lint OK, 5586 tests, 97.85%
+  coverage, self-scan 0 high or critical, bandit and pip-audit clean.
+
 ## State, 2026-10-13: the fourth pre-merge audit, of `5dd87b42` (A-77), fixed
 
 - Not merge-ready on `5dd87b42`: one MEDIUM, a regression against `main`. The work stopped twice
@@ -21,10 +50,10 @@ The carryover ledger. Every agent session updates this so context survives even 
   256 characters rule, tried first (`453247f0`), emptied what the excerpt shows in heavy events
   (3 of 6 clean streams with 5 or 20 alternatives quoted otherwise than by `main`), so the run
   rule replaced it (`e7f1b5a3`).
-- Not closed, in A-77's list: an unregistered secret no rule masks in part, longer than 256
-  characters or holding white space and longer than 32, reaching from the shown half past the
-  cut (`r6/over256b.py`: a 600-character URL password of words showed 20 to 61 characters, 52 to
-  61 on `5dd87b42`, 0 to 3 on `main`).
+- Left open that afternoon, closed the same night (above): an unregistered secret no rule masks
+  in part, longer than 256 characters or holding white space and longer than 32, reaching from
+  the shown half past the cut (`r6/over256b.py`: a 600-character URL password of words showed 20
+  to 61 characters, 52 to 61 on `5dd87b42`, 0 to 3 on `main`).
 - Found while fixing, not by the audit: an event stream of OpenAI chunks with logprobs kept each
   masked token's `bytes`, which spelled the key in the excerpt (`main` and `5dd87b42`), and joined
   each rank of alternatives across the chunks (4 of 6 clean replies with alternatives quoted
@@ -52,7 +81,7 @@ The carryover ledger. Every agent session updates this so context survives even 
 - LOW 3: a block of `data:` lines with no blank line between them is read line by line in the
   one reading (`reader_attacks.py` "masked event + a block": rebuilt, now masked), and a clean
   stream is read once.
-- LOW 4: only four times the excerpt's read extent is read (37 KiB), and a stream reaching past
+- LOW 4: only four times the excerpt's read extent is read (36 KiB), and a stream reaching past
   half of it has its open tail left out (`redactor.withhold_open_ends`). `cost3.py` on 4 MiB
   bodies: 0.10 to 17.98 s on `74ace451` here, now 0.01 to 0.24 s; `scale3.py` flat (0.03 to
   0.20 s from 0.5 to 4 MiB).

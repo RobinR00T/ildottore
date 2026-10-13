@@ -22,10 +22,11 @@ versioning: [SemVer](https://semver.org/).
   emptied (content and delta text, a `response`, a logprob token and its alternatives, a `data:`
   line's text; `bytes` and Ollama's `context` nulled), its keys, structure, numbers and protocol
   fields, roles, finish and stop reasons kept, under a first line that says the text is withheld.
-  Case A and case B: 0 of 36 rows each; the long password 0 characters at every start; clean
-  bodies that fit the window `main`'s excerpt byte for byte (1,498 of 1,498); clean bodies past it
-  differ from `main` only by the withheld text and the notice (240 of 320, the six shapes that
-  stream, every shown event or line checked, 27,226); `cost3.py` 0.01 to 0.20 s on 4 MiB bodies (0.01 to 0.21 s on `5dd87b42`).
+  Case A and case B: 0 of 36 rows each; the long password 0 characters at every start; clean bodies
+  that fit the window `main`'s excerpt byte for byte (1,498 of 1,498); clean bodies past it differ
+  from `main` only by the withheld text and the notice (240 of 320, the six shapes that stream,
+  every shown event or line checked, 27,226); `cost3.py` 0.01 to 0.20 s on 4 MiB bodies (0.01 to
+  0.21 s on `5dd87b42`).
 - **An event stream's logprobs spell no masked token (found with that fix, not by the audit).**
   An OpenAI chunk streamed with logprobs holds a logprob list of one item, which was no logprob
   list: the excerpt masked its token as the stream's piece but kept its `bytes`, which spelled
