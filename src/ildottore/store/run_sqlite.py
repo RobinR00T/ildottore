@@ -66,11 +66,17 @@ class SqliteRunStore:
 
         target_id = run.targets[0].id if run.targets else None
         status = _dominant_status(run)
-        meta = self._redact_json(
+        # The target ids with the fixed identity salt, as the `target_id` column: with this
+        # store's salt they took another mask in every run once A-78 masked a UUID (round-2 audit
+        # of A-78, R2-L6).
+        meta = json.dumps(
             {
-                "summary": run.summary.model_dump(mode="json"),
-                "target_ids": [t.id for t in run.targets],
-            }
+                "summary": self._redactor.redact(run.summary.model_dump(mode="json")),
+                "target_ids": [redact_identity(t.id) for t in run.targets],
+            },
+            sort_keys=True,
+            ensure_ascii=False,
+            separators=(",", ":"),
         )
         with self._conn:
             self._conn.execute(

@@ -102,3 +102,25 @@ def test_a_declaration_recorded_before_a78_is_not_a_change() -> None:
     # A file that now declares nothing differs from a run that declared a name, in either form.
     bare = Target(id="t1", type=TargetType.AGENT)
     assert _declaration_changed(stored, bare) is not None
+
+
+def test_the_run_row_lists_its_targets_with_the_identity_mask(tmp_path: Path) -> None:
+    # R2-L6: `meta_json.target_ids` took the store's per-process salt, so a UUID-named target
+    # had another mask in every run; it now reads as the `target_id` column does.
+    import json
+    import sqlite3
+    from contextlib import closing
+
+    from ildottore.redactor import Redactor
+
+    run = TestRun(run_id="run-1", targets=[Target(id=f"tenant-{UUID}", type=TargetType.AGENT)])
+    rows = []
+    for salt in ("one", "two"):
+        db = tmp_path / f"{salt}.sqlite"
+        with SqliteRunStore(db, redactor=Redactor(salt=salt)) as store:
+            store.save_run(run)
+        with closing(sqlite3.connect(db)) as conn:
+            rows.append(conn.execute("SELECT target_id, meta_json FROM runs").fetchone())
+    assert rows[0] == rows[1]
+    target_id, meta = rows[0]
+    assert json.loads(meta)["target_ids"] == [target_id] == [redact_identity(f"tenant-{UUID}")]
