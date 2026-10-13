@@ -368,7 +368,7 @@ def _masked_units(
             (i for i, (lines, _, _) in enumerate(units) if offsets[lines[0]] >= settled),
             len(units),
         )
-        masked = withhold_open_ends(masked, after=after)
+        masked = withhold_open_ends(masked, raw=transcript, after=after)
     if masked is transcript:
         return None
     frames = cast("dict[str, list[dict[str, Any]]]", masked)[TRANSCRIPT_FRAMES]
@@ -383,6 +383,22 @@ def _offsets(lines: list[list[str]]) -> list[int]:
         out.append(at)
         at += len(line) + len(ending)
     return out
+
+
+def _shown_head(lines: list[list[str]], offsets: list[int], *, cut: bool, settled: int) -> str:
+    """The lines as written again: all of them, or, when the body was cut, those that start in
+    the first half of the window (fourth pre-merge audit, MEDIUM).
+
+    Masks shorten a text, so what the second half held moved up into the 4 KiB the excerpt
+    shows, and a secret whose pieces straddle the cut showed its beginning there (a URL password
+    with symbols at 7 of 31 offsets, a 300-character registered credential at 70 of 111). The
+    excerpt reads less than half the window, so it never needs that half; a piece shown lies
+    more than half a window before the cut, and a secret that reaches from there past the cut has
+    its beginning left out by the open tail (:func:`ildottore.redactor.withhold_open_ends`).
+    """
+
+    kept = [pair for pair, at in zip(lines, offsets, strict=True) if not cut or at < settled]
+    return "".join(line + ending for line, ending in kept)
 
 
 def _sse_masked(text: str, redactor: Redactor) -> str | None:
@@ -457,7 +473,7 @@ def _sse_masked(text: str, redactor: Redactor) -> str | None:
         ]
         for index in event[1:]:
             lines[index] = ["", ""]
-    return "".join(line + ending for line, ending in lines)
+    return _shown_head(lines, offsets, cut=cut, settled=settled)
 
 
 def _stream_line(value: Any) -> bool:
@@ -502,13 +518,14 @@ def _ndjson_masked(text: str, redactor: Redactor) -> str | None:
         units.append(([index], kind, value))
     if len(units) < 2:
         return None
-    masked = _masked_units(redactor, units, cut=cut, settled=settled, offsets=_offsets(lines))
+    offsets = _offsets(lines)
+    masked = _masked_units(redactor, units, cut=cut, settled=settled, offsets=offsets)
     if masked is None:
         return None
     for (event, kind, before), after in zip(units, masked, strict=True):
         if after != before:
             lines[event[0]][0] = _written(kind, after, lines[event[0]][0])
-    return "".join(line + ending for line, ending in lines)
+    return _shown_head(lines, offsets, cut=cut, settled=settled)
 
 
 def _split_masked(body: bytes | str, redactor: Redactor) -> bytes | str:

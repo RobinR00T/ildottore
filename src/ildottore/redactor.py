@@ -2255,25 +2255,26 @@ def withhold_split(obj: object) -> object:
     return _withheld(obj)[0]
 
 
-#: A character a token of the rules can be made of: a run of them at a cut may be a secret's head.
-_TAIL_CHAR: Final = re.compile(r"[\w+/=.:@-]")
-#: The longest run of them read as a head: a longer one is long enough for the rules on its own
-#: (the excerpt's cut uses the same bound), and a field every event repeats (``text_delta``) joins
-#: into one run as long as the stream, which is no secret's head.
+#: The longest run of characters other than white space read as a head: a longer one is long
+#: enough for the rules on its own (the excerpt's cut uses the same bound), and a field every event
+#: repeats (``text_delta``) joins into one run as long as the stream, which is no secret's head.
 _TAIL_RUN: Final = 256
 
 
 def _open_tail(joined: str) -> int:
     """Where the part of ``joined`` that may run on past its end starts (``len`` when none).
 
-    The run of key characters it ends with, when no longer than :data:`_TAIL_RUN`, and the
-    longest end of it that begins a registered credential: either may be the head of a secret
-    whose rest was not read, which no rule recognises in part (the excerpt's own cut keeps out
-    what crosses it the same way).
+    ``joined`` is a stream's text as the target wrote it, not as masked: masked, a registered
+    credential's beginning no longer reads as written (fourth pre-merge audit, MEDIUM). The run of
+    characters other than white space it ends with, when no longer than :data:`_TAIL_RUN` (any
+    such character, `!`, `#` and `$` among them: only key characters left a URL password's
+    beginning out, up to its first symbol), and the longest end of it that begins a registered
+    credential, spaces and all: either may be the head of a secret whose rest was not read, which
+    no rule recognises in part.
     """
 
     start = len(joined)
-    while start > 0 and len(joined) - start <= _TAIL_RUN and _TAIL_CHAR.match(joined, start - 1):
+    while start > 0 and len(joined) - start <= _TAIL_RUN and not joined[start - 1].isspace():
         start -= 1
     if len(joined) - start > _TAIL_RUN:
         start = len(joined)
@@ -2285,26 +2286,29 @@ def _open_tail(joined: str) -> int:
     return start
 
 
-def withhold_open_ends(transcript: object, *, after: int = 0) -> object:
+def withhold_open_ends(transcript: object, *, raw: object = None, after: int = 0) -> object:
     """``transcript`` with, in each of its streams whose last piece is in a frame from ``after``
-    on, the pieces from where its open tail starts emptied (:func:`_open_tail`), or
+    on, every piece from the one where its open tail starts emptied (:func:`_open_tail`), or
     ``transcript`` itself when no piece changes (A-77).
 
-    For a transcript read from the head of a longer body (an unreadable reply's excerpt reads
-    only that, third pre-merge audit, LOW 4): a secret whose pieces run on past what was read is
-    joined only in part, and no rule masks a head, so its pieces are left out instead. A stream
-    whose last piece came earlier is read as complete.
+    ``raw`` is the same transcript before masking (``transcript`` itself when not given): the
+    open tail is read there, as the target wrote it, and its pieces are emptied whole in
+    ``transcript``. For a transcript read from the head of a longer body (an unreadable reply's
+    excerpt reads only that, third pre-merge audit, LOW 4): a secret whose pieces run on past what
+    was read is joined only in part, and no rule masks a head, so its pieces are left out instead.
+    A stream whose last piece came earlier is read as complete.
     """
 
-    if not isinstance(transcript, Mapping):
+    source = transcript if raw is None else raw
+    if not isinstance(transcript, Mapping) or not isinstance(source, Mapping):
         return transcript
-    protocol = _protocol_paths(transcript)
-    if protocol is None:
+    protocol = _protocol_paths(source)
+    if protocol is None or _protocol_paths(transcript) is None:
         return transcript
     frames = cast("list[object]", transcript[TRANSCRIPT_FRAMES])
-    edits: dict[int, list[tuple[_LeafPath, str]]] = {}
+    edits: dict[int, list[_LeafPath]] = {}
     # A field read once is a stream's head too: its rest may lie past what was read.
-    for stream in _transcript_streams(frames, protocol, minimum=1):
+    for stream in _transcript_streams(source[TRANSCRIPT_FRAMES], protocol, minimum=1):
         if stream[-1][0] < after:
             continue
         joined = "".join(text for _, _, text in stream)
@@ -2312,17 +2316,29 @@ def withhold_open_ends(transcript: object, *, after: int = 0) -> object:
         start = 0
         for index, path, text in stream:
             if start + len(text) > tail and text:
-                edits.setdefault(index, []).append((path, text[: max(0, tail - start)]))
+                edits.setdefault(index, []).append(path)
             start += len(text)
     if not edits:
         return transcript
     out = list(frames)
-    for index, leaves in edits.items():
+    changed = False
+    for index, paths in edits.items():
         item = _thawed(out[index])
-        for path, piece in leaves:
-            item = _with_leaf(item, path, piece)
+        for path in paths:
+            if _leaf(item, path) != "":
+                item = _with_leaf(item, path, "")
+                changed = True
         out[index] = item
-    return {**transcript, TRANSCRIPT_FRAMES: out}
+    return {**transcript, TRANSCRIPT_FRAMES: out} if changed else transcript
+
+
+def _leaf(node: object, path: _LeafPath) -> object:
+    """What sits at ``path`` in ``node`` (the same structure the path was read from)."""
+
+    holder: Any = node
+    for step in path:
+        holder = holder[step]
+    return holder
 
 
 def mask_split(redactor: _RedactsText, obj: object) -> object:
