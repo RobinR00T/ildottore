@@ -1823,10 +1823,11 @@ def _string_leaves(node: object, path: _LeafPath = ()) -> Iterator[tuple[_LeafPa
             yield from _string_leaves(value, (*path, index))
 
 
-def _is_logprob_list(items: Sequence[object]) -> bool:
-    """True for a list of logprob items: each an object with a string token and a figure."""
+def _is_logprob_list(items: Sequence[object], *, minimum: int = 2) -> bool:
+    """True for a list of logprob items: each an object with a string token and a figure (at
+    least ``minimum`` of them: one is no stream, but its ``bytes`` still spell its token)."""
 
-    return len(items) > 1 and all(
+    return len(items) >= minimum and all(
         isinstance(item, Mapping) and isinstance(item.get(_TOKEN), str) and _LOGPROB in item
         for item in items
     )
@@ -1867,7 +1868,10 @@ def _transcript_streams(
     frames: Sequence[object], protocol: list[list[str]], *, minimum: int = 2
 ) -> list[_Stream]:
     """The content of the frames received, one stream per field, the protocol's fields aside
-    (a field in fewer than ``minimum`` frames is no stream to join)."""
+    (a field in fewer than ``minimum`` frames is no stream to join), and a logprob item's
+    alternatives aside: they are no stream there either (found with the fourth pre-merge audit's
+    fix: an event stream of OpenAI chunks with logprobs joined each rank of them across the
+    chunks, and masked clean replies)."""
 
     streams: dict[_LeafPath, _Stream] = {}
     for index, entry in enumerate(frames):
@@ -1876,6 +1880,8 @@ def _transcript_streams(
         for path, text in _string_leaves(entry.get(_FRAME), (_FRAME,)):
             segments = [str(step) for step in path[1:]]
             if any(segments[: len(declared)] == declared for declared in protocol):
+                continue
+            if any(step in _ALTERNATIVES for step in path):  # no stream, as in a logprob list
                 continue
             streams.setdefault(path, []).append((index, path, text))
     return [stream for stream in streams.values() if len(stream) >= minimum]
@@ -2140,14 +2146,34 @@ def _mask_streams_of(
         item = _thawed(out[index])
         for path, _text, piece, _masks in leaves:
             item = _with_leaf(item, path, piece)
-        if logprobs:
-            for path, text, piece, masks in leaves:
-                if path == (_TOKEN,):
-                    _mask_alternatives(item, text, piece, masks)
-                    if isinstance(item, dict) and item.get(_BYTES) is not None:
-                        item[_BYTES] = None
+        for path, text, piece, masks in leaves:
+            holder = _logprob_holder(item, path, logprobs=logprobs)
+            if holder is not None:
+                _mask_alternatives(holder, text, piece, masks)
+                if holder.get(_BYTES) is not None:
+                    holder[_BYTES] = None
         out[index] = item
     return out
+
+
+def _logprob_holder(
+    item: object, path: _LeafPath, *, logprobs: bool
+) -> dict[object, object] | None:
+    """The logprob item whose token sits at ``path`` in ``item``, or None.
+
+    In a logprob list the item is ``item`` itself; in a transcript, a frame may hold one (an
+    OpenAI chunk streamed with logprobs, one token in each), whose ``bytes`` spell the token and
+    whose alternatives are weighed for it, so they are masked with it as a list's are (found
+    with the fourth pre-merge audit's fix: the chunks' ``bytes`` spelled a key their tokens no
+    longer showed, in the excerpt of an event stream).
+    """
+
+    if not path or path[-1] != _TOKEN or (logprobs and path != (_TOKEN,)):
+        return None
+    holder = _leaf(item, path[:-1])
+    if isinstance(holder, dict) and _LOGPROB in holder:
+        return holder
+    return None
 
 
 def _mask_streams(
@@ -2182,10 +2208,11 @@ def _mask_streams(
         item, hit = _mask_streams(redactor, value)
         items.append(item)
         changed = changed or hit
-    if not alternatives and _is_logprob_list(items):
-        masked = _mask_streams_of(redactor, items, _logprob_streams(items), logprobs=True)
-        if masked is not None:
-            items, changed = masked, True
+    if not alternatives and _is_logprob_list(items, minimum=1):
+        if _is_logprob_list(items):
+            masked = _mask_streams_of(redactor, items, _logprob_streams(items), logprobs=True)
+            if masked is not None:
+                items, changed = masked, True
         unspelled = _drop_spelled_bytes(redactor, items)
         if unspelled is not None:
             items, changed = unspelled, True
@@ -2193,21 +2220,33 @@ def _mask_streams(
 
 
 def _blank_leaves(items: list[object], streams: list[_Stream], *, logprobs: bool) -> list[object]:
-    """``items`` (a copy) with every piece of ``streams`` empty, and a token's alternatives too."""
+    """``items`` (a copy) with every piece of ``streams`` empty, and a token's alternatives and
+    ``bytes`` too, in a logprob list or in a transcript's frame (:func:`_logprob_holder`)."""
 
     out = list(items)
     for index in sorted({index for stream in streams for index, _, _ in stream}):
         item = _thawed(out[index])
-        for stream in streams:
-            for at, path, _ in stream:
-                if at == index:
-                    item = _with_leaf(item, path, "")
-        if logprobs and isinstance(item, dict):
-            _mask_alternatives(item, cast("str", item.get(_TOKEN)), "", ())
-            if item.get(_BYTES) is not None:
-                item[_BYTES] = None
+        paths = [path for stream in streams for at, path, _ in stream if at == index]
+        for path in paths:
+            item = _with_leaf(item, path, "")
+        for path in paths:
+            holder = _logprob_holder(item, path, logprobs=logprobs)
+            if holder is not None:
+                _blank_beside(holder)
         out[index] = item
     return out
+
+
+def _blank_beside(holder: dict[object, object]) -> bool:
+    """Empty what spells a logprob item's token beside it, its alternatives and its ``bytes``
+    (in place), once the token is emptied; whether anything was there to empty."""
+
+    before = (holder.get(_BYTES), repr(holder.get("top")), repr(holder.get("top_logprobs")))
+    _mask_alternatives(holder, "", "", ())
+    if holder.get(_BYTES) is not None:
+        holder[_BYTES] = None
+    after = (holder.get(_BYTES), repr(holder.get("top")), repr(holder.get("top_logprobs")))
+    return before != after
 
 
 def _withheld(node: object, *, alternatives: bool = False) -> tuple[object, bool]:
@@ -2333,6 +2372,9 @@ def withhold_open_ends(transcript: object, *, raw: object = None, after: int = 0
             if _leaf(item, path) != "":
                 item = _with_leaf(item, path, "")
                 changed = True
+            holder = _logprob_holder(item, path, logprobs=False)
+            if holder is not None:
+                changed = _blank_beside(holder) or changed
         out[index] = item
     return {**transcript, TRANSCRIPT_FRAMES: out} if changed else transcript
 
