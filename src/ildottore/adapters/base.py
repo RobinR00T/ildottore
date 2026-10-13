@@ -459,7 +459,7 @@ def _written_head(
 ) -> str:
     """The lines as written again: all of them, or, when the window cut the body, the notice
     (:func:`_withheld_notice`) and the lines of ``head`` that `main`'s excerpt of it shows whole
-    (:func:`_main_reach`).
+    (:func:`_main_reach`) and that are fields of the format (:func:`_a_field`).
 
     Emptied, the lines are short, so the excerpt's 4 KiB reached lines `main`'s never reached,
     and what it keeps outside the streamed text (a comment, an ``event:`` or ``id:`` line, an
@@ -469,8 +469,28 @@ def _written_head(
 
     if not cut:
         return "".join(line + ending for line, ending in lines)
-    kept = lines[: _main_reach(head, offsets, redactor)]
+    kept = [pair for pair in lines[: _main_reach(head, offsets, redactor)] if _a_field(pair[0])]
     return _withheld_notice(window) + "".join(line + ending for line, ending in kept)
+
+
+#: The fields of an event stream a cut excerpt keeps (WHATWG HTML, 9.2.6): every other line is
+#: none the reader reads.
+_SSE_FIELDS: Final = frozenset({_SSE_DATA, "event", "id", "retry"})
+
+
+def _a_field(line: str) -> bool:
+    """Whether a cut excerpt keeps ``line``: a blank line, a JSON line, or a field of
+    :data:`_SSE_FIELDS`.
+
+    Any other line (a comment, a line starting with a space or ``=``) can take its mask in
+    `main`'s excerpt from the text before it, which the cut excerpt withholds: plain-text data
+    ending in ``password:`` or ``token=``, then the value as a comment, showed the value where
+    `main` masked it through the label (sixth pre-merge audit, 5 of 17 forms). A field begins
+    with its name, which no rule reads as a label's separator.
+    """
+
+    text = line.removeprefix(_BOM)
+    return not text or text[:1] in "{[" or text.partition(":")[0] in _SSE_FIELDS
 
 
 def _main_reach(head: str, offsets: list[int], redactor: Redactor) -> int:
