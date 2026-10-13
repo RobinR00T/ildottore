@@ -2237,16 +2237,13 @@ def _blank_leaves(items: list[object], streams: list[_Stream], *, logprobs: bool
     return out
 
 
-def _blank_beside(holder: dict[object, object]) -> bool:
+def _blank_beside(holder: dict[object, object]) -> None:
     """Empty what spells a logprob item's token beside it, its alternatives and its ``bytes``
-    (in place), once the token is emptied; whether anything was there to empty."""
+    (in place), once the token is emptied."""
 
-    before = (holder.get(_BYTES), repr(holder.get("top")), repr(holder.get("top_logprobs")))
     _mask_alternatives(holder, "", "", ())
     if holder.get(_BYTES) is not None:
         holder[_BYTES] = None
-    after = (holder.get(_BYTES), repr(holder.get("top")), repr(holder.get("top_logprobs")))
-    return before != after
 
 
 def _withheld(node: object, *, alternatives: bool = False) -> tuple[object, bool]:
@@ -2292,91 +2289,6 @@ def withhold_split(obj: object) -> object:
     """
 
     return _withheld(obj)[0]
-
-
-#: The longest end of a stream cut by the window read as a head that may run on, when it holds no
-#: white space: a head longer than that is long enough for the rules on its own (the excerpt's own
-#: cut uses the same bound), and a longer run is cut to its last this many characters.
-_TAIL_RUN: Final = 256
-#: The shortest end read so, white space or not: a card or a phone number grouped by spaces.
-_TAIL_FLOOR: Final = 32
-
-
-def _open_tail(joined: str) -> int:
-    """Where the part of ``joined`` that may run on past its end starts (``len`` when none).
-
-    ``joined`` is a stream's text as the target wrote it, not as masked: masked, a registered
-    credential's beginning no longer reads as written (fourth pre-merge audit, MEDIUM). The part
-    is the run of characters other than white space ``joined`` ends with, its last
-    :data:`_TAIL_RUN` when longer (a head glued to a long run of other characters), at least its
-    last :data:`_TAIL_FLOOR` characters, and more when a longer end begins a registered
-    credential, spaces and all: any of these may hold the head of a secret whose rest was not
-    read, which no rule recognises in part. The run of key characters it was before stopped at
-    the first `!`, `#` or `$`, and was read as no head at all past 256 characters. White space
-    ends the run, so a clean stream loses its last word, not its last 256 characters: in OpenAI
-    chunks streamed with 5 or 20 alternatives each, those reached back into what the excerpt
-    shows, and 3 of 6 clean bodies were quoted otherwise than by `main`.
-    """
-
-    start = len(joined)
-    while start > 0 and len(joined) - start < _TAIL_RUN and not joined[start - 1].isspace():
-        start -= 1
-    start = min(start, max(0, len(joined) - _TAIL_FLOOR))
-    for secret in _known_secrets():
-        for size in range(min(len(secret) - 1, len(joined)), len(joined) - start, -1):
-            if joined.endswith(secret[:size]):
-                start = len(joined) - size
-                break
-    return start
-
-
-def withhold_open_ends(transcript: object, *, raw: object = None, after: int = 0) -> object:
-    """``transcript`` with, in each of its streams whose last piece is in a frame from ``after``
-    on, every piece from the one where its open tail starts emptied (:func:`_open_tail`), or
-    ``transcript`` itself when no piece changes (A-77).
-
-    ``raw`` is the same transcript before masking (``transcript`` itself when not given): the
-    open tail is read there, as the target wrote it, and its pieces are emptied whole in
-    ``transcript``. For a transcript read from the head of a longer body (an unreadable reply's
-    excerpt reads only that, third pre-merge audit, LOW 4): a secret whose pieces run on past what
-    was read is joined only in part, and no rule masks a head, so its pieces are left out instead.
-    A stream whose last piece came earlier is read as complete.
-    """
-
-    source = transcript if raw is None else raw
-    if not isinstance(transcript, Mapping) or not isinstance(source, Mapping):
-        return transcript
-    protocol = _protocol_paths(source)
-    if protocol is None or _protocol_paths(transcript) is None:
-        return transcript
-    frames = cast("list[object]", transcript[TRANSCRIPT_FRAMES])
-    edits: dict[int, list[_LeafPath]] = {}
-    # A field read once is a stream's head too: its rest may lie past what was read.
-    for stream in _transcript_streams(source[TRANSCRIPT_FRAMES], protocol, minimum=1):
-        if stream[-1][0] < after:
-            continue
-        joined = "".join(text for _, _, text in stream)
-        tail = _open_tail(joined)
-        start = 0
-        for index, path, text in stream:
-            if start + len(text) > tail and text:
-                edits.setdefault(index, []).append(path)
-            start += len(text)
-    if not edits:
-        return transcript
-    out = list(frames)
-    changed = False
-    for index, paths in edits.items():
-        item = _thawed(out[index])
-        for path in paths:
-            if _leaf(item, path) != "":
-                item = _with_leaf(item, path, "")
-                changed = True
-            holder = _logprob_holder(item, path, logprobs=False)
-            if holder is not None:
-                changed = _blank_beside(holder) or changed
-        out[index] = item
-    return {**transcript, TRANSCRIPT_FRAMES: out} if changed else transcript
 
 
 def _leaf(node: object, path: _LeafPath) -> object:
