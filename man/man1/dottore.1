@@ -77,7 +77,7 @@ not registered, and a --spec-path that does not exist or yields nothing, are ref
 .TP
 .B new-spec
 Scaffold a new attack spec and empty fixtures. A --family holding a control or format character,
-shaped like a credential, or nothing but spaces is refused (exit 3) and nothing is written; any other text is written as a
+shaped like a key (a credential format or a high-entropy token), or nothing but spaces is refused (exit 3) and nothing is written; any other text is written as a
 YAML string that reads back as written.
 .TP
 .B replay
@@ -306,7 +306,8 @@ Only an exploited (fail) finding trips the gate; pass and inconclusive never do.
 A usage error is printed with its message through the same mask as every error line, so a key a
 shell variable put into a typed option (--runs "$KEY") is not echoed. The installed dottore and
 dott run ildottore.cli.main:main; a script an older install generated, which calls app(), masks
-the same way. lint, describe and schema export mask what they echo of a path or a name.
+the same way, as does a program that holds the command in a click group of its own, or python -m
+typer. lint, describe and schema export mask what they echo of a path or a name.
 .PP
 .B lint
 has its own: 0 clean, 1 an error-severity finding, 3 a path that does not exist or yields nothing

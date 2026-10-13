@@ -270,8 +270,9 @@ refused.
 .B api_key_env
 names an environment variable, never the key itself: a value that is not a variable's name is
 refused before anything is written, never quoted, and so is an endpoint that carries a
-credential (a user name or password before its host, a query or fragment parameter named like a
-credential or holding a value shaped like a key, or no host after its scheme), a provider a
+credential (a user name or password before its host, a path segment shaped like a key, a path,
+query or fragment parameter whose normalised name is a credential's or whose value is shaped like
+a key, or no host after its scheme; a hex id, a UUID or an email is no key), a provider a
 target file does not take, and a version other than "1" or "1.<minor>". An entry with no api_key_env gets env://NONE in the scope and no auth_ref in its
 target file. Each entry becomes a chatbot target (an
 mcp one an api target) with no seeded_setup, so a spec that needs documents, tools or memory is

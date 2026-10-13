@@ -45,11 +45,14 @@ versioning: [SemVer](https://semver.org/).
   into `scope.yaml` and the target file as `env://sk-ant-...`, exit 0, and `api_key_env: ""`, which
   meant no key, is refused (exit 0 to 3): leave the key out.
 - A fleet `endpoint` that carries a credential is refused before anything is written: user info
-  (`https://user:<password>@host`), a query or fragment parameter named like one (`?api_key=`,
-  `#token=`) or holding a value shaped like a key, and a URL with no host after its scheme
-  (`https:/ops:<key>@host`, `https:\\ops:<key>@host`), each of which was copied into both files.
-  A query that carries none (`?api-version=2024-02-01`) is kept. A `provider` the tool does not have
-  is refused too.
+  (`https://user:<password>@host`), a path segment shaped like a key (`/key/<key>/v1`), a path,
+  query or fragment parameter whose normalised name is a credential's (`?api_key=`,
+  `?accessToken=`, `;token=`, `#token=`, `?jwt=`, `?k=`, `?api_key[]=`) or whose value is shaped
+  like a key (a credential format, or a high-entropy token that is not a hexadecimal id or a
+  UUID), and a URL with no host after its scheme (`https:/ops:<key>@host`,
+  `https:\\ops:<key>@host`), each of which was copied into both files. What a legitimate endpoint
+  carries is kept (`?api-version=2024-02-01`, a tenant UUID, a hex trace or request id, an email,
+  `?sort_key=`, `?session=`). A `provider` the tool does not have is refused too.
 
 ### Changed (breaking for a live run with an unset credential variable: `run` and `fingerprint` refuse it, u12 A-82)
 
@@ -78,9 +81,11 @@ versioning: [SemVer](https://semver.org/).
 - **A usage error no longer prints a secret.** `dottore run --runs "$KEY"` printed `Invalid value
   for '--runs': 'sk-ant-api03-...' is not a valid integer.` with the key in clear, and so did `-T`,
   `--rate`, `--timeout`, `--concurrency`, `--top-tests`, the `--budget-*` flags and `fleet --runs`.
-  Usage errors are now printed with the usage block and `error: <message>` through the CLI's
-  redactor (exit 3, as before), whether the script runs `ildottore.cli.main:main` (what this
-  version installs) or `app()` (what an older install generated, which `pip install -e` keeps).
+  Usage errors are now masked by the root command where click raises them (exit 3, as before),
+  so every caller prints them masked: the script this version installs
+  (`ildottore.cli.main:main`), one an older install generated (`app()`, which `pip install -e`
+  keeps), a program that takes the click command or holds it in its own group, and `python -m
+  typer`.
 - **What the operator typed is masked where the CLI echoes it**: `lint <path>`, `describe <id>` and
   `schema export --name <name>` printed it raw.
 - **The report schema constrains the run and each finding** (required keys, types, the verdict's
@@ -93,7 +98,7 @@ versioning: [SemVer](https://semver.org/).
   its length; `--suite ../../etc/passwd` keeps its words; a per-attempt timeout says so, and an
   error with no message reads `<Class> (no detail given)`; `127.0.0.1` stays readable in an
   allowlist refusal's URL. `new-spec --family` refuses a control or format character and a value
-  shaped like a credential, and writes any other text as a YAML string that reads back as written
+  shaped like a key (`CVE-2021-44228` is a family), and writes any other text as a YAML string that reads back as written
   (`yes` as `"yes"`, not a boolean); `--id` is checked with `--stdout` too.
 
 ### Added (a target file may declare one of its own granted tools not destructive, OD-43)

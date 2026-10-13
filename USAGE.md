@@ -217,8 +217,8 @@ ports (an offline `mock://` entry sends nothing and keeps a bare host).
 
 Keys are never written to the file: each entry names an env var (`api_key_env`), resolved
 only at send time. A value that is not a variable's name (the key pasted there), an endpoint
-that carries a credential (`user:password@`, `?api_key=...`, a value shaped like a key, a URL
-with no host) and a `provider` the tool does not have are refused before anything is written,
+that carries a credential (`user:password@`, a path segment or a parameter shaped like a key,
+a parameter named like a credential such as `?api_key=` or `?accessToken=`, a URL with no host) and a `provider` the tool does not have are refused before anything is written,
 never quoted; an entry with no `api_key_env` is sent no credential (`env://NONE` in
 the scope, no `auth_ref` in its target file). `provider` is inferred from the endpoint (`/chat/completions` -> openai,
 `/messages` -> anthropic, else `rest`). A WebSocket target is not a fleet entry: a `ws://` or

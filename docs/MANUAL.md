@@ -1035,11 +1035,19 @@ value (since 2026-10-11; the first two were copied into `scope.yaml` and the tar
 * an `api_key_env` that is not an environment variable's name (letters, digits and `_`, not
   starting with a digit): the key itself pasted there was written as `auth_ref: env://<the key>`;
 * an `endpoint` that carries a credential: a user name or password before its host
-  (`https://user:<password>@host/...`), a query or fragment parameter named like one (`?api_key=`,
-  `?access_token=`, `#token=`) or holding a value shaped like a key, or a URL with no host after its
-  scheme (`https:/ops:<key>@host`, `https:\\ops:<key>@host`, which the scope's host was built
-  from): name the credential's variable with `api_key_env` instead. A query that carries none
-  (Azure OpenAI's `?api-version=2024-02-01`) is kept;
+  (`https://user:<password>@host/...`); a path segment shaped like a key (`/key/<key>/v1`); a
+  path, query or fragment parameter whose name is a credential's (`api_key`, `access_token`,
+  `accessToken`, `token`, `bearer`, `jwt`, `code`, `sessionid`, `k`, `sig`, `X-Amz-Credential`,
+  and the like, the name decoded, stripped, without a trailing `[]`, camelCase split and
+  case-folded before it is compared whole) or whose value is shaped like a key; or a URL with no
+  host after its scheme (`https:/ops:<key>@host`, `https:\\ops:<key>@host`, which the scope's
+  host was built from). Shaped like a key means one of the redactor's credential formats (a JWT,
+  an OpenAI, GitHub, AWS or Slack key, a PEM block) or a high-entropy token that is not a
+  hexadecimal id or a UUID. What a legitimate endpoint carries is kept: Azure OpenAI's
+  `?api-version=2024-02-01`, a tenant's UUID, a trace or request id in hexadecimal, an email, and
+  a name that only ends like a credential's (`sort_key`, `session`, `max_token`). The refusal
+  names the parameter as written and never prints a value. Name the credential's variable with
+  `api_key_env` instead;
 * a `provider` other than those a target file takes (§4.2), or left out to be inferred;
 * a `version` other than `"1"` or `"1.<minor>"`.
 
@@ -1120,9 +1128,11 @@ defaults to `2`, which here would read as "findings". The usage error goes throu
 as every other error line: `dottore run --runs "$KEY"` printed `Invalid value for '--runs':
 'sk-ant-api03-...' is not a valid integer.` with the key in clear until 2026-10-11, since the
 command-line library printed it before any masking ran; it now reads `error: Invalid value for
-'--runs': '«REDACTED:...»' is not a valid integer.`, whether the installed script runs
-`ildottore.cli.main:main` (what this version installs) or `app()` (what an older install
-generated, and `pip install -e` keeps across a pull). `lint <path>`, `describe <id>` and `schema
+'--runs': '«REDACTED:...»' is not a valid integer.`. The root command masks the error where
+click raises it, so every caller prints it masked: the installed script, which runs
+`ildottore.cli.main:main`, one an older install generated, which calls `app()` and which `pip
+install -e` keeps across a pull, a program that takes the command (`typer.main.get_command(app)`)
+or holds it in a group of its own, and `python -m typer ildottore.cli.main`. `lint <path>`, `describe <id>` and `schema
 export --name <name>` mask what they echo of it the same way. Options that can only be wrong are
 refused (exit 3) before anything is sent: `--fail-on bogus`, `--timeout 0`, `--concurrency 0`,
 `--top-tests 0`, `--runs 0`, `--rate 0`, a negative `--budget-tokens`, `--budget-requests` or
@@ -1491,8 +1501,9 @@ dottore new-spec --id PI-NEW-001 --family prompt_injection [--category ..] [--ou
 
 Writes a spec skeleton plus empty fixtures (or prints them with `--stdout`). `--family` seeds the
 `name` and the `tags`: a value with a control or format character (a line break, an escape, a
-direction override such as U+202E), one shaped like a credential (a key or a token, not shown) or
-nothing but spaces is refused (exit 3) and nothing is written, and `--id` is checked for the
+direction override such as U+202E), one shaped like a key (a credential format or a high-entropy
+token, as `dottore fleet` reads an endpoint; not shown) or nothing but spaces is refused (exit 3)
+and nothing is written (`CVE-2021-44228` is a family), and `--id` is checked for the
 schema's shape with `--stdout` too; any other text is written as a YAML string that reads back as written (`tags: ["key:
 value"]`, and `["yes"]` rather than the boolean YAML reads from `yes`), a plain word as before
 (`tags: [jailbreak]`). Until 2026-10-11 the value went into the
@@ -2390,7 +2401,7 @@ mutator that does not declare its parameters is not checked. See [`06-extensibil
 | `selected spec(s) write a regex that does not compile` (exit 3) | A spec's `regex_absence` or `regex_presence` pattern, or a `step_arg_patterns` entry, is not a regex the engine compiles, so its evaluator could never decide. `dottore lint` lists them with the engine's reason (up to 10 per spec); fix it, or run the rest with `--exclude <id>`. |
 | `auth_ref 'env://NAME' names the environment variable NAME, which is not set, so every request would go out without a credential; nothing was sent` (exit 3) | The variable the target file's `auth_ref` (or the `--judge` model's, or a swept scope identity's) names is not exported in this shell, or is set to nothing but spaces. Export it; a target that takes no credential leaves `auth_ref` out, and a scope identity that carries none writes `env://NONE`, which is never read. `--dry-run`, `--estimate` and `-sn` print the same as a `warning:` and go on (§4.2). |
 | `'auth_ref' names no environment variable after env://` (exit 3), or `api_key_env: Value error, is not an environment variable's name` from `dottore fleet` | What follows `env://` (or `api_key_env:`) is not a variable's name, letters, digits and `_`, not starting with a digit: usually the key itself pasted there, or a name with a space. Write the variable's name and export the key into it; the value is never printed. |
-| `dottore fleet` says `endpoint: Value error, carries a user name or password before its host`, `carries a credential in its query string` or `has no host after its scheme` | The endpoint holds `user:password@`, a credential in its query or fragment, or is a URL with no host (`https:/host`), which fleet would copy into two files. Drop the credential, write `scheme://host/path`, and put the key in a variable named by `api_key_env` (§4.3). |
+| `dottore fleet` says `endpoint: Value error, carries a user name or password before its host`, `carries a credential in its path`, `in its query string` or `has no host after its scheme` | The endpoint holds `user:password@`, a credential in its path, query or fragment (the refusal names the parameter, or says the segment or value is shaped like a key), or is a URL with no host (`https:/host`), which fleet would copy into two files. Drop the credential, write `scheme://host/path`, and put the key in a variable named by `api_key_env` (§4.3). |
 | `has invalid provider '...'` or `has invalid transport '...'` (exit 3) | The value is not one the tool has. `provider`: `openai`, `anthropic`, `mcp`, `websocket` or `rest` (or leave it out for REST); `transport`: `http` or `stdio`, and `stdio` only with `provider: mcp` (§4.2). |
 | `'sampling_defaults' failed validation: temperature: Input should be a finite number` (exit 3) | The block writes `.nan`, `.inf` or `-.inf`, which no provider takes and JSON cannot hold. Write a number. |
 | `lint` exits 3 with `NO_SPECS` | The path holds no spec and no suite file that lint reads. A directory without a `pack.yaml` is read as loose specs, its own `*.yaml` and `*.yml` files only: add a `pack.yaml` to load `attacks/` and `suites/` (docs/06 §2), or point lint at the directory that holds the specs. `PATH_NOT_FOUND` (also exit 3) is a path that does not exist; `FILES_NOT_READ` is a warning naming YAML files a loose tree did not read. |

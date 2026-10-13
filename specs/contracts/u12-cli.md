@@ -1330,6 +1330,30 @@ Amended after the pre-merge audit of `f9dbed49` (2026-10-12), each its own commi
 * `shared.credential_refs.unset_variable` takes the environment as an argument; the wiring passes
   `os.environ`, as it alone reads the environment.
 
+Amended after the round-2 audit of `e1824e99` (2026-10-13, merge-ready, its LOWs fixed):
+* LOW 1: `typer.main.get_command(app)()`, a parent group holding the command and `python -m typer`
+  bypassed the masking, which lived in `cli.main.main` and a Typer subclass's call. The root
+  command is `app._MaskedGroup` (Typer `cls=`): it masks a click exception in place where it
+  raises it (`make_context`, `invoke`, `_mask_in_place`), so whoever prints it shows it masked,
+  and run standalone it prints the plain usage block (`run_masked`). `_MaskedTyper` is gone;
+  `pretty_exceptions_show_locals=False` keeps locals out of a traceback through Typer's hook.
+* LOWs 2 to 4: `cli.key_shape` says what is shaped like a key: the redactor's credential formats
+  (`redactor.credential_patterns`) or its entropy rule outside a hexadecimal id or a UUID, never
+  its PII rules; and what names a credential: the whole name, normalised (decoded up to three
+  times, stripped, `[]` dropped, camelCase split, case-folded), in `CREDENTIAL_NAMES`. A fleet
+  endpoint is checked in its path segments and path parameters too. The audit's probe: all 32
+  legitimate endpoints accepted (a tenant UUID, `proj_<hex>`, a hex trace id, `req_<hex>`, an
+  email, `sort_key`, `session`, `max_token`, `use_auth` among them), all 35 hostile ones refused,
+  nothing written or shown. `new-spec --family CVE-2021-44228` is accepted.
+* LOW 5: a credential parameter is named as written (`FleetFileError.kept_names` keeps it through
+  the CLI's mask: `'X-Amz-Credential'` read as high entropy), and a file name too long is `File
+  name too long: a name of N characters` (it said `cannot read` of `-oJ`). LOW 6: `--spec-path`
+  of a name no file system could hold is described by its length.
+* Not fixed, said: a key of 32 hexadecimal digits, or one of low entropy, under a parameter name
+  that is not a credential's (`?q=<hex>`) is kept, as a trace id is; a group from the installed
+  `click` (not Typer's copy) that holds the command gets the masked message, but as an exception
+  of the other copy's class, which it does not catch.
+
 ## §8 Out of scope / forbidden
 - MUST NOT implement attack/mutation/evaluation/scoring/reporting/fingerprint logic (u05-u11,
   u13): only wire and call them. MUST NOT own `cli/lint.py` (u02) or edit any spec YAML.
