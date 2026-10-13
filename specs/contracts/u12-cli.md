@@ -1341,7 +1341,10 @@ Checked by `tests/cli/test_run_store_errors.py` (34), `tests/cli/test_evidence_r
 (10), `tests/cli/test_attempt_ceiling.py` (12), `tests/cli/test_estimate_quiet.py` (2),
 `tests/cli/test_report_paths_inputs.py` (16), `tests/cli/test_fleet_run_options.py` (13),
 `tests/cli/test_broken_pipe.py` (9, each in a subprocess writing into a reader closed before it
-starts) and `tests/store/test_store_open_errors.py` (16).
+starts), `tests/cli/test_guard_subclass.py` (16: the same exit codes through a subclass of
+`OperationalErrorGroup` that overrides `main` and `invoke` and calls `super()`, the way another
+root group composes with it; the group keeps no state) and `tests/store/test_store_open_errors.py`
+(16).
 
 ## §8 Out of scope / forbidden
 - MUST NOT implement attack/mutation/evaluation/scoring/reporting/fingerprint logic (u05-u11,

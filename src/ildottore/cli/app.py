@@ -101,6 +101,10 @@ class OperationalErrorGroup(TyperGroup):
     handler tuple forgot used to end. Here it is one line on stderr through the same masking as
     every other error, and its traceback (masked line by line) only under ``-v``. Ctrl-C is not
     an exception in this sense and keeps its 130.
+
+    Built to be subclassed: it keeps no state, and a root group that does more (masking a usage
+    error where it is raised) overrides ``main`` or ``invoke`` and calls ``super()``, which keeps
+    this closure (``tests/cli/test_guard_subclass.py``).
     """
 
     def main(self, *args: Any, **kwargs: Any) -> Any:
