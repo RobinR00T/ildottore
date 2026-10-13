@@ -5,6 +5,39 @@ versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed (what the fourth pre-merge audit, of `5dd87b42`, found in A-77, before it lands)
+
+- **A cut stream's excerpt shows no secret's beginning (MEDIUM, a regression against `main`).**
+  The window read only a long stream's head, but masks shorten a text, so what lay near the
+  window's cut moved up into the 4 KiB the excerpt shows; and the open tail left out only a run
+  of key characters, which stops at a `!`, `#` or `$`, and was read after masking, so it missed a
+  long registered credential the entropy rule had masked in part. A URL password with symbols showed
+  `https://ops:Corr3ct!` at 7 of 31 cuts in three stream shapes, and a 300-character registered
+  credential part of itself at 70 of 111 (`window_attacks.py`, case A; `main` 0). When the window
+  cuts the body, only the lines that start in its first half are shown (the auditor's
+  `patch-show-first-half.diff`), and a body whose first half is as it came is quoted as it came.
+  The open tail stays, for a secret whose pieces reach from that half past the cut (a
+  300-character registered credential in padded 1-character deltas showed `EMnY9tlicZLhC` on
+  `5dd87b42`), read on the stream as the target wrote it: the run of characters other than white
+  space it ends with, its last 256 when longer (a head glued to a longer run showed
+  `://ops:Corr3ct!Ho` with the run rule alone), at least its last 32 (a card or a phone grouped by
+  spaces), and a longer end that begins a registered credential. Case A: 0 of 36 rows leak, was 4;
+  the long-span and glued probes 0 of 16, were 11; clean bodies past the window 0 of 320 differ
+  from `main`. Not covered, in A-77: an unregistered secret no rule masks in part, longer than 256
+  characters or holding white space and longer than 32, reaching from the shown half past the cut
+  (a 600-character URL password of words in 1-character events showed 20 to 61 characters, 52 to
+  61 on `5dd87b42`, where `main` showed 0 to 3), and, as before, a stream that pauses past the
+  window.
+- **An event stream's logprobs spell no masked token (found with that fix, not by the audit).**
+  An OpenAI chunk streamed with logprobs holds a logprob list of one item, which was no logprob
+  list: the excerpt masked its token as the stream's piece but kept its `bytes`, which spelled
+  the key in order (on `main` too), and joined each rank of alternatives across the chunks, which
+  A-77 says alternatives are not, so 4 of 6 clean replies streamed with alternatives were quoted
+  otherwise than by `main`. A transcript's alternatives are no stream, and a transcript's piece
+  that is a logprob item's token has the item's alternatives masked and its `bytes` dropped, as
+  a list's token has; a one-item list has the `bytes` of a token masked on its own dropped. Now
+  no rebuild, and 0 of 6 differ from `main`.
+
 ### Fixed (what the third pre-merge audit, of `74ace451`, found in A-77, before it lands)
 
 - **A log of JSON lines is quoted as main quotes it (LOW).** Any body whose lines were all JSON
@@ -23,9 +56,11 @@ versioning: [SemVer](https://semver.org/).
   in the audit (18.0 s here, `data` events with no colon; `main` 0.00 s); the excerpt keeps at most
   4 KiB, so only four times the part it reads is read (37 KiB with no long registered
   credential), and each stream that reaches past half that window has its open tail left out (a
-  run of key characters up to 256 long, a registered credential's beginning), so no secret whose
-  pieces run past the window is shown in part. `cost3.py` on 4 MiB bodies: 0.01 to 0.24 s, was
-  0.10 to 17.98 s.
+  run of key characters up to 256 long, a registered credential's beginning). That did not keep
+  a secret's beginning out of the excerpt where masks shortened the head; the fourth pre-merge
+  audit's fix, above, shows only the window's first half and reads the tail otherwise, and A-77
+  names what it still does not cover. `cost3.py` on 4 MiB bodies: 0.01 to 0.24 s, was 0.10 to
+  17.98 s.
 - **Figures (LOW).** The second audit's `sse_variants.py` figure was the key in 9 of 19 shapes
   and the credential in 9, not 10. A-77's not-covered list is made exact.
 

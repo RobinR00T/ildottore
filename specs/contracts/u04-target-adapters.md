@@ -367,7 +367,9 @@ reads as U+FFFD, since httpx decodes the stream as text.
   (`mask_split` over the transcript): the frames were `json.dumps`ed and redacted as one string, so
   each delta was masked alone. `reply_excerpt` reads a JSON body's logprob streams the same way
   (`_split_masked`: OpenAI's `logprobs.content` tokens, their `top_logprobs` shown masked beside a
-  masked token, and the `bytes` of every masked token or alternative, which spell it, dropped), and
+  masked token, and the `bytes` of every masked token or alternative, which spell it, dropped; an
+  event stream's chunk holding one logprob item has the same done to it, its alternatives no
+  stream, so its `bytes` no longer spell a key its tokens no longer show), and
   a body streamed as server-sent events when no stream was asked for, masked across the events
   as a transcript is (it is not JSON, so it was quoted as it came, each delta redacted alone,
   pre-merge audit of `c4bd2012`, MEDIUM 3). The stream is read as the format says (WHATWG HTML,
@@ -387,23 +389,36 @@ reads as U+FFFD, since httpx decodes the stream as text.
   masked string by string as `main` masks it (LOW 2: 181 of 217 clean JSON Lines logs were quoted
   otherwise). Only the head the excerpt can read is read: four times its read extent (twice what
   it keeps plus four times the longest registered credential or 256), cut at a line end, 37 KiB
-  with no long credential; when the body was longer, each stream whose last piece lies past half
-  that head has its open tail left out (`redactor.withhold_open_ends`: a run of key characters up
-  to 256 long, or a registered credential's beginning, at its end), so a secret whose pieces run
-  past the head is not shown in part, and the excerpt is read from that head alone (LOW 4: a 4 MiB
-  stream of tiny events cost up to 12.8 s, `main` 0.00 s; now under 0.25 s on every shape of the
-  audit's `cost3.py`). A masked unit is written again on one `data` line (a text holding LF, on as
-  many), JSON in the compact form it had, every other line as it came. A body rewritten (a JSON body or a stream) is written
-  with `ensure_ascii` off, as the target wrote it: escaped, a phone or a card grouped by U+00A0 or
-  U+202F outside any stream reached the excerpt's redaction as `\u00a0` and was shown where
-  `main` masked it (second pre-merge audit, MEDIUM 1), and a WebSocket turn's frames are quoted
-  the same way. Not read: what u01 A-77's not-covered list names for the excerpt (a line that is
-  no field of the format, pieces in a comment, `event:` or `id:` line, JSON lines in another shape,
-  among them). Any other body, or one holding
-  no such stream, is quoted byte for byte as before; its `size` is the body's as it came. Checked
-  by `tests/adapters/test_split_values_in_replies.py` (its first seven fail on `de122e26`, the
-  three event-stream cases on `c4bd2012`, the six grouped-number cases and 12 of the 20 stream
-  shapes on `ea13562f`, and the log, block and window cases on `74ace451`).
+  with no long credential. When the body was longer, only the lines that start in the first half
+  of that head are shown, and the body is quoted as it came when none of them changed (fourth
+  pre-merge audit, MEDIUM: masks shorten the text, so what lay near the cut moved up into the
+  4 KiB the excerpt keeps, and a URL password with symbols or a 300-character registered
+  credential straddling the cut showed its beginning); each stream whose last piece lies past
+  that half has its open tail left out (`redactor.withhold_open_ends`, read on the stream as the
+  target wrote it: the run of characters other than white space it ends with, its last 256 when
+  longer, at least its last 32, and a longer end that begins a registered credential; the run of
+  key characters it was before stopped at a `!`, `#` or `$`, and, read after masking, missed a
+  long registered credential the entropy rule had masked in part), so a secret whose pieces
+  reach from the shown half past the cut is not shown in part, save the case u01 A-77's
+  not-covered list names (unregistered, masked by no rule in part, longer than 256 characters or
+  holding white space and longer than 32). A clean stream loses its last word: its last 256
+  characters reached back into what the excerpt shows in OpenAI chunks streamed with 20
+  alternatives. The excerpt is read from that head alone (LOW 4: a 4 MiB stream of tiny events
+  cost up to 12.8 s, `main` 0.00 s; now under 0.25 s on every shape of the audit's `cost3.py`).
+  A masked unit is written again on one `data` line (a text holding LF, on as many), JSON in the
+  compact form it had, every other line as it came. A body rewritten (a JSON body or a stream) is
+  written with `ensure_ascii` off, as the target wrote it: escaped, a phone or a card grouped by
+  U+00A0 or U+202F outside any stream reached the excerpt's redaction as `\u00a0` and was shown
+  where `main` masked it (second pre-merge audit, MEDIUM 1), and a WebSocket turn's frames are
+  quoted the same way. Not read: what u01 A-77's not-covered list names for the excerpt (a line that
+  is no field of the format, pieces in a comment, `event:` or `id:` line, JSON lines in another
+  shape, among them). Any other body, or one holding no such stream, is quoted byte for byte as
+  before; its `size` is the body's as it came. Checked by
+  `tests/adapters/test_split_values_in_replies.py` (its first seven fail on `de122e26`, the three
+  event-stream cases on `c4bd2012`, the six grouped-number cases and 12 of the 20 stream shapes on
+  `ea13562f`, the log, block and window cases on `74ace451`, and on `5dd87b42` the five cases of a
+  secret straddling the window's cut or reaching past it from the shown half, an event stream's
+  logprobs and a clean stream of heavy events).
 
 - **A reply the provider's filter stopped keeps its stop reason, and the REST adapter reads a
   Bedrock guardrail's side (added 2026-10-11, OD-42; the runner's half is u08 A-70).** The stop

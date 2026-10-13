@@ -697,7 +697,8 @@ key, and joining a transcript's deltas a registered credential, an email and a k
 logprob list (a list of objects each with a string `token` and a `logprob`: the stored
 `TokenLogprob` and OpenAI's wire shape) gives its tokens; a WebSocket transcript (an object with
 `frames`, each `{direction, frame}`, and `protocol_paths`, u04's half) gives each field of the
-frames received that is not under a protocol path, field by field. A stream's pieces are joined
+frames received that is not under a protocol path, field by field (a logprob item's alternatives
+aside, under `top` or `top_logprobs`, as in a list). A stream's pieces are joined
 in order and redacted once, and the masks are placed back on the joined text: each literal of the
 redacted copy is placed as early and as late as it can be, so a mask spans every character it
 could stand for (`_placed_masks`). The first piece a mask covers shows it in place of the part it
@@ -715,8 +716,12 @@ has its alternatives masked once the item's every edit is made (an alternative w
 token shows what the token shows, any other the token's masks; a later edit used to undo them and
 leave 10 characters of a labelled password, MEDIUM 2), and wherever a token or an alternative is
 masked, by its stream or on its own, the `bytes` OpenAI writes beside it go, since they spell it
-(LOW 4). The alternatives are no stream: a rank of them side by side, or the alternatives of one
-token, is text no one wrote, and joining a rank masked 6.9% of all the alternatives of clean
+(LOW 4); so in a transcript's frame, where an OpenAI chunk streamed with logprobs holds one
+logprob item (found with the fourth pre-merge audit's fix: the chunks' `bytes` spelled a key an
+event stream's excerpt masked, on `main` and on `5dd87b42`, and each rank of alternatives was
+joined across the chunks, so 4 of 6 clean replies streamed with alternatives were masked). The
+alternatives are no stream: a rank of them side by side, or the alternatives of one token, is
+text no one wrote, and joining a rank masked 6.9% of all the alternatives of clean
 replies (5,794 of 83,950 on the auditor's 898 clean replies), each beside a token that was kept
 (LOW 5; none now). Then each string is redacted
 on its own (`Redactor.redact`), and both again while either masks more, so the result is a fixed
@@ -746,7 +751,12 @@ JSON a raw CR or LF breaks (read as text); JSON lines in any shape but Ollama's 
 (they are records, masked string by string), JSON lines with one line that is not a JSON object (a
 trailing `[DONE]`, a leading log line), lines of JSON strings or with CR-only ends, and a body
 mixing events with JSON lines; a stream whose pieces stop in the first half of the read window and
-resume past it (read as complete); and any other line-based format (u04's half says what is read);
+resume past it (read as complete); a secret not registered, which no rule masks in part, longer
+than 256 characters or holding white space and longer than 32, whose pieces reach from the read
+window's first half past its end: what of it lies before the open tail is shown (a 600-character
+URL password of words and `!` in 1-character events showed 20 to 61 of its characters from
+starts between 7 and 17 KiB, 52 to 61 on `5dd87b42`, where `main`'s excerpt, which joins no
+piece, showed 0 to 3); and any other line-based format (u04's half says what is read);
 a secret encoded rather than split; a field of a transcript that the target file declares as the
 protocol's; and evidence written before A-77, whose pieces stay on disk. Checks:
 `tests/test_redactor_split_values.py` (a property test cuts a key, a registered credential, an
