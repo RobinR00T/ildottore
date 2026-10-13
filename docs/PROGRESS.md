@@ -3,6 +3,106 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-12 (morning): the pre-merge audit of `d07a1088`, fixed
+
+- On `fix/scoring-audit-2026-10-11`: the independent pre-merge audit of `d07a1088` closed the
+  eight original findings, gates green there (5,520 tests, 97.85%), and found two MEDIUM and three
+  LOW, fixed one commit each, every reproduction script of the auditor
+  (`_ildottore-tren/scratch/fixscore-audit/`) rerun before and after.
+- MEDIUM 1 (a regression of LOW 5): a guardrail reply with text was read on its trace only, and
+  `adapters.rest` files a masked reply (`ANONYMIZED`) under the output side with a blocked one,
+  so a planted canary beside a masked name went from a confirmed fail (`de122e26`) to a cut
+  needing review (`repro_masked.py`). Now `REPLACED_TEXT_EVALUATORS` (the trace evaluators plus
+  `secret_leakage`, `secret_shape`, `authz_leak`) through `_evaluators_for_filtered_reply`, the
+  name, set and helper of `fix/filter-stop-provenance` (A-79), which lands next: one rule at the
+  merge. After: fail confirmed.
+- MEDIUM 2: the sweep mapped an owner's canary only once its reply was read, so with the owner
+  not heard from tenant A's reply showing its canary was no crossing (`repro_sweep_owner_down.py`:
+  PASS on `de122e26`, inconclusive on `d07a1088`). Mapped before the send now, and `authz_leak`
+  reads the owner map on fewer than two replies too (u06's half of A-74), so the two-identity case
+  fails as well. After: fail confirmed.
+- LOW 1: what a resume keeps (`_completed_attempt_ids`) is read from each id's attempt
+  (`one_per_attempt_id`), not from any copy: an unreadable reply whose re-send was blocked was
+  kept for good (`repro_unread_then_block.py`: the third run kept 5, sent 0, inconclusive); now
+  it keeps 4, sends 1 and passes, and the summary's "a resume sends them again" holds.
+- LOW 2: `_combine_verdicts` takes the identities the sweep heard from (`swept`, a mapping, was a
+  bool; `fix/filter-stop-provenance`'s new `swept=identities is not None` calls fail mypy at the
+  merge, loudly), so with two or more answers beside one left out the note reads `authz_leak
+  kept: 2 identities answered the identity sweep, and it did not hear from every identity`
+  (`repro_corroborate_note.py`, `EMB-XTENANT-RETRIEVAL-001`, said "fewer than two").
+- LOW 3: the run's `--include-needs-review` reaches the reporters (`include_needs_review` on
+  `BaseReporter`, `get_reporter`, `wiring.build_reporter`); with it a SARIF fail that needs review
+  keeps its band's level (it exits 2), and the run's `properties` say so.
+- Wording: the resend tie-break never puts a cut reply over an environment error (a cut reply is
+  answered and judged, so it ranks first already); the docs now say an unreadable reply.
+- Nothing else moved: `rank_pairs.py` prints the same 28 pairs as on `d07a1088`, the
+  cross-version `cli_cross_version.py` matrix (phase 1 on `de122e26`, the resume here; env0 then
+  html, unread0 then env0, unread0 then ok, env0 then ok) the same lines with run ids masked, and
+  the auditor's four earlier scripts the same results.
+- Tests: 18 new, 15 failing on `d07a1088` (the 3 others are controls), 1 changed expectation (the
+  short-sweep test). Branch total against `main`: 62 new (44 failing on `de122e26`), 4 changed.
+  `make gates` green on `dd4f8648` (12/10/2026 10:12 to 10:20 CEST, `PYTHONPATH` set to the
+  worktree's `src`, `TMPDIR` the system default): 5538 tests (5520 on `d07a1088`), 97.86%
+  coverage (`evaluators/authz_leak.py`, `shared/provider_filter.py`, `shared/resend.py`,
+  `store/replay.py`, `reporting/base.py` and `reporting/sarif_reporter.py` 100%,
+  `core/runner.py` 97%), ruff, format, mypy strict on 161 files, four import contracts kept, 75
+  specs lint OK, self-scan 0 high/critical, bandit and pip-audit clean.
+- Merged with `fix/filter-stop-provenance` (PR #111, `ffec14ec`, which lands first), a real merge,
+  no history rewritten: both branches' `REPLACED_TEXT_EVALUATORS` and
+  `_evaluators_for_filtered_reply` are one rule; fixstop's `partial_reply`, `replaced_reply`
+  (`blank_text`) and A-79 judge rule (`weighed`) kept; its two new `_combine_verdicts` calls pass
+  `swept=identities`; `_trace_before_block`'s local reply renamed `reply` (it shadowed the
+  `stopped` parameter). `make gates` green on the merge, `c5460345` (12/10/2026 11:19 to
+  11:26 CEST): 5663 tests (5538 here, the rest fixstop's), 97.87% coverage (`core/runner.py`
+  98%), ruff, format, mypy strict on 162 files, four import contracts kept, 75 specs lint OK,
+  self-scan 0 high/critical, bandit and pip-audit clean. On the merged tree the auditor's four
+  repros print what they did on `38bc67b2`, and fixstop's `repro_declared.py` and `compat.py`
+  what they print on `ffec14ec`.
+
+## State, 2026-10-11 (night): the audit of the scoring, fixed
+
+- On `fix/scoring-audit-2026-10-11`, from `main` at `de122e26` (#110): every finding of the
+  correctness audit of the scoring, two HIGH, one MEDIUM and five LOW, fixed by best practice
+  under the owner's delegation, each reproduction script of the auditor
+  (`_ildottore-tren/scratch/audit-score/`) turned into a test. No OD opened; the clauses amended
+  are u08 A-69, A-70, A-73's half and A-74, their u10, u11 and u12 halves, and u06 A-73 (A-75 and
+  A-76 stay free).
+- HIGH 1: which artifact of a re-sent attempt id is the attempt is one rule in `shared.resend`,
+  read by the runner and the replay (each had a copy that kept the first artifact at a tie, the
+  runner's prior ones in content-hash order). Rank, then an unreadable reply over an environment
+  error or a block whichever came first (a cut reply is answered and judged, so it ranks first
+  already), then the later send by a
+  `send_number` stamped in `request.metadata` of every stored attempt, then the first. The fix the
+  audit proposed put the later send at the second step; the never-a-pass step comes first because
+  the later send alone turns an unreadable reply into a pass whenever the resume meets a network
+  failure (the same false pass, in the other order). Revisable: swap two fields of
+  `shared.resend._rank`. `cli_resume_unreadable.py`: PASS with 0 unreadable on `de122e26` (the
+  replay said 1), now `inconclusive` with 1 in the report and the replay; `repro_resume_reverse.py`:
+  replay 0 unreadable on `de122e26`, now 1, matching the report.
+- HIGH 2: a conversation (or an in-band scene's tool rounds) that a later send's environment error
+  or unreadable reply ended keeps the trace so far beside the attempt (`AttemptResult.trace_so_far`);
+  the trace evaluators read it first, a fail is stored as any fail with the error under
+  `request.metadata.conversation_error`, anything else as before. `repro_mt_env.py`: turn 2 env
+  PASS and unreadable inconclusive on `de122e26`, block fail; now all three fail, exit 2.
+- MEDIUM: the identity sweep names every identity it did not hear from (unreadable reply, failed
+  send, a prompt its filter refused), beside OD-42's filter stops, and `authz_leak` cannot pass
+  beside it. An environment error counts too (a gate fails closed); the cost, a transient failure
+  of one identity keeps the spec from passing, is in docs/12's F11 row. `repro_sweep_unreadable.py`:
+  pass on `de122e26`, now `inconclusive`, the identity named.
+- LOW 1 the resume note names each id once (was `-1 that ended in an environment error`); LOW 2
+  `setup_not_reached` is asked of a judge-only fail too; LOW 3 the `--include-needs-review` help;
+  LOW 4 a SARIF fail that needs review is at most `warning`; LOW 5 a Bedrock guardrail's
+  replacement is read by the trace evaluators plus `secret_leakage`, `secret_shape` and
+  `authz_leak` (the pre-merge audit's MEDIUM 1, in the entry above).
+- Tests: 44 new, 28 of them failing on `de122e26` (the tie test fails there in one of its two file
+  orders for each of its six cases), 3 changed expectations (two sweep verdicts that now name the
+  identity, one in-band metadata that now carries `send_number`).
+  `make gates` green on `b6fe3609` (with `PYTHONPATH` set to the worktree's `src`): 5520 tests
+  (5476 on `main` at `de122e26`, 44 new), 97.85% coverage (`shared/resend.py`, `store/replay.py`
+  and `reporting/sarif_reporter.py` 100%, `core/runner.py` 97%), ruff, format, mypy strict on 161
+  files, four import contracts kept, 75 specs lint OK, self-scan 0 high/critical, bandit and
+  pip-audit clean.
+
 ## State, 2026-10-12 (late morning): the pre-merge audit of `3f7b1254` (A-79), fixed
 
 - Merge-ready per the audit, with one LOW fixed before it lands (new commits, no history

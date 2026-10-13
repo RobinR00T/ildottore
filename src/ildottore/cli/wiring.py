@@ -319,14 +319,23 @@ def build_reporter(
     specs: dict[str, AttackSpec] | None = None,
     planned_specs: int | None = None,
     run_status: RunStatus | None = None,
+    include_needs_review: bool = False,
 ) -> Reporter:
     """Instantiate the u11 reporter for ``fmt`` (json|html|sarif|junit).
 
     ``planned_specs``/``run_status`` let a report state what the run intended and whether it
     finished, instead of presenting a budget-truncated campaign as a complete one.
+    ``include_needs_review`` is the run's flag: with it, a SARIF fail that needs review keeps
+    its band's level, as it trips ``--fail-on``.
     """
 
-    return get_reporter(fmt, specs=specs, planned_specs=planned_specs, run_status=run_status)
+    return get_reporter(
+        fmt,
+        specs=specs,
+        planned_specs=planned_specs,
+        run_status=run_status,
+        include_needs_review=include_needs_review,
+    )
 
 
 # --- fingerprint -------------------------------------------------------------------

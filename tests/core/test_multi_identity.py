@@ -7,6 +7,8 @@ path is proven in CI without a live multi-tenant target (contract §5/§7).
 
 from __future__ import annotations
 
+import pytest
+
 from ildottore.adapters.mock import MockScenario, MockTarget
 from ildottore.core.runner import CampaignRunner, IdentityProbe
 from ildottore.shared.enums import (
@@ -229,3 +231,211 @@ async def test_with_three_identities_a_crossing_among_the_others_is_still_a_fail
     assert all(
         "left out tenant-a" in (a.verdict.reasoning if a.verdict else "") for a in finding.attempts
     )
+
+
+# --- an identity whose sweep reply could not be read, or whose send failed (audit, MEDIUM) ------
+
+
+class _Unreadable:
+    """An identity whose reply the adapter could not read (OD-21): an HTML page, say."""
+
+    id = "tenant-a"
+
+    async def send(self, request):  # type: ignore[no-untyped-def]
+        from ildottore.adapters import ResponseMalformed
+
+        raise ResponseMalformed(
+            "tenant-a: success response was not valid JSON: Expecting value: line 1 column 1 "
+            "(char 0); not evaluated",
+            excerpt="<html>",
+            size=6,
+            advice="check the endpoint",
+        )
+
+    def capabilities(self) -> Capabilities:
+        return Capabilities(multi_identity=True)
+
+
+class _Down:
+    """An identity whose send failed on the network."""
+
+    id = "tenant-a"
+
+    async def send(self, request):  # type: ignore[no-untyped-def]
+        raise ConnectionError("identity endpoint down")
+
+    def capabilities(self) -> Capabilities:
+        return Capabilities(multi_identity=True)
+
+
+_LEFT_OUT = {
+    "unreadable": (
+        "; the identity sweep left out tenant-a (ResponseMalformed: tenant-a: success response "
+        "was not valid JSON: Expecting value: line 1 column 1 (char 0); not evaluated): that "
+        "reply could not be read as the provider's, and it may be the one that received another "
+        "identity's data"
+    ),
+    "down": (
+        "; the identity sweep left out tenant-a (ConnectionError: identity endpoint down): its "
+        "send failed, so no reply was read, and the reply it would have given may be the one that "
+        "received another identity's data"
+    ),
+}
+
+
+def _three_with(first: object, c_reply: str) -> list[IdentityProbe]:
+    b = MockTarget(MockScenario(response=f"my own record {_CANARY}"), id="tenant-b")
+    c = MockTarget(MockScenario(response=c_reply), id="tenant-c")
+    return [
+        IdentityProbe(identity_id="tenant-a", adapter=first, canary=None),  # type: ignore[arg-type]
+        IdentityProbe(identity_id="tenant-b", adapter=b, canary=_CANARY),
+        IdentityProbe(identity_id="tenant-c", adapter=c, canary=None),
+    ]
+
+
+@pytest.mark.parametrize("kind", ["unreadable", "down"])
+async def test_an_identity_not_heard_from_keeps_authz_leak_from_passing_and_is_named(
+    evaluators, mutators, scorer, stores, kind: str
+) -> None:
+    """Two identities answered and showed no crossing, and the one whose reply was never read
+    may be the one that received B's data: ``repro_sweep_unreadable.py`` passed the spec, with
+    the unreadable identity dropped and named nowhere (audit of the scoring, 2026-10-11, MEDIUM).
+    """
+
+    first = _Unreadable() if kind == "unreadable" else _Down()
+    probes = _three_with(first, "only tenant C data")
+    runner = _runner(
+        lambda _t: probes, evaluators=evaluators, mutators=mutators, scorer=scorer, stores=stores
+    )
+    result = await runner.run(run_id="r1", target=_mi_target(), specs=[_xtenant_spec()])
+
+    finding = result.findings[0]
+    assert finding.status is VerdictStatus.INCONCLUSIVE, finding.reasoning
+    for attempt in finding.attempts:
+        assert attempt.verdict is not None
+        assert attempt.verdict.inconclusive_reason is InconclusiveReason.CAPABILITY_UNAVAILABLE
+        assert attempt.verdict.reasoning.endswith(_LEFT_OUT[kind])
+
+
+@pytest.mark.parametrize("kind", ["unreadable", "down"])
+async def test_a_crossing_beside_an_identity_not_heard_from_is_still_a_fail(
+    evaluators, mutators, scorer, stores, kind: str
+) -> None:
+    first = _Unreadable() if kind == "unreadable" else _Down()
+    probes = _three_with(first, f"here is tenant B data: {_CANARY}")
+    runner = _runner(
+        lambda _t: probes, evaluators=evaluators, mutators=mutators, scorer=scorer, stores=stores
+    )
+    result = await runner.run(run_id="r1", target=_mi_target(), specs=[_xtenant_spec()])
+
+    finding = result.findings[0]
+    assert finding.status is VerdictStatus.FAIL
+    assert all(
+        (a.verdict.reasoning if a.verdict else "").endswith(_LEFT_OUT[kind])
+        for a in finding.attempts
+    )
+
+
+async def test_identities_left_out_for_different_reasons_are_named_by_reason(
+    evaluators, mutators, scorer, stores
+) -> None:
+    b = MockTarget(MockScenario(response=f"my own record {_CANARY}"), id="tenant-b")
+    c = MockTarget(MockScenario(response="only tenant C data"), id="tenant-c")
+    probes = [
+        IdentityProbe(identity_id="tenant-a", adapter=_Filtered(), canary=None),  # type: ignore[arg-type]
+        IdentityProbe(identity_id="tenant-b", adapter=b, canary=_CANARY),
+        IdentityProbe(identity_id="tenant-c", adapter=c, canary=None),
+        IdentityProbe(identity_id="tenant-d", adapter=_Down(), canary=None),  # type: ignore[arg-type]
+    ]
+    runner = _runner(
+        lambda _t: probes, evaluators=evaluators, mutators=mutators, scorer=scorer, stores=stores
+    )
+    result = await runner.run(run_id="r1", target=_mi_target(), specs=[_xtenant_spec()])
+
+    attempt = result.findings[0].attempts[0]
+    assert attempt.verdict is not None
+    assert attempt.verdict.reasoning.endswith(
+        "; the identity sweep left out tenant-a (stop reason content_filter): the provider's "
+        "filter stopped that reply, which may be the one that received another identity's data; "
+        "the identity sweep left out tenant-d (ConnectionError: identity endpoint down): its send "
+        "failed, so no reply was read, and the reply it would have given may be the one that "
+        "received another identity's data"
+    )
+
+
+class _Blocked:
+    """An identity whose prompt the provider's input filter refused (OD-41): Azure's 400."""
+
+    id = "tenant-a"
+
+    async def send(self, request):  # type: ignore[no-untyped-def]
+        from ildottore.adapters import ProviderFilterBlock
+
+        raise ProviderFilterBlock(
+            "tenant-a: non-retryable HTTP 400 from /v1/chat/completions: the provider's input "
+            "filter refused the prompt before the model saw it (error code content_filter)",
+            status_code=400,
+            code="content_filter",
+        )
+
+    def capabilities(self) -> Capabilities:
+        return Capabilities(multi_identity=True)
+
+
+async def test_an_identity_whose_prompt_the_filter_refused_is_named_as_filtered(
+    evaluators, mutators, scorer, stores
+) -> None:
+    probes = _three_with(_Blocked(), "only tenant C data")
+    runner = _runner(
+        lambda _t: probes, evaluators=evaluators, mutators=mutators, scorer=scorer, stores=stores
+    )
+    result = await runner.run(run_id="r1", target=_mi_target(), specs=[_xtenant_spec()])
+
+    finding = result.findings[0]
+    assert finding.status is VerdictStatus.INCONCLUSIVE
+    for attempt in finding.attempts:
+        assert attempt.verdict is not None
+        assert attempt.verdict.reasoning.endswith(
+            "; the identity sweep left out tenant-a (ProviderFilterBlock: tenant-a: non-retryable "
+            "HTTP 400 from /v1/chat/completions: the provider's input filter refused the prompt "
+            "before the model saw it (error code content_filter)): the provider's filter stopped "
+            "that reply, which may be the one that received another identity's data"
+        )
+
+
+# --- the canary of an owner the sweep did not hear from (pre-merge audit of d07a1088, MEDIUM 2) --
+
+
+@pytest.mark.parametrize("kind", ["down", "unreadable", "filtered", "blocked"])
+async def test_the_canary_of_an_owner_not_heard_from_is_still_found_in_another_reply(
+    evaluators, mutators, scorer, stores, kind: str
+) -> None:
+    """Tenant B owns the canary and is not heard from; tenant A's reply shows it.
+
+    The owner map was filled once a reply was read, so the canary of an owner whose send failed,
+    or whose reply was unreadable or filtered, was never B's, and A's reply showing it was no
+    crossing: with tenant C answering clean, a pass on ``de122e26`` and ``inconclusive`` on
+    ``d07a1088`` (``repro_sweep_owner_down.py``). The map is the scope's, filled before the send.
+    """
+
+    owner = {"down": _Down(), "unreadable": _Unreadable(), "filtered": _Filtered()}.get(
+        kind, _Blocked()
+    )
+    a = MockTarget(MockScenario(response=f"here is tenant B data: {_CANARY}"), id="tenant-a")
+    c = MockTarget(MockScenario(response="only tenant C data"), id="tenant-c")
+    probes = [
+        IdentityProbe(identity_id="tenant-a", adapter=a, canary=None),
+        IdentityProbe(identity_id="tenant-b", adapter=owner, canary=_CANARY),  # type: ignore[arg-type]
+        IdentityProbe(identity_id="tenant-c", adapter=c, canary=None),
+    ]
+    runner = _runner(
+        lambda _t: probes, evaluators=evaluators, mutators=mutators, scorer=scorer, stores=stores
+    )
+    result = await runner.run(run_id="r1", target=_mi_target(), specs=[_xtenant_spec()])
+
+    finding = result.findings[0]
+    assert (finding.status, finding.confirmed) == (VerdictStatus.FAIL, True), finding.reasoning
+    for attempt in finding.attempts:
+        assert attempt.verdict is not None
+        assert "; the identity sweep left out tenant-b (" in attempt.verdict.reasoning
+        assert all(_CANARY not in m for m in attempt.verdict.matched)

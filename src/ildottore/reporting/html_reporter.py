@@ -96,9 +96,14 @@ class HtmlReporter(BaseReporter):
         unsafe_render: bool = False,
         planned_specs: int | None = None,
         run_status: RunStatus | None = None,
+        include_needs_review: bool = False,
     ) -> None:
         super().__init__(
-            specs=specs, redactor=redactor, planned_specs=planned_specs, run_status=run_status
+            specs=specs,
+            redactor=redactor,
+            planned_specs=planned_specs,
+            run_status=run_status,
+            include_needs_review=include_needs_review,
         )
         self._unsafe_render = unsafe_render
 

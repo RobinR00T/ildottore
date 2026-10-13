@@ -515,8 +515,9 @@ def run(
         typer.Option(
             "--include-needs-review",
             help="Also gate unconfirmed fails (not reproduced on every attempt of one variant, "
-            "or with --runs 1 of the spec, or below the confidence threshold). Undecided "
-            "results never gate.",
+            "or with --runs 1 of the spec, or below the confidence threshold, or reported by "
+            "the judge alone); SARIF then gives them their band's level. Undecided results "
+            "never gate.",
         ),
     ] = False,
     compare: Annotated[bool, typer.Option("--compare", help="Model-comparison matrix.")] = False,

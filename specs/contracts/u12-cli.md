@@ -1180,7 +1180,15 @@ sends again because they could not be read (`; <k> that could not be read will b
 LOW 1), and one that keeps none says so (`keeps none of the <n> attempt(s) it stored across <s>
 spec(s) (none was answered, or failed in a way a retry would repeat)`; it said `keeps 0
 attempt(s)`, verification of `07aa0b3a`, LOW 2). The report schema's `status` description names `aborted` and the wider `unreachable`.
-Checked by `tests/cli/test_malformed_reply_campaign.py`.
+Checked by `tests/cli/test_malformed_reply_campaign.py`. **Amended 2026-10-11 after the audit of the
+scoring (LOW 1):** the note names each id it sends again once, by the artifact that is its attempt
+(`shared.resend`, u08 A-74), and so counts what it keeps (`blocked`, `trimmed`): it counted an id
+in every category one of its artifacts fell in, so an id holding a reply stored without a verdict
+and that reply's unreadable re-send read `-1 that ended in an environment error will be sent again;
+1 that could not be read will be sent again; 1 answered but not evaluated before the halt will be
+sent again`; it now reads `1 that could not be read will be sent again`
+(`runner.unjudged_attempt_ids` reads the attempt too). Checked by
+`tests/cli/test_resume_resend_scored.py`, failing on `de122e26`.
 
 **A-79 (u08's clause; this unit's half, added 2026-10-11, the amendment to OD-41 and OD-42,
 decided under the owner's delegation, best practice, revisable) A run the provider's filter

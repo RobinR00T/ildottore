@@ -56,8 +56,8 @@ the state in each result's `properties.state`.
   else, so the attack text of a `test_only` spec is readable in the JSON report. The HTML report
   shows no prompts.)
 - KEEP: SARIF output is 2.1.0, `level` mapped from band per `docs/05 §3`
-  (critical/high→`error`, medium→`warning`, low/info→`note`); ruleId = spec id; rules carry
-  OWASP/ATLAS/NIST tags.
+  (critical/high→`error`, medium→`warning`, low/info→`note`), a fail whose state is
+  `needs_review` at most `warning` (A-73); ruleId = spec id; rules carry OWASP/ATLAS/NIST tags.
 - KEEP: masking is mandatory and applied centrally before any format writer runs (single choke
   point in `masking.py`), so a new format can't bypass it.
 - DECIDE: whether HTML embeds evidence excerpts inline or links to store refs only (propose:
@@ -170,6 +170,28 @@ kind `open`, state `needs_review`. With none blocked, only the JSON report chang
 and `[]`), so the golden JSON snapshot gains it and the SARIF, JUnit and HTML ones do not move.
 Checked by `tests/cli/test_provider_filter_campaign.py` (every format of one run, the JSON against
 the schema).
+
+**A-73 (u06's clause; this unit's half, added 2026-10-11 after the audit of the scoring, LOW 4) A
+fail that needs review is no `error` in SARIF.** A fail only the judge reported is never confirmed
+(OD-19), and neither is one not reproduced on every attempt of a variant: `--fail-on` gates neither
+without `--include-needs-review`. SARIF gave such a fail its band's level, so a judge-only critical
+fail was an `error`, which GitHub code scanning fails a pull request's check on by default
+("Triaging code scanning alerts in pull requests": a result "with a severity of `error`,
+`critical`, or `high`" fails the check, read 2026-10-12), while `dottore` exited 0 for it. A `fail` result whose `properties.state` is `needs_review` is now at most
+`warning` (`error` becomes `warning`; `warning` and `note` stay), its band unchanged in
+`properties.band`; a confirmed fail keeps its band's level, and every other kind keeps `none`.
+The golden SARIF snapshot does not move (its fail is confirmed). Checked by
+`tests/reporting/test_sarif_reporter.py` (6 cases; the critical and high ones fail on `de122e26`).
+**Amended 2026-10-12 after the pre-merge audit of `d07a1088` (LOW 3):** the cap holds only
+without `--include-needs-review`. With it such a fail trips `--fail-on`, and capped at `warning`
+it let code scanning pass the check `dottore` exited 2 on. The flag reaches the writer as
+`include_needs_review` (`BaseReporter`, `get_reporter`, `cli.wiring.build_reporter`, from
+`RunOptions` in `cli.run._write_reports`); with it a needs-review fail keeps its band's level and
+the SARIF run's `properties` carry `"include_needs_review": true` (absent without it, so the
+golden snapshot does not move). The other formats take the flag and do not read it. Checked by
+`tests/reporting/test_sarif_reporter.py` (5 more cases, the 4 with the flag failing on
+`d07a1088`) and `tests/cli/test_flags.py` (2 cases through `_write_reports` beside
+`exit_code_for`, the one with the flag failing on `d07a1088`).
 
 **A-74 (u08's clause; this unit's half, added 2026-10-11, OD-21; pre-merge audit of `598f0858`,
 HIGH 1) The replies the adapter could not read are counted apart in every format.** Such an attempt

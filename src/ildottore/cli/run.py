@@ -99,6 +99,7 @@ from ildottore.shared.provider_filter import (
     filtered_run,
     side_unknown_attempt_ids,
 )
+from ildottore.shared.resend import one_per_attempt_id
 from ildottore.shared.tool_abuse import cleared_verbs, handoff_shaped, scene_tool_names
 from ildottore.shared.unreadable import (
     UNREADABLE_REPLY_KEY,
@@ -2007,29 +2008,23 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
         elif not opts.quiet:
             done, again = resume_progress(resume_from)
             unjudged = len(unjudged_attempt_ids(resume_from))
+            # Each id once, by the artifact that is its attempt (``shared.resend``): an id holding
+            # a reply stored without a verdict and its unreadable re-send was counted in both, and
+            # the environment errors came out at -1 (audit of the scoring, 2026-10-11, LOW 1).
+            kept_ids = answered_attempt_ids(resume_from)
+            effective = one_per_attempt_id(
+                a for finding in resume_from.findings for a in finding.attempts
+            )
             # OD-21: a reply the adapter could not read is sent again (the target may have been
             # fixed since), and said apart from the environment errors.
-            kept_now = answered_attempt_ids(resume_from)
-            unread = len(
-                unreadable_attempt_ids(
-                    a
-                    for finding in resume_from.findings
-                    for a in finding.attempts
-                    if a.attempt_id not in kept_now
-                )
-            )
+            resent = [a for a in effective if a.attempt_id not in kept_ids]
+            unread = len(unreadable_attempt_ids(resent))
             errored = again - unjudged - unread
             # OD-41: a prompt the provider's input filter refused would be refused again.
             # Only among the attempts it keeps: a cut reply stored without a verdict is sent again,
             # and was counted as kept for review beside "will be sent again" (verification of
             # 91845524, finding 1).
-            kept_ids = answered_attempt_ids(resume_from)
-            prior_attempts = [
-                a
-                for finding in resume_from.findings
-                for a in finding.attempts
-                if a.attempt_id in kept_ids
-            ]
+            prior_attempts = [a for a in effective if a.attempt_id in kept_ids]
             blocked = len(blocked_attempt_ids(prior_attempts))
             # OD-42: a reply the provider's filter cut is answered, and kept like any other.
             trimmed = len(cut_attempt_ids(prior_attempts)) + len(
@@ -3336,7 +3331,11 @@ def _write_reports(
     written: list[Path] = []
     for fmt, path in outputs.items():
         reporter = wiring.build_reporter(
-            fmt, specs=specs_by_id, planned_specs=planned_specs, run_status=run_status
+            fmt,
+            specs=specs_by_id,
+            planned_specs=planned_specs,
+            run_status=run_status,
+            include_needs_review=opts.include_needs_review,
         )
         payload = reporter.render(run, findings)
         path.parent.mkdir(parents=True, exist_ok=True)
