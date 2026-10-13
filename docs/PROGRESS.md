@@ -3,6 +3,42 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-13: the fourth pre-merge audit, of `5dd87b42` (A-77), fixed
+
+- Not merge-ready on `5dd87b42`: one MEDIUM, a regression against `main`. The work stopped twice
+  (a network error, then the org spend limit at about 05:50); the coordinator saved the first
+  stop's work as `e22a3cc2`, and new commits sit on top of it, no history rewritten.
+- MEDIUM: a cut stream's excerpt showed a secret's beginning. Masks shorten the window's text,
+  so its second half moved up into the 4 KiB the excerpt shows, and the open tail was a run of
+  key characters read after masking. `window_attacks.py` case A: 4 of 36 rows leaked on
+  `5dd87b42` (a URL password with symbols at 7 of 31 cuts in three shapes, a 300-character
+  registered credential at 70 of 111), now 0 of 36; case B (a pause past the window) 16 of 36 on
+  both, as on `main`, and in A-77's list. When the window cuts the body only the lines that
+  start in its first half are shown (the auditor's patch), and a body whose first half is as it
+  came is quoted as it came. The open tail is read on the raw stream: the run of characters other
+  than white space it ends with, 32 to 256 characters, or a registered credential's beginning.
+  Scratch probes `r6/longspan.py`, `r6/glued2.py`: 11 of 16 leaked on `5dd87b42`, 0 now. A last
+  256 characters rule, tried first (`453247f0`), emptied what the excerpt shows in heavy events
+  (3 of 6 clean streams with 5 or 20 alternatives quoted otherwise than by `main`), so the run
+  rule replaced it (`e7f1b5a3`).
+- Not closed, in A-77's list: an unregistered secret no rule masks in part, longer than 256
+  characters or holding white space and longer than 32, reaching from the shown half past the
+  cut (`r6/over256b.py`: a 600-character URL password of words showed 20 to 61 characters, 52 to
+  61 on `5dd87b42`, 0 to 3 on `main`).
+- Found while fixing, not by the audit: an event stream of OpenAI chunks with logprobs kept each
+  masked token's `bytes`, which spelled the key in the excerpt (`main` and `5dd87b42`), and joined
+  each rank of alternatives across the chunks (4 of 6 clean replies with alternatives quoted
+  otherwise than by `main`). A transcript's alternatives are no stream, and a transcript's token
+  in a logprob item masks its alternatives and drops its `bytes` (`df0cd422`): no rebuild, 0 of 6.
+- Unchanged: clean bodies past the window 0 of 320 differ from `main`, `clean_excerpts.py` 0 of
+  217 in every shape, `diff_main.py` 0 of 1,500 summaries differ from `5dd87b42` (replay 1500/781),
+  `cost3.py` 0.01 to 0.20 s on 4 MiB, every earlier round's script the same output as on
+  `5dd87b42` but for the digests, which follow the salt (with one salt, `fuzz_rejoin.py` seeds 1
+  to 3 give the same counts on both, 0 refusals), and `e2e_bigsse.py` inconclusive
+  `unreadable_reply`, bytes 376515, no raw key or canary, its excerpt 1,663 characters (4,092 on
+  `5dd87b42`: only the first half is shown).
+- Tests: 109 new against `main` (5476 there, 5585 here), 7 of them since `5dd87b42`. `make gates` green on `f435cdcc` (`PYTHONPATH` set to the worktree's `src` and root, `TMPDIR` at the system default, nothing written under `/tmp`): ruff and format clean (423 files), mypy strict (161), four import contracts kept, 75 specs lint OK, 5585 tests, 97.83% coverage, self-scan 0 high or critical, bandit and pip-audit clean.
+
 ## State, 2026-10-12 (late morning): the third pre-merge audit, of `74ace451` (A-77), fixed
 
 - Merge-ready on `74ace451` (no HIGH or MEDIUM; reports 0 of 400 differ from `main`; a trial
