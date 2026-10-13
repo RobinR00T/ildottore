@@ -151,3 +151,19 @@ def test_the_store_keeps_an_attempt_whatever_the_campaign_wrote_before(tmp_path:
     stored = (tmp_path / "ev").rglob(f"{ref.sha256}.json")
     body = next(stored).read_text(encoding="utf-8")
     assert "glft-a0000000000000000001" not in body and "ab" * 16 not in body
+
+
+@pytest.mark.usefixtures("no_known_secrets")
+def test_the_labelled_rule_reads_one_as_text_after_a_url_mask_too() -> None:
+    # The path a URL mask that took a labelled value's head goes through (#96): the same reading.
+    from ildottore.redactor import register_known_secret
+
+    register_known_secret("Adm1n@2026")
+    text = (
+        "redis://ops:Adm1n@2026-db:6379,password=Secr3t@Value99xyz and «REDACTED:uuid:1a2b3c4d»"
+        " and secret: «REDACTED:uuid»Summer2026x"
+    )
+    out = Redactor(salt="s").redact_text(text)
+    assert "Value99xyz" not in out and "Summer2026x" not in out
+    assert " and «REDACTED:uuid:1a2b3c4d» and secret: «REDACTED:labeled_secret:" in out
+    assert Redactor(salt="other").redact_text(out) == out
