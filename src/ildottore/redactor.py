@@ -1329,6 +1329,9 @@ class Redactor:
 
     def _set_late(self, patterns: list[Pattern]) -> None:
         self._late = patterns
+        # Whether the UUID pattern is one of them, by identity: `in` on the list compared each
+        # pattern by value, a dataclass `__eq__` call each, on every pass (CI of #113).
+        self._uuid_late = any(pattern is _UUID_PATTERN for pattern in patterns)
         # Every hint of the late patterns, searched once in a token before any of them is tried.
         hints = [hint for pattern in self._late for hint in pattern.hints]
         self._late_hint = (
@@ -1449,7 +1452,8 @@ class Redactor:
 
         # The stand-ins of this pass (A-78, `_Cuts`): only a redactor whose entropy rule masks a
         # UUID cut by a number rule whole, and whose late pattern masks any other, uses them.
-        cuts = _Cuts.for_text(text) if self._hex_runs and _UUID_PATTERN in self._late else None
+        # A UUID holds a `-`: a text with none needs no stand-ins, nor the scan for a free block.
+        cuts = _Cuts.for_text(text) if self._hex_runs and self._uuid_late and "-" in text else None
 
         def _as_written(stretch: str) -> str:
             if cuts is not None:
@@ -1782,6 +1786,11 @@ class Redactor:
         for them.
         """
 
+        # One search for a literal some late pattern needs, before any is tried: a short text
+        # holding none (an address, a word) cost each pattern's own check, 1.7 times main's time
+        # on 24,000 evidence keys (CI of #113).
+        if self._late_hint is not None and self._late_hint.search(text) is None:
+            return text
         written = as_written or (lambda stretch: stretch)
         for pattern in self._late:
             if pattern.may_match(text):
@@ -2246,7 +2255,7 @@ class Redactor:
 
         if cuts is not None and cuts.run.search(token):
             return self._cut_spans(token, cuts)
-        if self._hex_runs and _UUID_PATTERN in self._late and _UUID.fullmatch(token):
+        if self._hex_runs and self._uuid_late and _UUID.fullmatch(token):
             # A UUID alone: masked whole either way, as the late pattern masks it.
             return [(0, len(token), self._mask_token(_UUID_PATTERN, token))]
         if self._masks_whole(token):
