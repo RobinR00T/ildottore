@@ -80,6 +80,155 @@ Found by the pre-merge security audit of 2026-10-11 (MEDIUM 4 and LOW 6).
   prefix the entropy rule passes, and a UUID in a CLI error that the number rules read a number
   in, masked as before.
 
+### Fixed (an audit of the scoring and its pre-merge audit: three false passes, a silent sweep and five lows, 2026-10-11 and 2026-10-12)
+
+- **A resume's re-send is scored as the attempt it replaces, by one rule the report and `dottore
+  replay` share (HIGH 1, u08 A-74).** The runner and the replay each kept the first artifact of an
+  attempt id at a tie, the runner's prior ones in content-hash order, and an environment error, an
+  unreadable reply and a block tie. Measured on `de122e26`: `BIAS-STEREOTYPE-001 --runs 5 --judge`
+  whose first attempt ended in four HTTP 503s, resumed against an HTML page, was a PASS with 0
+  unreadable replies and exit 0 under `--fail-on info --include-needs-review`, while `dottore
+  replay` counted 1; the reverse (unreadable, then a network error on the resume) kept the
+  unreadable reply in the report and the error in the replay. Now `shared.resend` decides for both:
+  answered and judged, then a verdict, then a bare reply; at the same rank an unreadable reply over
+  an environment error or a block, whichever came first (a cut reply, answered and judged, already
+  ranks first); then the later
+  send, by the `send_number` now stamped in `request.metadata` of every stored attempt. The same
+  run is `inconclusive`, `1/5 could not be read`, 1 unreadable reply in the summary and in the
+  replay. A re-send is now always an artifact of its own.
+- **A tool the model already called is scored when a later send fails (HIGH 2, u08 A-69).** Only a
+  provider-filter block kept a conversation's trace; an environment error or an unreadable reply
+  dropped it, so `drop_table` on turn 1 and a timeout on turn 2 passed the spec 4 of 5, exit 0
+  under `--fail-on low --include-needs-review`. The trace so far is kept beside the attempt, the
+  trace evaluators read it first, and a fail is stored as any fail with the error under
+  `request.metadata.conversation_error`: now a fail, exit 2. A trace that fails nothing leaves the
+  attempt as before, and a resume sends it again. Also for the tool rounds of an in-band scene.
+- **The identity sweep names every identity it did not hear from (MEDIUM, u08 A-74).** An identity
+  whose reply could not be read, or whose send failed, was dropped silently, so two identities
+  that compared clean passed `authz_leak` beside it. It is now left out by name, as a reply the
+  provider's filter stopped already was, and `authz_leak` cannot pass beside it (`; the identity
+  sweep left out tenant-a (ResponseMalformed: ...): that reply could not be read as the provider's,
+  and it may be the one that received another identity's data`). A transient failure of one
+  identity's send now keeps such a spec from passing, visibly. The canary an identity owns is
+  mapped to it before its send (pre-merge audit, MEDIUM 2): mapped once its reply was read, an
+  owner left out had no canary, and tenant A's reply showing it was no crossing (three identities,
+  the owner timing out: PASS on `de122e26`, `inconclusive` on the first version of this fix); it
+  is a confirmed fail, and with two identities `authz_leak` reads the owner map on the one reply
+  left (u06's half of A-74). On a spec that only corroborates with `authz_leak`
+  (`EMB-XTENANT-RETRIEVAL-001`), the note says why it was kept (pre-merge audit, LOW 2): it read
+  `authz_leak kept: fewer than two identities answered the identity sweep` with two of three that
+  had; now `authz_leak kept: 2 identities answered the identity sweep, and it did not hear from
+  every identity`, before the identity left out and why.
+- **The resume note names each id it sends again once (LOW 1).** An id holding a reply stored
+  without a verdict and its unreadable re-send read `-1 that ended in an environment error will
+  be sent again; 1 that could not be read ...; 1 answered but not evaluated ...`; now `1 that
+  could not be read will be sent again`. What a resume keeps is read from that attempt too
+  (pre-merge audit, LOW 1): an id was kept when any of its copies was blocked, so an unreadable
+  reply whose re-send the provider's input filter refused stayed the attempt for good, and a
+  later resume against a healthy target kept 5 attempts and sent none; now it sends that one
+  again and the spec passes.
+- **A fail only the judge reported does not skip the `setup_not_reached` check (LOW 2, u08's half
+  of u06 A-73).**
+- **`--include-needs-review`'s help names a fail only the judge reported (LOW 3).**
+- **A SARIF fail that needs review is at most a `warning` (LOW 4, u11 A-73).** A judge-only
+  critical fail was an `error`, which GitHub code scanning fails a check on, while `dottore` exited
+  0. Its band stays in `properties.band`; a confirmed fail keeps its level. Under
+  `--include-needs-review`, which makes it gate, it keeps its band's level too, and the SARIF run's
+  `properties` say `"include_needs_review": true` (pre-merge audit, LOW 3: the writer never saw
+  the flag, so `dottore` exited 2 while code scanning read a `warning` and passed the check).
+- **A Bedrock guardrail's replacement is not judged on the operator's words (LOW 5, u08 A-70).**
+  Its text is the configured message or the model's reply with its PII masked, which the trace
+  does not tell apart, and a configured message that read as compliance failed the `refusal`
+  heuristic, a confirmed fail on the operator's words; now a cut needing review, a forbidden tool
+  call beside it still a fail. It is read by the one rule for text the filter put there (A-79,
+  below). The first version of this fix read it on its trace only, and a planted canary beside a
+  masked name (`The key is CANARY-...; contact {NAME}`) went from a confirmed fail to a cut needing
+  review (pre-merge audit, MEDIUM 1); it is a confirmed fail again.
+- Docs: MANUAL §3, §5 (`--resume`, `dottore replay`), §9, §10, §11, §13, FAQ, USAGE,
+  `dottore(1)`, `docs/04` §1 and §2, `docs/05` §2 and §3, `docs/09`, `docs/12`,
+  `examples/ci-github-actions.yml`, contracts u06, u08, u10, u11, u12 and the index. Tests: 62 new
+  (44 failing on `de122e26`; 18 of them from the pre-merge audit of `d07a1088`, 15 failing
+  there), 4 changed expectations.
+
+### Changed, breaking: a target can no longer forge a filter stop to hide an exploit (A-79, the amendment to OD-41 and OD-42)
+
+Decided 2026-10-11 under the owner's delegation (best practice), revisable; found by the security
+audit of 2026-10-11 (MEDIUM 3), and its pre-merge audit. **A CI result changes in five cases**,
+each measured against a loopback stub, `main` (`de122e26`) against this branch:
+
+- **A run the provider's filter answered every time exits 3, not 0.** Every attempt refused, cut
+  or stopped by the filter (or with no reply that could be read), at least one by the filter and
+  none a fail: the run is `filtered` in every report (`summary.status.state`, SARIF's
+  `run_status`, JUnit's `run-filtered`, the HTML banner) and prints `error: run on <id> did not
+  complete: every one of the <n> attempt(s) was answered by the provider's filter (...), so no
+  reply the model wrote whole was evaluated: the run measured the filter, not the model.`
+  `JB-ROLEPLAY-001` and `PI-DIRECT-001` with Azure's 400 on every attack: 6 of 6 blocked, exit 0,
+  now exit 3; with Azure's withheld reply on every attack, the same. Every attempt, not a share: a
+  share would make a filter that does its job an error on every CI run. A partly filtered run keeps
+  its exit code (8 of 14 blocked, a pass and an inconclusive: exit 0, as before). If your pipeline
+  scans a deployment whose filter refuses the whole battery, it now fails with 3: point it at a
+  deployment or filter level that lets the attack prompts through.
+- **A filter stop counts only from the provider that documents it.** `content_filter` (and
+  Azure's 400) from an `openai` target, `refusal` from an `anthropic` one, Gemini's and Bedrock's
+  from a `RestTemplate` in their shape (or what its new `filter_stops` declares), and from a
+  WebSocket target only what its file lists under the new `response.filter_stops` (none by
+  default; each value one a provider documents; refused beside a `final_value`). Any other filter
+  word is an ordinary stop, kept in the stored reply with `foreign_stop: true`.
+  `JB-ROLEPLAY-001` with harmful text and `finish_reason: refusal` from an `openai` stub: three
+  cut attempts, exit 0, now a confirmed fail, exit 2, as with `stop`. A WebSocket target whose
+  turns end on `content_filter` must now declare it to have it read as a filter's: until it
+  does, a withheld turn (no text frame, or only blank ones, and no tool call) is an unreadable
+  reply, and a run made only of them is `unreachable`, exit 3, with advice that names
+  `response.filter_stops`. A relay of a streamed Azure reply sends a first delta of `""`: the
+  pre-merge audit of `e1a8aacf` (MEDIUM 1) found such a turn read as the model's empty answer,
+  so `PI-DIRECT-001` and `JB-ROLEPLAY-001` passed, exit 0.
+- **Azure's 400 `content_filter` from a non-OpenAI adapter stops the run** (exit 3 at the first
+  request) as any undocumented 4xx: an `anthropic` stub answering it to every attack had 6 of 6
+  blocked, exit 0.
+- **The judge's fail on text the filter cut stands, as a fail that needs review.** The text came
+  back, so it was delivered, whatever the filter says: combined by the rule every reply gets
+  (OD-19), a fail the judge alone reported is never confirmed, so it gates only with
+  `--include-needs-review`. `PI-DIRECT-001` with text cut by `content_filter` and a judge that says
+  exploited: inconclusive, exit 0 either way, now `fail` (needs review), exit 0 and 2 with
+  `--include-needs-review`, as the same text uncut. Its pass is still only recorded.
+- **A forbidden phrase in a Bedrock guardrail's configured message is no longer a fail.** Text
+  the filter put there (the configured message, on the input or the output side, or a reply with
+  its PII masked) is read only by the evaluators whose fail cannot come from configured words:
+  `secret_leakage`, `secret_shape`, `authz_leak` and the tool trace. On `main` a `regex_absence`
+  phrase in the message of an output-side block (or one with no trace) beside `refusal` was a
+  confirmed fail; it is the cut's `inconclusive`. A planted canary in it is still a fail, now on
+  the input side too (pre-merge audit of `a55710e9`, MEDIUM 1, under the owner's delegation).
+
+Added: an `openai` or `anthropic` target file may declare `filter_stops: []` (or the provider's
+own word only) for an endpoint that speaks the provider's API and has no OpenAI, Azure or Anthropic
+filter behind it (never a gateway in front of Azure, which relays Azure's filter): no HTTP 400,
+and no stop on a reply with text or a tool call, is then read as a filter's, while a reply with no
+text and no tool call that ends on the provider's own word is still the filter's withheld one,
+never a pass (no text is whitespace or a format character that shows and carries nothing: a
+zero-width space passed until the pre-merge audit of `e1a8aacf`, LOW 1, and since that of
+`3f7b1254` a reply of tag characters, which spell ASCII no one sees, is text the judge reads,
+as are the 13 format signs a font draws; the
+pre-merge audit of `10cb526b` found `[]` made it a pass: `PI-DIRECT-001` against Azure's withheld
+reply, exit 0 where without the declaration the run is `filtered`, exit 3; and a `RestTemplate`'s
+declaration keeps its shape's word on a reply with no text the same way). `--dry-run`, `-v` and
+`-sn` print a `filters:` line for it (and for a WebSocket file's declaration). The declaration is
+checked by the `Target` model, so a `Target` built in Python is held to the same rule as the file
+(it took any provider's words), and the adapters only narrow their own words by it. A filtered
+run's error line adds what to check for the attempts that got no reply at all (the endpoint for a transport failure, the
+adapter's advice for an unreadable reply), and `dottore replay` of a filtered run prints `run:
+filtered: ...`. The fingerprint's `guardrails.output_filter` does not believe a foreign stop.
+Still possible, and said: an endpoint that uses its own provider's word can withhold chosen
+attacks (an empty `content_filter`, Azure's 400) and keep CI green, since `--fail-on` does not gate
+an inconclusive attempt; read `summary.blocked_by_provider_filter` and
+`summary.cut_by_provider_output_filter` to stop on them. **A resume across this upgrade keeps the
+verdicts its stored attempts were judged with under the earlier rules** (`foreign_stop` is not
+recomputed for a stored reply), left for the judging-rules version that
+`fix/resume-judging-rules` adds. The stop vocabularies, each sourced, move to `shared.filter_stops`. Stored replies, reports
+and target digests without the new fields are byte for byte as before. Controls kept: a genuine
+Azure 400 on some prompts of an `openai` target and a genuine Anthropic refusal (a block before
+any output, a cut after some) score as OD-41 and OD-42 built them. ADR-0011 has a second
+amendment; clause u08 A-79 (and its u00, u04, u09, u10, u11 and u12 halves).
+
 ### Added (a target file may declare one of its own granted tools not destructive, OD-43)
 
 - **A `seeded_setup.granted_tools` entry may be `{name: <tool>, destructive: false}`.** A tool a

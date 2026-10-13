@@ -123,15 +123,24 @@ _CONTROL_RANGES: Final = ((0x00, 0x1F), (0x7F, 0x9F), (0x2028, 0x2029), (0xD800,
 #: Python's Unicode version (3.11 has 14.0); a test checks it holds every Cf of the Python it runs.
 #: A terminal shows none of them: a bidi control reorders what is read (Trojan Source,
 #: CVE-2021-42574), and a zero-width or a tag character hides text (decided by the owner on
-#: 2026-10-07: written out like the controls).
-_FORMAT_RANGES: Final = (
-    *((0x00AD, 0x00AD), (0x0600, 0x0605), (0x061C, 0x061C), (0x06DD, 0x06DD)),
-    *((0x070F, 0x070F), (0x0890, 0x0891), (0x08E2, 0x08E2), (0x180E, 0x180E)),
-    *((0x200B, 0x200F), (0x202A, 0x202E), (0x2060, 0x2064), (0x2066, 0x206F)),
-    *((0xFEFF, 0xFEFF), (0xFFF9, 0xFFFB), (0x110BD, 0x110BD), (0x110CD, 0x110CD)),
-    *((0x13430, 0x1343F), (0x1BCA0, 0x1BCA3), (0x1D173, 0x1D17A), (0xE0001, 0xE0001)),
-    (0xE0020, 0xE007F),
+#: 2026-10-07: written out like the controls). In three kinds, the one list for every reader that
+#: tells them apart (``shared.provider_filter.blank_text``, pre-merge audit of ``3f7b1254``):
+#: :data:`EMPTY_FORMAT_RANGES` show nothing and carry nothing; :data:`FORMAT_SIGN_RANGES` are the
+#: 13 prepended concatenation marks, signs a font draws as a glyph (the Arabic number signs, the
+#: end of ayah, the Syriac abbreviation mark, the Arabic pound and piastre marks, the Kaithi
+#: number signs);
+#: :data:`TAG_RANGES` spell ASCII that no one sees (ASCII smuggling).
+EMPTY_FORMAT_RANGES: Final = (
+    *((0x00AD, 0x00AD), (0x061C, 0x061C), (0x180E, 0x180E), (0x200B, 0x200F)),
+    *((0x202A, 0x202E), (0x2060, 0x2064), (0x2066, 0x206F), (0xFEFF, 0xFEFF)),
+    *((0xFFF9, 0xFFFB), (0x13430, 0x1343F), (0x1BCA0, 0x1BCA3), (0x1D173, 0x1D17A)),
 )
+FORMAT_SIGN_RANGES: Final = (
+    *((0x0600, 0x0605), (0x06DD, 0x06DD), (0x070F, 0x070F), (0x0890, 0x0891)),
+    *((0x08E2, 0x08E2), (0x110BD, 0x110BD), (0x110CD, 0x110CD)),
+)
+TAG_RANGES: Final = ((0xE0001, 0xE0001), (0xE0020, 0xE007F))
+_FORMAT_RANGES: Final = (*EMPTY_FORMAT_RANGES, *FORMAT_SIGN_RANGES, *TAG_RANGES)
 #: U+FFFD, the replacement character: half a character in a target's reply (a lone surrogate) is
 #: read as one where the reply is parsed (u04 A-47), before the redactor sees it, so a credential
 #: split by half a character arrives split by U+FFFD, or by a run of them (an MCP SSE stream reads

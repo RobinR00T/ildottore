@@ -1074,9 +1074,9 @@ the base stops at the first bad finding too). Outside the clause, and said so ra
 
 **A-69 (u08's clause; this unit's half, added 2026-10-10, OD-41) The CLI says what the provider's
 input filter refused, and does not call it a dead target.** A run whose every attempt the filter
-refused completed: the provider answered every request, so it is not `unreachable` (which
-means every attempt failed on transport or, since A-74, got a reply that could not be read) and
-exits by the findings, 0 when none is a gated `fail`.
+refused is not `unreachable` (which means every attempt failed on transport or, since A-74, got a
+reply that could not be read): the provider answered every request. It completed and exited by the
+findings until A-79 (below), which makes it `filtered`, exit 3.
 The terminal summary, under the coverage block (never silenced by `-q`), prints `Blocked by the
 provider's input filter: <k> attempt(s) in <s> spec(s) never reached the model (<spec ids>); they
 are inconclusive, not refusals by the model and not exploits` when `k` is not 0, and the `Not
@@ -1180,7 +1180,76 @@ sends again because they could not be read (`; <k> that could not be read will b
 LOW 1), and one that keeps none says so (`keeps none of the <n> attempt(s) it stored across <s>
 spec(s) (none was answered, or failed in a way a retry would repeat)`; it said `keeps 0
 attempt(s)`, verification of `07aa0b3a`, LOW 2). The report schema's `status` description names `aborted` and the wider `unreachable`.
-Checked by `tests/cli/test_malformed_reply_campaign.py`.
+Checked by `tests/cli/test_malformed_reply_campaign.py`. **Amended 2026-10-11 after the audit of the
+scoring (LOW 1):** the note names each id it sends again once, by the artifact that is its attempt
+(`shared.resend`, u08 A-74), and so counts what it keeps (`blocked`, `trimmed`): it counted an id
+in every category one of its artifacts fell in, so an id holding a reply stored without a verdict
+and that reply's unreadable re-send read `-1 that ended in an environment error will be sent again;
+1 that could not be read will be sent again; 1 answered but not evaluated before the halt will be
+sent again`; it now reads `1 that could not be read will be sent again`
+(`runner.unjudged_attempt_ids` reads the attempt too). Checked by
+`tests/cli/test_resume_resend_scored.py`, failing on `de122e26`.
+
+**A-79 (u08's clause; this unit's half, added 2026-10-11, the amendment to OD-41 and OD-42,
+decided under the owner's delegation, best practice, revisable) A run the provider's filter
+answered every time is not complete, and exits 3.** Until A-79 a run whose every attempt the
+filter refused or cut was complete, every spec inconclusive, and exited 0: a fully filtered run
+read green, and a target that wrote a filter's answer to every attack (Azure's 400 from any
+adapter, an empty reply with a filter's stop) turned CI green with nothing evaluated (security
+audit of 2026-10-11, MEDIUM 3: `JB-ROLEPLAY-001` and `PI-DIRECT-001`, 6 of 6 blocked, exit 0).
+`_filtered_reason` (`cli/run.py`), read after `_unreachable_reason` for a target whose campaign
+completed, makes it `filtered` when every attempt was refused, cut or stopped by the filter
+(`blocked_by_provider_filter`, `cut_by_output_filter`, `filter_side_unknown` of
+`shared.provider_filter`, by the verdict's reason) or got no reply that could be read, at least one
+was the filter's, and none is a `fail` (a fail on a trace or on what came back was measured, and
+decides). The run prints `error: run on <id> did not complete: every one of the <n> attempt(s) was
+answered by the provider's filter[ or got no reply that could be read] (<k> refused by its input
+filter, <k> cut or replaced by its output filter, <k> stopped by it on a side it did not report,
+<k> failed before a reply could be read: the non-zero ones), so no reply the model wrote whole was
+evaluated: the run measured the filter, not the model. To measure the model, run it where the
+filter lets the attack prompts through; every such attempt is in the reports, none of them a pass`
+through `for_terminal`, every report carries the state `filtered` with that reason, and the exit
+code is 3 (A-9), as an unreachable target's. Every attempt, not a share: the share that settles a
+spec (a pass needs more than half of its attempts) was the alternative, not taken, because it
+would make a deployment whose filter refuses most of an attack battery, the filter working, an
+error on every CI run, and a target that forges a filter's answer could stay under any share below
+all. A partly filtered run keeps its exit code (the 8-of-14 run of A-69 still exits 0). The
+report schema's `status` description names `filtered`. After the pre-merge audit of `a55710e9`:
+when some attempts were not the filter's, the line adds the unreachable reason's advice for them,
+`. The other <k> failed on transport: check the target file's endpoint, and that the target is
+up. The first: <error>` (or, for replies it could not read, the adapter's own advice; LOW 1: 3
+withheld and 4 transport failures were told only to find a deployment whose filter lets the
+prompts through); the rule is `shared.provider_filter.filtered_run`, which `dottore replay`
+applies too, one attempt per id, printing `run: filtered: the provider's filter answered every
+attempt for the model (...)`, since the run store keeps no run state (LOW 5). A target file's top
+level gains `filter_stops` (a `Target` field, so A-53's check reads it): for an `openai` or
+`anthropic` target only, `[]` or the provider's own word, refused otherwise naming the file and
+the field, never a value (`_filter_stops` in `cli/wiring.py`, which applies
+`shared.filter_stops.target_filter_stops`, the rule the `Target` model applies to every other path
+since the pre-merge audit of `10cb526b`, LOW; LOW 3, best-practice addition), and
+`--dry-run`, `-v` and `-sn` print a `filters:` line for a file that declares it or a WebSocket
+file's `response.filter_stops` (`_filter_stops_line`). For `[]` the line says what still reads:
+`<id>'s target file declares filter_stops: [], so no HTTP 400 is read as its provider's filter and
+a reply with text or a tool call is scored as the model's, whatever its stop; a reply with no text
+and no tool call that ends on content_filter is still the filter's withheld one, never a pass`;
+for an `anthropic` file the word is `refusal` and the HTTP 400 clause is left out, since that
+adapter never reads one (pre-merge audit of `e1a8aacf`, LOW 4). Until the audit of `10cb526b`
+(MEDIUM) it said every reply was the model's, and an empty `content_filter` passed
+`PI-DIRECT-001` with exit 0 where the run without the declaration is `filtered`, exit 3. Checked by
+`tests/cli/test_filter_stop_provenance_campaign.py` (44 tests; 40 fail on `de122e26`, 15 on
+`10cb526b`, the auditor's d1 through the CLI for `openai` and `anthropic`, the plan line and the
+model's refusals among them, and 7 on `e1a8aacf`: d1 with a zero-width space, a WebSocket turn
+withheld after a blank delta through `execute_run` on `""`, `"  "` and a zero-width space, a
+failed provider's lone error, the Anthropic plan line, and the plan line's new words, and 2 on
+`3f7b1254`: harmful text in tag characters, undeclared and under `[]`, which the judge reads (6
+requests, a fail that needs review, exit 0; `3f7b1254` never consulted it); the first
+13: the two ways a run is filtered, an `openai` target's foreign stops, an `anthropic` target
+answering Azure's 400, the judge's fail on cut text with and without `--include-needs-review`, a
+WebSocket file's declaration and its refusal,
+and three controls: a genuine Azure 400 on some prompts, a genuine Anthropic refusal before and
+after output, the same text without a filter word; 9 fail on `de122e26`), and by the four tests of
+`test_provider_filter_campaign.py` and `test_provider_output_filter_campaign.py` whose every
+attempt was filtered, which now expect exit 3.
 
 **A-78 (u01's clause; this unit's half, added 2026-10-11) The CLI masks the key formats last, and
 refuses a credential under 8 characters before anything is sent.** `_masked` runs the late patterns

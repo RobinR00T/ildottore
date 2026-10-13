@@ -209,6 +209,10 @@ Finish a halted run; answered attempts are not re-sent, and those that ended in 
 environment error are sent again under the same attempt id (not one a retry would repeat,
 marked [not retryable]), as is a reply the halt stored before the judge could evaluate it
 (one a deterministic check already failed keeps that fail and is not re-sent).
+The re-send is scored in place of the try it replaces (every stored attempt carries a
+send_number in request.metadata), except that an environment error or a block on the re-send of
+a reply that could not be read, or that the provider's filter cut, leaves that reply the attempt:
+it says nothing of the reply. dottore replay counts by the same rule.
 A run halted before it stored any reply (for example an identity sweep, a -sV probe pass, a
 conversation cut mid-way, a first request that failed, or a Ctrl-C) is resumed from the start,
 its spend carried; refused are one that spent no request, one whose run store journals
@@ -253,7 +257,10 @@ any confirmed finding).
 .B --include-needs-review
 Also gate unconfirmed exploits (an unconfirmed fail, a fail only the judge reported among
 them). An inconclusive result never gates.
-An unconfirmed fail prints FAIL (<band>, needs review) on its progress line.
+An unconfirmed fail prints FAIL (<band>, needs review) on its progress line, and its SARIF
+result is at most a warning (a confirmed fail keeps its band's level), so code scanning does
+not fail a check on a finding --fail-on lets through; with this flag it gates, so it keeps its
+band's level too, and the SARIF run's properties say include_needs_review: true.
 .TP
 .B --evidence-root \fIPATH\fR, --run-db \fIPATH\fR
 Evidence store root (default .dottore/evidence) and run store SQLite path.
@@ -284,7 +291,8 @@ At least one gated finding at or above --fail-on.
 .B 3
 Operational error (bad scope, unknown suite, I/O), a usage error (unknown option, bad value),
 or a run that did not finish (a hard budget ceiling halted it, every attempt failed on
-transport or got a reply that could not be read, or an error stopped it: a non-retryable 4xx,
+transport or got a reply that could not be read, the provider's filter answered every attempt
+for the model and none failed (filtered), or an error stopped it: a non-retryable 4xx,
 or replies that could not be read, 5 in a row before any was read or 20 in a row after, aborted
 on UnreadableReplies). 3 takes precedence over 2: a run that did not finish exits 3 even when it found
 confirmed exploits, so read summary.status.reason before treating 3 as a retryable
@@ -304,8 +312,9 @@ OpenAI's HTTP 400 with the error code content_filter; Gemini's promptFeedback.bl
 only through a RestTemplate built in Python) does
 not stop the run: the attempt is inconclusive with the reason blocked_by_provider_filter, is not
 sent again, and is counted in the summary ("Blocked by the provider's input filter: N
-attempt(s) in S spec(s) never reached the model"). A run whose every attempt was refused that way
-completed; it is not "every attempt failed on transport". Any other 4xx still exits 3.
+attempt(s) in S spec(s) never reached the model"). Only from the provider that documents it:
+Azure's 400 from an openai target (or a RestTemplate that declares content_filter); from any other
+it is an ordinary 4xx. Any other 4xx still exits 3.
 .PP
 A reply the provider's filter cut or replaced (an HTTP 200 with its own stop reason: Azure OpenAI's
 content_filter, Anthropic's refusal; through a RestTemplate built in Python, a Bedrock guardrail's
@@ -313,10 +322,28 @@ guardrail_intervened and Gemini's SAFETY or RECITATION) is never scored as the m
 from a side that refused the prompt, it is blocked as above; from one that cut what the model wrote,
 the attempt is inconclusive with the reason cut_by_provider_output_filter and needs review; from a
 side the provider does not report, provider_filter_side_unknown. A spec with such an attempt and no
-fail is inconclusive, never a pass; a fail that rests on something present in what came back stands.
-The summary counts them ("Cut by the provider's output filter: N attempt(s) in S spec(s) came back
-cut or replaced"); they do not trip
+fail is inconclusive, never a pass; a fail that rests on something present in what came back stands,
+and so does the judge's on text the model wrote, as a fail that needs review (the text was
+delivered). The summary counts them ("Cut by the provider's output filter: N attempt(s) in S spec(s)
+came back cut or replaced"); they do not trip
 .BR --fail-on .
+Each adapter reads its own provider's filter words only: content_filter from an openai target,
+refusal from an anthropic one, Gemini's or Bedrock's from a RestTemplate in their shape, what a
+websocket target file lists under response.filter_stops (none by default). Any other filter word
+is an ordinary stop (foreign_stop in the stored reply), and the reply is the model's answer.
+An openai or anthropic target file declares filter_stops: [] for an endpoint that speaks the
+provider's API and has no OpenAI, Azure or Anthropic filter behind it (never a gateway in front
+of Azure, which relays Azure's filter): no HTTP 400, and no stop on a reply with text or a tool
+call, is then read as a filter's, while a reply with no text (whitespace or format characters
+that show nothing; a tag character is text) and no tool call that ends on the provider's own word
+still is, never a pass. A Bedrock guardrail's configured message is read only for a planted
+canary or secret, a crossing canary or the tool trace.
+.PP
+A run whose every attempt the provider's filter refused, cut or stopped, or that got no reply that
+could be read, with at least one of them the filter's and none a fail, exits 3 with the state
+filtered ("every one of the N attempt(s) was answered by the provider's filter"): it measured the
+filter, not the model. A partly filtered run keeps its exit status. dottore replay of such a
+run prints "run: filtered".
 .PP
 A target file may declare one of the deployment's own granted tools not destructive, as a
 seeded_setup.granted_tools entry {name: <tool>, destructive: false} (OD-43): tool_call then does
@@ -334,7 +361,11 @@ template's shape, a WebSocket frame or an MCP reply included) fails its attempt,
 with the reason unreadable_reply, and is not sent again in the run (a resume sends it again); the
 run goes on, but the spec it belongs to is never a pass, the attempt keeps an excerpt of the
 body under request.metadata.unreadable_reply, and the summary says how many ("Unreadable
-replies: N attempt(s) in S spec(s)"). At 5 such replies in a row before any reply was read, or 20
+replies: N attempt(s) in S spec(s)"). A tool the model called on an earlier turn of a
+conversation that such a reply, or an environment error, then ended is still scored: a forbidden
+call fails the attempt, the error kept under request.metadata.conversation_error. An identity of
+the multi-identity sweep whose reply could not be read, or whose send failed, is named in the
+verdict and keeps authz_leak from passing. At 5 such replies in a row before any reply was read, or 20
 in a row after (a target that broke mid-run), one benign request is sent first; only when that one
 cannot be read either does the run stop with exit 3, saying what to check for the target's
 provider. A content filter that answers attack prompts with a block page lets the check through,

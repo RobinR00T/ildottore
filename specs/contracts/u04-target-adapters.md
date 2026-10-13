@@ -385,9 +385,9 @@ reads as U+FFFD, since httpx decodes the stream as text.
     `RECITATION` or `MODEL_ARMOR` stop, and OD-41's Gemini prompt block are read only by a
     `RestTemplate` built in Python (pre-merge audit, M3). A target file's openai, anthropic and
     websocket providers carry their stops as before.
-  - The stop words are generic, so they are read whichever adapter carries them: a WebSocket
-    target's final frame that holds `content_filter`, `refusal` or `safety` at its finish path is
-    read as that filter's stop too, as the fingerprint already read it (L7).
+  - The stop words were generic, read whichever adapter carried them (L7): a WebSocket target's
+    final frame that held `content_filter`, `refusal` or `safety` at its finish path was read as
+    that filter's stop. **Superseded by A-79 below**: each adapter reads its own provider's words.
   Checked by `tests/adapters/test_provider_output_filter.py` (49 tests; it does not collect on
   `6d5f7ae`).
 
@@ -413,6 +413,82 @@ reads as U+FFFD, since httpx decodes the stream as text.
   (`redact_ids`, `Redactor.without_entropy`) drops the UUID pattern with the entropy rule, so a
   deployment's model name holding one reads as before A-78 for the fingerprint's metadata layer
   (u01's clause, L5).
+
+- **A-79 (this unit's half; the clause is u08's, added 2026-10-11, the amendment to OD-41 and
+  OD-42, decided under the owner's delegation, best practice, revisable) A stop is a filter's only
+  from the provider that documents it.** A target writes its own stop reason and error body, and
+  every adapter read every provider's filter words: an OpenAI-compatible target that answered
+  `refusal`, `SAFETY` or `guardrail_intervened`, or a WebSocket target that ended a turn on
+  `content_filter`, had its reply read as a filter's cut, and any adapter read Azure's HTTP 400
+  `content_filter` as a block (security audit of 2026-10-11, MEDIUM 3). The criterion:
+  - every adapter says which stops it honours, `filter_stops` (a `frozenset` of trimmed,
+    lower-case words): `BaseAdapter` none; `OpenAIAdapter` `content_filter`; `AnthropicAdapter`
+    `refusal`; `RestAdapter` its template's `reads_filter_stops`, which is `RestTemplate.filter_stops`
+    when set and otherwise the template's shape: Bedrock's (`guardrail_intervened`,
+    `content_filtered`) for a `finish_path` of `stopReason`, Gemini's and Vertex AI's (`safety`,
+    `blocklist`, `prohibited_content`, `spii`, `model_armor`, `recitation`) for a `text_path`
+    under `candidates.`, none otherwise (a target file's `provider: rest` target has the generic
+    template, with no `finish_path`, and reads none); `WebSocketAdapter` its file's
+    `response.filter_stops` (u00), none by default. The vocabularies, each sourced, are in
+    `shared.filter_stops`; a declaration must name values from them (`documented_stops`), refused
+    otherwise, and a WebSocket declaration beside a `final_value` is refused (every turn ends on
+    that value);
+  - every success reply leaves an adapter through `shared.provider_filter.stop_provenance`
+    (`BaseAdapter._checked`; the WebSocket adapter's turn): a stop that is some provider's filter
+    word and not one the adapter honours keeps its spelling and gets `ModelResponse.foreign_stop:
+    true` (u00), which every reader reads as an ordinary stop (u08). A REST body with no text and
+    a foreign stop is a `ResponseMalformed`, and so is a WebSocket turn with no text, no call and
+    only an undeclared word; the Bedrock trace is read only beside an honoured
+    `guardrail_intervened`;
+  - Azure's HTTP 400 `content_filter` is a `ProviderFilterBlock` only from an adapter that
+    honours `content_filter` (OpenAI's, or a REST template that declares it); from any other it is
+    an `AdapterStatusError`, an undocumented 4xx that stops the campaign, as before OD-41.
+    Gemini's `promptFeedback.blockReason` is read only by a template that honours one of Gemini's
+    stops (a template in Gemini's shape does, unless its `filter_stops` says otherwise);
+  - an `openai` or `anthropic` target file may declare `filter_stops` (u00 `Target`, u12): `[]`
+    for an endpoint that speaks the provider's API and has no such filter behind it (not a gateway
+    in front of Azure OpenAI, which relays Azure's), or the provider's own word only, checked by
+    the `Target` model on every path (`shared.filter_stops.target_filter_stops`). The composition
+    root passes it as the adapter's `declared_filter_stops`, which `filter_stops` returns
+    intersected with the provider's own words, so a declaration built past the model (by hand, a
+    `model_copy`) narrows and never widens them (pre-merge audit of `10cb526b`, LOW): with `[]` no
+    Azure 400, and no stop on a reply with text or a tool call, is read as a filter's (pre-merge
+    audit of `a55710e9`, LOW 3, best-practice addition);
+  - every adapter also says what its provider documents whatever is declared,
+    `own_filter_stops`: `BaseAdapter` none (the WebSocket adapter none either), `OpenAIAdapter`
+    `content_filter`, `AnthropicAdapter` `refusal`, `RestAdapter` its template's
+    `shape_filter_stops` (the shape's, as above). `stop_provenance` never marks a reply with no
+    text (`blank_text`: whitespace and the format characters that show and carry nothing, the
+    redactor's `EMPTY_FORMAT_RANGES`, so a zero-width space is none, pre-merge audit of
+    `e1a8aacf`, LOW 1, and a tag character or a format sign a font draws is text, that of
+    `3f7b1254`, LOW) and no tool call that ends on one of them: that
+    is the filter's withheld reply, scored as
+    without the declaration, never a pass. A gateway in front of Azure relays Azure's empty
+    `content_filter`, and the first version marked it foreign under `[]`, so `PI-DIRECT-001`
+    passed and the run exited 0 where without the declaration it is `filtered`, exit 3 (pre-merge
+    audit of `10cb526b`, MEDIUM). A REST body with no text reads the shape's word too, as `""`;
+  - the WebSocket adapter's `unreadable_advice` names `response.filter_stops`: a file written
+    before A-79 whose server ends a withheld turn on a filter word gets an unreadable reply for it
+    until the word is declared (LOW 2). A withheld turn is one with no tool call and no text
+    frame, or only blank ones (`blank_text`), ending on a documented filter word the file does
+    not declare: a relay of a streamed Azure reply sends a first delta of `""`, and until the
+    pre-merge audit of `e1a8aacf` (MEDIUM 1) only a turn with no text frame at all was
+    unreadable, so that one was the model's empty answer and passed, exit 0. A blank turn on a
+    declared word is the filter's cut, one on an ordinary stop an empty answer, as before.
+  Measured on `de122e26` through the CLI: an `openai` stub answering `JB-ROLEPLAY-001` with
+  harmful text and `finish_reason: refusal` gave three cut attempts and exit 0, and gives a
+  confirmed fail, exit 2, as the same text with `stop` does; an `anthropic` stub answering every
+  attack with Azure's 400 gave six blocked attempts and exit 0, and stops at the first, exit 3.
+  Checked by `tests/adapters/test_filter_stop_provenance.py` (54 tests; 52 fail on `de122e26`, the
+  two controls pass; 25 fail on `10cb526b`, among them the empty reply on the provider's own word
+  under a declaration, from OpenAI, Anthropic and a Gemini template, and an adapter given another
+  provider's word; 19 on `e1a8aacf`, among them `blank_text` on 8 strings and a zero-width reply
+  through the OpenAI adapter; 11 on `3f7b1254`: `blank_text` on 8 tag and sign strings, the
+  three kinds partitioning the redactor's list, the tag reply undeclared and under `[]` and a
+  sign under `[]`), `tests/adapters/test_provider_filter_block.py` (59: the Azure 400 from the
+  adapters that do not read it, 2 of them failing on `de122e26`) and the WebSocket cases of
+  `tests/adapters/test_malformed_replies.py` (42 tests; the blank turn on `""`, `"  "` and a
+  zero-width space, 3 failing on `e1a8aacf`, and its control).
 
 ## §8 Out of scope / forbidden
 - MUST NOT import or call vendor SDKs (`openai`, `anthropic` packages): httpx only (ADR-0002).

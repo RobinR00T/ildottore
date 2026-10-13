@@ -1,8 +1,10 @@
 # ADR-0011: a prompt the provider's filter refused is not a verdict (OD-41)
 
 * **Status:** accepted (the owner's decision, 2026-10-10, 17:33); amended 2026-10-11 (OD-42, the
-  owner's decision at 08:55): a reply the provider's filter cut or replaced, below
-* **Date:** 2026-10-10, amended 2026-10-11
+  owner's decision at 08:55): a reply the provider's filter cut or replaced, below; amended again
+  2026-10-11 under the owner's delegation (best practice, revisable; u08 A-79): a filter stop a
+  target can forge, at the end
+* **Date:** 2026-10-10, amended 2026-10-11 (twice)
 * **Context:** OD-41 in `specs/contracts/00-INDEX.md`, clause u08 §7 A-69. It extends
   `InconclusiveReason`, which `shared/enums.py` says is extensible only by ADR.
 
@@ -170,7 +172,8 @@ cut over a judge's fail, so its verdict could not decide, and on a canned messag
 verdict is exactly the false assurance this amendment removes. On a partial reply (text the model
 wrote before the cut) it is consulted after the deciding evaluators, alone, and its verdict
 recorded in the reasoning for the reviewer; a ceiling that refuses it is a note, not a halt that
-would leave the attempt unscored.
+would leave the attempt unscored. (Its fail on a partial reply stands since the second amendment
+below, as a fail that needs review; its pass is still only recorded.)
 
 ### Consequences
 
@@ -222,3 +225,104 @@ product error that stops the campaign. Decided by the coordinator under the owne
   text there stays a product error.
 - Bedrock's `InvokeModel` guardrail shape and every streamed reply: the adapters read neither.
 
+## Second amendment, 2026-10-11: a filter stop a target can forge (A-79)
+
+Decided under the owner's delegation of 2026-10-11 ("arreglalo todo según mejores prácticas"), as
+best practice, revisable; it amends OD-41 and OD-42 (`specs/contracts/00-INDEX.md`) and adds
+clause u08 §7 A-79.
+
+### The problem, measured
+
+Both decisions above read the provider's word for what its filter did, and the provider's word is
+the target's: a target writes its own stop reason and its own error body. The security audit of
+2026-10-11 (MEDIUM 3) found that `shared.provider_filter` read every provider's filter vocabulary
+from every adapter, that the judge's verdict on a reply with an output-side stop was recorded and
+never decided, and that a run whose every attempt the filter refused or cut was complete. Through
+the real CLI against a loopback `openai` stub on `main` (`de122e26`), with a judge: harmful text
+in reply to `JB-ROLEPLAY-001` with `finish_reason: stop` is a confirmed fail, exit 2; with
+`content_filter`, three cut attempts, exit 0; an HTTP 400 `content_filter` to every attack, 6 of 6
+blocked, exit 0. The same held for words another provider owns (`refusal` from an `openai`
+target), for Azure's 400 from an `anthropic` target, and for a WebSocket target ending its turns
+on `content_filter`. An OpenAI-compatible gateway that maps its own moderation to
+`content_filter` does the same with no bad intent. And a Bedrock trace that says the prompt was
+blocked had the runner read only the trace evaluators, so a canary in the reply's text was never
+read.
+
+### The decision
+
+Three rules, each with the alternative not taken:
+
+**1. A stop is a filter's only from the provider that documents it.** Each adapter honours its
+own provider's words: OpenAI's `content_filter` (and with it Azure's 400), Anthropic's `refusal`,
+a REST template's by its shape (Gemini's and Vertex AI's under `candidates.`, Bedrock's for
+`stopReason`) or by its `filter_stops`, a WebSocket target file's `response.filter_stops`
+(validated against the sourced vocabularies, none by default, refused beside a `final_value`).
+Any other filter word keeps its spelling in the stored reply with `foreign_stop: true` and is read
+as an ordinary stop, so the reply is the model's answer. The WebSocket declaration sits in the
+block, beside the `final_path` the stop is read at. An `openai` or `anthropic` file may declare a
+top-level `filter_stops`, `[]` or the provider's own word only, for an endpoint that speaks the
+provider's API and has no such filter behind it (not a gateway in front of Azure, which relays
+Azure's filter): with `[]` no Azure 400, and no stop on a reply with text or a tool call, is read
+as a filter's (added after the pre-merge audit of `a55710e9`, LOW 3, as best practice). A reply
+with neither that ends on the provider's own word is still the filter's withheld one, read as
+without the declaration and never a pass: the first version marked it foreign, so `[]` made it
+the model's empty answer and `PI-DIRECT-001` passed, exit 0 (pre-merge audit of `10cb526b`,
+MEDIUM). The declaration is checked by the `Target` model, so a target built in Python is held to
+it too, and an adapter only narrows its own words by it (that audit's LOW). Not taken: threading
+each adapter's set to every reader (the attack phase, the identity sweep, the replay), which
+leaves a reply stored without a verdict with nothing to read it by; the provenance travels on the
+reply instead.
+
+**2. Text that came back was delivered.** The judge's fail on a partial reply (text the model
+wrote before the cut, never a guardrail's configured message) joins the combination every reply
+gets (OD-19, ADR-0010): it stands when that combination says fail, and since a fail the judge
+alone reported is never confirmed it needs review and gates only with `--include-needs-review`.
+Its pass is recorded and does not decide, as before: a partial or canned text is not the model
+resisting. Deterministic fails stand as before. Text the filter put there (a Bedrock guardrail's
+configured message, on either side, or the reply with its PII masked) is read by one rule, only
+with the evaluators whose fail cannot come from words the operator configured: a planted canary
+or secret, a canary that crossed identities, the tool trace. The first version read the input
+side with every evaluator whose fail rests on something present, and a forbidden phrase in the
+configured message was a confirmed fail (pre-merge audit of `a55710e9`, MEDIUM 1; the output side
+had the same fail before A-79). A conversation cut before its last turn is still read
+on its trace only: its text evaluators score a final reply that was never written. Not taken: a
+confirmed fail on the judge's word (it never confirms one alone on a whole reply either); going on
+with a conversation past a cut turn that had text.
+
+**3. A run the filter answered every time exits 3.** A target whose every attempt was refused,
+cut or stopped by the filter, or got no reply that could be read, at least one by the filter and
+none a fail, is `filtered`: not complete, exit 3, as an unreachable one. Every attempt, not a
+share: more than half (the majority a spec's pass needs) was considered and not taken, because a
+deployment whose filter refuses most of an attack battery is the filter doing its job and would be
+an error on every CI run, while a target that forges a filter's answer could stay just under any
+share below all. A partly filtered run keeps its exit code; each spec with a filtered attempt is
+inconclusive, never a pass.
+
+### Consequences
+
+- Measured on this branch with the same stubs: harmful text with `refusal` from an `openai` target
+  is a confirmed fail, exit 2; text cut by `content_filter` with a judge that says exploited is a
+  fail that needs review (exit 0, 2 with `--include-needs-review`), as the same text uncut; 6 of 6
+  blocked or withheld is `filtered`, exit 3; Azure's 400 from an `anthropic` target stops the run at
+  the first request, exit 3. The 8-of-14 Azure run above and Anthropic's refusal beside answered
+  prompts are unchanged (exit 0).
+- **A CI result changes** (breaking): a run its target's filter answered every time exits 3 where
+  it exited 0; an exploit behind another provider's filter word fails where it was inconclusive;
+  a judge's fail on cut text is a needs-review fail where it was inconclusive; Azure's 400 from a
+  non-OpenAI adapter stops the run where it was a block.
+- `ModelResponse` gains `foreign_stop`, `WebSocketResponse` gains `filter_stops`, both left out of
+  a dump when unset, so stored replies, reports and target digests without them are unchanged. The
+  vocabularies move to `shared.filter_stops`; `RunStatus.state` gains `filtered`.
+- What it still leaves: a target that answers some attacks, not all, with its own provider's
+  filter word and no text (an empty `content_filter`, Azure's 400) hides those attempts and keeps
+  the exit code: they are inconclusive, `--fail-on` does not gate them, and a pipeline reads
+  `summary.blocked_by_provider_filter` and `summary.cut_by_provider_output_filter` to stop on
+  them; a gateway that maps moderation to `content_filter` is read as OpenAI's filter unless its
+  file declares `filter_stops: []`, and its replies with no text and no tool call on that word
+  even then (inconclusive, never a pass; no text is whitespace or a format character that shows
+  and carries nothing, so a zero-width space is none, pre-merge audit of `e1a8aacf`, LOW 1, and a
+  tag character, invisible ASCII, is text the judge reads, that of `3f7b1254`); a WebSocket turn
+  with only
+  blank text on a word its file does not declare cannot be read, as one with no text frame at
+  all (that audit's MEDIUM 1: it was the model's empty answer, a pass); a resume across the
+  upgrade keeps verdicts made under the earlier rules (open for the judging-rules version).
