@@ -322,3 +322,55 @@ def test_the_guard_is_on_the_installed_entry_point() -> None:
     assert main.app is app_mod.app
     assert isinstance(app_mod.app.info.cls, type)
     assert issubclass(app_mod.app.info.cls, app_mod.OperationalErrorGroup)
+
+
+# --- pre-merge audit of e6a1ab9b, LOW 5: the library's own errors and a stray exit ----------
+
+
+@pytest.mark.parametrize(
+    "raised",
+    ["click-exception", "file-error", "abort", "system-exit-1", "system-exit-2", "system-exit-str"],
+)
+def test_nothing_the_command_line_library_raises_exits_1(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, raised: str
+) -> None:
+    """A `ClickException` (exit 1 by default), an `Abort` (exit 1, "Aborted!") and a stray
+    `SystemExit(1)` (rich's answer to a broken pipe) passed the guard with exit 1."""
+
+    import typer._click.exceptions as click_errors
+
+    def boom(*args: object, **kwargs: object) -> object:
+        if raised == "click-exception":
+            raise click_errors.ClickException("boom")
+        if raised == "file-error":
+            raise click_errors.FileError("x.yaml", hint="cannot read")
+        if raised == "abort":
+            raise click_errors.Abort()
+        if raised == "system-exit-1":
+            raise SystemExit(1)
+        if raised == "system-exit-2":
+            raise SystemExit(2)
+        raise SystemExit("stopped")
+
+    monkeypatch.setattr(run_mod, "execute_run", boom)
+    code, shown = _run(tmp_path, "--run-db", str(tmp_path / "runs.sqlite"))
+    assert code == 3, shown
+
+
+def test_a_stray_exit_0_is_still_0(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def done(*args: object, **kwargs: object) -> object:
+        raise SystemExit(0)
+
+    monkeypatch.setattr(run_mod, "execute_run", done)
+    code, _ = _run(tmp_path, "--run-db", str(tmp_path / "runs.sqlite"))
+    assert code == 0
+
+
+def test_the_root_verbose_option_reads_as_a_counted_flag() -> None:
+    """LOW 8: its help read `-v, --verbose  INTEGER  [default: 0]`, as if it took a value."""
+
+    result = CliRunner().invoke(app, ["--help"])
+    assert result.exit_code == 0
+    line = next(row for row in result.output.splitlines() if "--verbose" in row)
+    assert "INTEGER" not in line
+    assert "default: 0" not in line

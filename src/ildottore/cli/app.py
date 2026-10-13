@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Annotated, Any, NoReturn
 
 import typer
+from typer._click.types import IntRange as TyperIntRange
 from typer.core import TyperGroup
 
 from ildottore import __version__
@@ -64,26 +65,32 @@ from ildottore.store.replay import TamperError
 _VERBOSE_KEY = "ildottore.verbose"
 
 
-def _flow_exceptions() -> tuple[type[BaseException], ...]:
-    """The command-line library's own control flow (exit, usage error, abort): let through.
+def _library_classes(name: str) -> tuple[type[BaseException], ...]:
+    """The command-line library's exception class ``name``, from each copy that is present.
 
     Typer 0.26 raises from its vendored copy of click; a click installed beside it has its own
-    classes, so both are listed when present (as ``_usage_errors_exit_3`` does below).
+    classes, so both are listed when present (as ``_click_errors_exit_3`` does below).
     """
 
     import importlib
 
-    found: list[type[BaseException]] = [typer.Exit]
-    for name in ("typer._click.exceptions", "click.exceptions"):
+    found: list[type[BaseException]] = []
+    for module_name in ("typer._click.exceptions", "click.exceptions"):
         try:
-            module = importlib.import_module(name)
-        except ImportError:
+            found.append(getattr(importlib.import_module(module_name), name))
+        except (ImportError, AttributeError):
             continue
-        found += [module.Exit, module.ClickException, module.Abort]
     return tuple(found)
 
 
-_FLOW = _flow_exceptions()
+#: An exit asked for: let through with its code.
+_EXITS: tuple[type[BaseException], ...] = (typer.Exit, *_library_classes("Exit"))
+#: The library's errors (a usage error, a file it could not open): let through, as exit 3
+#: (`_click_errors_exit_3` sets the class's code; `ClickException`'s default was 1).
+_CLICK_ERRORS = _library_classes("ClickException")
+#: The library's "Aborted!", exit 1 by default.
+_ABORTS = _library_classes("Abort")
+_PASS_THROUGH: tuple[type[BaseException], ...] = (*_EXITS, *_CLICK_ERRORS)
 
 
 class OperationalErrorGroup(TyperGroup):
@@ -99,8 +106,26 @@ class OperationalErrorGroup(TyperGroup):
     def invoke(self, ctx: Any) -> Any:
         try:
             return super().invoke(ctx)
-        except _FLOW:
+        except _PASS_THROUGH:
             raise
+        except _ABORTS as exc:
+            _echo_err("error: aborted")
+            raise typer.Exit(int(ExitCode.ERROR)) from exc
+        except SystemExit as exc:
+            # A stray exit: rich's answer to a broken pipe is SystemExit(1) (pre-merge audit of
+            # e6a1ab9b, MEDIUM 2 and LOW 5). 1 and 2 are the findings' codes here, and a text
+            # code exits 1, so those are exit 3; 0 and a code from 3 up keep their meaning.
+            if exc.code is None or (isinstance(exc.code, int) and exc.code not in (1, 2)):
+                raise
+            context = exc.__context__
+            if isinstance(context, OSError) and context.errno == errno.EPIPE:
+                _say_broken_pipe()
+            else:
+                _echo_err(
+                    f"error: unexpected exit with status {exc.code!r} (an internal error, not a "
+                    "scan result; rerun as `dottore -v ...` for the traceback)"
+                )
+            raise typer.Exit(int(ExitCode.ERROR)) from exc
         except Exception as exc:
             _report_unexpected(exc, verbose=int(ctx.meta.get(_VERBOSE_KEY, 0) or 0))
             raise typer.Exit(int(ExitCode.ERROR)) from exc
@@ -110,20 +135,7 @@ def _report_unexpected(exc: Exception, *, verbose: int) -> None:
     """Say on stderr what stopped the command, in one line (and its traceback under ``-v``)."""
 
     if isinstance(exc, OSError) and exc.errno == errno.EPIPE:
-        # The reader of stdout went away (`dottore ... | head`). Python would print a second
-        # error at exit, flushing into the closed pipe; the command-line library quiets that
-        # the same way.
-        import importlib
-
-        for name in ("typer._click.utils", "click.utils"):  # the vendored copy, else click's own
-            try:
-                pacify = importlib.import_module(name).PacifyFlushWrapper
-            except (ImportError, AttributeError):
-                continue
-            sys.stdout = pacify(sys.stdout)
-            sys.stderr = pacify(sys.stderr)
-            break
-        _echo_err("error: the output stream closed before the command finished (broken pipe)")
+        _say_broken_pipe()
         return
     try:
         said = _masked(exc)
@@ -141,10 +153,70 @@ def _report_unexpected(exc: Exception, *, verbose: int) -> None:
                 _echo_err("<unprintable traceback line>")
 
 
+#: What a command whose reader went away says, once, if stderr still has a reader.
+_BROKEN_PIPE = "error: the output stream closed before the command finished (broken pipe)"
+
+
+def _point_at_null(stream: Any) -> bool:
+    """Point ``stream``'s file descriptor at the null device; False when it has none.
+
+    The closed pipe is then never written again: the buffered text the next flush (the close
+    callback below, the interpreter's own at exit) writes goes nowhere, so neither raises a
+    second ``BrokenPipeError``, the one the command-line library turned into exit 1. What
+    Python's documentation advises for a closed stdout (Note on SIGPIPE, ``signal`` module).
+    """
+
+    try:
+        descriptor = stream.fileno()
+    except (AttributeError, OSError, ValueError):
+        return False
+    null = os.open(os.devnull, os.O_WRONLY)
+    try:
+        os.dup2(null, descriptor)
+    finally:
+        os.close(null)
+    return True
+
+
+def _say_broken_pipe() -> None:
+    """Silence the closed stdout and say why on stderr (silenced too when it is closed as well)."""
+
+    if not _point_at_null(sys.stdout):
+        import importlib
+
+        # A stream with no descriptor (a test runner's buffer): quiet it as the command-line
+        # library does, through its vendored copy or click's own.
+        for name in ("typer._click.utils", "click.utils"):
+            try:
+                pacify = importlib.import_module(name).PacifyFlushWrapper
+            except (ImportError, AttributeError):
+                continue
+            sys.stdout = pacify(sys.stdout)
+            break
+    try:
+        typer.echo(_BROKEN_PIPE, err=True)
+    except OSError:
+        _point_at_null(sys.stderr)
+
+
 def _echo_err(text: str) -> None:
     # stderr may be gone too: the exit code is then all that is left to say it.
     with contextlib.suppress(OSError):
         typer.echo(text, err=True)
+
+
+class _Counted(TyperIntRange):
+    """A counted flag's type (``-v``, ``-vv``), named so the help shows no value after it.
+
+    The help printed ``-v, --verbose  INTEGER  [default: 0]``, as if it took a number (pre-merge
+    audit of e6a1ab9b, LOW 8); the rich help leaves out a type named ``boolean``.
+    """
+
+    name = "boolean"
+
+
+def _counted() -> _Counted:
+    return _Counted(min=0)
 
 
 app = typer.Typer(
@@ -163,10 +235,11 @@ app.add_typer(schema_app, name="schema")
 
 # A usage error (an unknown option, a bad value) exits 3, the operational-error code. Click's
 # default is 2, which in this tool means "findings at or above --fail-on", so a CI step with a
-# typo in its flags reported a finding the scan never made (audit 2026-10-03, R17 / A-9).
-# Typer 0.26 raises from its own vendored copy of click, so both classes are set; a Typer
-# without the copy simply skips it.
-def _usage_errors_exit_3() -> None:
+# typo in its flags reported a finding the scan never made (audit 2026-10-03, R17 / A-9). Any
+# other error of the library (`ClickException`, `FileError`) exited 1, which means findings
+# below --fail-on (pre-merge audit of e6a1ab9b, LOW 5). Typer 0.26 raises from its own vendored
+# copy of click, so both copies' classes are set; a Typer without the copy simply skips it.
+def _click_errors_exit_3() -> None:
     import importlib
 
     for name in ("click.exceptions", "typer._click.exceptions"):
@@ -175,9 +248,10 @@ def _usage_errors_exit_3() -> None:
         except ImportError:
             continue
         module.UsageError.exit_code = int(ExitCode.ERROR)
+        module.ClickException.exit_code = int(ExitCode.ERROR)
 
 
-_usage_errors_exit_3()
+_click_errors_exit_3()
 
 
 def _version_callback(value: bool) -> None:
@@ -201,7 +275,26 @@ def _streams_escape_what_they_cannot_encode(ctx: typer.Context) -> None:
         errors = getattr(stream, "errors", None)
         if reconfigure is not None and errors is not None:
             reconfigure(errors="backslashreplace")
-            ctx.call_on_close(partial(reconfigure, errors=errors))
+            ctx.call_on_close(partial(_restore_stream, reconfigure, errors))
+
+
+def _restore_stream(reconfigure: Any, errors: str) -> None:
+    """Give a stream its error handler back; a reader that went away is exit 3 (u12 A-80).
+
+    Reconfiguring flushes, and a command whose output was still buffered met the closed pipe
+    here, after the command had returned: the command-line library turned that
+    ``BrokenPipeError`` into exit 1, which here means findings below ``--fail-on``, and a live
+    scan with findings piped into a closed reader sent its requests and exited 1 with nothing
+    said (pre-merge audit of ``e6a1ab9b``, MEDIUM 2).
+    """
+
+    try:
+        reconfigure(errors=errors)
+    except OSError as exc:
+        if exc.errno != errno.EPIPE:
+            raise
+        _say_broken_pipe()
+        raise typer.Exit(int(ExitCode.ERROR)) from exc
 
 
 @app.callback()
@@ -217,6 +310,8 @@ def _root(
             "-v",
             "--verbose",
             count=True,
+            click_type=_counted(),
+            show_default=False,
             help="Print the traceback of an internal error (exit 3), for any command. "
             "`run -v` also prints the resolved plan.",
         ),
@@ -651,7 +746,17 @@ def run(
     quiet: Annotated[
         bool, typer.Option("-q", "--quiet", help="Suppress per-spec progress.")
     ] = False,
-    verbose: Annotated[int, typer.Option("-v", "--verbose", count=True, help="Verbosity.")] = 0,
+    verbose: Annotated[
+        int,
+        typer.Option(
+            "-v",
+            "--verbose",
+            count=True,
+            click_type=_counted(),
+            show_default=False,
+            help="Print the resolved plan, then run (-vv: the skipped and blocked ids too).",
+        ),
+    ] = 0,
 ) -> None:
     """Run a campaign against one or more targets."""
 
