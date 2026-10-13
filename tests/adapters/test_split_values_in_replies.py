@@ -530,6 +530,150 @@ def test_an_event_stream_s_logprobs_spell_no_masked_token(no_known_secrets: None
     assert _split_masked(clean, Redactor(salt="s")) is clean
 
 
+def _spread(secret: str, start: int, rng: random.Random) -> str:
+    """A body with ``secret`` in 1-character events from ``start`` on, after a blob that masking
+    collapses to one mask, then 3,000 events of clean text: it runs past the window's cut."""
+
+    def event(content: str) -> str:
+        return f"data: {json.dumps({'choices': [{'delta': {'content': content}}]})}\n\n"
+
+    alphabet = string.ascii_letters + string.digits
+    blob = ""
+    while start - len(blob) > 1200:
+        blob += event("".join(rng.choice(alphabet) for _ in range(1000)))
+    return (
+        blob
+        + event(" the key is ")
+        + "".join(event(c) for c in secret)
+        + "".join(event(" more words") for _ in range(3000))
+    )
+
+
+def test_a_cut_stream_shows_none_of_a_secret_at_any_offset(no_known_secrets: None) -> None:
+    """Owner's decision, fail closed: no streamed text of a body cut by the window is shown. A
+    URL password of 600 characters of words, which no rule masks in part, showed 20 to 61 of
+    them from starts between 7 and 17 KiB on 5646b218 (`main` 0 to 3); and a stream that paused
+    past the window showed a registered credential's, an email's and a URL password's heads."""
+
+    rng = random.Random(3)  # noqa: S311 - a seeded fixture, not a secret
+    words = ["Correct", "Horse", "Battery", "Staple", "Quiet", "Harbour", "Lantern", "Meadow"]
+    password = ""
+    while len(password) < 600:
+        password += rng.choice(words) + "!"
+    password = password[:600]
+    for start in (2_000, 7_000, 10_000, 13_000, 16_000, 18_000):
+        body = _spread(f"https://ops:{password}@db.internal:5432/v1", start, rng)
+        excerpt, _ = reply_excerpt(body, Redactor(salt="s"))
+        assert not _shows(excerpt, password), (start, excerpt[-300:])
+    # A pause: the head streamed early, events with no content past the window, the rest after.
+    registered = "Correct Horse!Battery#Staple-Qx7Lm2Vt"
+    register_known_secret(registered)
+    for secret, private in (
+        (registered, registered),
+        (EMAIL, EMAIL.split("@")[0]),
+        (f"https://ops:{URL_PASSWORD}@db.internal:5432/v1", URL_PASSWORD),
+    ):
+        pieces = [f"Here: {secret}"[i : i + 3] for i in range(0, len(secret) + 6, 3)]
+        cut = len(pieces) * 2 // 3
+        body = "".join(f"data: {_oai(piece)}\n\n" for piece in pieces[:cut])
+        body += ": keep-alive ping\n\n" * 2500
+        body += "".join(f"data: {_oai(piece)}\n\n" for piece in pieces[cut:])
+        excerpt, _ = reply_excerpt(body, Redactor(salt="s"))
+        assert not _shows(excerpt, private), (secret, excerpt[:400])
+
+
+def test_a_clean_stream_past_the_window_differs_only_by_its_withheld_text() -> None:
+    """Its lines before the window's midpoint, each with its streamed text emptied, its keys,
+    structure, types, roles, ids, finish reasons and figures kept, under one notice."""
+
+    from ildottore.adapters.base import _stream_window, _withheld_notice
+
+    window, settled = _stream_window()
+    words = ("Paris is the capital of France and it has many people " * 400).split(" ")
+    shapes = {
+        "Anthropic": (
+            lambda w: (
+                "event: content_block_delta\ndata: "
+                + json.dumps(
+                    {
+                        "type": "content_block_delta",
+                        "index": 0,
+                        "delta": {"type": "text_delta", "text": w},
+                    }
+                )
+                + "\n\n"
+            ),
+            {
+                "type": "content_block_delta",
+                "index": 0,
+                "delta": {"type": "text_delta", "text": ""},
+            },
+        ),
+        "OpenAI": (
+            lambda w: (
+                "data: "
+                + json.dumps(
+                    {
+                        "id": "c1",
+                        "choices": [
+                            {
+                                "index": 0,
+                                "delta": {"role": "assistant", "content": w},
+                                "finish_reason": None,
+                            }
+                        ],
+                    }
+                )
+                + "\n\n"
+            ),
+            {
+                "id": "c1",
+                "choices": [
+                    {
+                        "index": 0,
+                        "delta": {"role": "assistant", "content": ""},
+                        "finish_reason": None,
+                    }
+                ],
+            },
+        ),
+        "Ollama": (
+            lambda w: (
+                json.dumps(
+                    {
+                        "model": "llama3",
+                        "message": {"role": "assistant", "content": w},
+                        "done": False,
+                    }
+                )
+                + "\n"
+            ),
+            {"model": "llama3", "message": {"role": "assistant", "content": ""}, "done": False},
+        ),
+    }
+    for name, (write, emptied) in shapes.items():
+        body = "".join(write(" " + w) for w in words)
+        assert len(body) > window
+        expected_text, at = "", 0
+        for line in re.split("(?<=\n)", body):
+            if line and at < settled:
+                if line.startswith("data: "):
+                    expected_text += "data: " + json.dumps(emptied) + "\n"
+                elif line.startswith("{"):
+                    expected_text += json.dumps(emptied) + "\n"
+                else:
+                    expected_text += line
+            at += len(line)
+        assert (
+            _split_masked(body, Redactor(salt="s")) == _withheld_notice(window) + expected_text
+        ), name
+        excerpt, _ = reply_excerpt(body, Redactor(salt="s"))
+        assert excerpt.count(_withheld_notice(window).strip()) == 1, name
+    # A clean stream that fits the window is quoted as it came, as main quotes it.
+    short = "".join(shapes["Anthropic"][0](" " + w) for w in words[:40])
+    assert _split_masked(short, Redactor(salt="s")) is short
+
+
 def test_what_is_no_stream_is_quoted_as_it_came() -> None:
     """One event, JSON lines that are arrays, Ollama's lines with blank lines between them."""
 
