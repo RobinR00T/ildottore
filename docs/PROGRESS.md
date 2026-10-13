@@ -25,6 +25,10 @@ The carryover ledger. Every agent session updates this so context survives even 
   R2-L6: the run row's `target_ids` use the identity mask; stale notes corrected.
 - The merge note in the entry below is stale: `fix/no-secret-in-fragments` changed its filler
   itself (75ca00ac), and the trial merge passes without it.
+- `make gates` green on `1e9d8329` (`PYTHONPATH` at the worktree's `src`, `TMPDIR` the system's),
+  05:38 to 05:47 CEST: 6210 tests, 97.86% coverage (main 97.84%; `redactor.py` misses 4 statements,
+  as main does), mypy 160 files, 4 import contracts kept, 75 specs lint OK, self-scan, bandit and
+  pip-audit clean.
 
 ## State, 2026-10-12 (morning): the pre-merge audit of A-78 (`0b4b1f14`), fixed
 
