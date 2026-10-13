@@ -675,6 +675,44 @@ def test_a_clean_stream_past_the_window_differs_only_by_its_withheld_text() -> N
     assert _split_masked(short, Redactor(salt="s")) is short
 
 
+def test_a_cut_stream_s_excerpt_reaches_no_further_into_the_body_than_main_s() -> None:
+    """Fifth pre-merge audit: pieces of a secret outside the streamed text (comment lines, `id:`
+    lines, an event's JSON `id`) every other event among 600 with 200 characters of content.
+    The emptied lines are short, so the 4 KiB excerpt reached lines `main`'s never reached: 11 of
+    11 pieces shown, `main` 8. Only the lines `main`'s excerpt shows whole are kept, and that is
+    not a count of bytes: where `main`'s masks lengthen its text (short emails in every event),
+    a bound of 4 KiB still showed 8 pieces where `main` showed none."""
+
+    from ildottore.adapters.base import _quoted
+
+    secret = "Zq8xW2pL9mK4vB7nQ1eR5tY3uI6oP0aSdF2gH4jKw8Ex"
+    pieces = [secret[i : i + 4] for i in range(0, len(secret), 4)]
+    cases = [(where, "w" * 200, 0) for where in ("comment", "id line", "JSON id")]
+    cases += [(where, "a@b.io c@d.io e@f.io g@h.io", 40) for where in ("comment", "id line")]
+    for where, content, first in cases:
+        body = ""
+        for i in range(600):
+            k = (i - first) // 2
+            piece = pieces[k] if i >= first and i % 2 == 0 and k < len(pieces) else None
+            event: dict[str, object] = {"id": "x1", "choices": [{"delta": {"content": content}}]}
+            before = ""
+            if piece and where == "comment":
+                before = f": {piece}\n"
+            elif piece and where == "id line":
+                before = f"id: {piece}\n"
+            elif piece:
+                event["id"] = piece
+            body += before + "data: " + json.dumps(event, separators=(",", ":")) + "\n\n"
+
+        def shown(text: str) -> set[str]:
+            return {p for p in pieces if re.search(rf"(?<![A-Za-z0-9]){p}(?![A-Za-z0-9])", text)}
+
+        excerpt, _ = reply_excerpt(body, Redactor(salt="s"))
+        assert excerpt.startswith("[il dottore: "), where
+        main = _quoted(body.encode(), Redactor(salt="s"))  # main's excerpt: the body unrewritten
+        assert shown(excerpt) <= shown(main), (where, first, sorted(shown(excerpt) - shown(main)))
+
+
 def test_what_is_no_stream_is_quoted_as_it_came() -> None:
     """One event, JSON lines that are arrays, Ollama's lines with blank lines between them."""
 
