@@ -711,8 +711,11 @@ checks the request, token and attempts axes and commits all or none; `execute_at
 the same attempt), so attempts never exceed requests. `debit_attempt` stays for a library caller
 and the runner no longer calls it. In the CLI the attempts ceiling is the effective request
 ceiling (`budgets_for`; a library caller may still name its own): derived from the estimate and
-clamped at 20,000 on its own, no flag raised it and `--runs 100` over the battery halted on
-`max_attempts` with requests to spare; now it cannot stop a run before the request ceiling, and
+clamped at 20,000 on its own, no flag raised it, and `--runs 200 --budget-requests 60000
+--budget-tokens 30000000 --budget-wall 7200` over the battery halted on `max_attempts` (limit
+20,000, 2 of 75 specs unfinished) with requests to spare (`--runs 100` stays under it: 10,300
+attempts); now it cannot stop a run before the request ceiling (the same run: exit 2, 20,600
+attempts), and
 `--budget-requests` raises both. A resume reads a stored attempts figure as at most the stored
 requests, for a run recorded before this. Checked by `tests/cli/test_attempt_ceiling.py`.
 

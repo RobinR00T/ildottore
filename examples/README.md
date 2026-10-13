@@ -198,9 +198,12 @@ dottore fleet examples/fleet.yaml --out .dottore/fleet -oJ fleet.json --run-db .
 
 The last line prints `Run it:` followed by `dottore run <the two target files> --scope
 ".dottore/fleet/scope.yaml" --judge ".dottore/fleet/judge.yaml" --run-db ".dottore/runs.sqlite" -oJ
-"fleet.json"` (checked 2026-10-12 from a directory outside the repository: `fleet` and `run` read
-`specs/` there when it exists, else the battery beside the installed package, so neither needs the
-repository root any more; `fleet --run` used to fail with `path not found: specs` anywhere else).
+"fleet.json"` (checked 2026-10-12 from a directory outside the repository, with the editable
+install of INSTALL.md: `fleet` and `run` read `specs/` there when it exists, else the battery
+beside the installed package, and say on stderr when they fall back, so neither needs the
+repository root any more; `fleet --run` used to fail with `path not found: specs` anywhere else.
+A wheel built from this repository ships neither the battery nor the schemas, so this holds for a
+source checkout or an editable install only).
 
 `examples/fleet.yaml` declares its judge in a `judge:` block, so the generated scope
 authorizes it and `fleet` writes it to `.dottore/fleet/judge.yaml`. Passing

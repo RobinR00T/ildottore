@@ -18,12 +18,14 @@ The carryover ledger. Every agent session updates this so context survives even 
   <path>: <reason>`), in every mode (read-only in the ones that send nothing); concurrent opens
   wait 30 s and retry the WAL switch, and a migration runs under the write lock (18 of 80
   concurrent first opens failed on `de122e26`, 0 of 160 here; through the CLI 1 of 18 runs died
-  there, 0 of 30 here; the auditor saw 5 of 6). The root command group maps any exception no
+  there, 0 of 30 here; the original audit saw 5 of 6, the pre-merge audit 2 of 18). The root
+  command group maps any exception no
   command handles to exit 3 with one masked line, the traceback under the new root `dottore -v`.
   Against a loopback stub, `-sV --run-db <garbage>`: 18 requests then exit 1 before, 0 and exit 3
   now.
 - M2: the attempts ceiling is the request ceiling, and an attempt counts with its first accepted
-  request. `--runs 200` over the battery (`--budget-requests 60000`): exit 3 at `max_attempts`
+  request. `--runs 200` over the battery (`--budget-requests 60000 --budget-tokens 30000000
+  --budget-wall 7200`): exit 3 at `max_attempts`
   20,000 with 2 specs unfinished before, exit 2 with 20,600 attempts now. Under
   `--budget-requests 100`: 128 attempts for 100 requests and +43 per resume before, 85 and +0 now.
   `--estimate` prints the ceilings. M3: an `--evidence-root` that is a regular file is refused

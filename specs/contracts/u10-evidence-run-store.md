@@ -36,7 +36,7 @@ the u00 protocols:
 ## §4 Known constraints: KEEP / DECIDE
 - KEEP: evidence artifacts are **immutable + content-addressed** (SHA-256); a rewrite with the
   same content is a no-op, differing content is a new ref (never overwrites).
-- KEEP: SQLite opened with `PRAGMA journal_mode=WAL`, `foreign_keys=ON`, a 30 s busy timeout;
+- KEEP: SQLite opened with `PRAGMA journal_mode=WAL`, `foreign_keys=ON`, a 30 s interruptible lock wait;
   all writes in a transaction, a migration in one under the write lock; schema version tracked in
   a `schema_version` table (forward-only migrations) (A-80).
 - KEEP: redaction is **fail-closed**: if the redactor errors or a raw-secret pattern survives,
@@ -170,17 +170,26 @@ an attempt's status and a footer line with their count. Checked by
 `tests/cli/test_operator_declaration_campaign.py`.
 
 **A-80 (u12's clause; this unit's half, added 2026-10-12) The stores open under contention, say
-which path failed, and prove themselves before a send.** `migrations.connect` waits
-`BUSY_TIMEOUT_S` (30 s, was SQLite's 5 s default) for a lock another connection holds and retries
-the switch to WAL while SQLite answers it busy (it does so at once, without the busy handler, while
-another connection holds the file: 18 of 80 concurrent first opens failed, 0 of 160 after);
-`migrate` takes the write lock (`BEGIN IMMEDIATE`) before it reads the version it starts from and
-applies every pending step in that one transaction (two processes migrating together could both
-add the same column, and `executescript` committed each script step on its own). A path that cannot
+which path failed, and prove themselves before a send.** `migrations.connect` returns a
+`StoreConnection`: SQLite waits 0.1 s per try, and `execute`, `executemany` and `commit` retry
+while it answers busy, `BUSY_TIMEOUT_S` (30 s, was SQLite's 5 s default) in all, with Python's
+interruptible sleeps between tries, so Ctrl-C and SIGTERM stop a wait at once (a single 30 s wait
+in C held them for about 32 s, pre-merge audit of `e6a1ab9b`, LOW 1); a wait past `NOTICE_AFTER_S`
+(1 s) writes `note: waiting for the run store at <path>: another process holds its lock (up to
+30 s; Ctrl-C stops the wait)` to stderr once per connection, and one that runs out raises
+`StoreLocked` (a `sqlite3.OperationalError`) naming the store; a stale snapshot
+(`SQLITE_BUSY_SNAPSHOT`) is not waited on. That covers the switch to WAL, which SQLite answers
+busy at once, without its busy handler, while another connection holds the file (18 of 80
+concurrent first opens failed, 0 of 160 after). `migrate` takes the write lock (`BEGIN IMMEDIATE`)
+before it reads the version it starts from and applies every pending step in that one transaction
+(two processes migrating together could both add the same column, and `executescript` committed
+each script step on its own), and refuses a connection with a transaction already open rather
+than committing it. A path that cannot
 be opened (a directory, a file that is not SQLite, a path under a regular file), or a sqlite3 error
 inside `with SqliteRunStore(...)`, is a `RunStoreError` (an `OSError`) whose message names the
 path. `check_store_path` and `evidence_fs.check_root_path` refuse such paths writing nothing (for
-the modes that send nothing); `evidence_fs.prepare_run` creates `<root>/<run>/attempts` (and
+the modes that send nothing, and for `replay --run-db`), both through `paths.nearest_existing`;
+`evidence_fs.prepare_run` creates `<root>/<run>/attempts` (and
 `probes`) and writes and removes a temporary file in each before the first send, raising
 `EvidenceStoreError` (an `OSError`) naming the root. Checked by
 `tests/store/test_store_open_errors.py` and `tests/cli/test_evidence_root_preflight.py`.

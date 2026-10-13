@@ -281,12 +281,16 @@ Evidence store root (default .dottore/evidence) and run store SQLite path (defau
 under a regular file is refused in every mode before anything is sent, writing nothing (exit 3:
 "cannot open the run store at", "cannot write evidence under"); a sending run opens the run store
 and proves each run's evidence directory writable before its first request. Several runs may share
-one store: a connection waits up to 30 s for a lock another holds.
+one store: a write waits up to 30 s for a lock another process holds, in short tries Ctrl-C
+stops, says so on stderr after a second ("waiting for the run store"), and names the store when
+it gives up ("stayed locked by another process"). A report inside a run directory of the evidence
+store is refused.
 .TP
 .B --spec-path \fIPATH\fR
 Spec search path. Default: specs/ in the working directory when it is a directory, else the
-battery beside the installed package (a source checkout or an editable install), for every
-command; a path that does not exist is "spec path not found" (exit 3).
+battery beside the installed package (a source checkout or an editable install), which run,
+fleet --run, registry ls, describe, coverage and render-media say on stderr when they fall back
+to; lint does not fall back. A path that does not exist is "spec path not found" (exit 3).
 .TP
 .B --no-color
 Disable colour output.
@@ -305,7 +309,8 @@ Clean: no gated finding at or above --fail-on.
 .TP
 .B 1
 Findings present but all below --fail-on (for lint, lint findings). Nothing else exits 1: an
-internal error is 3.
+internal error, an error or abort of the command-line library, a stray exit with status 1 and a
+broken output pipe are 3.
 .TP
 .B 2
 At least one gated finding at or above --fail-on.

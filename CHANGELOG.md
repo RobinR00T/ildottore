@@ -9,14 +9,21 @@ versioning: [SemVer](https://semver.org/).
 
 - **Nothing but findings exits 1.** Exit 1 means "findings below `--fail-on`", so a CI gate that
   lets 1 through read a crashed scan as a pass. A `--run-db` naming a directory or a file that is
-  not SQLite, `replay --run-db <garbage>`, and five of six concurrent `dottore run` on a new
-  `--run-db` (`OperationalError: database is locked`) ended in a traceback with exit 1. They are
+  not SQLite, `replay --run-db <garbage>`, and some of several `dottore run` started together on a
+  new `--run-db` (`OperationalError: database is locked`; 5 of 6 in the audit, 1 and 2 of 18 in
+  two re-measurements) ended in a traceback with exit 1. They are
   now `error: cannot open the run store at <path>: <reason>` (exit 3), a sqlite3 error later in a
   run is `error: the run store at <path> failed: <reason>` (exit 3), and the root command group
   turns any exception no command handles into exit 3 with one masked line (``error: unexpected
   <Class>: <message> (an internal error, not a scan result; rerun as `dottore -v ...` for the
   traceback)``), its traceback (masked line by line) only under the new root `dottore -v` or `run
-  -v`. A broken output pipe is exit 3; Ctrl-C keeps 130; `lint` still exits 1 on lint findings.
+  -v`. The command-line library's other errors (a `ClickException`, a `FileError`: exit 1 by
+  default), its `Aborted!` and an exit a library asks for with status 1, 2 or a message are exit 3
+  too. A broken output pipe is exit 3 with `error: the output stream closed before the command
+  finished (broken pipe)`: `registry ls`, `lint`, `describe` and `coverage` into a reader that had
+  gone exited 1, as did a scan with findings, whose progress lines met the closed pipe (rich
+  answers that with `SystemExit(1)`); stdout is pointed at the null device so no later flush meets
+  the pipe again. Ctrl-C keeps 130; `lint` still exits 1 on lint findings.
 - **The stores are checked before the first send.** Every mode checks `--run-db` and
   `--evidence-root` without writing (the dry run, the estimate and `-sn` included, which still
   write nothing), and a sending run opens the run store and proves each run's `attempts/` (and
@@ -26,16 +33,22 @@ versioning: [SemVer](https://semver.org/).
   `NotADirectoryError`, nothing stored, and the requests counted against the resume's ceiling).
   Against a loopback stub: `-sV --run-db <garbage>` sent 18 requests then exited 1, now 0 and 3;
   `--quick --evidence-root <file>` sent 5 then exited 3, now 0 and 3.
-- **Concurrent runs on one store.** A connection waits 30 s for a lock another holds (it was
-  SQLite's 5 s default), the switch to WAL is retried while SQLite refuses it as busy (it does so at
-  once, without waiting, while another connection holds the file), and a migration takes the write
-  lock before it reads the version it starts from, in one transaction (two processes could both add
-  the same column, and each script step committed on its own). Measured: 18 of 80 concurrent first
-  opens failed before (8 processes, 10 rounds), 0 of 160 after; through the CLI, 1 of 18 runs died
-  before (three rounds of six), 0 of 30 after (five rounds).
+- **Concurrent runs on one store.** A statement waits up to 30 s for a lock another process holds
+  (it was SQLite's 5 s default), in tries of 0.1 s with Python's sleeps between them, so Ctrl-C
+  and SIGTERM stop the wait at once (one 30 s wait in C held them for about 32 s); a wait past a
+  second prints `note: waiting for the run store at <path>: another process holds its lock (up to
+  30 s; Ctrl-C stops the wait)` once, and one that runs out is `the run store at <path> stayed
+  locked by another process for 30 s` (exit 3), naming the store mid-run too. The switch to WAL is
+  retried the same way (SQLite refuses it as busy at once while another connection holds the
+  file), and a migration takes the write lock before it reads the version it starts from, in one
+  transaction (two processes could both add the same column, and each script step committed on its
+  own; it no longer commits a caller's open transaction either). Measured: 18 of 80 concurrent
+  first opens failed before (8 processes, 10 rounds), 0 of 160 after; through the CLI, 1 of 18 runs
+  died before (three rounds of six), 0 of 30 after (five rounds).
 - **A campaign over 20,000 attempts finishes.** The attempts ceiling was derived from the estimate
   and capped at 20,000 on its own, the `--budget-*` overrides left it out and no flag raised it:
-  `--runs 200` over the battery under `--budget-requests 60000` halted on `max_attempts` (limit
+  `--runs 200 --budget-requests 60000 --budget-tokens 30000000 --budget-wall 7200` over the
+  battery halted on `max_attempts` (limit
   20,000) with 2 of 75 specs unfinished, exit 3. The attempts ceiling is the request ceiling now
   (an attempt is at least one request), so it cannot stop a run before the request ceiling and
   `--budget-requests` raises both; the same run completes (20,600 attempts, 29,400 requests, exit
@@ -54,22 +67,33 @@ versioning: [SemVer](https://semver.org/).
 - **A report never overwrites an input.** `-oJ scope.yaml -oH target.yaml` overwrote both with the
   reports after the run. A report path that is the `--scope` file, a target file, the `--judge`
   file, the fleet file of `fleet --run`, the run store or its `-wal`, `-shm` or `-journal` file
-  (before the store exists too), or a file of the spec path is refused before anything is sent
-  (exit 3); an existing output is compared as a file, so a symlink, a hard link or another
-  spelling on a case-insensitive volume is caught.
+  (before the store exists too, and beside the file a symlinked `--run-db` names), or a file of
+  the spec path is refused before anything is sent (exit 3); an existing output is compared with
+  each input and every file of the spec path by device and inode, so a symlink, a hard link or
+  another spelling on a case-insensitive volume is caught (`-oJ SPECS/attacks/<spec>.yaml` beside
+  `--spec-path specs`). So is a report inside a run directory of the evidence store
+  (`<evidence-root>/<run-id>/`): one written over an artifact made the next resume refuse the run
+  as tampered. `replay --run-db <directory>` is refused as `run` refuses it; it warned and replayed
+  without the manifest check.
 - **One default spec path, and `fleet --run` from anywhere.** `fleet --run` read `specs/` in the
   working directory with no option to change it (`path not found: specs` outside the repository
-  root). Every command now reads `specs/` in the working directory when it is a directory, else
-  the battery beside the installed package (a source checkout or an editable install), and a spec
-  path that does not exist is `spec path not found: <path>. Pass --spec-path <dir>; ...` instead of
-  `1 spec file(s) failed to load ...: ?: path not found: specs`.
+  root). `run`, `fleet --run`, `registry ls`, `describe`, `coverage` and `render-media` now read
+  `specs/` in the working directory when it is a directory, else the battery beside the installed
+  package (a source checkout or an editable install; a wheel ships neither the battery nor the
+  schemas), and say on stderr when they fall back (`note: there is no specs/ directory here, so
+  this reads the battery beside the installed package: <path> ...`). `dottore lint` does not fall
+  back: in a pack's own repository with no `specs/` it still exits 1 (`path not found: specs`)
+  rather than passing the built-in battery. A spec path that does not exist is `spec path not
+  found: <path>. Pass --spec-path <dir>; ...` instead of `1 spec file(s) failed to load ...: ?:
+  path not found: specs`.
 
 ### Added (`fleet` takes run's store and report options; a root `-v`)
 
 - `dottore fleet` takes `--spec-path`, `--evidence-root`, `--run-db` and `-oJ/-oH/-oS/-oX/-oA` with
   `run`'s meaning; without `--run` they are carried into the `dottore run` line it prints.
 - `dottore -v <command>` prints the traceback of an internal error for any command (`run -v` does
-  too, beside printing the plan).
+  too, beside printing the plan). Both read as counted flags in the help (`INTEGER [default: 0]`
+  before).
 
 ### Added (a target file may declare one of its own granted tools not destructive, OD-43)
 

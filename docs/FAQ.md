@@ -158,17 +158,20 @@ traceback). A gate should still fail on anything above `1` it does not expect.
 
 ### Can several runs share one `--run-db`?
 
-Yes, a new one included: a connection waits up to 30 s for a lock another holds, and two runs
-creating the store together set it up once. Until 2026-10-12, five of six runs started together
-on a new store died with `database is locked` (exit 1). A store path that cannot be one (a
-directory, a file that is not SQLite) is refused with exit `3` before anything is sent, as is an
+Yes, a new one included: a write waits up to 30 s for a lock another process holds (Ctrl-C stops
+the wait at once, and a wait past a second is said on stderr), and runs creating the store
+together set it up once. Until 2026-10-12 some of the runs started together on a new store died
+with `database is locked` and exit 1 (1 and 2 of 18 in two measurements, 5 of 6 in the audit
+that found it). A store path that cannot be one (a directory, a file that is not SQLite) is
+refused with exit `3` before anything is sent, `replay --run-db` included, as is an
 `--evidence-root` that is a regular file; `--dry-run` and `--estimate` say so too, writing
 nothing.
 
 ### Why did `--budget-requests` not let my campaign finish past 20,000 attempts?
 
 Before 2026-10-12 the attempts ceiling was derived on its own and capped at 20,000, and no flag
-raised it: `--runs 200` over the battery halted on `max_attempts` with requests to spare. The
+raised it: `--runs 200 --budget-requests 60000 --budget-tokens 30000000 --budget-wall 7200` over
+the battery halted on `max_attempts` with requests to spare. The
 attempts ceiling is the request ceiling now (an attempt is at least one request, and it counts
 only once its first request is accepted), so `--budget-requests` raises both. `--estimate` prints
 the ceilings a run will have.

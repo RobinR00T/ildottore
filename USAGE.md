@@ -213,7 +213,10 @@ dottore fleet fleet.yaml --run -oJ fleet.json --run-db fleet.sqlite   # run's st
 
 `fleet` takes `--spec-path`, `--evidence-root`, `--run-db` and `-oJ/-oH/-oS/-oX/-oA` with `run`'s
 meaning (without `--run` they are carried into the `dottore run` line it prints), and reads the
-same default spec path, so it runs from any directory.
+same default spec path as `run`: `specs/` in the working directory, else the battery beside the
+installed package. From a source checkout or an editable install it therefore runs from any
+directory (saying on stderr which battery it read); a wheel ships neither the battery nor the
+schemas, so pass `--spec-path` there and expect the schema to be missing too.
 
 The judge goes in the fleet file too, as a `judge:` block (`id`, `endpoint`, `model`,
 `api_key_env`), because the generated scope is built from that file alone: `fleet` writes it
