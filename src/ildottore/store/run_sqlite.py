@@ -565,10 +565,6 @@ class SqliteRunStore:
             return None
         return self._redactor.redact_text(value)
 
-    def _redact_json(self, obj: object) -> str:
-        redacted = self._redactor.redact(obj)
-        return json.dumps(redacted, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
-
 
 _SHA256 = re.compile(r"[0-9a-f]{64}")
 
