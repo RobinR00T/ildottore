@@ -388,24 +388,28 @@ reads as U+FFFD, since httpx decodes the stream as text.
   Ollama's, a `done` beside a `message` or a `response`, or an OpenAI chunk); any other is records,
   masked string by string as `main` masks it (LOW 2: 181 of 217 clean JSON Lines logs were quoted
   otherwise). Only the head the excerpt can read is read: four times its read extent (twice what
-  it keeps plus four times the longest registered credential or 256), cut at a line end, 37 KiB
-  with no long credential. When the body was longer, only the lines that start in the first half
-  of that head are shown, and the body is quoted as it came when none of them changed (fourth
-  pre-merge audit, MEDIUM: masks shorten the text, so what lay near the cut moved up into the
-  4 KiB the excerpt keeps, and a URL password with symbols or a 300-character registered
-  credential straddling the cut showed its beginning); each stream whose last piece lies past
-  that half has its open tail left out (`redactor.withhold_open_ends`, read on the stream as the
-  target wrote it: the run of characters other than white space it ends with, its last 256 when
-  longer, at least its last 32, and a longer end that begins a registered credential; the run of
-  key characters it was before stopped at a `!`, `#` or `$`, and, read after masking, missed a
-  long registered credential the entropy rule had masked in part), so a secret whose pieces
-  reach from the shown half past the cut is not shown in part, save the case u01 A-77's
-  not-covered list names (unregistered, masked by no rule in part, longer than 256 characters or
-  holding white space and longer than 32). A clean stream loses its last word: its last 256
-  characters reached back into what the excerpt shows in OpenAI chunks streamed with 20
-  alternatives. The excerpt is read from that head alone (LOW 4: a 4 MiB stream of tiny events
-  cost up to 12.8 s, `main` 0.00 s; now under 0.25 s on every shape of the audit's `cost3.py`).
-  A masked unit is written again on one `data` line (a text holding LF, on as many), JSON in the
+  it keeps plus four times the longest registered credential or 256), cut at a line end, 36 KiB
+  with no long credential. A body that fits that head is masked as above. One longer than it has its
+  streamed text withheld instead (the owner's decision of 2026-10-13, under the delegation, best
+  practice: fail closed, an excerpt may show less than `main`, never more): the excerpt keeps the
+  lines that start before the head's midpoint, with every streamed text value in them emptied
+  (content and delta text, a `response`, a message's content, a logprob token and its alternatives,
+  a `data:` line's text; `bytes` and Ollama's `context` nulled), and keeps keys, structure, numbers,
+  booleans and the protocol's fields above, and a `role`, a `finish_reason`, a `stop_reason` and a
+  `service_tier`, at any depth (an event's `delta.type`, a tool call's `id`); its first line says,
+  once, that the text it streams is withheld because the reply is longer than the head the excerpt
+  reads. A secret whose pieces cross the head's cut is never read whole, so no rule can mask it:
+  masked across the head, what lay near the cut moved up into the 4 KiB the excerpt keeps (fourth
+  pre-merge audit, MEDIUM: a URL password with symbols showed its beginning at 7 of 31 cuts, a
+  300-character registered credential at 70 of 111), and with only the head's first half shown and a
+  stream's open tail left out, a 600-character URL password of words still showed 20 to 61 of its
+  characters and a stream that paused past the head showed its secret's beginning. Withheld, none
+  shows; a clean body past the head differs from `main`'s excerpt only by that text and the notice
+  (240 of 320 in the auditor's eight shapes, the six that stream; every event or line shown equals
+  the body's with its text emptied, 27,226 checked), and one that fits is `main`'s byte for byte
+  (1,498 of 1,498). The excerpt is read from that head alone (LOW 4: a 4 MiB stream of tiny events
+  cost up to 12.8 s, `main` 0.00 s; now under 0.25 s on every shape of the audit's `cost3.py`). A
+  masked unit is written again on one `data` line (a text holding LF, on as many), JSON in the
   compact form it had, every other line as it came. A body rewritten (a JSON body or a stream) is
   written with `ensure_ascii` off, as the target wrote it: escaped, a phone or a card grouped by
   U+00A0 or U+202F outside any stream reached the excerpt's redaction as `\u00a0` and was shown
@@ -416,9 +420,10 @@ reads as U+FFFD, since httpx decodes the stream as text.
   before; its `size` is the body's as it came. Checked by
   `tests/adapters/test_split_values_in_replies.py` (its first seven fail on `de122e26`, the three
   event-stream cases on `c4bd2012`, the six grouped-number cases and 12 of the 20 stream shapes on
-  `ea13562f`, the log, block and window cases on `74ace451`, and on `5dd87b42` the five cases of a
-  secret straddling the window's cut or reaching past it from the shown half, an event stream's
-  logprobs and a clean stream of heavy events).
+  `ea13562f`, the log, block and window cases on `74ace451`, on `5dd87b42` the five cases of a
+  secret straddling the window's cut or reaching past it from the shown half and an event stream's
+  logprobs, and on `5646b218` a secret at any offset of a cut stream, a paused stream, and a clean
+  stream past the window).
 
 - **A reply the provider's filter stopped keeps its stop reason, and the REST adapter reads a
   Bedrock guardrail's side (added 2026-10-11, OD-42; the runner's half is u08 A-70).** The stop

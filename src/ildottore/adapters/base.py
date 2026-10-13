@@ -308,7 +308,7 @@ def _stream_window() -> tuple[int, int]:
     then a margin for a registered credential or a short key-shaped token crossing that cut,
     :func:`reply_excerpt`). A window of four times that leaves the excerpt reading well inside
     what it shows, and nothing past the window is read: a 4 MiB stream of tiny events cost up to
-    12.8 s and costs what 37 KiB does. A body the window cuts has its streamed text withheld
+    12.8 s and costs what 36 KiB does. A body the window cuts has its streamed text withheld
     (:func:`_withheld_units`): a secret whose pieces cross the cut is never read whole, so no
     rule can mask it, and no part of it may be shown.
     """

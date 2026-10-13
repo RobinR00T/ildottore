@@ -739,29 +739,34 @@ frame type at `type`, the default `type_path`. `redactor.split_texts` gives the 
 store's guard checks, `redactor.withhold_split` empties every piece of a value's streams (the
 runner's answer to a refused write, u08's half), and `redactor.mask_keys` masks a mapping's keys
 with the store's numbering (moved from the store; the store and the reports both use it, MEDIUM 2;
-`KeysNotDistinct` where no number tells two apart). Not covered: a secret a target splits over a
-list of its own JSON that is no stream (a REST body's array); a secret its alternatives alone
-spell while the tokens beside them are kept (a rank of `top` or `top_logprobs`, and the `bytes` of
-those alternatives, as an unreadable reply's excerpt quotes them: no model's alternatives spell a
-text, each being weighed for the token the model wrote before it, and joining them masked clean
-replies); in an unreadable reply's excerpt: a line that is no field of an event stream (a `data:`
-after a space, a `Data:` line, a delta on a plain line); pieces in a comment, an `event:` or an
-`id:` line; data whose pieces each begin with a space the format keeps (`data:  x`); an event whose
-JSON a raw CR or LF breaks (read as text); JSON lines in any shape but Ollama's and OpenAI's chunks
-(they are records, masked string by string), JSON lines with one line that is not a JSON object (a
-trailing `[DONE]`, a leading log line), lines of JSON strings or with CR-only ends, and a body
-mixing events with JSON lines; a stream whose pieces stop in the first half of the read window and
-resume past it (read as complete); a secret not registered, which no rule masks in part, longer
-than 256 characters or holding white space and longer than 32, whose pieces reach from the read
-window's first half past its end: what of it lies before the open tail is shown (a 600-character
-URL password of words and `!` in 1-character events showed 20 to 61 of its characters from
-starts between 7 and 17 KiB, 52 to 61 on `5dd87b42`, where `main`'s excerpt, which joins no
-piece, showed 0 to 3); and any other line-based format (u04's half says what is read);
-a secret encoded rather than split; a field of a transcript that the target file declares as the
-protocol's; and evidence written before A-77, whose pieces stay on disk. Checks:
-`tests/test_redactor_split_values.py` (a property test cuts a key, a registered credential, an
-email and four URLs with a password into pieces of 1 to 4 characters, as tokens and as deltas,
-and checks every joined text is a fixed point), `tests/store/test_split_values_at_rest.py`,
+`KeysNotDistinct` where no number tells two apart). An unreadable reply's excerpt reads only a head
+of the body (u04's half): a stream the head cuts has its streamed text withheld, not masked, its
+keys, structure, numbers and protocol fields kept, and says so once. That is the owner's decision of
+2026-10-13, under the delegation (best practice): fail closed, an excerpt may show less than `main`,
+never more. A secret whose pieces cross the cut is never read whole, so no rule masks it: masked
+across the head, a URL password with symbols showed its beginning at 7 of 31 cuts and a
+300-character registered credential at 70 of 111 (fourth pre-merge audit, MEDIUM), and with only the
+head's first half shown and a stream's open tail left out, a 600-character URL password of words
+still showed 20 to 61 of its characters (`main` 0 to 3) and a stream that paused past the head
+showed its secret's beginning; withheld, none shows at any offset. Not covered: a secret a target
+splits over a list of its own JSON that is no stream (a REST body's array); a secret its
+alternatives alone spell while the tokens beside them are kept (a rank of `top` or `top_logprobs`,
+and the `bytes` of those alternatives, as an unreadable reply's excerpt quotes them: no model's
+alternatives spell a text, each being weighed for the token the model wrote before it, and joining
+them masked clean replies); in an unreadable reply's excerpt: a line that is no field of an event
+stream (a `data:` after a space, a `Data:` line, a delta on a plain line); pieces in a comment, an
+`event:` or an `id:` line; data whose pieces each begin with a space the format keeps (`data:  x`);
+an event whose JSON a raw CR or LF breaks (read as text); JSON lines in any shape but Ollama's and
+OpenAI's chunks (they are records, masked string by string), JSON lines with one line that is not a
+JSON object (a trailing `[DONE]`, a leading log line), lines of JSON strings or with CR-only ends,
+and a body mixing events with JSON lines; in a body the read head cuts, a secret split over the
+fields kept there (the protocol's fields, a role or a finish reason, a key), quoted as `main` quotes
+them, each string redacted on its own; and any other line-based format (u04's half says what is
+read); a secret encoded rather than split; a field of a transcript that the target file declares as
+the protocol's; and evidence written before A-77, whose pieces stay on disk. Checks:
+`tests/test_redactor_split_values.py` (a property test cuts a key, a registered credential, an email
+and four URLs with a password into pieces of 1 to 4 characters, as tokens and as deltas, and checks
+every joined text is a fixed point), `tests/store/test_split_values_at_rest.py`,
 `tests/reporting/test_split_values_and_keys.py`, `tests/adapters/test_split_values_in_replies.py`
 and `tests/cli/test_split_values_e2e.py`.
 

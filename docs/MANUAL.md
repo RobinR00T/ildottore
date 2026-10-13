@@ -2233,10 +2233,11 @@ Cut by the provider's output filter: 8 attempt(s) in 2 spec(s) came back cut or 
   probe refused is stored withheld the same way. An unreadable reply's excerpt is masked the same
   way: a body streamed as server-sent events is read as the format says, and so are JSON lines
   in Ollama's or OpenAI's chunk shape (any other JSON lines, a log, are quoted as they came); only
-  the head the excerpt can show is read, and of a longer body only that head's first half is
-  shown, with the end of a stream that may run on past the head left out (the word it ends
-  with, up to 256 characters and at least its last 32, or a registered credential's
-  beginning). A chunk streamed with logprobs has its masked tokens' alternatives and `bytes`
+  the head the excerpt can show is read (36 KiB with no long registered credential). A longer
+  body's excerpt withholds the text it streams: the lines of that head's first half are shown
+  with every streamed text value emptied, keys, structure, types, roles, ids and finish reasons
+  kept, under a first line that says so, since a secret streamed across the cut could not be
+  masked whole. A chunk streamed with logprobs has its masked tokens' alternatives and `bytes`
   masked too. Evidence written before A-77 keeps an OpenAI or WebSocket target's reply in pieces
   as it came. The keys of an attempt's
   free-form fields (a tool call's argument names, `usage`, a frame's fields) are masked in the

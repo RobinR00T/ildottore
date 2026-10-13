@@ -7,27 +7,25 @@ versioning: [SemVer](https://semver.org/).
 
 ### Fixed (what the fourth pre-merge audit, of `5dd87b42`, found in A-77, before it lands)
 
-- **A cut stream's excerpt shows no secret's beginning (MEDIUM, a regression against `main`).**
-  The window read only a long stream's head, but masks shorten a text, so what lay near the
-  window's cut moved up into the 4 KiB the excerpt shows; and the open tail left out only a run
-  of key characters, which stops at a `!`, `#` or `$`, and was read after masking, so it missed a
-  long registered credential the entropy rule had masked in part. A URL password with symbols showed
-  `https://ops:Corr3ct!` at 7 of 31 cuts in three stream shapes, and a 300-character registered
-  credential part of itself at 70 of 111 (`window_attacks.py`, case A; `main` 0). When the window
-  cuts the body, only the lines that start in its first half are shown (the auditor's
-  `patch-show-first-half.diff`), and a body whose first half is as it came is quoted as it came.
-  The open tail stays, for a secret whose pieces reach from that half past the cut (a
-  300-character registered credential in padded 1-character deltas showed `EMnY9tlicZLhC` on
-  `5dd87b42`), read on the stream as the target wrote it: the run of characters other than white
-  space it ends with, its last 256 when longer (a head glued to a longer run showed
-  `://ops:Corr3ct!Ho` with the run rule alone), at least its last 32 (a card or a phone grouped by
-  spaces), and a longer end that begins a registered credential. Case A: 0 of 36 rows leak, was 4;
-  the long-span and glued probes 0 of 16, were 11; clean bodies past the window 0 of 320 differ
-  from `main`. Not covered, in A-77: an unregistered secret no rule masks in part, longer than 256
-  characters or holding white space and longer than 32, reaching from the shown half past the cut
-  (a 600-character URL password of words in 1-character events showed 20 to 61 characters, 52 to
-  61 on `5dd87b42`, where `main` showed 0 to 3), and, as before, a stream that pauses past the
-  window.
+- **A cut stream's excerpt shows no streamed text (MEDIUM, a regression against `main`).** The
+  window read only a long stream's head, but masks shorten a text, so what lay near the window's
+  cut moved up into the 4 KiB the excerpt shows, and a secret whose pieces crossed the cut, never
+  read whole, showed its beginning: a URL password with symbols at 7 of 31 cuts in three stream
+  shapes, a 300-character registered credential at 70 of 111 (`window_attacks.py`, case A; `main`
+  0). Showing only the window's first half and leaving out each stream's open tail still let a
+  600-character URL password of words show 20 to 61 of its characters, where `main` showed 0 to 3,
+  and a stream that paused past the window show its secret's head (case B, 16 of 36 rows). By the
+  owner's decision of 2026-10-13, under the delegation (best practice), the excerpt fails closed:
+  it may show less than `main`, never more. A body streamed as events or as JSON lines in a shape
+  known to stream, and longer than the window (36 KiB with no long registered credential), keeps
+  in its excerpt the lines that start before the window's midpoint with every streamed text value
+  emptied (content and delta text, a `response`, a logprob token and its alternatives, a `data:`
+  line's text; `bytes` and Ollama's `context` nulled), its keys, structure, numbers and protocol
+  fields, roles, finish and stop reasons kept, under a first line that says the text is withheld.
+  Case A and case B: 0 of 36 rows each; the long password 0 characters at every start; clean
+  bodies that fit the window `main`'s excerpt byte for byte (1,498 of 1,498); clean bodies past it
+  differ from `main` only by the withheld text and the notice (240 of 320, the six shapes that
+  stream, every shown event or line checked, 27,226); `cost3.py` 0.01 to 0.20 s on 4 MiB bodies (0.01 to 0.21 s on `5dd87b42`).
 - **An event stream's logprobs spell no masked token (found with that fix, not by the audit).**
   An OpenAI chunk streamed with logprobs holds a logprob list of one item, which was no logprob
   list: the excerpt masked its token as the stream's piece but kept its `bytes`, which spelled
@@ -54,13 +52,12 @@ versioning: [SemVer](https://semver.org/).
   stream is read once.
 - **An excerpt reads only the head it can show (LOW).** A 4 MiB hostile stream cost up to 12.8 s
   in the audit (18.0 s here, `data` events with no colon; `main` 0.00 s); the excerpt keeps at most
-  4 KiB, so only four times the part it reads is read (37 KiB with no long registered
+  4 KiB, so only four times the part it reads is read (36 KiB with no long registered
   credential), and each stream that reaches past half that window has its open tail left out (a
   run of key characters up to 256 long, a registered credential's beginning). That did not keep
-  a secret's beginning out of the excerpt where masks shortened the head; the fourth pre-merge
-  audit's fix, above, shows only the window's first half and reads the tail otherwise, and A-77
-  names what it still does not cover. `cost3.py` on 4 MiB bodies: 0.01 to 0.24 s, was 0.10 to
-  17.98 s.
+  a secret's beginning out of the excerpt where masks shortened the head; since the fourth
+  pre-merge audit's fix, above, a body the window cuts has its streamed text withheld instead.
+  `cost3.py` on 4 MiB bodies: 0.01 to 0.24 s, was 0.10 to 17.98 s.
 - **Figures (LOW).** The second audit's `sse_variants.py` figure was the key in 9 of 19 shapes
   and the credential in 9, not 10. A-77's not-covered list is made exact.
 
