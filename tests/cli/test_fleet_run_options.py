@@ -51,7 +51,7 @@ def test_run_from_outside_the_repository_reads_the_packaged_battery(
         app, ["run", "target.yaml", "--scope", "scope.yaml", "--dry-run", "-q", "--no-color"]
     )
     assert result.exit_code == 0, result.output
-    assert result.output.startswith("dry-run: ")
+    assert result.stdout.startswith("dry-run: ")
 
 
 def test_a_spec_path_that_does_not_exist_is_named_as_such(
@@ -194,3 +194,73 @@ def test_fleet_run_writes_its_report_and_stores_where_it_is_told(tmp_path: Path)
     assert report["run"]["run_id"]
     assert (tmp_path / "r.db").is_file()
     assert any((tmp_path / "ev").iterdir())
+
+
+# --- pre-merge audit of e6a1ab9b, MEDIUM 3: lint stays strict, a fallback says what it read --
+
+
+def _pack_repo(tmp_path: Path) -> Path:
+    """A spec pack's own repository: pack.yaml and attacks/ at its root, no specs/."""
+
+    (tmp_path / "pack.yaml").write_text("id: mine\npack_version: '1.0'\nname: mine\n")
+    (tmp_path / "attacks").mkdir()
+    (tmp_path / "attacks" / "broken.yaml").write_text("id: BROKEN-001\nseverty: high\n")
+    return tmp_path
+
+
+def test_lint_with_no_specs_here_does_not_lint_the_packaged_battery(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The branch linted the built-in battery and printed "lint OK ... across 75 spec(s)",
+    exit 0, in a pack repository whose own spec was broken; main exits 1 there."""
+
+    monkeypatch.chdir(_pack_repo(tmp_path))
+    result = CliRunner().invoke(app, ["lint"])
+    assert result.exit_code == 1, result.output
+    assert "lint OK" not in result.output
+    assert "path not found: specs" in result.output
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["registry", "ls"],
+        ["coverage"],
+        ["describe", "PI-DIRECT-001"],
+    ],
+    ids=["registry-ls", "coverage", "describe"],
+)
+def test_a_command_that_falls_back_says_which_tree_it_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, argv: list[str]
+) -> None:
+    monkeypatch.chdir(_pack_repo(tmp_path))
+    result = CliRunner().invoke(app, argv)
+    assert result.exit_code == 0, result.output
+    assert (
+        "note: there is no specs/ directory here, so this reads the battery beside the installed "
+        f"package: {REPO / 'specs'} (pass --spec-path to read another)"
+    ) in result.stderr
+
+
+def test_run_says_which_tree_it_read_when_it_falls_back(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "scope.yaml").write_text(
+        'version: "1.0"\ntargets:\n  - id: mock-target\n    base_url: "mock://mock-target"\n'
+        '    endpoints:\n      - host: "mock-target"\n        path_prefixes: ["/"]\n'
+        '    identities:\n      - name: default\n        auth_ref: "env://NONE"\n'
+    )
+    (tmp_path / "target.yaml").write_text("id: mock-target\ntype: chatbot\n")
+    monkeypatch.chdir(tmp_path)
+    result = CliRunner().invoke(
+        app, ["run", "target.yaml", "--scope", "scope.yaml", "--dry-run", "-q", "--no-color"]
+    )
+    assert result.exit_code == 0, result.output
+    assert "reads the battery beside the installed package" in result.stderr
+
+
+def test_no_note_when_specs_is_here(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    (tmp_path / "specs").mkdir()
+    monkeypatch.chdir(tmp_path)
+    result = CliRunner().invoke(app, ["registry", "ls"])
+    assert "note:" not in result.stderr

@@ -324,9 +324,23 @@ def _root(
 
 
 def _spec_paths(spec: list[Path] | None) -> list[Path]:
-    """``--spec-path`` as given, else the default every command shares (u12 A-80)."""
+    """``--spec-path`` as given, else the default the reading commands share (u12 A-80).
 
-    return list(spec) if spec else wiring.default_spec_paths()
+    A fallback to the battery beside the package is said on stderr: in a pack's own repository
+    (``pack.yaml`` at its root, no ``specs/``) a command read the built-in battery without a
+    word (pre-merge audit of e6a1ab9b, MEDIUM 3). ``lint`` does not fall back at all.
+    """
+
+    if spec:
+        return list(spec)
+    paths = wiring.default_spec_paths()
+    if paths == [wiring.PACKAGED_SPEC_PATH]:
+        _echo_err(
+            "note: there is no specs/ directory here, so this reads the battery beside the "
+            f"installed package: {visible_controls(str(wiring.PACKAGED_SPEC_PATH))} (pass "
+            "--spec-path to read another)"
+        )
+    return paths
 
 
 # --- run -------------------------------------------------------------------------
@@ -1125,7 +1139,10 @@ def lint(
 ) -> None:
     """Schema + policy + fixtures-prove-detection lint (u02 command body)."""
 
-    search = _spec_paths(paths)
+    # Strict: `specs/` here or the paths given, never the packaged battery. Linting that in a
+    # pack's own repository printed "lint OK ... across 75 spec(s)" over a broken spec of the
+    # pack, exit 0, where main exits 1 (pre-merge audit of e6a1ab9b, MEDIUM 3).
+    search = list(paths) if paths else [Path("specs")]
     code, output = run_lint(search, as_json=as_json)
     typer.echo(output)
     raise typer.Exit(code)
