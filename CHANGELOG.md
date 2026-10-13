@@ -11,16 +11,16 @@ the file, schema copy, build or pipeline it names.
 
 - **The CI example installed v0.1.0, and a wheel.** `examples/ci-github-actions.yml` installed
   `@v0.1.0` with `pip install "git+https://..."`, which builds a wheel, and the wheel
-  `pyproject.toml` selects ships neither `specs/` nor `schemas/`: measured from a directory outside
-  the repo, a bare `dottore lint` exits 1 with `path not found: specs`,
+  `pyproject.toml` selects ships neither `specs/` nor `schemas/`. Measured from a directory
+  outside the repo: a bare `dottore lint` exits 1 with `path not found: specs`,
   `dottore lint <checkout>/specs` exits 1 with a traceback on a missing
-  `schemas/attack-spec.schema.json`, and
-  `dottore run --dry-run` exits 3, with or without `--spec-path`. The example now checks Il
-  Dottore out at a pinned full SHA of `main` (`# pin: update to the commit you have reviewed`,
-  `v0.1.0` as the commented alternative), installs that checkout with `pip install -e` and passes
-  `--spec-path`; its caveat lists how v0.1.0 gates differently (exit codes, OD-19, the
-  2026-10-03 scoring fixes, OD-38, OD-41, OD-42, OD-21, OD-44, OD-18, OD-29, OD-31). INSTALL.md
-  says a non-editable install cannot load the battery. Packaging is not changed.
+  `schemas/attack-spec.schema.json`, and `dottore run --dry-run` exits 3, with or without
+  `--spec-path`. The example now checks Il Dottore out at a pinned full SHA of `main`
+  (`# pin: update to the commit you have reviewed`, `v0.1.0` as the commented alternative),
+  installs that checkout with `pip install -e` and passes `--spec-path`; its caveat lists how
+  v0.1.0 gates differently (exit codes, OD-19, the 2026-10-03 scoring fixes, OD-38, OD-41,
+  OD-42, OD-21, OD-44, OD-18, OD-29, OD-31). INSTALL.md says a non-editable install cannot load
+  the battery, and the defect is a `docs/12` P1 row and a ROADMAP line. Packaging is not changed.
 - **Figures OD-44 moved, re-measured:** 33 specs and 545 requests on `examples/target.local.yaml`
   (USAGE, MANUAL, `docs/09`), "34 of 75 specs never ran" in the unreadable-replies transcript
   (`examples/README.md`), the `docs/16` §3 cost table and its prose, 140 and 350 replay attempts
@@ -28,22 +28,23 @@ the file, schema copy, build or pipeline it names.
   that is not JSON (it fails only its probe, exit 0), the Bedrock guardrail item (closed by OD-42)
   in the OD-41 rows, a duplicate OD-41 row in `docs/12`; the scope checksum is "an integrity
   check, not a signature (OD-2)" in `specs/scope.example.yaml`.
-- **The ledger.** CHANGELOG headings whose body states a break say "breaking for <whom>", and
-  the file's header says when; `00-INDEX.md` gains the A-37 row, records A-62 and A-64 as
-  reserved and unused (A-75 stays the next free number), reads OD-1 to OD-47 in order, names each unit's files (u04's `mcp.py`,
-  `websocket.py`, `comprehending.py`; u01's `safe_yaml.py`; the u06 file `unit-06-evaluators.md`);
-  each unit's §9 cites its ODs by number with the index's decision; OD-45 (a judge's
-  self-consistency disagreement), OD-46 (a policy-pack flag) and OD-47 (F9, `leetspeak` over
-  `JB-ENCODING-001`'s Base64) are numbered, open, owner to decide.
-- **Help and options.** No `--help` shows internal text ("(u02 command body)", reST double
-  backticks), pinned for every command by `tests/cli/test_help_text.py` (17 tests); `dottore(1)`
-  documents every option of every command and `--version`; MANUAL adds `coverage --no-gaps`,
-  `schema export --name` and `--version`. The LOW list: `mcp` in `dottore-scope(5)`'s
-  capabilities and refused in a fleet entry, `-v` beside the `operator:` line, an aggregate
-  coverage gate (OD-13), ROADMAP's WebSocket adapter and NIST AI 600-1 wording, ADR-0007's
-  amendment, RELEASING's script path, the 72-spec date in `docs/12`, Scenario B's left-out
-  stderr warning; `docs/PROGRESS.md` says its entries are in merge order. Lines over 100 columns
-  are rewrapped in a commit of their own.
+- **The ledger.** 17 CHANGELOG headings whose body states a break say "breaking for <whom>",
+  and the file's header says when; `00-INDEX.md` gains the A-37 row, records A-62 and A-64 as
+  reserved and unused (A-75 stays the next free number), reads OD-1 to OD-47 in order, and names
+  each unit's files (u04's `mcp.py`, `websocket.py`, `comprehending.py`; u01's `safe_yaml.py`;
+  the u06 file `unit-06-evaluators.md`); each unit's §9 cites its ODs by number with the index's
+  decision or status; OD-45 (a judge's self-consistency disagreement), OD-46 (a policy-pack flag)
+  and OD-47 (F9, `leetspeak` over `JB-ENCODING-001`'s Base64) are numbered, open, owner to
+  decide, and named in every unit their rows name.
+- **Help and options.** No `--help` shows internal text ("(u02 command body)", backticks, a unit
+  or clause id), pinned for every command by `tests/cli/test_help_text.py` (17 tests);
+  `dottore(1)` documents every option of every command and `--version`; MANUAL adds
+  `coverage --no-gaps`, `schema export --name` and `--version`. The LOW list: `mcp` in
+  `dottore-scope(5)`'s capabilities and refused in a fleet entry, `-v` beside the `operator:`
+  line, an aggregate coverage gate (OD-13), ROADMAP's WebSocket adapter and NIST AI 600-1
+  wording, ADR-0007's amendment, RELEASING's script path, the 72-spec date in `docs/12`, Scenario
+  B's left-out stderr warning; `docs/PROGRESS.md` says its entries are in merge order. Lines over
+  100 columns are rewrapped, with the rest of their paragraph reflowed, in a commit of their own.
 
 ### Added (breaking for an older copy of the report schema and an older build reading the run: a target file may declare one of its own granted tools not destructive, OD-43)
 

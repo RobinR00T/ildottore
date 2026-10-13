@@ -26,17 +26,29 @@ neighbouring entries can interleave (an older branch merged later sits above a n
   that is not JSON (OD-21); the Bedrock item closed by OD-42; the scope checksum is integrity
   only (OD-2).
 - Ledger and contracts: CHANGELOG "breaking for <whom>" labels (15 more headings, 17 in all),
-  the A-37 row, A-62 and A-64 reserved (A-75 stays free), OD rows in order, unit owners, ODs cited in each
-  §9, and three open decisions numbered for the owner: OD-45 (a judge's self-consistency
-  disagreement), OD-46 (a policy-pack flag), OD-47 (F9, `leetspeak` over `JB-ENCODING-001`'s
-  Base64).
-- CLI: no `--help` shows internal text, pinned by `tests/cli/test_help_text.py` (17 tests, 6 of
-  them fail on the old docstrings); `dottore(1)` documents every command's options.
-- Gates: `make --no-print-directory gates` green on this branch before the rewrap commit, 5493
-  tests (17 new), 97.84% coverage, 75 specs lint OK, four import contracts kept, self-scan 0 high/critical, bandit and pip-audit
-  clean. `main` itself after the merges of 2026-10-11, measured in a clean copy of `de122e26`
-  (`git archive`): 5476 passed, 97.84% coverage, a figure no entry recorded. Lines over 100
-  columns are rewrapped in the last commit, alone, so it can be redone after a rebase.
+  the A-37 row, A-62 and A-64 reserved (A-75 stays free), OD rows in order, unit owners, ODs
+  cited in each §9, and three open decisions numbered for the owner: OD-45 (a judge's
+  self-consistency disagreement), OD-46 (a policy-pack flag), OD-47 (F9, `leetspeak` over
+  `JB-ENCODING-001`'s Base64).
+- CLI: no `--help` shows internal text, pinned by `tests/cli/test_help_text.py` (17 tests: no
+  backtick, no "(u" and a digit, no unit or clause id); `dottore(1)` documents every command's
+  options.
+- Pre-merge audit of `10980e5e`: not ready, three changes and LOWs, fixed in new commits (no
+  history rewrite). The FAQ quotes the CLI's refusal as printed ("(open decision)", OD-46 named
+  after it); three more headings are labelled breaking, and OD-21 and OD-41 add "an older build
+  reading the run" (measured: `dottore replay` of such a run with the code of `6837a71d`'s and of
+  `fcdf9860`'s parent exits 3, a validation error at `verdict.inconclusive_reason`); A-75 is left
+  free; OD-45, OD-46 and OD-47 are named in u08, u01 and u05, and in `docs/02` and `docs/11`;
+  the wheel defect is recorded (`docs/12` P1, ROADMAP) with what it prints; the first rewrap is
+  reverted and redone last, reflowing its paragraphs, with the YAML comment rewording in a
+  commit of its own. The landing checklist is `_ildottore-tren/scratch/fixdocs/LANDING.md`.
+- Gates: `make --no-print-directory gates` on this branch before the rewrap commit: 5493
+  tests (17 new), 97.84% coverage, 75 specs lint OK, four import contracts kept, self-scan 0
+  high/critical, bandit clean; pip-audit, stopped by a DNS outage (`pypi.org` not resolved) on
+  2026-10-12, re-run on 2026-10-13 on the same tree: clean. `main` itself after the merges of
+  2026-10-11, measured in a clean copy of `de122e26` (`git archive`): 5476 passed, 97.84%
+  coverage, a figure no entry recorded. Lines over 100 columns are rewrapped in the last commit,
+  alone, so it can be redone after a rebase.
 
 ## State, 2026-10-11 (evening): the pre-merge audit of `ed381359` (OD-43), fixed
 
