@@ -113,10 +113,11 @@ inline.
 .B capabilities
 takes tools, rag, memory, streaming, seed, logprobs, multi_identity, multimodal and audio, each
 false unless set, sampling (below), and mcp, which the loader sets from provider mcp (refused
-declared false there, or true on a live target of another provider); any other key, or a capabilities that is neither a
-mapping nor null (false and [] included), is refused before anything is sent. To declare none, leave it out or write {}. A
-capabilities line with nothing under it is null, so keys below it that lost their indent are
-top-level keys, which are refused as any other unknown key is.
+declared false there, or true on a live target of another provider); any other key, or a
+capabilities that is neither a mapping nor null (false and [] included), is refused before anything
+is sent. To declare none, leave it out or write {}. A capabilities line with nothing under it is
+null, so keys below it that lost their indent are top-level keys, which are refused as any
+other unknown key is.
 .B sampling_defaults
 (temperature, top_p, max_tokens, seed) is a fallback, field by field (OD-39): a field the spec,
 the -sV probe or the judge sets goes out as set, a field it leaves unset is taken from this
@@ -203,11 +204,11 @@ state it, each attempt it changed says so, and a change refuses a resume. A name
 carry a call onto it: a scene tool mapped onto a declared name is refused. The entry holds name
 and destructive, which must be false: a non-boolean, true, a mapping without destructive (a
 bare name only grants), any other key, a missing name or one with a space at either end, a
-declared name also mapped under tools and one granted twice are refused. The deployment must return its tool calls: a reply that shows
-no call to the tool carrying the scene is inconclusive (setup_not_reached). The block is
-refused on a type: model target, which gets the scene in-band, and on an unknown key, a name
-both mapped and granted, or a run_token that is not 8 to 64 letters, digits, _ or -. Worked
-file: examples/target.app.yaml.
+declared name also mapped under tools and one granted twice are refused. The deployment must return
+its tool calls: a reply that shows no call to the tool carrying the scene is inconclusive
+(setup_not_reached). The block is refused on a type: model target, which gets the scene in-band, and
+on an unknown key, a name both mapped and granted, or a run_token that is not 8 to 64 letters,
+digits, _ or -. Worked file: examples/target.app.yaml.
 .PP
 A chat endpoint over a WebSocket is provider websocket, with a ws:// or wss:// endpoint (no
 query, no user:password) and a websocket block declaring its wire shape: handshake.send (a JSON

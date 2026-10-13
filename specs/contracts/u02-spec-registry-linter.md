@@ -111,8 +111,8 @@ evaluators). Later packs may extend but never silently override earlier ids. Ful
 - **Registry API:** property test (Hypothesis): `get(id)` round-trips every listed spec;
   `resolve(suite)` returns specs in suite order; `list(filter=...)` is a correct subset.
 - `dottore lint specs/` exits 0 on the shipped good tree, non-zero with itemized errors on `bad/`.
-- `ruff check`, `ruff format --check`, `mypy src/ildottore/registry`, `mypy src/ildottore/cli/lint.py`
-  clean; `lint-imports` green (registry imports `shared` only).
+- `ruff check`, `ruff format --check`, `mypy src/ildottore/registry`,
+  `mypy src/ildottore/cli/lint.py` clean; `lint-imports` green (registry imports `shared` only).
 
 **A-17 Every framework field is validated against something (added 2026-09-22).** `owasp` and
 `mitre_atlas.tactic` must be in their pinned universes (or in the declared companion sets),
