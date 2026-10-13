@@ -16,6 +16,7 @@ import re
 import string
 from collections.abc import Callable
 from pathlib import Path
+from typing import cast
 
 import pytest
 
@@ -331,7 +332,8 @@ def test_only_the_head_the_excerpt_reads_is_read_and_a_secret_past_it_is_left_ou
     no_known_secrets: None,
 ) -> None:
     """A 4 MiB stream of tiny events cost up to 12.8 s (LOW 4). Read up to its window, a
-    registered credential whose deltas run past the window is not shown in part."""
+    registered credential whose deltas run past the window is not shown in part: the streamed
+    text of a body the window cuts is withheld."""
 
     import time
 
@@ -339,7 +341,7 @@ def test_only_the_head_the_excerpt_reads_is_read_and_a_secret_past_it_is_left_ou
     started = time.perf_counter()
     reply_excerpt(hostile, Redactor(salt="s"))
     assert time.perf_counter() - started < 2.0
-    # Words no rule masks in part: only the window's open tail keeps its head out of the excerpt.
+    # Words no rule masks in part: nothing keeps their head out of the excerpt but withholding.
     secret = "correct horse battery staple and a quiet harbour"
     register_known_secret(secret)
     pad = "p" * 1200  # each delta's event carries this much else, as a target may write it
@@ -350,8 +352,8 @@ def test_only_the_head_the_excerpt_reads_is_read_and_a_secret_past_it_is_left_ou
     assert len(body) > 40_000  # the credential's deltas run past the window
     excerpt, _ = reply_excerpt(body, Redactor(salt="s"))
     assert secret[:3] not in _rebuilt(excerpt), excerpt[:200]
-    assert '"content": ""' in excerpt  # left out, not masked: the window read only its head
-    # A clean stream longer than the window is not rewritten: quoted as main quotes it.
+    assert '"content": ""' in excerpt  # withheld, not masked: the window read only its head
+    # A clean stream longer than the window has its text withheld too, its structure kept.
     words = ("the reply goes on and on " * 3000).split(" ")
     clean = "".join(
         "event: content_block_delta\ndata: "
@@ -360,7 +362,9 @@ def test_only_the_head_the_excerpt_reads_is_read_and_a_secret_past_it_is_left_ou
         for w in words
     )
     assert len(clean) > 200_000
-    assert _split_masked(clean, Redactor(salt="s")) is clean
+    withheld = cast("str", _split_masked(clean, Redactor(salt="s")))
+    assert withheld.startswith("[il dottore: ") and '"text": "the"' not in withheld
+    assert '"type": "text_delta"' in withheld
 
 
 #: Stream shapes in which a secret straddling the window's cut showed its beginning (fourth
@@ -523,28 +527,6 @@ def test_an_event_stream_s_logprobs_spell_no_masked_token(no_known_secrets: None
     words = ["Paris", "is", "the", "capital", "of", "France", "and", "it", "has", "many"]
     pairs = zip(words, words[::-1], strict=True)
     clean = "".join(_chunk_with_logprobs(" " + word, other) for word, other in pairs)
-    assert _split_masked(clean, Redactor(salt="s")) is clean
-
-
-def test_a_clean_stream_of_heavy_events_past_the_window_is_quoted_as_it_came() -> None:
-    """OpenAI chunks with 20 alternatives each are heavy: a stream's last 256 characters reach
-    back into what the excerpt shows. Only its last word is its open tail."""
-
-    words = ["Paris", "is", "the", "capital", "of", "France", "and", "it", "has", "many"]
-    rows = [" " + words[i % len(words)] for i in range(400)]
-
-    def chunk(piece: str) -> str:
-        alternatives = [{"token": w, "logprob": -3.2, "bytes": list(w.encode())} for w in words * 2]
-        item = {"token": piece, "logprob": -0.01, "bytes": list(piece.encode())}
-        choice = {
-            "index": 0,
-            "delta": {"content": piece},
-            "logprobs": {"content": [item | {"top_logprobs": alternatives}]},
-        }
-        return f"data: {json.dumps({'object': 'chat.completion.chunk', 'choices': [choice]})}\n\n"
-
-    clean = "".join(chunk(row) for row in rows)
-    assert len(clean) > 400_000
     assert _split_masked(clean, Redactor(salt="s")) is clean
 
 
