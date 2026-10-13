@@ -29,6 +29,13 @@ The carryover ledger. Every agent session updates this so context survives even 
   05:38 to 05:47 CEST: 6210 tests, 97.86% coverage (main 97.84%; `redactor.py` misses 4 statements,
   as main does), mypy 160 files, 4 import contracts kept, 75 specs lint OK, self-scan, bandit and
   pip-audit clean.
+- Round 3 (head `59349ba8`): merge-ready. The unused `SqliteRunStore._redact_json` removed
+  (`38aacbd5`); `origin/main` at `0be0be71` (#111, #112) merged in `0621f576`, conflicts in
+  CHANGELOG, PROGRESS, u04, u11 and `adapters/base.py` resolved keeping both sides. On the merged
+  tree: `make gates` green, 21:59 to 22:07 CEST, 6397 tests, 97.91% coverage, mypy 162 files; the
+  auditor's clean-grammar differential fuzz against `0be0be71`'s redactor, 8 x 60,000 texts, 0
+  regressions and no stand-in in any output; the 3.8 MiB flood scan exit 0, no token readable (148
+  on `0be0be71`, also exit 0).
 
 ## State, 2026-10-12 (morning): the pre-merge audit of A-78 (`0b4b1f14`), fixed
 
