@@ -583,12 +583,13 @@ def test_a_cut_stream_shows_none_of_a_secret_at_any_offset(no_known_secrets: Non
 
 
 def test_a_clean_stream_past_the_window_differs_only_by_its_withheld_text() -> None:
-    """Its lines before the window's midpoint, each with its streamed text emptied, its keys,
-    structure, types, roles, ids, finish reasons and figures kept, under one notice."""
+    """Its lines that lie wholly in its first 4 KiB, as far as `main`'s excerpt keeps, each with
+    its streamed text emptied, its keys, structure, types, roles, ids, finish reasons and figures
+    kept, under one notice."""
 
-    from ildottore.adapters.base import _stream_window, _withheld_notice
+    from ildottore.adapters.base import UNREADABLE_EXCERPT_BYTES, _stream_window, _withheld_notice
 
-    window, settled = _stream_window()
+    window, _ = _stream_window()
     words = ("Paris is the capital of France and it has many people " * 400).split(" ")
     shapes = {
         "Anthropic": (
@@ -654,16 +655,16 @@ def test_a_clean_stream_past_the_window_differs_only_by_its_withheld_text() -> N
     for name, (write, emptied) in shapes.items():
         body = "".join(write(" " + w) for w in words)
         assert len(body) > window
-        expected_text, at = "", 0
+        expected_text, end = "", 0
         for line in re.split("(?<=\n)", body):
-            if line and at < settled:
+            end += len(line.encode())
+            if line and end <= UNREADABLE_EXCERPT_BYTES:  # as far as main's excerpt keeps
                 if line.startswith("data: "):
                     expected_text += "data: " + json.dumps(emptied) + "\n"
                 elif line.startswith("{"):
                     expected_text += json.dumps(emptied) + "\n"
                 else:
                     expected_text += line
-            at += len(line)
         assert (
             _split_masked(body, Redactor(salt="s")) == _withheld_notice(window) + expected_text
         ), name

@@ -313,9 +313,16 @@ def _stream_window() -> tuple[int, int]:
     rule can mask it, and no part of it may be shown.
     """
 
-    longest = max((len(secret) for secret in registered_secrets()), default=0)
-    extent = 2 * UNREADABLE_EXCERPT_BYTES + 4 * max(longest, _SHORT_TOKEN_HEAD)
+    extent = _read_extent()
     return 4 * extent, 2 * extent
+
+
+def _read_extent() -> int:
+    """How much of a body :func:`reply_excerpt` reads: twice what it keeps, then a margin for a
+    registered credential or a short key-shaped token crossing that cut."""
+
+    longest = max((len(secret) for secret in registered_secrets()), default=0)
+    return 2 * UNREADABLE_EXCERPT_BYTES + 4 * max(longest, _SHORT_TOKEN_HEAD)
 
 
 def _head(text: str, window: int) -> tuple[str, bool]:
@@ -403,8 +410,10 @@ def _withheld_units(units: list[_Unit], offsets: list[int], settled: int) -> lis
     symbols showed its beginning at 7 of 31 cuts, a 300-character registered credential at 70 of
     111 (fourth pre-merge audit, MEDIUM), and with an open tail left out, a 600-character URL
     password of words still showed 20 to 61 of its characters, and a stream that paused past the
-    window its secret's head. Withheld, none shows: an excerpt may show less than `main`, never
-    more.
+    window its secret's head. Withheld, none of the streamed text shows; and the lines quoted are
+    only those `main`'s excerpt shows whole (:func:`_written_head`), so what is kept outside the
+    streamed text shows no more than `main` either: an excerpt may show less than `main`, never
+    more. Units past those lines are emptied too, unread.
     """
 
     out: list[Any] = []
@@ -440,16 +449,51 @@ def _offsets(lines: list[list[str]]) -> list[int]:
 
 
 def _written_head(
-    lines: list[list[str]], offsets: list[int], *, cut: bool, settled: int, window: int
+    head: str,
+    lines: list[list[str]],
+    offsets: list[int],
+    *,
+    cut: bool,
+    window: int,
+    redactor: Redactor,
 ) -> str:
     """The lines as written again: all of them, or, when the window cut the body, the notice
-    (:func:`_withheld_notice`) and the lines that start before ``settled``, the only ones whose
-    text was withheld (the excerpt reads less than that, :func:`_stream_window`)."""
+    (:func:`_withheld_notice`) and the lines of ``head`` that `main`'s excerpt of it shows whole
+    (:func:`_main_reach`).
+
+    Emptied, the lines are short, so the excerpt's 4 KiB reached lines `main`'s never reached,
+    and what it keeps outside the streamed text (a comment, an ``event:`` or ``id:`` line, an
+    event's ``id`` or ``model``) showed more of a secret placed there than `main` did (fifth
+    pre-merge audit: 11 of 11 pieces, `main` 8).
+    """
 
     if not cut:
         return "".join(line + ending for line, ending in lines)
-    kept = [pair for pair, at in zip(lines, offsets, strict=True) if at < settled]
+    kept = lines[: _main_reach(head, offsets, redactor)]
     return _withheld_notice(window) + "".join(line + ending for line, ending in kept)
+
+
+def _main_reach(head: str, offsets: list[int], redactor: Redactor) -> int:
+    """How many of the lines of ``head`` (starting at ``offsets``) `main`'s excerpt of ``head``
+    shows whole: the most whose text, redacted, begins that excerpt.
+
+    Not a count of bytes: `main`'s own masks lengthen or shorten what it shows, so a fixed 4 KiB
+    of the body showed more than `main` where they lengthened it (short emails masked in every
+    event: `main` showed none of 11 pieces placed in comment lines, a bound of 4 KiB 8 of them).
+    Searched by halves over the lines `main` reads; the count returned always meets the test.
+    """
+
+    quoted = _quoted(head.encode("utf-8", "replace"), redactor)
+    ends = [*offsets[1:], len(head)]
+    extent = _read_extent()  # what `main` reads: no line ending past it is shown whole
+    low, high = 0, sum(1 for end in ends if end <= extent)
+    while low < high:
+        middle = (low + high + 1) // 2
+        if quoted.startswith(redactor.redact_text(head[: ends[middle - 1]])):
+            low = middle
+        else:
+            high = middle - 1
+    return low
 
 
 def _sse_masked(text: str, redactor: Redactor) -> str | None:
@@ -473,7 +517,7 @@ def _sse_masked(text: str, redactor: Redactor) -> str | None:
     A masked unit is written again on one ``data`` line (a text holding LF, on as many), every
     other line as it came; the text returned is that head. Of a body the window cut, the
     streamed text is withheld instead of masked (:func:`_withheld_units`), and the text returned
-    is the notice and the lines before the window's midpoint (:func:`_written_head`).
+    is the notice and the lines `main`'s excerpt shows whole (:func:`_written_head`).
     """
 
     window, settled = _stream_window()
@@ -526,7 +570,7 @@ def _sse_masked(text: str, redactor: Redactor) -> str | None:
         ]
         for index in event[1:]:
             lines[index] = ["", ""]
-    return _written_head(lines, offsets, cut=cut, settled=settled, window=window)
+    return _written_head(head, lines, offsets, cut=cut, window=window, redactor=redactor)
 
 
 def _stream_line(value: Any) -> bool:
@@ -578,7 +622,7 @@ def _ndjson_masked(text: str, redactor: Redactor) -> str | None:
     for (event, kind, before), after in zip(units, masked, strict=True):
         if after != before:
             lines[event[0]][0] = _written(kind, after, lines[event[0]][0])
-    return _written_head(lines, offsets, cut=cut, settled=settled, window=window)
+    return _written_head(head, lines, offsets, cut=cut, window=window, redactor=redactor)
 
 
 def _split_masked(body: bytes | str, redactor: Redactor) -> bytes | str:
@@ -622,6 +666,13 @@ def reply_excerpt(body: bytes | str, redactor: Redactor) -> tuple[str, int]:
     size = len(body.encode("utf-8", "replace") if isinstance(body, str) else bytes(body))
     body = _split_masked(body, redactor)
     data = body.encode("utf-8", "replace") if isinstance(body, str) else bytes(body)
+    return _quoted(data, redactor), size
+
+
+def _quoted(data: bytes, redactor: Redactor) -> str:
+    """The start of ``data`` as :func:`reply_excerpt` quotes it (`main`'s excerpt of a body it
+    does not rewrite)."""
+
     cut = min(len(data), 2 * UNREADABLE_EXCERPT_BYTES)
     while 0 < cut < len(data) and data[cut] & 0xC0 == 0x80:  # not inside a character
         cut -= 1
@@ -630,7 +681,7 @@ def reply_excerpt(body: bytes | str, redactor: Redactor) -> tuple[str, int]:
     window = head + data[cut : cut + 4 * max(longest, _SHORT_TOKEN_HEAD)].decode("utf-8", "replace")
     kept = window[: _clean_cut(window, len(head))]
     shown = redactor.redact_text(kept).encode("utf-8")[:UNREADABLE_EXCERPT_BYTES]
-    return shown.decode("utf-8", "ignore"), size
+    return shown.decode("utf-8", "ignore")
 
 
 class AdapterProductError(AdapterError):
