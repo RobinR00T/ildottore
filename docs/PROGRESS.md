@@ -3,6 +3,26 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-13 (night): the round-2 audit of `f51a7d07`, its four LOWs fixed
+
+- The round-2 audit found `f51a7d07` merge-ready (the merge reverts nothing, no send path escapes
+  the debit, the differentials against `0be0be71` show only the intended changes, Ctrl-C during a
+  migration leaves no half-built store) and four LOWs, fixed in new commits; `main` is not merged
+  again until #113 lands.
+- LOW 1: protecting every file under the spec path refused the rerun of `run --spec-path . -oJ
+  out.json`. The loader records the files it reads (`LoadResult.files`: pack.yaml, specs, suites,
+  media assets) and only those are protected, by device and inode; the MEDIUM 1 spelling, a hard
+  link and a media asset stay refused.
+- LOW 2: a separately installed click's `ClickException`, `Abort` or `Exit(1)` (a plugin's) exited
+  1 with a traceback. They are mapped to exit 3 where they arrive, read from `sys.modules`; the CLI
+  no longer imports that click itself.
+- LOW 3 and LOW 4: a lock that outlasts the wait names its store once, the note is said once per
+  run, and the store layer is silent by default: its caller passes a callback
+  (`connect(on_lock_wait=...)` or `lock_waits_reported(...)`), which `run`, `fleet --run` and
+  `replay` do.
+- The heads-up's subclass-friendly `OperationalErrorGroup`: no source change was needed;
+  `tests/cli/test_guard_subclass.py` pins the closure through a subclass.
+
 ## State, 2026-10-13 (evening): the pre-merge audit of `e6a1ab9b`, fixed, and `main` merged in
 
 - The pre-merge audit of `fix/cli-store-budgets-paths` at `e6a1ab9b` found three MEDIUMs and
