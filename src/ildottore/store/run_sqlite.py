@@ -22,7 +22,7 @@ from typing import Any
 from ildottore.redactor import Redactor, redact_evidence_ref, redact_identity
 from ildottore.shared.amounts import is_amount
 from ildottore.shared.models import Finding, TestRun
-from ildottore.store import migrations
+from ildottore.store import migrations, paths
 
 
 def finding_id_of(finding: Finding) -> str:
@@ -72,18 +72,9 @@ def check_store_path(db_path: Path) -> None:
         if head and head != _SQLITE_HEADER:
             raise RunStoreError(f"cannot open the run store at {path}: file is not a database")
         return
-    ancestor = nearest_existing(path.parent)
+    ancestor = paths.nearest_existing(path.parent)
     if ancestor is not None and not ancestor.is_dir():
         raise RunStoreError(f"cannot open the run store at {path}: {ancestor} is not a directory")
-
-
-def nearest_existing(path: Path) -> Path | None:
-    """``path`` or its closest ancestor that exists, or ``None`` when none does."""
-
-    for candidate in (path, *path.parents):
-        if candidate.exists():
-            return candidate
-    return None
 
 
 def _open_reason(db_path: Path, exc: BaseException) -> str:
@@ -113,12 +104,6 @@ class SqliteRunStore:
             raise RunStoreError(
                 f"cannot open the run store at {self._db_path}: {_open_reason(self._db_path, exc)}"
             ) from exc
-
-    @property
-    def path(self) -> Path:
-        """The SQLite file this store reads and writes."""
-
-        return self._db_path
 
     # --- lifecycle -----------------------------------------------------------
 

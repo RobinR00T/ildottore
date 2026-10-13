@@ -34,13 +34,6 @@ class EvidenceStoreError(OSError):
     """The evidence root cannot take a run's artifacts; the message names the root (u10 A-80)."""
 
 
-def _nearest_existing(path: Path) -> Path | None:
-    for candidate in (path, *path.parents):
-        if candidate.exists():
-            return candidate
-    return None
-
-
 def check_root_path(root: Path) -> None:
     """Refuse, writing nothing, an evidence root that cannot hold a directory (u10 A-80).
 
@@ -53,7 +46,7 @@ def check_root_path(root: Path) -> None:
         if not root.is_dir():
             raise EvidenceStoreError(f"cannot write evidence under {root}: it is not a directory")
         return
-    ancestor = _nearest_existing(root.parent)
+    ancestor = paths.nearest_existing(root.parent)
     if ancestor is not None and not ancestor.is_dir():
         raise EvidenceStoreError(
             f"cannot write evidence under {root}: {ancestor} is not a directory"

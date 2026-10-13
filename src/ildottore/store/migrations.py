@@ -10,25 +10,85 @@ Every connection is opened with ``PRAGMA journal_mode=WAL`` and
 re-run on an already-current DB does nothing and returns the current version.
 
 Several processes may open one store at the same time (six ``dottore run`` sharing a
-``--run-db``): a connection waits :data:`BUSY_TIMEOUT_S` for a lock another one holds, the switch
-to WAL is retried while SQLite refuses it as busy (it does not wait for that one), and a
-migration takes the write lock before it reads the version it starts from (u10 A-80).
+``--run-db``): a statement waits up to :data:`BUSY_TIMEOUT_S` for a lock another connection
+holds, in short tries Python's signal handlers run between (Ctrl-C stops it), says on stderr
+that it is waiting, and names the store when it gives up; the switch to WAL is retried the same
+way (SQLite refuses it as busy without waiting), and a migration takes the write lock before it
+reads the version it starts from (u10 A-80).
 """
 
 from __future__ import annotations
 
 import os
 import sqlite3
+import sys
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from pathlib import Path
-from typing import Final, TypeVar
+from typing import Any, Final, TypeVar
+
+from ildottore.redactor import visible_controls
 
 _T = TypeVar("_T")
 
-#: How long one connection waits for a lock another connection holds, in seconds. SQLite's
-#: busy handler sleeps for it; the WAL switch and the migration's write lock are retried for it.
-BUSY_TIMEOUT_S: Final = 30.0
+#: How long a statement waits, in all, for a lock another connection holds, in seconds.
+BUSY_TIMEOUT_S = 30.0
+#: SQLite's own wait per try. SQLite sleeps in C, where Python runs no signal handler, so a 30 s
+#: busy timeout held Ctrl-C for about 32 s (pre-merge audit of e6a1ab9b); the wait is Python's
+#: loop over short tries instead.
+_TRY_TIMEOUT_S: Final = 0.1
+#: How long a wait goes on before it is said on stderr, once per connection.
+NOTICE_AFTER_S = 1.0
+#: SQLITE_BUSY_SNAPSHOT: a read transaction's snapshot went stale; waiting cannot clear it.
+_BUSY_SNAPSHOT: Final = 517
+
+
+class StoreLocked(sqlite3.OperationalError):
+    """Another process held the run store's lock for the whole wait; the message names it."""
+
+
+class StoreConnection(sqlite3.Connection):
+    """A connection whose statements wait for a held lock in Python, interruptibly, and say so.
+
+    ``execute``, ``executemany`` and ``commit`` retry while SQLite answers busy, for
+    :attr:`wait_s` in all; the first time a wait passes :data:`NOTICE_AFTER_S` a one-line note
+    goes to stderr, and a wait that runs out raises :class:`StoreLocked` naming
+    :attr:`store_path`. A statement SQLite refused as busy changed nothing, so it is retried as
+    it was; ``commit`` is retried as SQLite's documentation allows.
+    """
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.store_path = ""
+        self.wait_s = BUSY_TIMEOUT_S
+        self._noticed = False
+
+    def execute(self, sql: str, parameters: Any = (), /) -> sqlite3.Cursor:
+        return self._waiting(lambda: sqlite3.Connection.execute(self, sql, parameters))
+
+    def executemany(self, sql: str, parameters: Iterable[Any], /) -> sqlite3.Cursor:
+        rows = list(parameters)  # an iterator would be spent by the first try
+        return self._waiting(lambda: sqlite3.Connection.executemany(self, sql, rows))
+
+    def commit(self) -> None:
+        self._waiting(lambda: sqlite3.Connection.commit(self))
+
+    def _waiting(self, operation: Callable[[], _T]) -> _T:
+        return _while_busy(operation, self.wait_s, on_wait=self._notice, store=self.store_path)
+
+    def _notice(self) -> None:
+        if self._noticed:
+            return
+        self._noticed = True
+        try:
+            sys.stderr.write(
+                f"note: waiting for the run store at {visible_controls(self.store_path)}: another "
+                f"process holds its lock (up to {self.wait_s:g} s; Ctrl-C stops the wait)\n"
+            )
+            sys.stderr.flush()
+        except (OSError, ValueError):  # stderr closed: the wait goes on unsaid
+            pass
+
 
 _SCHEMA_SQL_PATH: Final = Path(__file__).with_name("schema.sql")
 
@@ -92,22 +152,26 @@ _MIGRATIONS: Final[list[tuple[int, str | Callable[[sqlite3.Connection], None]]]]
 ]
 
 
-def connect(db_path: Path, *, timeout_s: float = BUSY_TIMEOUT_S) -> sqlite3.Connection:
+def connect(db_path: Path, *, timeout_s: float | None = None) -> StoreConnection:
     """Open a SQLite connection with WAL + foreign keys enforced (contract §4).
 
-    Creates the parent directory if needed; paths-with-spaces safe (``Path``). The connection
-    waits ``timeout_s`` for a lock another connection holds. SQLite answers the switch to WAL
-    with SQLITE_BUSY at once, without that wait, while another connection holds the file (it
-    would deadlock otherwise), so the switch is retried for as long: six processes opening a new
-    store together lost five of them to "database is locked" (u10 A-80).
+    Creates the parent directory if needed; paths-with-spaces safe (``Path``). Each statement
+    waits up to ``timeout_s`` (default :data:`BUSY_TIMEOUT_S`) for a lock another connection
+    holds (:class:`StoreConnection`). That covers the switch to WAL, which SQLite answers with
+    SQLITE_BUSY at once while another connection holds the file (it would deadlock otherwise):
+    processes opening a new store together lost some of their runs to "database is locked"
+    (u10 A-80).
     """
 
+    wait_s = BUSY_TIMEOUT_S if timeout_s is None else timeout_s
     db_path.parent.mkdir(parents=True, exist_ok=True)
     _create_private(db_path)
-    conn = sqlite3.connect(db_path, timeout=timeout_s)
+    conn = sqlite3.connect(db_path, timeout=_TRY_TIMEOUT_S, factory=StoreConnection)
     try:
+        conn.store_path = str(db_path)
+        conn.wait_s = wait_s
         conn.row_factory = sqlite3.Row
-        _while_busy(lambda: conn.execute("PRAGMA journal_mode=WAL").fetchone(), timeout_s)
+        conn.execute("PRAGMA journal_mode=WAL").fetchone()
         conn.execute("PRAGMA foreign_keys=ON")
     except BaseException:
         conn.close()
@@ -116,30 +180,56 @@ def connect(db_path: Path, *, timeout_s: float = BUSY_TIMEOUT_S) -> sqlite3.Conn
 
 
 def _busy(exc: sqlite3.OperationalError) -> bool:
-    """Whether ``exc`` is SQLite saying another connection holds the lock (BUSY or LOCKED)."""
+    """Whether waiting can clear ``exc``: another connection holds the lock (BUSY or LOCKED).
 
+    Not a stale snapshot (SQLITE_BUSY_SNAPSHOT, which only starting the transaction again
+    clears), and not this module's own :class:`StoreLocked`, which is a wait that ran out.
+    """
+
+    if isinstance(exc, StoreLocked):
+        return False
     code = getattr(exc, "sqlite_errorcode", None)
     if isinstance(code, int):
-        return code & 0xFF in (sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED)
+        return code != _BUSY_SNAPSHOT and code & 0xFF in (
+            sqlite3.SQLITE_BUSY,
+            sqlite3.SQLITE_LOCKED,
+        )
     text = str(exc).lower()
     return "locked" in text or "busy" in text
 
 
-def _while_busy(operation: Callable[[], _T], timeout_s: float) -> _T:
+def _while_busy(
+    operation: Callable[[], _T],
+    timeout_s: float,
+    *,
+    on_wait: Callable[[], None] | None = None,
+    store: str = "",
+) -> _T:
     """Run ``operation``, again after a pause each time SQLite answers busy, for ``timeout_s``.
 
-    For the two statements SQLite's own busy handler does not cover: the switch to WAL and a
-    ``BEGIN IMMEDIATE`` it refuses to wait for because waiting could deadlock.
+    The pauses are ``time.sleep``, which a signal interrupts (Ctrl-C raises at once). ``on_wait``
+    is called once the wait has lasted :data:`NOTICE_AFTER_S`. A wait that runs out raises
+    :class:`StoreLocked` naming ``store`` when there is one, else SQLite's own error.
     """
 
-    deadline = time.monotonic() + timeout_s
+    started = time.monotonic()
+    deadline = started + timeout_s
     pause = 0.005
     while True:
         try:
             return operation()
         except sqlite3.OperationalError as exc:
-            if not _busy(exc) or time.monotonic() + pause > deadline:
+            if not _busy(exc):
                 raise
+            now = time.monotonic()
+            if now + pause > deadline:
+                if not store:
+                    raise
+                raise StoreLocked(
+                    f"the run store at {store} stayed locked by another process for {timeout_s:g} s"
+                ) from exc
+            if on_wait is not None and now - started >= NOTICE_AFTER_S:
+                on_wait()
         time.sleep(pause)
         pause = min(pause * 2, 0.25)
 
@@ -177,7 +267,7 @@ def current_version(conn: sqlite3.Connection) -> int:
     return int(value) if value is not None else 0
 
 
-def migrate(conn: sqlite3.Connection, *, timeout_s: float = BUSY_TIMEOUT_S) -> int:
+def migrate(conn: sqlite3.Connection, *, timeout_s: float | None = None) -> int:
     """Apply every pending migration in one transaction; return the new version.
 
     Idempotent: if the DB is already at ``SCHEMA_VERSION`` nothing runs. DDL is
@@ -194,8 +284,14 @@ def migrate(conn: sqlite3.Connection, *, timeout_s: float = BUSY_TIMEOUT_S) -> i
     if current_version(conn) >= SCHEMA_VERSION:
         return current_version(conn)
     if conn.in_transaction:
-        conn.commit()
-    _while_busy(lambda: conn.execute("BEGIN IMMEDIATE"), timeout_s)
+        # It committed the caller's open transaction silently, as executescript did.
+        raise ValueError(
+            "migrate() runs in a transaction of its own: commit or roll back the connection's "
+            "open transaction first"
+        )
+    _while_busy(
+        lambda: conn.execute("BEGIN IMMEDIATE"), BUSY_TIMEOUT_S if timeout_s is None else timeout_s
+    )
     try:
         start = current_version(conn)
         for version, step in _MIGRATIONS:

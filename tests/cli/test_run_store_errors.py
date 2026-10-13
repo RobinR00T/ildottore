@@ -374,3 +374,80 @@ def test_the_root_verbose_option_reads_as_a_counted_flag() -> None:
     line = next(row for row in result.output.splitlines() if "--verbose" in row)
     assert "INTEGER" not in line
     assert "default: 0" not in line
+
+
+def test_a_store_another_process_keeps_locked_exits_3_naming_it_before_any_send(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, no_sends: list[str]
+) -> None:
+    """LOW 1 of the pre-merge audit: the wait is said, and the store it gave up on is named."""
+
+    import sqlite3
+
+    from ildottore.store import SqliteRunStore, migrations
+
+    monkeypatch.setattr(migrations, "BUSY_TIMEOUT_S", 0.5)
+    monkeypatch.setattr(migrations, "NOTICE_AFTER_S", 0.05)
+    store = tmp_path / "runs.sqlite"
+    with SqliteRunStore(store):
+        pass
+    holder = sqlite3.connect(store, timeout=0)
+    holder.execute("BEGIN EXCLUSIVE")
+    try:
+        code, shown = _run(tmp_path, "--run-db", str(store))
+    finally:
+        holder.close()
+    assert code == 3, shown
+    assert f"note: waiting for the run store at {store}: another process holds its lock" in shown
+    assert f"the run store at {store} stayed locked by another process for 0.5 s" in shown
+    assert no_sends == []
+
+
+def test_fleet_run_maps_a_store_error_to_exit_3(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import sqlite3
+
+    def locked(*args: object, **kwargs: object) -> object:
+        raise sqlite3.OperationalError("database is locked")
+
+    monkeypatch.setattr(run_mod, "execute_run", locked)
+    fleet = tmp_path / "fleet.yaml"
+    fleet.write_text('version: "1"\ntargets:\n  - id: m\n    endpoint: mock://m\n')
+    store = tmp_path / "r.db"
+    result = CliRunner().invoke(
+        app, ["fleet", str(fleet), "--out", str(tmp_path / "o"), "--run", "--run-db", str(store)]
+    )
+    assert result.exit_code == 3, result.output
+    assert f"error: the run store at {store} failed: database is locked" in result.output
+
+
+def test_replay_maps_a_store_error_to_exit_3(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import sqlite3
+
+    from ildottore.cli import replay as replay_mod
+
+    def locked(*args: object, **kwargs: object) -> object:
+        raise sqlite3.OperationalError("database is locked")
+
+    monkeypatch.setattr(replay_mod, "replay_checked", locked)
+    store = tmp_path / "r.db"
+    result = CliRunner().invoke(app, ["replay", "run-0123456789ab", "--run-db", str(store)])
+    assert result.exit_code == 3, result.output
+    assert f"error: the run store at {store} failed: database is locked" in result.output
+
+
+def test_replay_refuses_a_directory_as_its_run_store(tmp_path: Path) -> None:
+    """LOW 7: it warned "no run store at <dir>" and replayed without the manifest check."""
+
+    code, _ = _run(tmp_path, "--run-db", str(tmp_path / "runs.sqlite"))
+    assert code == 2
+    run_id = next(p.name for p in (tmp_path / "ev").iterdir())
+    store = tmp_path / "dbdir"
+    store.mkdir()
+    result = CliRunner().invoke(
+        app, ["replay", run_id, "--evidence-root", str(tmp_path / "ev"), "--run-db", str(store)]
+    )
+    assert result.exit_code == 3, result.output
+    assert f"cannot open the run store at {store}: it is a directory, not a file" in result.output

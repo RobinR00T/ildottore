@@ -146,13 +146,177 @@ def test_a_migration_that_fails_leaves_nothing_applied(
 
 
 def test_the_connection_waits_for_a_held_lock(tmp_path: Path) -> None:
-    """A store another process is writing waits up to the busy timeout, not 5 s (the default)."""
+    """30 s in all, in tries of 0.1 s Python's signal handlers run between (not 5 s, the
+    default, and not one 30 s wait in C that held Ctrl-C)."""
 
     db = tmp_path / "runs.sqlite"
     conn = migrations.connect(db)
     try:
-        assert conn.execute("PRAGMA busy_timeout").fetchone()[0] == int(
-            migrations.BUSY_TIMEOUT_S * 1000
-        )
+        assert isinstance(conn, migrations.StoreConnection)
+        assert conn.execute("PRAGMA busy_timeout").fetchone()[0] == 100
+        assert conn.wait_s == migrations.BUSY_TIMEOUT_S == 30.0
+        assert conn.store_path == str(db)
     finally:
         conn.close()
+
+
+# --- pre-merge audit of e6a1ab9b: a lock wait is said, interruptible, and names the store ----
+
+
+def _held(db: Path) -> sqlite3.Connection:
+    """Another process's write lock on ``db``, held until the connection is closed."""
+
+    with SqliteRunStore(db):
+        pass  # created and migrated
+    holder = sqlite3.connect(db, timeout=0)
+    holder.execute("BEGIN IMMEDIATE")
+    return holder
+
+
+def test_a_lock_held_past_the_wait_names_the_store(tmp_path: Path) -> None:
+    db = tmp_path / "runs.sqlite"
+    holder = _held(db)
+    try:
+        conn = migrations.connect(db, timeout_s=0.4)
+        started = time.monotonic()
+        with pytest.raises(migrations.StoreLocked) as raised:
+            conn.execute("INSERT INTO schema_version (version) VALUES (99)")
+        waited = time.monotonic() - started
+        conn.close()
+    finally:
+        holder.close()
+    assert 0.3 <= waited < 3, waited
+    assert str(raised.value) == (
+        f"the run store at {db} stayed locked by another process for 0.4 s"
+    )
+    assert isinstance(raised.value, sqlite3.OperationalError)  # the handlers that catch it
+
+
+def test_a_lock_wait_is_said_once_on_stderr(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(migrations, "NOTICE_AFTER_S", 0.05)
+    db = tmp_path / "runs.sqlite"
+    holder = _held(db)
+    try:
+        conn = migrations.connect(db, timeout_s=0.5)
+        for _ in range(2):
+            with pytest.raises(migrations.StoreLocked):
+                conn.execute("INSERT INTO schema_version (version) VALUES (99)")
+        conn.close()
+    finally:
+        holder.close()
+    err = capsys.readouterr().err
+    assert err.count(f"note: waiting for the run store at {db}: another process holds") == 1
+    assert "Ctrl-C stops the wait" in err
+
+
+@pytest.mark.skipif(not hasattr(__import__("signal"), "setitimer"), reason="needs setitimer")
+def test_a_lock_wait_stops_on_ctrl_c(tmp_path: Path) -> None:
+    """SQLite's busy timeout sleeps in C, where Python runs no signal handler: a 30 s timeout
+    held Ctrl-C for about 32 s. The wait is Python's loop now, between short tries."""
+
+    import signal
+
+    def interrupt(signum: int, frame: object) -> None:
+        raise KeyboardInterrupt
+
+    db = tmp_path / "runs.sqlite"
+    holder = _held(db)
+    previous = signal.signal(signal.SIGALRM, interrupt)
+    try:
+        conn = migrations.connect(db, timeout_s=30)
+        signal.setitimer(signal.ITIMER_REAL, 0.3)
+        started = time.monotonic()
+        with pytest.raises(KeyboardInterrupt):
+            conn.execute("INSERT INTO schema_version (version) VALUES (99)")
+        stopped = time.monotonic() - started
+        conn.close()
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous)
+        holder.close()
+    assert stopped < 2, stopped
+
+
+def test_an_error_that_is_not_a_lock_is_raised_at_once() -> None:
+    calls = 0
+
+    def missing() -> None:
+        nonlocal calls
+        calls += 1
+        raise sqlite3.OperationalError("no such table: x")
+
+    with pytest.raises(sqlite3.OperationalError, match="no such table"):
+        migrations._while_busy(missing, 5)
+    assert calls == 1
+
+
+def test_a_stale_snapshot_is_not_waited_on() -> None:
+    """SQLITE_BUSY_SNAPSHOT cannot clear by waiting: the transaction has to start again."""
+
+    calls = 0
+
+    def stale() -> None:
+        nonlocal calls
+        calls += 1
+        exc = sqlite3.OperationalError("database is locked")
+        exc.sqlite_errorcode = 517  # type: ignore[attr-defined]
+        raise exc
+
+    with pytest.raises(sqlite3.OperationalError):
+        migrations._while_busy(stale, 5)
+    assert calls == 1
+
+
+def test_a_busy_answer_is_retried_until_it_clears() -> None:
+    answers = iter([sqlite3.OperationalError("database is locked")] * 3)
+
+    def flaky() -> str:
+        for exc in answers:
+            raise exc
+        return "done"
+
+    assert migrations._while_busy(flaky, 5) == "done"
+
+
+def test_migrate_refuses_a_connection_with_an_open_transaction(tmp_path: Path) -> None:
+    """It used to commit the caller's transaction silently before its own."""
+
+    conn = migrations.connect(tmp_path / "runs.sqlite")
+    try:
+        conn.execute("CREATE TABLE mine (a)")
+        conn.execute("INSERT INTO mine VALUES (1)")
+        assert conn.in_transaction
+        with pytest.raises(ValueError, match="open transaction"):
+            migrations.migrate(conn)
+        conn.rollback()
+        assert conn.execute("SELECT COUNT(*) FROM mine").fetchone()[0] == 0
+    finally:
+        conn.close()
+
+
+def test_a_migration_that_fails_closes_the_connection_and_names_the_store(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    opened: list[sqlite3.Connection] = []
+    real_connect = migrations.connect
+
+    def connect(path: Path, **kwargs: object) -> sqlite3.Connection:
+        conn = real_connect(path)
+        opened.append(conn)
+        return conn
+
+    def broken(conn: sqlite3.Connection, **kwargs: object) -> int:
+        raise sqlite3.DatabaseError("database disk image is malformed")
+
+    monkeypatch.setattr(migrations, "connect", connect)
+    monkeypatch.setattr(migrations, "migrate", broken)
+    db = tmp_path / "runs.sqlite"
+    with pytest.raises(RunStoreError) as raised:
+        SqliteRunStore(db)
+    assert str(raised.value) == (
+        f"cannot open the run store at {db}: database disk image is malformed"
+    )
+    with pytest.raises(sqlite3.ProgrammingError):  # closed
+        opened[0].execute("SELECT 1")
