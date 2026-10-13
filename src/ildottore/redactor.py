@@ -2255,9 +2255,12 @@ def withhold_split(obj: object) -> object:
     return _withheld(obj)[0]
 
 
-#: How much of the end of a stream cut by the window is read as a head that may run on: a head
-#: longer than that is long enough for the rules on its own (the excerpt's cut uses the same bound).
+#: The longest end of a stream cut by the window read as a head that may run on, when it holds no
+#: white space: a head longer than that is long enough for the rules on its own (the excerpt's own
+#: cut uses the same bound), and a longer run is cut to its last this many characters.
 _TAIL_RUN: Final = 256
+#: The shortest end read so, white space or not: a card or a phone number grouped by spaces.
+_TAIL_FLOOR: Final = 32
 
 
 def _open_tail(joined: str) -> int:
@@ -2265,18 +2268,25 @@ def _open_tail(joined: str) -> int:
 
     ``joined`` is a stream's text as the target wrote it, not as masked: masked, a registered
     credential's beginning no longer reads as written (fourth pre-merge audit, MEDIUM). The part
-    is its last :data:`_TAIL_RUN` characters, whatever they are, and more when a longer end of it
-    begins a registered credential: either may hold the head of a secret whose rest was not read,
-    which no rule recognises in part. A run of key characters was not enough: it stopped at the
-    first `!`, `#`, `$` or space, and a head glued to a longer run of other characters was never
-    read as one.
+    is the run of characters other than white space ``joined`` ends with, its last
+    :data:`_TAIL_RUN` when longer (a head glued to a long run of other characters), at least its
+    last :data:`_TAIL_FLOOR` characters, and more when a longer end begins a registered
+    credential, spaces and all: any of these may hold the head of a secret whose rest was not
+    read, which no rule recognises in part. The run of key characters it was before stopped at
+    the first `!`, `#` or `$`, and was read as no head at all past 256 characters. White space
+    ends the run, so a clean stream loses its last word, not its last 256 characters: in OpenAI
+    chunks streamed with 5 or 20 alternatives each, those reached back into what the excerpt
+    shows, and 3 of 6 clean bodies were quoted otherwise than by `main`.
     """
 
-    start = max(0, len(joined) - _TAIL_RUN)
+    start = len(joined)
+    while start > 0 and len(joined) - start < _TAIL_RUN and not joined[start - 1].isspace():
+        start -= 1
+    start = min(start, max(0, len(joined) - _TAIL_FLOOR))
     for secret in _known_secrets():
-        for size in range(min(len(secret) - 1, len(joined)), _TAIL_RUN, -1):
+        for size in range(min(len(secret) - 1, len(joined)), len(joined) - start, -1):
             if joined.endswith(secret[:size]):
-                start = min(start, len(joined) - size)
+                start = len(joined) - size
                 break
     return start
 
