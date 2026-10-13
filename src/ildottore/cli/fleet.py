@@ -131,11 +131,17 @@ def _parameter_credential(piece: str) -> str | None:
     """
 
     name, has_value, value = piece.partition("=")
-    if not has_value:
-        shape = key_shape(unquote_plus(name))
-        return f"a component shaped like a key ({shape})" if shape else None
-    if names_a_credential(name):
+    # A credential's name first: it is a word of the list, printed as written, and one of them
+    # (`X-Amz-Credential`) is high in entropy.
+    if has_value and names_a_credential(name):
         return f"the parameter {quoted(name)}"
+    shape = key_shape(unquote_plus(name))
+    if shape is not None:
+        # A key put where a name belongs (`?<key>=1`, `#<key>=x`, `;<key>=x`) is a value, never
+        # quoted; the round-2 rework refused it only with no `=` (round-3 audit of A-82).
+        return f"a {'parameter name' if has_value else 'component'} shaped like a key ({shape})"
+    if not has_value:
+        return None
     shape = key_shape(unquote_plus(value))
     return f"the parameter {quoted(name)}, whose value is {shape}" if shape else None
 

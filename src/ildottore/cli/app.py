@@ -105,6 +105,11 @@ def _mask_in_place(exc: BaseException) -> None:
     setattr(exc, "format_message", lambda: shown)  # noqa: B010 - an instance's method replaced
     setattr(exc, "message", shown)  # noqa: B010
     setattr(exc, "_dottore_masked", True)  # noqa: B010
+    # The conversion error click raised it from (`invalid literal for int(): '<key>'`) is chained
+    # to it: a group from the installed click does not catch Typer's copy's class and prints the
+    # traceback, chain included (round-3 audit of A-82). Neither the cause nor the context goes.
+    exc.__cause__ = None
+    exc.__suppress_context__ = True
 
 
 def _print_usage_error(exc: BaseException) -> None:

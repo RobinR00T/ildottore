@@ -587,3 +587,57 @@ def test_key_shape_reads_key_formats_and_entropy_and_no_pii() -> None:
     assert normalised_name(" accessToken[] ") == "access_token"
     assert normalised_name("%2561pi_key") == "api_key"
     assert normalised_name("X-Amz-Credential") == "x_amz_credential"
+
+
+@pytest.mark.parametrize(
+    "endpoint",
+    [
+        f"https://a.example.com/v1/chat/completions?{KEY}=1",
+        f"https://a.example.com/v1/chat/completions#{KEY}=x",
+        f"https://a.example.com/v1/chat/completions;{KEY}=x",
+    ],
+    ids=["query-name", "fragment-name", "path-parameter-name"],
+)
+def test_fleet_refuses_a_key_written_as_a_parameter_name(tmp_path: Path, endpoint: str) -> None:
+    """Refused on e1824e99, accepted by the round-2 rework, written to disk (round-3 audit)."""
+
+    result = _fleet(tmp_path, f'version: "1"\ntargets:\n  - id: a\n    endpoint: "{endpoint}"\n')
+    assert result.exit_code == 3, result.output
+    assert "a parameter name shaped like a key" in result.output
+    _no_leak(result.output)
+    assert not (tmp_path / "o").exists()
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "application_key",
+        "app_key",
+        "api_secret",
+        "oauth_token",
+        "oauth_signature",
+        "private_token",
+        "personal_access_token",
+        "sas_token",
+        "x_goog_api_key",
+        "X-Goog-Signature",
+        "X-Goog-Credential",
+        "xapikey",
+        "XApiKey",
+        "accesskey",
+        "secretkey",
+        "auth_key",
+        "authkey",
+        "hapikey",
+        "token_secret",
+        "passcode",
+    ],
+)
+def test_fleet_refuses_the_credential_names_the_round_3_audit_added(
+    tmp_path: Path, name: str
+) -> None:
+    endpoint = f"https://a.example.com/v1/chat/completions?{name}={_LOW}"
+    result = _fleet(tmp_path, f'version: "1"\ntargets:\n  - id: a\n    endpoint: "{endpoint}"\n')
+    assert result.exit_code == 3, result.output
+    assert _LOW not in result.output
+    assert not (tmp_path / "o").exists()

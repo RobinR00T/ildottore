@@ -325,3 +325,31 @@ def test_python_m_typer_prints_it_masked() -> None:
     for fragment in FRAGMENTS:
         assert fragment not in result.stdout + result.stderr, result.stderr
     assert "REDACTED" in result.stdout + result.stderr, result.stderr
+
+
+def test_a_group_of_the_installed_click_gets_the_masked_message_and_no_raw_cause() -> None:
+    """A group from the installed `click` does not catch the exception of Typer's copy, so it
+    prints a traceback: its last line is the masked message, and the conversion error click
+    raised it from, which quotes the value, is not chained to it (round-3 audit of A-82). This is
+    what embedding the command in a plain click group supports: a usage error says nothing of the
+    value; the exit code and the traceback are that group's."""
+
+    pytest.importorskip("click")
+    code = (
+        "import sys, click, typer\n"
+        "from ildottore.cli.main import app\n"
+        "parent = click.Group('outer')\n"
+        "parent.add_command(typer.main.get_command(app), 'dottore')\n"
+        "parent(sys.argv[1:])\n"
+    )
+    result = subprocess.run(  # noqa: S603 - this interpreter running the command in a group
+        [sys.executable, "-c", code, "dottore", "run", "--runs", KEY],
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+    )
+    for fragment in FRAGMENTS:
+        assert fragment not in result.stdout + result.stderr, result.stderr
+    assert "During handling" not in result.stderr and "direct cause" not in result.stderr
+    assert "REDACTED" in result.stderr.splitlines()[-1], result.stderr
