@@ -67,25 +67,23 @@ PIN_HISTORY: tuple[tuple[int, str, str], ...] = (
         "re-pin 2026-10-13: deny by default, the whole package but JUDGING_EXEMPT (second audit of "
         "6de5780b); version 1 is not released",
     ),
+    (
+        1,
+        "094105ecb30f4edb5fc32504951510538dd590f151679b42ec64201f9e0c56a5",
+        "re-pin 2026-10-13: the renderers, commands, cli.app and cli.main covered, data files by "
+        "suffix only (third audit of 1d3d65c7); version 1 is not released",
+    ),
 )
 
 #: The digest each version is pinned to now: the last line of :data:`PIN_HISTORY` for it.
 PINNED: dict[int, str] = {
-    1: "d22739274adb405de5ca37f206962771e042b36ed426809968c914ffa990a809",
+    1: "094105ecb30f4edb5fc32504951510538dd590f151679b42ec64201f9e0c56a5",
 }
 
 #: One ``<version> <digest>`` line per pin, appended to and never edited: the history must start
 #: with these lines, and may hold at most one more (the pin being made, frozen when it is
 #: committed). An edit in place of a pin, its line and ``PINNED`` together, fails here.
 FROZEN = Path(__file__).with_name("judging_pins.frozen")
-
-#: The renderers a run imports to show what it already decided: the only exemptions allowed inside
-#: the run's import closure, and only ``cli.run`` and ``cli.wiring`` among covered modules may
-#: import them.
-PRESENTATION = frozenset(
-    {"ildottore.reporting", "ildottore.cli.render", "ildottore.cli.exit_codes"}
-)
-_PRESENTATION_IMPORTERS = frozenset({"ildottore.cli.run", "ildottore.cli.wiring"})
 
 _SRC = Path(judging_rules.__file__).resolve().parents[2]
 
@@ -227,29 +225,61 @@ def test_every_exemption_names_a_module_and_gives_its_reason() -> None:
         assert _module_file(name) is not None, f"{name} is not a module of the package"
 
 
-def test_an_exempt_module_a_run_imports_is_a_renderer_only_the_composer_imports() -> None:
-    """An exemption is checked, not taken on its word: a command is outside the run's import
-    closure, and a renderer inside it is imported, among covered modules, by the composer alone
-    (cli.run and cli.wiring), so no verdict code reads one."""
+#: The functions of the standard library that import a module named by a string.
+_DYNAMIC_IMPORTS = frozenset({"import_module", "__import__"})
 
-    run_path = _closure("ildottore.cli.run")
+
+def test_no_part_of_a_run_can_import_an_exempt_module() -> None:
+    """An exemption is checked, not taken on its word. A module the ``dottore`` entry point loads
+    runs its top-level code in the process of every run, so an exempt one must be outside the
+    import closure of ``ildottore.cli.main`` (the third audit: an exempt renderer emptied
+    ``FILTER_STOPS`` at import time and a resume mixed verdicts)."""
+
+    loaded = _closure("ildottore.cli.main")
     for name in JUDGING_EXEMPT:
-        inside = sorted(m for m in run_path if _under(m, name))
-        if name in PRESENTATION:
-            continue
+        inside = sorted(m for m in loaded if _under(m, name))
         assert not inside, (
-            f"{name} is exempt as a command a run never imports, and a run imports {inside}: "
-            "cover it, or make the case that it only renders"
+            f"{name} is exempt and the dottore entry point imports {inside}: cover it (it runs in "
+            "every run's process)"
         )
-    exempt = list(JUDGING_EXEMPT)
+
+
+def test_no_covered_code_imports_an_exempt_module_by_name() -> None:
+    """A dynamic import is outside the static closure (the third audit's dyn-x reached an exempt
+    command's constant through ``importlib.import_module``). One that names an ``ildottore``
+    module must name a covered one, by a literal string; an argument that is not a literal is
+    allowed only where no literal of its function names an ``ildottore`` module."""
+
+    covered = {label for label, _ in covered_files()}
     for module in _all_modules():
-        if any(_under(module, name) for name in exempt):
+        if module not in covered:
             continue
-        for imported in _imports(module):
-            for name in PRESENTATION:
-                if _under(imported, name):
-                    assert module in _PRESENTATION_IMPORTERS, (
-                        f"covered module {module} imports the exempt renderer {imported}"
+        path = _module_file(module)
+        assert path is not None
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        scopes: list[ast.AST] = [tree] + [
+            n for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+        ]
+        for scope in scopes:
+            literals = [
+                n.value
+                for n in ast.walk(scope)
+                if isinstance(n, ast.Constant) and isinstance(n.value, str)
+            ]
+            for call in (n for n in ast.walk(scope) if isinstance(n, ast.Call)):
+                func = call.func
+                called = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", "")
+                if called not in _DYNAMIC_IMPORTS or not call.args:
+                    continue
+                first = call.args[0]
+                if isinstance(first, ast.Constant) and isinstance(first.value, str):
+                    assert not any(_under(first.value, n) for n in JUDGING_EXEMPT), (
+                        f"{module} imports the exempt module {first.value} by name"
+                    )
+                else:
+                    assert not any(v.startswith("ildottore") for v in literals), (
+                        f"{module} imports a module by a computed name beside a literal naming an "
+                        "ildottore module: cover what it can reach, or import it statically"
                     )
 
 
@@ -258,8 +288,31 @@ def test_every_other_file_of_the_package_is_covered() -> None:
     for module in _all_modules():
         if not any(_under(module, name) for name in JUDGING_EXEMPT):
             assert module in labels, f"{module} is neither covered nor exempt"
-    assert {"store/schema.sql", "fingerprint/signatures/pack.yaml"} <= labels
-    assert not any(label.startswith("reporting/") for label in labels)
+    assert {
+        "store/schema.sql",
+        "fingerprint/signatures/pack.yaml",
+        "reporting/schemas/report-1.0.schema.json",
+        "reporting/templates/report.html.j2",
+        "ildottore.reporting.json_reporter",
+        "ildottore.cli.render",
+        "ildottore.cli.app",
+    } <= labels
+    assert not any(label.startswith("ildottore.testing") for label in labels)
+
+
+def test_only_the_suffixes_the_package_reads_are_data() -> None:
+    """Every non-Python file of the package has a suffix of DATA_SUFFIXES, so none it reads is
+    left out; a stray file (the third audit's evaluators/.DS_Store) is not one of them."""
+
+    package = Path(judging_rules.__file__).resolve().parents[1]
+    for path in package.rglob("*"):
+        relative = path.relative_to(package)
+        if (
+            path.is_file()
+            and path.suffix not in {".py", ".pyc"}
+            and not any(part.startswith(".") or part == "__pycache__" for part in relative.parts)
+        ):
+            assert path.suffix in judging_rules.DATA_SUFFIXES, f"{relative} is read? classify it"
 
 
 def _package_copy(tmp_path: Path) -> Path:
@@ -307,14 +360,55 @@ def test_a_change_to_covered_code_changes_the_digest(
     assert judging_rules._digest(copy) != before
 
 
-def test_a_comment_a_docstring_or_an_exempt_module_is_not_a_change(tmp_path: Path) -> None:
+def test_a_comment_a_docstring_or_a_stray_file_is_not_a_change(tmp_path: Path) -> None:
     copy = _package_copy(tmp_path)
     before = judging_rules._digest(copy)
     runner = copy / "core" / "runner.py"
     runner.write_text(runner.read_text(encoding="utf-8") + "\n# a note, and nothing else\n")
-    html = copy / "reporting" / "html_reporter.py"
-    html.write_text(html.read_text(encoding="utf-8") + "\nX_ONLY_A_RENDERER_READS = 1\n")
+    (copy / "evaluators" / ".DS_Store").write_bytes(b"\x00\x01 Finder")
+    (copy / "evaluators" / "notes.txt").write_text("nothing the package reads")
+    (copy / "testing" / "golden.py").write_text("X = 1\n")
     assert judging_rules._digest(copy) == before
+
+
+def test_a_side_effect_in_a_renderer_changes_the_digest(tmp_path: Path) -> None:
+    """The third audit's mut-sidefx2, which an exemption of the renderer let through."""
+
+    copy = _package_copy(tmp_path)
+    before = judging_rules._digest(copy)
+    render = copy / "cli" / "render.py"
+    render.write_text(
+        render.read_text(encoding="utf-8")
+        + "\nimport ildottore.shared.provider_filter as _pf\n\n_pf.FILTER_STOPS = frozenset()\n"
+    )
+    assert judging_rules._digest(copy) != before
+
+
+def test_a_package_with_no_source_is_refused_not_digested(tmp_path: Path) -> None:
+    """A zip or frozen install has no file under the package directory: a digest of nothing would
+    pass every resume (third audit, LOW). It is refused, a ValueError, which the CLI exits 3 on."""
+
+    empty = tmp_path / "ildottore"
+    empty.mkdir()
+    (empty / "data.yaml").write_text("x: 1\n")
+    with pytest.raises(judging_rules.JudgingCodeUnreadable, match="cannot read Il Dottore's own"):
+        judging_rules._digest(empty)
+    assert issubclass(judging_rules.JudgingCodeUnreadable, ValueError)
+
+
+def test_each_covered_file_has_a_short_digest_for_the_refusal(tmp_path: Path) -> None:
+    files = judging_rules.judging_files()
+    assert set(files) == {label for label, _ in covered_files()}
+    assert all(len(d) == judging_rules.FILE_DIGEST_LENGTH for d in files.values())
+    copy = _package_copy(tmp_path)
+    _, before = judging_rules._scan(copy)
+    rest = copy / "adapters" / "rest.py"
+    text = rest.read_text(encoding="utf-8")
+    rest.write_text(
+        text.replace("finish_path: str | None = None", 'finish_path: str | None = "x"', 1)
+    )
+    _, after = judging_rules._scan(copy)
+    assert [k for k in before if before[k] != after[k]] == ["ildottore.adapters.rest"]
 
 
 def test_the_digest_costs_well_under_a_second() -> None:

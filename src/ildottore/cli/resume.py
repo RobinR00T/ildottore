@@ -35,6 +35,8 @@ from ildottore.shared.judging_rules import (
     JUDGING_RULES_SINCE,
     JUDGING_RULES_VERSION,
     judging_digest,
+    judging_files,
+    python_build,
 )
 from ildottore.shared.models import (
     AttackSpec,
@@ -831,6 +833,20 @@ class ResumeRefused(ValueError):
         self.digests = digests
 
 
+def _changed_files(stored: object, current: dict[str, str]) -> str:
+    """The covered files whose digest differs between the record and now, at most five named."""
+
+    if not isinstance(stored, dict):
+        return ""
+    names = sorted(
+        label for label in stored.keys() | current.keys() if stored.get(label) != current.get(label)
+    )
+    if not names:
+        return ""
+    shown = ", ".join(names[:5]) + (f" and {len(names) - 5} more" if len(names) > 5 else "")
+    return f"; the files that differ: {shown}"
+
+
 def _assert_same_code(run_id: str, context: dict[str, object]) -> None:
     """Refuse a resume whose halted half was judged by other code under the same version (A-81).
 
@@ -839,13 +855,13 @@ def _assert_same_code(run_id: str, context: dict[str, object]) -> None:
     one bumped the version for is caught too: the second audit of the first design edited a default
     of the REST template, a subclass's override, the offline judge and a decorator, each under the
     same version and an unchanged pin, and the resume mixed verdicts. A run that records no digest
-    (one a build before it made) is refused the same way. No flag waives it.
+    (one a build before it made) is refused the same way, and so is one an interpreter of another
+    implementation or ``major.minor`` judged (its ``re``, ``json`` and Unicode tables read a reply
+    too). The refusal names the files that differ, from the per-file record. No flag waives it.
     """
 
     stored = context.get("judging_digest")
     current = judging_digest()
-    if stored == current:
-        return
     this = (
         f"this is Il Dottore {_shown_version(__version__)}, judging rules {JUDGING_RULES_VERSION}"
     )
@@ -860,13 +876,24 @@ def _assert_same_code(run_id: str, context: dict[str, object]) -> None:
             f"run {run_id!r} records judging rules {JUDGING_RULES_VERSION} and no judging digest, "
             f"so the code that judged it cannot be told from this one ({this}). {advice}"
         )
-    raise ResumeRefused(
-        f"run {run_id!r} was judged under the same judging rules ({JUDGING_RULES_VERSION}) by "
-        f"other code: its judging digest is {stored} and this installation's is {current} (Il "
-        f"Dottore's code changed since the halt: an upgrade, a reinstall or a local edit; {this}). "
-        f"{advice}",
-        digests=(str(stored), current),
-    )
+    if stored != current:
+        files = _changed_files(context.get("judging_files"), judging_files())
+        raise ResumeRefused(
+            f"run {run_id!r} was judged under the same judging rules ({JUDGING_RULES_VERSION}) by "
+            f"other code: its judging digest is {stored} and this installation's is {current} (Il "
+            f"Dottore's code changed since the halt: an upgrade, a reinstall or a local edit"
+            f"{files}; {this}). {advice}",
+            digests=(str(stored), current),
+        )
+    then, now = context.get("python"), python_build()
+    if then != now:
+        raise ResumeRefused(
+            f"run {run_id!r} was judged under {then or 'an unrecorded interpreter'} and this "
+            f"invocation runs under {now}. The standard library reads a reply too (its regular "
+            "expressions, JSON and Unicode tables change between versions), so one report would "
+            "judge the same kind of reply two ways. There is no flag for this: finish it with the "
+            "interpreter that started it, or start a fresh run."
+        )
 
 
 def _is_version(value: object) -> bool:

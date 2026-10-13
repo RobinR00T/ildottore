@@ -443,3 +443,46 @@ def test_a_package_version_with_no_pep_440_shape_is_recorded_as_unknown(
     assert context["tool_version"] == "unknown" and context["tool_versions"] == ["unknown"]
     outcome = execute_run(_opts(tmp_path, resume=run_id, budget_requests=100), [spec_dir])
     assert outcome.exit_code in {ExitCode.FINDINGS_AT_OR_ABOVE, ExitCode.FINDINGS_BELOW}
+
+
+def test_the_digest_refusal_names_the_files_that_changed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    run_id, spec_dir = _halted(tmp_path)
+    files = _context(tmp_path)["judging_files"]
+    assert isinstance(files, dict) and "ildottore.adapters.rest" in files
+    changed = {**files, "ildottore.adapters.rest": "0" * 8, "ildottore.cli.render": "1" * 8}
+    monkeypatch.setattr(resume_mod, "judging_digest", lambda: "e" * 64)
+    monkeypatch.setattr(resume_mod, "judging_files", lambda: changed)
+    with pytest.raises(resume_mod.ResumeRefused) as refused:
+        execute_run(_opts(tmp_path, resume=run_id, budget_requests=100), [spec_dir])
+    assert "the files that differ: ildottore.adapters.rest, ildottore.cli.render" in str(
+        refused.value
+    )
+
+
+def test_the_changed_files_are_capped_at_five() -> None:
+    stored = {f"m{i}": "0" * 8 for i in range(8)}
+    current = {f"m{i}": "1" * 8 for i in range(8)}
+    text = resume_mod._changed_files(stored, current)
+    assert text == "; the files that differ: m0, m1, m2, m3, m4 and 3 more"
+    assert resume_mod._changed_files(None, current) == ""
+
+
+def test_a_run_judged_under_another_interpreter_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from ildottore.shared.judging_rules import python_build
+
+    run_id, spec_dir = _halted(tmp_path)
+    context = _context(tmp_path)
+    assert context["python"] == python_build()
+    dependencies = context["dependencies"]
+    assert isinstance(dependencies, dict)
+    assert set(dependencies) == {"pydantic", "httpx", "websockets"}
+    monkeypatch.setattr(resume_mod, "python_build", lambda: "PyPy 3.10")
+    with pytest.raises(resume_mod.ResumeRefused) as refused:
+        execute_run(_opts(tmp_path, resume=run_id, budget_requests=100), [spec_dir])
+    message = str(refused.value)
+    assert f"was judged under {python_build()}" in message and "under PyPy 3.10" in message
+    assert "There is no flag for this" in message

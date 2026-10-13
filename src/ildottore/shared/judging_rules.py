@@ -48,12 +48,18 @@ from pathlib import Path
 from typing import Final
 
 __all__ = [
+    "DATA_SUFFIXES",
     "JUDGING_EXEMPT",
     "JUDGING_RULES_SINCE",
     "JUDGING_RULES_VERSION",
+    "RECORDED_DEPENDENCIES",
+    "JudgingCodeUnreadable",
     "covered_files",
+    "dependency_versions",
     "judging_digest",
+    "judging_files",
     "normalized_source",
+    "python_build",
 ]
 
 #: Bumped by one whenever a change can alter the verdict stored for an attempt. ``1``: the rules as
@@ -65,44 +71,40 @@ JUDGING_RULES_VERSION: Final = 1
 #: (as ``JUDGING_RULES_SINCE``) instead of writing the date: set once, at the merge.
 JUDGING_RULES_SINCE: Final = "2026-10-12"
 
-#: The modules :func:`judging_digest` leaves out: each is presentation or input only and cannot
-#: change the verdict stored for an attempt. A package name exempts every module under it. Two
-#: kinds, which ``tests/shared/test_judging_rules.py`` checks: a command a run never imports (it is
-#: outside the import closure of ``ildottore.cli.run``), or a renderer a run imports only to show
-#: what it already decided (imported by ``cli.run`` and ``cli.wiring`` alone among covered modules).
+#: The modules :func:`judging_digest` leaves out, each with its reason. Only a module no part of a
+#: run can execute may be here: outside the import closure of the console entry point
+#: (``ildottore.cli.main``, which ``dottore`` and ``dott`` call), and named by no dynamic import of
+#: covered code, both of which ``tests/shared/test_judging_rules.py`` checks. A module the entry
+#: point imports runs its top-level code in the process of every run, so an edit to it can change
+#: a verdict as a side effect (the third audit appended to the exempt ``cli/render.py`` a line that
+#: emptied ``shared.provider_filter.FILTER_STOPS``, and a resume mixed verdicts): the renderers,
+#: the other commands, ``cli.app`` and ``cli.main`` are covered for that reason, and a resume after
+#: an edit to their help text is refused, as after any other edit.
 JUDGING_EXEMPT: Final = {
-    # Commands that never run a campaign, outside the run's import closure.
-    "ildottore.cli.app": (
-        "parses the command line into RunOptions and prints help and errors; what a run does with "
-        "them is in cli.run and below"
+    "ildottore.testing": (
+        "the offline golden harness of the test suite: no module the dottore entry point loads "
+        "imports it"
     ),
-    "ildottore.cli.main": "the console entry point, which calls cli.app",
-    "ildottore.cli.calibrate": "the calibrate command, which reads reports a run wrote",
-    "ildottore.cli.coverage": "the coverage command, which reads the specs and runs nothing",
-    "ildottore.cli.describe": "the describe command, which prints one spec",
-    "ildottore.cli.diff": "the diff command, which compares two reports",
-    "ildottore.cli.fingerprint": (
-        "the fingerprint command; the -sV pass a run makes goes through cli.wiring and the "
-        "fingerprint package, which are covered"
-    ),
-    "ildottore.cli.fleet": (
-        "expands a fleet file into target and scope files, whose content the target digest binds "
-        "(u12 A-24); its --run calls cli.run"
-    ),
-    "ildottore.cli.lint": "the lint command",
-    "ildottore.cli.new_spec": "the new-spec scaffolding command",
-    "ildottore.cli.registry": "the registry ls command",
-    "ildottore.cli.render_media": "the render-media command",
-    "ildottore.cli.replay": "the replay command, which reads a stored run and judges nothing",
-    "ildottore.testing": "the offline golden harness of the test suite",
-    # Renderers a run imports to show what it already decided.
-    "ildottore.reporting": (
-        "renders the JSON, HTML, SARIF and JUnit reports from findings a run has scored; nothing "
-        "a run stores is read back from it"
-    ),
-    "ildottore.cli.render": "prints a run's progress and summary on the terminal",
-    "ildottore.cli.exit_codes": "maps a finished run's findings to the process exit code",
 }
+
+#: The suffixes of the package's own data files, which the digest covers byte for byte: the
+#: fingerprint signatures (``.yaml``), the run store schema (``.sql``), the report schemas
+#: (``.json``) and the HTML report template (``.j2``). Anything else is not read by the package:
+#: a stray file (a ``.DS_Store``) is not a change of the code that judges (the third audit: one
+#: refused every resume).
+DATA_SUFFIXES: Final = frozenset({".yaml", ".sql", ".json", ".j2"})
+
+#: Hex digits of a per-file digest, which a refusal uses to name the files that changed.
+FILE_DIGEST_LENGTH: Final = 8
+
+
+class JudgingCodeUnreadable(ValueError):
+    """The package's own source files cannot be read, so the code that judges cannot be bound.
+
+    A ``ValueError``, so the CLI exits 3: a zip or frozen install has no file under the package
+    directory, and a digest of nothing would pass every resume (third audit, LOW).
+    """
+
 
 #: The package directory the digest covers.
 _PACKAGE: Final = Path(__file__).resolve().parents[1]
@@ -155,20 +157,23 @@ def _exempt(module: str) -> bool:
 def covered_files(package: Path = _PACKAGE) -> list[tuple[str, Path]]:
     """``(label, path)`` of every file the digest covers, sorted: the package minus the exempt.
 
-    A Python source is labelled by its module, any other file (a schema, a signature pack, the
-    SQL schema) by its path; compiled files and caches are not the package's source.
+    A Python source is labelled by its module, a data file (:data:`DATA_SUFFIXES`) by its path; a
+    dotfile, a cache and any other suffix are not the package's source.
     """
 
     out: list[tuple[str, Path]] = []
     for path in sorted(package.rglob("*")):
-        if not path.is_file() or "__pycache__" in path.parts or path.suffix in {".pyc", ".pyo"}:
-            continue
         relative = path.relative_to(package)
+        if not path.is_file() or any(
+            part.startswith(".") or part == "__pycache__" for part in relative.parts
+        ):
+            continue
         if path.suffix == ".py":
             module = _module_of(relative)
-            if _exempt(module):
-                continue
-            out.append((module, path))
+            if not _exempt(module):
+                out.append((module, path))
+            continue
+        if path.suffix not in DATA_SUFFIXES:
             continue
         owner = _module_of(relative.parent / "__init__.py") if relative.parent.parts else ""
         if owner and _exempt(owner):
@@ -177,23 +182,80 @@ def covered_files(package: Path = _PACKAGE) -> list[tuple[str, Path]]:
     return out
 
 
-def _digest(package: Path) -> str:
+def _scan(package: Path) -> tuple[str, dict[str, str]]:
+    """``(digest, {label: short digest})`` over :func:`covered_files`."""
+
+    files = covered_files(package)
+    if not any(path.suffix == ".py" for _, path in files):
+        raise JudgingCodeUnreadable(
+            f"cannot read Il Dottore's own source files under {package} (a zip or a frozen "
+            "install?): the code that judges a run cannot be recorded, so no run is started. "
+            "Install the package from its files (pip install, or the source tree)."
+        )
     digest = hashlib.sha256()
-    for label, path in covered_files(package):
+    each: dict[str, str] = {}
+    for label, path in files:
         if path.suffix == ".py":
             content = normalized_source(path.read_text(encoding="utf-8")).encode("utf-8")
         else:
             content = path.read_bytes()
         digest.update(label.encode("utf-8") + b"\0" + content + b"\0")
-    return digest.hexdigest()
+        each[label] = hashlib.sha256(content).hexdigest()[:FILE_DIGEST_LENGTH]
+    return digest.hexdigest(), each
+
+
+def _digest(package: Path) -> str:
+    return _scan(package)[0]
 
 
 @cache
+def _scanned(package: Path) -> tuple[str, dict[str, str]]:
+    return _scan(package)
+
+
 def judging_digest(package: Path = _PACKAGE) -> str:
     """The SHA-256 of the code that judges, computed from the installed package (deny by default).
 
     Taken once per process (the files do not change under a running scan): about 0.3 s for the
-    161 modules of the package, the parse and the tokenizer being most of it.
+    package, the parse and the tokenizer being most of it.
     """
 
-    return _digest(package)
+    return _scanned(package)[0]
+
+
+def judging_files(package: Path = _PACKAGE) -> dict[str, str]:
+    """``{label: short digest}`` of each covered file, so a refusal can name what changed."""
+
+    return dict(_scanned(package)[1])
+
+
+def python_build() -> str:
+    """The interpreter that judges, as a run records it: implementation and ``major.minor``.
+
+    Compared by a resume: the standard library's ``re``, ``json`` and Unicode tables are part of
+    how a reply is read, and they change between minor versions.
+    """
+
+    import platform
+    import sys
+
+    return f"{platform.python_implementation()} {sys.version_info[0]}.{sys.version_info[1]}"
+
+
+#: The third-party packages whose versions a run records, not compares: the models, the HTTP and
+#: the WebSocket clients a reply goes through.
+RECORDED_DEPENDENCIES: Final = ("pydantic", "httpx", "websockets")
+
+
+def dependency_versions() -> dict[str, str | None]:
+    """``{distribution: version or None}`` of :data:`RECORDED_DEPENDENCIES`, for the record."""
+
+    from importlib.metadata import PackageNotFoundError, version
+
+    out: dict[str, str | None] = {}
+    for name in RECORDED_DEPENDENCIES:
+        try:
+            out[name] = version(name)
+        except PackageNotFoundError:
+            out[name] = None
+    return out

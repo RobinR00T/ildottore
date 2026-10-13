@@ -800,6 +800,16 @@ _CONTEXT_FIELDS: Final[dict[str, tuple[bool, Any, str]]] = {
         lambda v: isinstance(v, str) and _SHA256.fullmatch(v) is not None,
         "a sha256 digest",
     ),
+    "judging_files": (False, _is_field_digests, "a map of file digests"),
+    "python": (False, _is_name, "an interpreter name"),
+    "dependencies": (
+        False,
+        lambda v: (
+            isinstance(v, dict)
+            and all(isinstance(k, str) and (d is None or _is_name(d)) for k, d in v.items())
+        ),
+        "a map of package versions",
+    ),
     "route": (False, _is_name, "a route name"),
     "selection": (False, _is_selection, "the selection flags this tool records"),
     "spec_fields": (

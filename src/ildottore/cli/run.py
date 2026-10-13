@@ -83,7 +83,13 @@ from ildottore.shared.digest import (
     target_field_digests,
 )
 from ildottore.shared.enums import Category, EvaluatorType
-from ildottore.shared.judging_rules import JUDGING_RULES_VERSION, judging_digest
+from ildottore.shared.judging_rules import (
+    JUDGING_RULES_VERSION,
+    dependency_versions,
+    judging_digest,
+    judging_files,
+    python_build,
+)
 from ildottore.shared.models import (
     AttackSpec,
     Finding,
@@ -3037,6 +3043,11 @@ def _persist_run_integrity(
                 # The code that judges, computed from the installed package (deny by default):
                 # a resume under other code is refused even when nobody bumped the version.
                 "judging_digest": judging_digest(),
+                # Each covered file's short digest, so a refusal names what changed; the
+                # interpreter, compared too; the libraries a reply goes through, recorded only.
+                "judging_files": judging_files(),
+                "python": python_build(),
+                "dependencies": dependency_versions(),
                 # What a refused resume names (M1): the field of a spec or of the target that
                 # changed, the route, and the selection flags the run was made with.
                 "spec_fields": {spec.id: spec_field_digests(spec) for spec in specs},
