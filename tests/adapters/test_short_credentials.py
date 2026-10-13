@@ -156,3 +156,8 @@ def test_the_message_never_holds_the_credential() -> None:
         refuse_short_credential("t1", "Zq8!pL2", "https://ops:Xy7%40w@api.example.test")
     for value in ("Zq8!pL2", "Xy7%40w", "Xy7@w"):
         assert value not in str(info.value)
+
+
+def test_an_endpoint_that_cannot_be_read_has_no_password_to_check() -> None:
+    # The allowlist gate, run first, refuses such a URL; the check itself passes it by.
+    refuse_short_credential("t1", "a-long-enough-key", "http://[::1")

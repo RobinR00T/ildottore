@@ -582,13 +582,10 @@ class _AsWritten:
             return None
         return first - self._before(index)
 
-    def in_view(self, at: int) -> int | None:
-        """Where text position ``at`` is in the view, if no mask holds it; else None."""
+    def in_view(self, at: int) -> int:
+        """Where text position ``at``, outside every mask, is in the view."""
 
-        index = bisect.bisect_right(self.text_starts, at)  # the masks starting by `at`
-        if index and self.text_ends[index - 1] > at:
-            return None
-        return at + self._before(index)
+        return at + self._before(bisect.bisect_right(self.text_starts, at))
 
     def readable(self, first: int, after: int) -> tuple[int, int] | None:
         """Where, in the text, the password at ``view[first:after]`` is masked.
@@ -868,22 +865,34 @@ class _Cuts:
     def for_text(cls, text: str) -> _Cuts | None:
         """The stand-ins for a pass over ``text``: a block it holds no character of, or None."""
 
-        used = {ord(c) for c in _PRIVATE_USE_CHAR.findall(text)}
+        # The blocks the text uses, in one pass: testing every block against every character the
+        # text holds took 2.2 s on the 137,468 characters of the Private Use Area (round 2, R2-L2).
+        # A text holding one character of each of the 1,072 blocks gets no stand-ins: its numbers
+        # are masked as main masked them, a UUID's included (`Redactor._number_mask`).
+        used = {
+            (first, (code - first) // _STAND_IN_BLOCK)
+            for code in map(ord, _PRIVATE_USE_CHAR.findall(text))
+            for first, last in _PRIVATE_USE
+            if first <= code <= last
+        }
         for first, last in _PRIVATE_USE:
-            for base in range(first, last + 1 - _STAND_IN_BLOCK, _STAND_IN_BLOCK):
-                if used and any(base <= code < base + _STAND_IN_BLOCK for code in used):
+            for block in range((last + 1 - first) // _STAND_IN_BLOCK):
+                if (first, block) in used:
                     continue
+                base = first + block * _STAND_IN_BLOCK
                 cuts = cls._BY_BASE.get(base)
                 if cuts is None:
                     cuts = cls._BY_BASE[base] = cls(base)
                 return cuts
         return None
 
-    def encode(self, number: str, pattern: Pattern) -> str | None:
-        """``number``, read inside a UUID by ``pattern``, in stand-ins; None if it cannot be."""
+    def encode(self, number: str, pattern: Pattern) -> str:
+        """``number``, read inside a UUID by ``pattern``, the card or the phone rule, in stand-ins.
 
-        if not number or pattern.type not in _STAND_IN_KINDS or number.strip(_STAND_IN_CHARS):
-            return None
+        The part of a number inside a UUID holds only digits and `-` (a number rule takes digits,
+        spaces and `().-`, a UUID hex digits and `-`), each of which has a stand-in.
+        """
+
         first, rest = self._encode[_STAND_IN_KINDS.index(pattern.type), pattern.hashed]
         return number[0].translate(first) + number[1:].translate(rest)
 
@@ -1429,9 +1438,9 @@ class Redactor:
             written.append(mask if original is None else original)
             return f"{_STASH_OPEN}{len(preserved) - 1}{_STASH_CLOSE}"
 
-        # The stand-ins of this pass (A-78, `_Cuts`): only a redactor whose late UUID pattern
-        # masks a UUID whole leaves one whole for it.
-        cuts = _Cuts.for_text(text) if _UUID_PATTERN in self._late else None
+        # The stand-ins of this pass (A-78, `_Cuts`): only a redactor whose entropy rule masks a
+        # UUID cut by a number rule whole, and whose late pattern masks any other, uses them.
+        cuts = _Cuts.for_text(text) if self._hex_runs and _UUID_PATTERN in self._late else None
 
         def _as_written(stretch: str) -> str:
             if cuts is not None:
@@ -1577,7 +1586,7 @@ class Redactor:
             )
         # Last, after the URL rule as written too, which reads a mask's `:` as a userinfo's and
         # takes the URL for one its rule read (u01 A-78; pre-commit differential fuzz).
-        working = self.redact_late(working, _as_written, cuts)
+        working = self.redact_late(working, _as_written)
         if cuts is not None:  # a number no mask took is masked as main masked it
             working = cuts.run.sub(lambda m: self._number_masks(cuts, m.group(0)), working)
 
@@ -1752,43 +1761,22 @@ class Redactor:
 
         return _sub
 
-    def redact_late(
-        self,
-        text: str,
-        as_written: Callable[[str], str] | None = None,
-        cuts: _Cuts | None = None,
-    ) -> str:
+    def redact_late(self, text: str, as_written: Callable[[str], str] | None = None) -> str:
         """Mask the late patterns (:func:`_late_patterns`, A-78) in what ``text`` shows.
 
         The last rule of a pass, after the labelled, the entropy and the URL-as-written rules. No
         late pattern matches inside a mask (none starts with a letter of one, or holds a ``«``, a
         ``:`` or a ``»``). ``as_written`` writes out a stash token a match holds (the pass's own);
         the CLI calls it on its own on each stretch of the message it prints that it does not
-        keep, after its entropy pass (``cli.app._masked``). The patterns read stand-ins
-        (``cuts``) back, so a UUID a number rule read a number in is matched whole; each match is
-        masked at the same place in ``text``, the stand-ins it holds with it.
+        keep, after its entropy pass (``cli.app._masked``). In a pass, the entropy rule has
+        masked every UUID a number rule read a number in (``_cut_spans``), so no stand-in is left
+        for them.
         """
 
         written = as_written or (lambda stretch: stretch)
-        if cuts is not None and not cuts.run.search(text):
-            cuts = None
         for pattern in self._late:
-            view = text if cuts is None else cuts.decode(text)
-            if not pattern.may_match(view):
-                continue
-            if view is text:
+            if pattern.may_match(text):
                 text = pattern.regex.sub(self._make_sub(pattern, written), text)
-                continue
-            pieces: list[str] = []
-            cursor = 0
-            for m in pattern.regex.finditer(view):
-                if skipped(m):
-                    continue
-                masked = self._mask_token(pattern, written(m.group(0)) if pattern.hashed else m[0])
-                pieces += (text[cursor : m.start()], masked)
-                cursor = m.end()
-            if pieces:
-                text = "".join(pieces) + text[cursor:]
         return text
 
     def _redact_pem(self, pattern: Pattern, text: str, as_written: Callable[[str], str]) -> str:
@@ -2040,9 +2028,10 @@ class Redactor:
             # with every mask one neutral character. Read on the text, a mask laid after that
             # rule gave it the `:` it lacked, and the password stayed readable: a phone mask's
             # before A-78, a hex run's or a UUID's since (pre-merge audit of A-78, L2).
+            # Both views hold the same masks (`_shown` and `_as_token` read the same as masks), so a
+            # `://` outside one in the first is outside one in the second.
             at = read.in_text(url.start(), url.start() + 3)
-            seen = None if at is None else later.in_view(at)
-            if seen is not None and _URL_USERINFO.match(later.view, seen):
+            if at is not None and _URL_USERINFO.match(later.view, later.in_view(at)):
                 continue
             stretch = read.readable(*url.span(1))
             if stretch is None:
@@ -2113,12 +2102,9 @@ class Redactor:
         cursor = start
         for begin, finish in uuids:
             first, last = max(begin, start), min(finish, end)
-            stand_ins = cuts.encode(text[first:last], pattern)
-            if stand_ins is None:  # not a card or a phone rule: masked as main masked it
-                return self._mask_token(pattern, text[start:end])
             if cursor < first:
                 out.append(self._mask_token(pattern, text[cursor:first]))
-            out.append(stand_ins)
+            out.append(cuts.encode(text[first:last], pattern))
             cursor = last
         if cursor < end:
             out.append(self._mask_token(pattern, text[cursor:end]))
@@ -2180,8 +2166,6 @@ class Redactor:
         any token is (:meth:`_entropy_spans`).
         """
 
-        if not self._hex_runs:  # the fallback is off: the late pattern masks each UUID whole
-            return []
         whole = cuts.decode(token)
         if _UUID.fullmatch(whole):  # stand-ins exist only beside the UUID pattern
             return [(0, len(token), self._mask_token(_UUID_PATTERN, whole))]

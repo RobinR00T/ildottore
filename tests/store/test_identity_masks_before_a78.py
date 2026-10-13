@@ -99,3 +99,6 @@ def test_a_declaration_recorded_before_a78_is_not_a_change() -> None:
     stored = {"not_destructive_tools": [dict(BEFORE)[name]]}
     assert _declaration_changed(stored, target) is None
     assert _declaration_changed({"not_destructive_tools": ["other"]}, target) is not None
+    # A file that now declares nothing differs from a run that declared a name, in either form.
+    bare = Target(id="t1", type=TargetType.AGENT)
+    assert _declaration_changed(stored, bare) is not None

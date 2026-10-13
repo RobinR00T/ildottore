@@ -13,6 +13,7 @@ pattern reads back to mask the UUID whole.
 
 from __future__ import annotations
 
+import math
 import random
 import re
 import time
@@ -152,11 +153,13 @@ def test_with_no_free_block_numbers_are_masked_as_main_masked_them() -> None:
     from ildottore.redactor import _PRIVATE_USE, _STAND_IN_BLOCK, _Cuts
 
     every_block = "".join(
-        chr(base)
+        chr(first + block * _STAND_IN_BLOCK)
         for first, last in _PRIVATE_USE
-        for base in range(first, last + 1 - _STAND_IN_BLOCK, _STAND_IN_BLOCK)
+        for block in range((last + 1 - first) // _STAND_IN_BLOCK)
     )
+    assert len(every_block) == 1_072
     assert _Cuts.for_text(every_block) is None
+    assert _Cuts.for_text(every_block[1:]) is not None
     out = Redactor().redact_text(every_block + " 2c1b9386-0000-0000-3f39-000000000000")
     assert out.endswith(" 2c1b9386-«REDACTED:phone»-3f39-«REDACTED:phone»")
 
@@ -170,3 +173,24 @@ def test_a_labelled_digest_is_the_value_as_written() -> None:
     other_block = redactor.redact_text(f" secret: {value}")
     assert plain == f"secret: «REDACTED:labeled_secret:{redactor._digest(value)}»"
     assert other_block == " " + plain
+
+
+def test_a_stand_in_no_mask_took_becomes_the_number_mask_main_wrote() -> None:
+    # A guard: every stand-in is masked with its UUID by the entropy rule, so none reaches the
+    # end of a pass; one that did would become the number's mask, never a character of the block.
+    from ildottore.redactor import _CARD, _PHONE, _Cuts
+
+    cuts = _Cuts.for_text("")
+    assert cuts is not None
+    run = cuts.encode("0000-0000", _PHONE) + cuts.encode("4111", _CARD)
+    assert cuts.numbers(run) == [("phone", False, "0000-0000"), ("card", False, "4111")]
+    assert cuts.decode(run) == "0000-00004111"
+    assert Redactor(salt="s")._number_masks(cuts, run) == "«REDACTED:phone»«REDACTED:card»"
+
+
+def test_without_the_entropy_rule_a_number_in_a_uuid_is_masked_as_main_masked_it() -> None:
+    # The stand-ins are the entropy rule's to place back: a redactor without it uses none.
+    out = Redactor(salt="s", entropy_threshold=math.inf).redact_text(
+        "x 2c1b9386-0000-0000-3f39-000000000000 y"
+    )
+    assert out == "x 2c1b9386-«REDACTED:phone»-3f39-«REDACTED:phone» y"

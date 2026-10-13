@@ -216,3 +216,27 @@ def test_only_an_mcp_target_is_launched_over_stdio(
     assert result.exit_code == 3, result.output
     assert "live: " + MESSAGE in result.output, result.output
     assert seen == []
+
+
+def test_a_stdio_mcp_target_s_identities_are_not_checked(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A stdio MCP server is a local subprocess, sent no key: its sweep's identities are not
+    # checked either, while an OpenAI target's with the same fields are.
+    from ildottore.cli import wiring
+    from ildottore.policy.scope import Identity, Scope, ScopeTarget
+    from ildottore.shared.enums import TargetType
+    from ildottore.shared.models import Target
+
+    monkeypatch.setenv("SHORT", SHORT)
+    identities = [Identity(name=n, auth_ref="env://SHORT") for n in ("default", "second")]
+    scope = Scope(
+        version="1.0",
+        targets=[ScopeTarget(id="live", base_url="stdio://local", identities=identities)],
+    )
+    stdio = {"transport": "stdio", "command": ["server"]}
+    wiring.check_identity_credentials(
+        scope, Target(id="live", type=TargetType.MODEL, provider="mcp", **stdio)
+    )
+    with pytest.raises(ValueError, match="live, identity 'default': the credential is shorter"):
+        wiring.check_identity_credentials(
+            scope, Target(id="live", type=TargetType.MODEL, provider="openai", **stdio)
+        )
