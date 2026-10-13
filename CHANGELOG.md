@@ -76,9 +76,10 @@ Found by the pre-merge security audit of 2026-10-11 (MEDIUM 4 and LOW 6).
   stdio MCP target (`provider: mcp`), sent no key, is not checked.
 - Cost: 4 MB of prose 1.18 s (1.02 s before), of base64 tokens 3.50 s (2.71 s), of UUIDs 3.41 s
   (4.61 s), of UUIDs whose groups are all digits 6.91 s (2.80 s), the same glued into one token by
-  `_` 2.79 s (2.12 s). Not covered: a key glued to a letter or a digit, a random token with no
-  prefix the entropy rule passes, and a UUID in a CLI error that the number rules read a number
-  in, masked as before.
+  `_` 2.79 s (2.12 s); 24,000 short texts (evidence keys) 0.74 s (0.67 s), after a prefilter that
+  skips the new rules in a text that holds nothing they start with. Not covered: a key glued to a
+  letter or a digit, a random token with no prefix the entropy rule passes, and a UUID in a CLI
+  error that the number rules read a number in, masked as before.
 
 ### Fixed (an audit of the scoring and its pre-merge audit: three false passes, a silent sweep and five lows, 2026-10-11 and 2026-10-12)
 

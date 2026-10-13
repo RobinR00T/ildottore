@@ -896,8 +896,12 @@ KB 0.11 s, 1 MB 0.71 s, 2 MB 1.40 s; the first version took 32.80 s at 160 KB), 
 s); the same space-separated 3.15 s and 127 MiB (1.35 s, 53 MiB, which left most of each readable);
 v4 UUIDs 1.98 s (2.41 s); UUIDs after phone numbers 2.81 s (1.50 s); `0x` and 80 hex digits 1.34 s
 (1.16 s); base64 tokens 1.92 s (1.46 s); prose 1.01 s (0.83 s); the 137,468 Private Use characters
-0.13 s (0.08 s; 4.19 s on `3a9a4dfa`, R2-L2). The ratios, not the seconds, hold across the two
-machines measured.
+0.13 s (0.08 s; 4.19 s on `3a9a4dfa`, R2-L2). A short text pays what a pass costs before any
+rule matches: one search for a literal some late pattern needs, and none for the stand-ins in a
+text with no `-` (no UUID holds none); 24,000 evidence keys `user<i>@x.io` are masked in 0.74 s
+(main at `0be0be71` 0.67 s; 1.12 s before that prefilter, which put a time-bound test over its
+limit under the coverage tracer of a CI runner, PR #113). The ratios, not the seconds, hold
+across the two machines measured.
 
 *Not covered.* A key glued to a letter or a digit (40 `0` or 40 `A` before it) is the middle of a
 longer word to the late patterns and stays the entropy rule's, which the padding dilutes, as on main;
