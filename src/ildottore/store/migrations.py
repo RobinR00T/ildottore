@@ -21,13 +21,12 @@ from __future__ import annotations
 
 import os
 import sqlite3
-import sys
 import time
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Any, Final, TypeVar
-
-from ildottore.redactor import visible_controls
 
 _T = TypeVar("_T")
 
@@ -43,24 +42,59 @@ NOTICE_AFTER_S = 1.0
 _BUSY_SNAPSHOT: Final = 517
 
 
+#: What is told of a lock wait: ``(store path, seconds it will wait in all)``.
+LockWaitCallback = Callable[[str, float], None]
+
+#: The callback of the caller in this context (`lock_waits_reported`), or none: the store says
+#: nothing of a wait on its own (round-2 audit of f51a7d07, LOW 4: a library user got CLI text).
+_LOCK_WAIT_CALLBACK: ContextVar[LockWaitCallback | None] = ContextVar(
+    "ildottore_store_lock_wait", default=None
+)
+
+
+@contextmanager
+def lock_waits_reported(callback: LockWaitCallback) -> Iterator[None]:
+    """Report each connection's first wait past :data:`NOTICE_AFTER_S` to ``callback`` within.
+
+    For a caller that opens many connections (the CLI opens one per store operation) and wants
+    them told one way; ``connect(on_lock_wait=...)`` is the one-connection form.
+    """
+
+    token = _LOCK_WAIT_CALLBACK.set(callback)
+    try:
+        yield
+    finally:
+        _LOCK_WAIT_CALLBACK.reset(token)
+
+
 class StoreLocked(sqlite3.OperationalError):
     """Another process held the run store's lock for the whole wait; the message names it."""
+
+    def __init__(self, store: str, waited_s: float) -> None:
+        self.store = store
+        self.waited_s = waited_s
+        #: The reason alone, for a message that already names the store.
+        self.reason = f"another process held its lock for {waited_s:g} s"
+        super().__init__(
+            f"the run store at {store} stayed locked by another process for {waited_s:g} s"
+        )
 
 
 class StoreConnection(sqlite3.Connection):
     """A connection whose statements wait for a held lock in Python, interruptibly, and say so.
 
     ``execute``, ``executemany`` and ``commit`` retry while SQLite answers busy, for
-    :attr:`wait_s` in all; the first time a wait passes :data:`NOTICE_AFTER_S` a one-line note
-    goes to stderr, and a wait that runs out raises :class:`StoreLocked` naming
-    :attr:`store_path`. A statement SQLite refused as busy changed nothing, so it is retried as
-    it was; ``commit`` is retried as SQLite's documentation allows.
+    :attr:`wait_s` in all; the first time a wait passes :data:`NOTICE_AFTER_S` it is told to
+    :attr:`on_lock_wait` (nothing by default), and a wait that runs out raises
+    :class:`StoreLocked` naming :attr:`store_path`. A statement SQLite refused as busy changed
+    nothing, so it is retried as it was; ``commit`` is retried as SQLite's documentation allows.
     """
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self.store_path = ""
         self.wait_s = BUSY_TIMEOUT_S
+        self.on_lock_wait: LockWaitCallback | None = None
         self._noticed = False
 
     def execute(self, sql: str, parameters: Any = (), /) -> sqlite3.Cursor:
@@ -77,17 +111,10 @@ class StoreConnection(sqlite3.Connection):
         return _while_busy(operation, self.wait_s, on_wait=self._notice, store=self.store_path)
 
     def _notice(self) -> None:
-        if self._noticed:
+        if self._noticed or self.on_lock_wait is None:
             return
         self._noticed = True
-        try:
-            sys.stderr.write(
-                f"note: waiting for the run store at {visible_controls(self.store_path)}: another "
-                f"process holds its lock (up to {self.wait_s:g} s; Ctrl-C stops the wait)\n"
-            )
-            sys.stderr.flush()
-        except (OSError, ValueError):  # stderr closed: the wait goes on unsaid
-            pass
+        self.on_lock_wait(self.store_path, self.wait_s)
 
 
 _SCHEMA_SQL_PATH: Final = Path(__file__).with_name("schema.sql")
@@ -152,12 +179,19 @@ _MIGRATIONS: Final[list[tuple[int, str | Callable[[sqlite3.Connection], None]]]]
 ]
 
 
-def connect(db_path: Path, *, timeout_s: float | None = None) -> StoreConnection:
+def connect(
+    db_path: Path,
+    *,
+    timeout_s: float | None = None,
+    on_lock_wait: LockWaitCallback | None = None,
+) -> StoreConnection:
     """Open a SQLite connection with WAL + foreign keys enforced (contract §4).
 
     Creates the parent directory if needed; paths-with-spaces safe (``Path``). Each statement
     waits up to ``timeout_s`` (default :data:`BUSY_TIMEOUT_S`) for a lock another connection
-    holds (:class:`StoreConnection`). That covers the switch to WAL, which SQLite answers with
+    holds (:class:`StoreConnection`), and tells its first wait past :data:`NOTICE_AFTER_S` to
+    ``on_lock_wait``, else to the callback of :func:`lock_waits_reported`, else to nobody. That
+    covers the switch to WAL, which SQLite answers with
     SQLITE_BUSY at once while another connection holds the file (it would deadlock otherwise):
     processes opening a new store together lost some of their runs to "database is locked"
     (u10 A-80).
@@ -170,6 +204,7 @@ def connect(db_path: Path, *, timeout_s: float | None = None) -> StoreConnection
     try:
         conn.store_path = str(db_path)
         conn.wait_s = wait_s
+        conn.on_lock_wait = on_lock_wait or _LOCK_WAIT_CALLBACK.get()
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA journal_mode=WAL").fetchone()
         conn.execute("PRAGMA foreign_keys=ON")
@@ -225,9 +260,7 @@ def _while_busy(
             if now + pause > deadline:
                 if not store:
                     raise
-                raise StoreLocked(
-                    f"the run store at {store} stayed locked by another process for {timeout_s:g} s"
-                ) from exc
+                raise StoreLocked(store, timeout_s) from exc
             if on_wait is not None and now - started >= NOTICE_AFTER_S:
                 on_wait()
         time.sleep(pause)

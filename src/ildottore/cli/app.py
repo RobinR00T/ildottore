@@ -937,11 +937,15 @@ def run(
 
 
 def _store_failed(run_db: Path, exc: sqlite3.Error) -> NoReturn:
-    """Say which run store failed and exit 3 (a sqlite3 error that reached a command)."""
+    """Say which run store failed and exit 3 (a sqlite3 error that reached a command).
 
-    typer.echo(
-        f"error: {_masked(RuntimeError(f'the run store at {run_db} failed: {exc}'))}", err=True
-    )
+    A lock held past the wait names its store already, and is said as it is.
+    """
+
+    from ildottore.store.migrations import StoreLocked
+
+    said = str(exc) if isinstance(exc, StoreLocked) else f"the run store at {run_db} failed: {exc}"
+    typer.echo(f"error: {_masked(RuntimeError(said))}", err=True)
     raise typer.Exit(ExitCode.ERROR) from exc
 
 
@@ -1328,7 +1332,8 @@ def replay(
     from ildottore.store import TamperError
 
     try:
-        result, warning = replay_mod.replay_checked(evidence_root, run_id, run_db)
+        with run_mod.lock_waits_noted():
+            result, warning = replay_mod.replay_checked(evidence_root, run_id, run_db)
     except (OSError, ValueError, TamperError) as exc:
         typer.echo(f"error: {_masked(exc)}", err=True)
         raise typer.Exit(ExitCode.ERROR) from exc

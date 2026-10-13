@@ -82,6 +82,8 @@ def _open_reason(db_path: Path, exc: BaseException) -> str:
 
     if db_path.is_dir():
         return "it is a directory, not a file"
+    if isinstance(exc, migrations.StoreLocked):
+        return exc.reason  # the message names the store already
     return str(exc)
 
 
@@ -120,9 +122,13 @@ class SqliteRunStore:
         tb: TracebackType | None,
     ) -> None:
         self.close()
+        if isinstance(exc, migrations.StoreLocked):
+            # It names the store itself: said twice, it read "the run store at X failed: the run
+            # store at X stayed locked ..." (round-2 audit of f51a7d07, LOW 3).
+            raise RunStoreError(str(exc)) from exc
         if isinstance(exc, sqlite3.Error):
-            # Named, so a lock held past the busy timeout or a disk that filled up says which
-            # store failed, and reaches the CLI as the I/O error it is (exit 3, u10 A-80).
+            # Named, so a disk that filled up says which store failed, and reaches the CLI as
+            # the I/O error it is (exit 3, u10 A-80).
             raise RunStoreError(f"the run store at {self._db_path} failed: {exc}") from exc
 
     # --- writes --------------------------------------------------------------

@@ -1820,10 +1820,49 @@ def _termination_as_interrupt() -> Iterator[None]:
                 raise interrupted
 
 
+class _LockWaitNotice:
+    """The CLI's note for a run store another process holds: once per run and per store.
+
+    The store says nothing of a wait itself (round-2 audit of f51a7d07, LOW 4), and each store
+    operation of a run opens a connection of its own, so a note per connection repeated itself
+    (LOW 3). ``say`` writes the line; stderr by default, never silenced by ``-q``.
+    """
+
+    def __init__(self, say: Callable[[str], None] | None = None) -> None:
+        self._say = say if say is not None else _say_on_stderr
+        self._said: set[str] = set()
+
+    def __call__(self, store: str, wait_s: float) -> None:
+        if store in self._said:
+            return
+        self._said.add(store)
+        self._say(
+            f"note: waiting for the run store at {visible_controls(store)}: another process holds "
+            f"its lock (up to {wait_s:g} s; Ctrl-C stops the wait)"
+        )
+
+
+def _say_on_stderr(line: str) -> None:
+    from contextlib import suppress
+
+    with suppress(OSError, ValueError):  # stderr gone: the wait goes on unsaid
+        print(line, file=sys.stderr, flush=True)
+
+
+@contextmanager
+def lock_waits_noted() -> Iterator[None]:
+    """Say, once per store, that the command waits for a run store another process holds."""
+
+    from ildottore.store.migrations import lock_waits_reported
+
+    with lock_waits_reported(_LockWaitNotice()):
+        yield
+
+
 def execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
     """Run the campaign :func:`_execute_run` describes, SIGTERM and SIGHUP as Ctrl-C."""
 
-    with _termination_as_interrupt():
+    with _termination_as_interrupt(), lock_waits_noted():
         return _execute_run(opts, spec_paths)
 
 

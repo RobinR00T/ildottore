@@ -397,9 +397,29 @@ def test_a_store_another_process_keeps_locked_exits_3_naming_it_before_any_send(
     finally:
         holder.close()
     assert code == 3, shown
-    assert f"note: waiting for the run store at {store}: another process holds its lock" in shown
-    assert f"the run store at {store} stayed locked by another process for 0.5 s" in shown
+    notice = f"note: waiting for the run store at {store}: another process holds its lock"
+    assert shown.count(notice) == 1  # once per run, not once per connection (round-2 LOW 3)
+    error = next(line for line in shown.splitlines() if line.startswith("error:"))
+    assert error == f"error: the run store at {store} stayed locked by another process for 0.5 s"
     assert no_sends == []
+
+
+def test_the_cli_says_a_lock_wait_once_per_run() -> None:
+    """Each store opening is a connection of its own; the note is the run's, said once."""
+
+    from ildottore.cli.run import _LockWaitNotice
+
+    said: list[str] = []
+    notice = _LockWaitNotice(said.append)
+    notice("a.sqlite", 30.0)
+    notice("a.sqlite", 30.0)
+    notice("b.sqlite", 30.0)
+    assert said == [
+        "note: waiting for the run store at a.sqlite: another process holds its lock (up to "
+        "30 s; Ctrl-C stops the wait)",
+        "note: waiting for the run store at b.sqlite: another process holds its lock (up to "
+        "30 s; Ctrl-C stops the wait)",
+    ]
 
 
 def test_fleet_run_maps_a_store_error_to_exit_3(

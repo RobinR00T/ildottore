@@ -192,23 +192,63 @@ def test_a_lock_held_past_the_wait_names_the_store(tmp_path: Path) -> None:
     assert isinstance(raised.value, sqlite3.OperationalError)  # the handlers that catch it
 
 
-def test_a_lock_wait_is_said_once_on_stderr(
+def test_the_store_says_nothing_of_a_wait_by_default(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """Round-2 audit of f51a7d07, LOW 4: a library user gets no CLI text on stderr."""
+
     monkeypatch.setattr(migrations, "NOTICE_AFTER_S", 0.05)
     db = tmp_path / "runs.sqlite"
     holder = _held(db)
     try:
-        conn = migrations.connect(db, timeout_s=0.5)
+        conn = migrations.connect(db, timeout_s=0.3)
+        with pytest.raises(migrations.StoreLocked):
+            conn.execute("INSERT INTO schema_version (version) VALUES (99)")
+        conn.close()
+    finally:
+        holder.close()
+    assert capsys.readouterr().err == ""
+
+
+@pytest.mark.parametrize("given", ["argument", "context"])
+def test_a_wait_is_reported_to_the_callers_callback_once_per_connection(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, given: str
+) -> None:
+    monkeypatch.setattr(migrations, "NOTICE_AFTER_S", 0.05)
+    db = tmp_path / "runs.sqlite"
+    heard: list[tuple[str, float]] = []
+
+    def hear(store: str, wait_s: float) -> None:
+        heard.append((store, wait_s))
+
+    holder = _held(db)
+    try:
+        if given == "argument":
+            conn = migrations.connect(db, timeout_s=0.3, on_lock_wait=hear)
+        else:
+            with migrations.lock_waits_reported(hear):
+                conn = migrations.connect(db, timeout_s=0.3)
         for _ in range(2):
             with pytest.raises(migrations.StoreLocked):
                 conn.execute("INSERT INTO schema_version (version) VALUES (99)")
         conn.close()
     finally:
         holder.close()
-    err = capsys.readouterr().err
-    assert err.count(f"note: waiting for the run store at {db}: another process holds") == 1
-    assert "Ctrl-C stops the wait" in err
+    assert heard == [(str(db), 0.3)]
+
+
+def test_the_lock_message_names_the_store_once(tmp_path: Path) -> None:
+    """LOW 3: "the run store at X failed: the run store at X stayed locked ..."."""
+
+    db = tmp_path / "runs.sqlite"
+    holder = _held(db)
+    try:
+        with pytest.raises(RunStoreError) as raised, SqliteRunStore(db) as store:
+            store._conn.wait_s = 0.2  # type: ignore[attr-defined]
+            store._conn.execute("INSERT INTO schema_version (version) VALUES (99)")
+    finally:
+        holder.close()
+    assert str(raised.value) == f"the run store at {db} stayed locked by another process for 0.2 s"
 
 
 @pytest.mark.skipif(not hasattr(__import__("signal"), "setitimer"), reason="needs setitimer")
