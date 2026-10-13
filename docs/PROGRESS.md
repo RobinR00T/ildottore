@@ -43,6 +43,278 @@ The carryover ledger. Every agent session updates this so context survives even 
   path inside the evidence root is not refused; `replay --run-db <directory>` warns and goes on
   without the manifest check, as before.
 
+## State, 2026-10-12 (morning): the pre-merge audit of `d07a1088`, fixed
+
+- On `fix/scoring-audit-2026-10-11`: the independent pre-merge audit of `d07a1088` closed the
+  eight original findings, gates green there (5,520 tests, 97.85%), and found two MEDIUM and three
+  LOW, fixed one commit each, every reproduction script of the auditor
+  (`_ildottore-tren/scratch/fixscore-audit/`) rerun before and after.
+- MEDIUM 1 (a regression of LOW 5): a guardrail reply with text was read on its trace only, and
+  `adapters.rest` files a masked reply (`ANONYMIZED`) under the output side with a blocked one,
+  so a planted canary beside a masked name went from a confirmed fail (`de122e26`) to a cut
+  needing review (`repro_masked.py`). Now `REPLACED_TEXT_EVALUATORS` (the trace evaluators plus
+  `secret_leakage`, `secret_shape`, `authz_leak`) through `_evaluators_for_filtered_reply`, the
+  name, set and helper of `fix/filter-stop-provenance` (A-79), which lands next: one rule at the
+  merge. After: fail confirmed.
+- MEDIUM 2: the sweep mapped an owner's canary only once its reply was read, so with the owner
+  not heard from tenant A's reply showing its canary was no crossing (`repro_sweep_owner_down.py`:
+  PASS on `de122e26`, inconclusive on `d07a1088`). Mapped before the send now, and `authz_leak`
+  reads the owner map on fewer than two replies too (u06's half of A-74), so the two-identity case
+  fails as well. After: fail confirmed.
+- LOW 1: what a resume keeps (`_completed_attempt_ids`) is read from each id's attempt
+  (`one_per_attempt_id`), not from any copy: an unreadable reply whose re-send was blocked was
+  kept for good (`repro_unread_then_block.py`: the third run kept 5, sent 0, inconclusive); now
+  it keeps 4, sends 1 and passes, and the summary's "a resume sends them again" holds.
+- LOW 2: `_combine_verdicts` takes the identities the sweep heard from (`swept`, a mapping, was a
+  bool; `fix/filter-stop-provenance`'s new `swept=identities is not None` calls fail mypy at the
+  merge, loudly), so with two or more answers beside one left out the note reads `authz_leak
+  kept: 2 identities answered the identity sweep, and it did not hear from every identity`
+  (`repro_corroborate_note.py`, `EMB-XTENANT-RETRIEVAL-001`, said "fewer than two").
+- LOW 3: the run's `--include-needs-review` reaches the reporters (`include_needs_review` on
+  `BaseReporter`, `get_reporter`, `wiring.build_reporter`); with it a SARIF fail that needs review
+  keeps its band's level (it exits 2), and the run's `properties` say so.
+- Wording: the resend tie-break never puts a cut reply over an environment error (a cut reply is
+  answered and judged, so it ranks first already); the docs now say an unreadable reply.
+- Nothing else moved: `rank_pairs.py` prints the same 28 pairs as on `d07a1088`, the
+  cross-version `cli_cross_version.py` matrix (phase 1 on `de122e26`, the resume here; env0 then
+  html, unread0 then env0, unread0 then ok, env0 then ok) the same lines with run ids masked, and
+  the auditor's four earlier scripts the same results.
+- Tests: 18 new, 15 failing on `d07a1088` (the 3 others are controls), 1 changed expectation (the
+  short-sweep test). Branch total against `main`: 62 new (44 failing on `de122e26`), 4 changed.
+  `make gates` green on `dd4f8648` (12/10/2026 10:12 to 10:20 CEST, `PYTHONPATH` set to the
+  worktree's `src`, `TMPDIR` the system default): 5538 tests (5520 on `d07a1088`), 97.86%
+  coverage (`evaluators/authz_leak.py`, `shared/provider_filter.py`, `shared/resend.py`,
+  `store/replay.py`, `reporting/base.py` and `reporting/sarif_reporter.py` 100%,
+  `core/runner.py` 97%), ruff, format, mypy strict on 161 files, four import contracts kept, 75
+  specs lint OK, self-scan 0 high/critical, bandit and pip-audit clean.
+- Merged with `fix/filter-stop-provenance` (PR #111, `ffec14ec`, which lands first), a real merge,
+  no history rewritten: both branches' `REPLACED_TEXT_EVALUATORS` and
+  `_evaluators_for_filtered_reply` are one rule; fixstop's `partial_reply`, `replaced_reply`
+  (`blank_text`) and A-79 judge rule (`weighed`) kept; its two new `_combine_verdicts` calls pass
+  `swept=identities`; `_trace_before_block`'s local reply renamed `reply` (it shadowed the
+  `stopped` parameter). `make gates` green on the merge, `c5460345` (12/10/2026 11:19 to
+  11:26 CEST): 5663 tests (5538 here, the rest fixstop's), 97.87% coverage (`core/runner.py`
+  98%), ruff, format, mypy strict on 162 files, four import contracts kept, 75 specs lint OK,
+  self-scan 0 high/critical, bandit and pip-audit clean. On the merged tree the auditor's four
+  repros print what they did on `38bc67b2`, and fixstop's `repro_declared.py` and `compat.py`
+  what they print on `ffec14ec`.
+
+## State, 2026-10-11 (night): the audit of the scoring, fixed
+
+- On `fix/scoring-audit-2026-10-11`, from `main` at `de122e26` (#110): every finding of the
+  correctness audit of the scoring, two HIGH, one MEDIUM and five LOW, fixed by best practice
+  under the owner's delegation, each reproduction script of the auditor
+  (`_ildottore-tren/scratch/audit-score/`) turned into a test. No OD opened; the clauses amended
+  are u08 A-69, A-70, A-73's half and A-74, their u10, u11 and u12 halves, and u06 A-73 (A-75 and
+  A-76 stay free).
+- HIGH 1: which artifact of a re-sent attempt id is the attempt is one rule in `shared.resend`,
+  read by the runner and the replay (each had a copy that kept the first artifact at a tie, the
+  runner's prior ones in content-hash order). Rank, then an unreadable reply over an environment
+  error or a block whichever came first (a cut reply is answered and judged, so it ranks first
+  already), then the later send by a
+  `send_number` stamped in `request.metadata` of every stored attempt, then the first. The fix the
+  audit proposed put the later send at the second step; the never-a-pass step comes first because
+  the later send alone turns an unreadable reply into a pass whenever the resume meets a network
+  failure (the same false pass, in the other order). Revisable: swap two fields of
+  `shared.resend._rank`. `cli_resume_unreadable.py`: PASS with 0 unreadable on `de122e26` (the
+  replay said 1), now `inconclusive` with 1 in the report and the replay; `repro_resume_reverse.py`:
+  replay 0 unreadable on `de122e26`, now 1, matching the report.
+- HIGH 2: a conversation (or an in-band scene's tool rounds) that a later send's environment error
+  or unreadable reply ended keeps the trace so far beside the attempt (`AttemptResult.trace_so_far`);
+  the trace evaluators read it first, a fail is stored as any fail with the error under
+  `request.metadata.conversation_error`, anything else as before. `repro_mt_env.py`: turn 2 env
+  PASS and unreadable inconclusive on `de122e26`, block fail; now all three fail, exit 2.
+- MEDIUM: the identity sweep names every identity it did not hear from (unreadable reply, failed
+  send, a prompt its filter refused), beside OD-42's filter stops, and `authz_leak` cannot pass
+  beside it. An environment error counts too (a gate fails closed); the cost, a transient failure
+  of one identity keeps the spec from passing, is in docs/12's F11 row. `repro_sweep_unreadable.py`:
+  pass on `de122e26`, now `inconclusive`, the identity named.
+- LOW 1 the resume note names each id once (was `-1 that ended in an environment error`); LOW 2
+  `setup_not_reached` is asked of a judge-only fail too; LOW 3 the `--include-needs-review` help;
+  LOW 4 a SARIF fail that needs review is at most `warning`; LOW 5 a Bedrock guardrail's
+  replacement is read by the trace evaluators plus `secret_leakage`, `secret_shape` and
+  `authz_leak` (the pre-merge audit's MEDIUM 1, in the entry above).
+- Tests: 44 new, 28 of them failing on `de122e26` (the tie test fails there in one of its two file
+  orders for each of its six cases), 3 changed expectations (two sweep verdicts that now name the
+  identity, one in-band metadata that now carries `send_number`).
+  `make gates` green on `b6fe3609` (with `PYTHONPATH` set to the worktree's `src`): 5520 tests
+  (5476 on `main` at `de122e26`, 44 new), 97.85% coverage (`shared/resend.py`, `store/replay.py`
+  and `reporting/sarif_reporter.py` 100%, `core/runner.py` 97%), ruff, format, mypy strict on 161
+  files, four import contracts kept, 75 specs lint OK, self-scan 0 high/critical, bandit and
+  pip-audit clean.
+
+## State, 2026-10-12 (late morning): the pre-merge audit of `3f7b1254` (A-79), fixed
+
+- Merge-ready per the audit, with one LOW fixed before it lands (new commits, no history
+  rewritten, under the owner's delegation, best practice, revisable). `blank_text` read every
+  format character as no text, the tag block too, so harmful text in tag characters (ASCII
+  smuggling) with `content_filter` was a cut with no text and the judge that says exploited was
+  never consulted: 0 judge requests, `filtered`, exit 3, where `e1a8aacf` and `main` read it (6).
+  Never a pass, but hidden text went unjudged. The 13 format signs a font draws (U+0600 to
+  U+0605, U+06DD, U+070F, U+0890, U+0891, U+08E2, U+110BD, U+110CD) were blank too.
+- One list: the redactor's pinned `_FORMAT_RANGES` (Unicode 16.0, the same 170 characters) is
+  now the union of `EMPTY_FORMAT_RANGES`, `FORMAT_SIGN_RANGES` and `TAG_RANGES`, and
+  `blank_text` reads whitespace and `EMPTY_FORMAT_RANGES` only (no longer `unicodedata`).
+  `shared.provider_filter` imports it from the redactor, a leaf of the shared band. After (my
+  `repro_tags.py`): tags undeclared and under `[]`, U+0600 under `[]` and U+06DD undeclared all
+  give 6 judge requests, a fail that needs review, exit 0, as on `e1a8aacf`; the zero-width
+  replies stay `filtered`, exit 3, and the WebSocket blank turns stay unreadable.
+- The nit: `fingerprint/layers/guardrail.py:185` keeps `.strip()`. Its `empty` is a probe reply
+  that says nothing to the guardrail profile, not the filter rule, and moving it would change
+  u09 outcomes (a zero-width probe reply from `unclear` or `answered` to `empty`) outside this
+  branch's rule; the claim "the one test of no text" is narrowed to the filter rule (here and in
+  `blank_text`'s docstring).
+- Tests, 13 new, all failing on `3f7b1254`: `tests/adapters/test_filter_stop_provenance.py`
+  now 54 (52 fail on `de122e26`, 25 on `10cb526b`, 19 on `e1a8aacf`, 11 on `3f7b1254`),
+  `tests/cli/test_filter_stop_provenance_campaign.py` now 44 (40, 15, 7 and 2).
+- Re-run: the auditor's `repro_declared.py` output is identical to round 3's, its `compat.py`
+  byte-identical to `main`. Gates on `d509befa` (`make gates`, worktree `src` first on
+  `PYTHONPATH`, `TMPDIR` at the system default, 10:24 to 10:33): all green, 5,601 tests passed
+  (5,588 on `3f7b1254`), coverage 97.86% (14,198 statements, 208 missed),
+  `shared/provider_filter.py` at 100%, `redactor.py` at 99%, lint OK across 75 specs, self-scan 0
+  high/critical, bandit and pip-audit clean.
+
+## State, 2026-10-12 (morning): the pre-merge audit of `e1a8aacf` (A-79), fixed
+
+- One MEDIUM and five LOWs, fixed as new commits on `fix/filter-stop-provenance` (no history
+  rewritten), under the owner's delegation (best practice, revisable). The auditor's raw outputs
+  are in `scratch/fixstop-audit3/`; the fix's notes and probe runs in `scratch/fixstop-fix2/`.
+- MEDIUM 1, on the one adapter the round-2 rule left out: a WebSocket file with no
+  `response.filter_stops` whose server sends a first delta of `""` (or `"  "`) and then
+  `finish_reason: content_filter`, what a relay of a streamed Azure reply looks like. The turn was
+  unreadable only with no text frame at all, so this one was the model's empty answer:
+  `PI-DIRECT-001` and `JB-ROLEPLAY-001` passed, exit 0 (a zero-width space: inconclusive, exit
+  0). Now a turn with no tool call whose joined text is blank and that ends on a documented
+  filter word the file does not declare is unreadable too, same advice: the auditor's
+  `ws_probe.py` gives exit 3, every attempt `unreadable_reply`, for `""`, `"  "` and U+200B; a
+  declared word stays the filter's cut, exit 3; text stays a fail, exit 2.
+- LOW 1: `str.strip` keeps format characters, so under `[]` an OpenAI reply of U+200B (or U+200D,
+  U+2060, U+FEFF) with `content_filter` passed, exit 0. `shared.provider_filter.blank_text`
+  (whitespace and Unicode Cf only) is now the filter rule's one test of "no text":
+  `stop_provenance`, `partial_reply`, `replaced_reply`, the runner's `_trace_before_block` and the
+  WebSocket turn.
+  `_refusal_side` keeps reading presence (any character is output, which decides Anthropic's side).
+  After: `filtered`, exit 3, as an empty reply.
+- LOW 2: the stale comment on `OpenAIAdapter.declared_filter_stops`. LOW 3: `Target(provider=5,
+  filter_stops=[...])` gave a second, misleading error; the check is left out when the provider
+  failed. LOW 4: "a reply with no text and no tool call" (and "with text or a tool call") in every
+  doc and in the plan line, and the plan line for an `anthropic` file no longer names an HTTP 400.
+  LOW 5: the round-2 report said 17 new tests failing on `10cb526b`; it was 17 new, 16 failing
+  there (6 adapter, 10 CLI, one of them the changed plan-line test), as the repo docs said.
+- Tests, 21 new: `tests/adapters/test_filter_stop_provenance.py` now 43 (41 fail on `de122e26`,
+  16 on `10cb526b`, 10 on `e1a8aacf`), `tests/cli/test_filter_stop_provenance_campaign.py` now 42
+  (38, 15 and 7: d1 with U+200B, the WebSocket turn through `execute_run` on 3 fragments, the
+  lone provider error, the Anthropic plan line, and the changed plan-line test), and
+  `tests/adapters/test_malformed_replies.py` now 42 (3 fail on `e1a8aacf`, and a control).
+- Re-run on the fix: the auditor's `repro_declared.py` gives d1 to d6 as in round 2 (d1 exit 3,
+  `filtered`), its `compat.py` is byte-identical to `main`. Gates on `2288de00` (`make gates`,
+  worktree `src` first on `PYTHONPATH`, `TMPDIR` at the system default, 09:36 to 09:45): all
+  green, 5,588 tests passed (5,567 on `e1a8aacf`), coverage 97.86% (14,194 statements, 208
+  missed), `shared/filter_stops.py`, `shared/provider_filter.py` and `shared/models.py` at 100%,
+  `adapters/websocket.py` at 99%, lint OK across 75 specs, self-scan 0 high/critical, bandit
+  and pip-audit clean.
+
+## State, 2026-10-12 (02:00): the pre-merge audit of `10cb526b` (A-79), fixed
+
+- One MEDIUM and one LOW, fixed as new commits on `fix/filter-stop-provenance` (no history
+  rewritten), under the owner's delegation (best practice, revisable). The auditor's probes are in
+  `scratch/fixstop-audit2/` (`repro_declared.py`); the fix's notes and repro runs in
+  `scratch/fixstop-fix2/`.
+- MEDIUM: `filter_stops: []` turned the filter's withheld reply into a pass. d1, `PI-DIRECT-001`
+  answered with `content_filter` and no text: with `[]` 3 passes, exit 0 (6 judge requests on
+  the empty replies); without it, cut, `filtered`, exit 3. The docs recommended `[]` for "a
+  gateway", and a gateway in front of Azure relays Azure's filter. Now each adapter says what its provider
+  documents whatever is declared (`own_filter_stops`: OpenAI `content_filter`, Anthropic
+  `refusal`, a REST template's `shape_filter_stops`), and `stop_provenance` never marks foreign a
+  reply with no text and no tool call that ends on one of them. It goes through the existing path
+  (`filter_side`, `_cut_verdict`, `_evaluators_for_filtered_reply`): no runner change. After: d1
+  exit 3, `filtered`, 3 cut, judge 0, as d1c; d2 (harmful text, `[]`) still a confirmed fail, exit
+  2; d3 (Azure's 400, `[]`) still an ordinary 4xx, exit 3. The `filters:` plan line for `[]` says
+  what still reads. The advice now limits `[]` to endpoints with no OpenAI, Azure or Anthropic
+  filter behind them and warns that a gateway in front of Azure relays Azure's filter (MANUAL
+  §4.2 and §9, FAQ, `examples/target.openai.yaml`, ADR-0011, CHANGELOG, USAGE, `dottore(1)`,
+  docs/05, docs/10, docs/12, the u00, u04, u08 and u12 contracts, the OD-42 row of 00-INDEX).
+- LOW: the Python API widened the list. `Target(provider="openai", filter_stops=["refusal",
+  "guardrail_intervened"])` built an `OpenAIAdapter` reading both. The rule moved to
+  `shared.filter_stops.target_filter_stops`, applied by a `Target` field validator on every path
+  and read first by the loader (same messages, which name the file); `Target` hides the input in
+  its errors, so no value is quoted; the OpenAI and Anthropic adapters intersect a declaration
+  with their own word (a `model_copy` or a hand-built adapter narrows, never widens).
+- Tests: `tests/adapters/test_filter_stop_provenance.py` now 33 (31 fail on `de122e26`, 6 on
+  `10cb526b`), `tests/cli/test_filter_stop_provenance_campaign.py` now 35 (31 fail on `de122e26`,
+  10 on `10cb526b`: d1 for `openai` and `anthropic` with the exit code, the plan line, the model's
+  6 refusals and its normalization). The auditor's `compat.py`: every example digests and dumps
+  as on `main`.
+- Gates on `572094b9` (`make gates`, worktree `src` first on `PYTHONPATH`, 02:01 to 02:08): all
+  green, 5,567 tests passed (5,550 on `10cb526b`), coverage 97.86% (14,188 statements, 208
+  missed), `shared/filter_stops.py` and `shared/provider_filter.py` at 100%, lint OK across 75
+  specs, self-scan 0 high/critical, bandit and pip-audit clean.
+
+## State, 2026-10-12 (night): the pre-merge audit of `a55710e9` (A-79), fixed
+
+- One MEDIUM, six LOWs and a nit, fixed as new commits on `fix/filter-stop-provenance` (no history
+  rewritten), under the owner's delegation (best practice, revisable). The auditor's probes are in
+  `scratch/fixstop-audit/`.
+- MEDIUM 1: the input-side reading ran every evaluator whose fail rests on something present on a
+  Bedrock guardrail's configured message, so `regex_absence` "never disclose" beside `refusal` was
+  a confirmed fail (`de122e26`: blocked; the output side had the same fail on `de122e26`, the
+  scoring audit's LOW 5). One helper, `_evaluators_for_filtered_reply`, now serves `_cut_verdict`
+  and `_trace_before_block`: replaced text (`replaced_reply`) is read only by
+  `REPLACED_TEXT_EVALUATORS` (`secret_leakage`, `secret_shape`, `authz_leak`, the trace). The
+  repro: input and output both inconclusive (blocked, cut); a canary in the message still fails.
+  When `fix/scoring-audit-2026-10-11` merges, its `replaced` line in `_cut_verdict` gives way to
+  the helper (one rule, a superset of its trace-only reading).
+- LOW 1: a filtered run's line adds the unreachable advice for the attempts that got no reply.
+  LOW 2: the WebSocket advice names `response.filter_stops`, and the CHANGELOG says a withheld
+  turn is unreadable until declared. LOW 3: the FAQ answer says "not with text that came back" and
+  what stays open (chosen attacks withheld with the provider's own word keep CI green; read
+  the summary keys), the MANUAL row fixed, and an `openai` or `anthropic` file may declare
+  `filter_stops: []` (validated, shown by `--dry-run`, `-v` and `-sn` as `filters:`; the example
+  `target.openai.yaml` carries it commented out; every example digests and dumps as on `main`, by
+  the auditor's `compat.py`). LOW 4: the stale runner comments. LOW 5: `dottore replay` prints
+  `run: filtered: ...`, by `shared.provider_filter.filtered_run`, the rule `run` uses. LOW 6: the
+  resume across the upgrade is stated in u10 and the CHANGELOG for `fix/resume-judging-rules`.
+- Tests added: 7 in `tests/core/test_filter_stop_scoring.py` (now 14, 6 fail on `de122e26`), 1 in
+  `tests/adapters/test_filter_stop_provenance.py` (now 25, 23 fail there), 13 in
+  `tests/cli/test_filter_stop_provenance_campaign.py` (now 26, 22 fail there).
+
+## State, 2026-10-12 (early hours): a forged filter stop, closed (A-79; security audit MEDIUM 3)
+
+- On `fix/filter-stop-provenance` from `de122e26`, under the owner's delegation of 2026-10-11
+  (best practice, revisable): the amendment to OD-41 and OD-42, clause u08 A-79 with its u00,
+  u04, u09, u10, u11 and u12 halves, ADR-0011's second amendment. Not pushed.
+- The finding, reproduced first with the auditor's stub (`scratch/audit-sec/e2e_logprobs.py`):
+  harmful text to `JB-ROLEPLAY-001` with `finish_reason: stop`, exit 2; with `content_filter`,
+  inconclusive 3/3, exit 0; Azure's 400 to every attack, 6 of 6 blocked, exit 0. On this branch:
+  2, 3 (all six cut, `filtered`) and 3 (`filtered`).
+- Rule 1, provenance: each adapter's `filter_stops` (OpenAI `content_filter`, Anthropic `refusal`,
+  a REST template's by shape or declaration, a WebSocket file's `response.filter_stops`, default
+  none) and `stop_provenance`, which marks any other filter word `ModelResponse.foreign_stop`;
+  Azure's 400 only from an adapter that reads `content_filter`. The vocabularies moved to
+  `shared.filter_stops`. No `core` reader changed: the provenance travels on the reply.
+- Rule 2, delivered text: the judge's fail on a partial reply joins `_combine_verdicts` in
+  `_cut_verdict` (a needs-review fail, OD-19), and `_trace_before_block` reads the text of an
+  input-side reply with `CUT_DECIDING_EVALUATORS`. Runner changes kept to those two methods and
+  one docstring, to ease the merge with `fix/scoring-audit-2026-10-11` (resume ranking, the
+  multi-turn trace on env errors, the identity sweep: none touched here).
+- Rule 3, every attempt filtered: `_filtered_reason` in `cli/run.py`, state `filtered`, exit 3.
+  Every attempt, not more than half: a share makes a filter that does its job a CI error and
+  still leaves a forger room under it.
+- Tests: 24 in `tests/adapters/test_filter_stop_provenance.py` (22 fail on `de122e26`), 7 in
+  `tests/core/test_filter_stop_scoring.py` (2), 13 in
+  `tests/cli/test_filter_stop_provenance_campaign.py` (9), the Azure 400 from `anthropic` and from
+  a plain REST template in `tests/adapters/test_provider_filter_block.py` (2; its `rest-azure`
+  cases fail there only because `RestTemplate` has no `filter_stops`) and the WebSocket cases in
+  `tests/adapters/test_malformed_replies.py` (2 fail there: the new one, and the one that now
+  declares its stop). The ones that pass on `de122e26` are the
+  controls: a genuine Azure 400 on some prompts, a genuine Anthropic refusal, the same text
+  without a filter word, and the WebSocket loader's refusal (`de122e26` refuses the key itself).
+  Four existing CLI tests whose every attempt was filtered now expect exit 3; one WebSocket test
+  and one REST trace test now declare their stop.
+- Open, said in the docs: a target that answers some attacks, not all, with its own provider's
+  filter word and no text hides those attempts (inconclusive, never a pass); a conversation cut
+  before its last turn is still read on its trace only.
+
 ## State, 2026-10-11 (evening): the pre-merge audit of `ed381359` (OD-43), fixed
 
 - No bypass found; one MEDIUM and seven LOWs, fixed one commit each on

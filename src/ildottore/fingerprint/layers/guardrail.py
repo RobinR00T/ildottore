@@ -100,8 +100,9 @@ _BENIGN_MARKERS: Final = next(
 #: text); Amazon Bedrock Converse's ``guardrail_intervened`` and ``content_filtered``; Gemini's
 #: ``SAFETY``, ``PROHIBITED_CONTENT``, ``BLOCKLIST`` and ``SPII``, and Vertex AI's
 #: ``MODEL_ARMOR``. ``length`` and ``max_tokens`` (the probe's own reply cap) are not among them.
-#: The set lives in ``shared.provider_filter`` since OD-42, where each value is sourced: the
-#: attack phase reads the same stops, and ``core`` may not import this layer.
+#: The set lives in ``shared.filter_stops`` since OD-42, where each value is sourced: the attack
+#: phase reads the same stops, and ``core`` may not import this layer. A stop is read only from the
+#: provider that documents it (u04 A-79): the adapter marks any other as ``foreign_stop``.
 FILTER_STOPS: Final = SHARED_FILTER_STOPS
 
 #: Stop reasons an adapter writes when the target reported none, so they say nothing about a
@@ -177,7 +178,9 @@ def reply_outcome(response: ModelResponse, answer_markers: tuple[str, ...] = ())
     the filter's, not wholly the model's.
     """
 
-    if _provider_stop(response) in FILTER_STOPS:
+    # A filter word the target's provider does not document is an ordinary stop (u04 A-79): the
+    # adapter marked it, and a target cannot claim a filter it does not have.
+    if not response.foreign_stop and _provider_stop(response) in FILTER_STOPS:
         return "filtered"
     if not response.text.strip():
         return "empty"

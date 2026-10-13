@@ -49,8 +49,13 @@ class BaseReporter(ABC):
         redactor: Redactor | None = None,
         planned_specs: int | None = None,
         run_status: RunStatus | None = None,
+        include_needs_review: bool = False,
     ) -> None:
         self._specs = specs or {}
+        # The run's `--include-needs-review`: whether a fail that needs review gates the exit
+        # code. SARIF reads it, so a result's level agrees with the exit code code scanning sits
+        # beside (pre-merge audit of `d07a1088`, LOW 3).
+        self._include_needs_review = include_needs_review
         self._redactor = redactor if redactor is not None else default_redactor()
         # What the run INTENDED (how many specs the plan selected) and whether it finished.
         # Neither is derivable from the findings: a campaign halted by a budget ceiling yields
@@ -113,12 +118,13 @@ def get_reporter(
     redactor: Redactor | None = None,
     planned_specs: int | None = None,
     run_status: RunStatus | None = None,
+    include_needs_review: bool = False,
 ) -> BaseReporter:
     """Instantiate the reporter registered for ``fmt``.
 
-    Passes ``specs`` (framework attribution), ``redactor`` (masking seam) and the run's
-    intent/status through to the factory. An unknown format is a clear ``KeyError``, never a
-    silent fallback.
+    Passes ``specs`` (framework attribution), ``redactor`` (masking seam), the run's
+    intent/status and whether a fail that needs review gates it (``include_needs_review``)
+    through to the factory. An unknown format is a clear ``KeyError``, never a silent fallback.
     """
 
     key = fmt.value if isinstance(fmt, ReportFormat) else fmt
@@ -128,5 +134,9 @@ def get_reporter(
         available = ", ".join(sorted(_FACTORIES))
         raise KeyError(f"unknown report format {key!r}; available: {available}") from None
     return factory(
-        specs=specs, redactor=redactor, planned_specs=planned_specs, run_status=run_status
+        specs=specs,
+        redactor=redactor,
+        planned_specs=planned_specs,
+        run_status=run_status,
+        include_needs_review=include_needs_review,
     )

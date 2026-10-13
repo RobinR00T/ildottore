@@ -78,8 +78,10 @@ from ildottore.reporting import RunStatus
 from ildottore.shared.config_errors import cut, listed, quoted
 from ildottore.shared.digest import spec_digests, target_digest
 from ildottore.shared.enums import Category, EvaluatorType
+from ildottore.shared.filter_stops import OPENAI_FILTER_STOPS, PROVIDER_FILTER_STOPS
 from ildottore.shared.models import (
     AttackSpec,
+    Attempt,
     Finding,
     ModelFingerprint,
     PlanBudgets,
@@ -92,8 +94,12 @@ from ildottore.shared.provider_filter import (
     blocked_attempt_ids,
     blocked_by_provider_filter,
     cut_attempt_ids,
+    cut_by_output_filter,
+    filtered_attempt,
+    filtered_run,
     side_unknown_attempt_ids,
 )
+from ildottore.shared.resend import one_per_attempt_id
 from ildottore.shared.tool_abuse import cleared_verbs, handoff_shaped, scene_tool_names
 from ildottore.shared.unreadable import (
     UNREADABLE_REPLY_KEY,
@@ -1254,6 +1260,10 @@ def _print_dry_run_plan(
         # What the operator's file says of its own tools, before anything is sent (OD-43).
         for line in _declaration_lines(plan.target, plan.selected):
             print(f"  operator: {line}")
+        # And of the provider filter words it reads, when it declares them (u04 A-79).
+        filters = _filter_stops_line(plan.target)
+        if filters is not None:
+            print(f"  filters: {filters}")
         # Per field, how many specs the block fills it on (a spec's own value wins, so a block's
         # temperature reaches none of the shipped battery), and what never goes out (OD-39).
         for note in plan.sampling_notes:
@@ -1351,6 +1361,46 @@ def _near_scene_lines(target: Target, specs: Sequence[AttackSpec]) -> list[str]:
     return lines
 
 
+def _filter_stops_line(target: Target) -> str | None:
+    """What ``--dry-run``, ``-v`` and ``-sn`` say of a file's filter declaration, or ``None``.
+
+    Said only when the file declares one (u04 A-79): ``filter_stops`` at the top level of an
+    ``openai`` or ``anthropic`` file, ``websocket.response.filter_stops`` in a WebSocket one. A
+    declaration changes what is scored as the provider's filter, so it is shown before anything
+    is sent, as the operator's declaration of its tools is (OD-43).
+    """
+
+    declared = target.filter_stops
+    where = "filter_stops"
+    if declared is None and target.websocket is not None and target.websocket.response.filter_stops:
+        declared = target.websocket.response.filter_stops
+        where = "websocket.response.filter_stops"
+    if declared is None:
+        return None
+    if not declared:
+        # Its own word still reads on a reply with no text and no tool call (pre-merge audit of
+        # 10cb526b, MEDIUM); the HTTP 400 is said only where one is read, Azure's (OD-41), since
+        # an anthropic adapter never reads one (e1a8aacf audit, LOW 4).
+        own = PROVIDER_FILTER_STOPS.get((target.provider or "").strip().lower(), frozenset())
+        no_400 = (
+            "no HTTP 400 is read as its provider's filter and " if own & OPENAI_FILTER_STOPS else ""
+        )
+        withheld = (
+            f"; a reply with no text and no tool call that ends on {', '.join(sorted(own))} is "
+            "still the filter's withheld one, never a pass"
+            if own
+            else ""
+        )
+        return (
+            f"{visible_controls(target.id)}'s target file declares {where}: [], so {no_400}a "
+            f"reply with text or a tool call is scored as the model's, whatever its stop{withheld}"
+        )
+    return (
+        f"{visible_controls(target.id)}'s target file declares {where}: "
+        f"[{', '.join(declared)}], the only stops read as a provider's filter"
+    )
+
+
 def _declaration_lines(target: Target, specs: Sequence[AttackSpec] = ()) -> list[str]:
     """What ``--dry-run``, ``-v`` and ``-sn`` say of the operator's declaration (OD-43, A-72).
 
@@ -1421,6 +1471,9 @@ def _print_discovery(plans: list[TargetPlan], *, quiet: bool = False) -> None:
             print(f"    sampling:  {visible_controls(plan.no_sampling)}")
         for line in _declaration_lines(plan.target, plan.selected):
             print(f"    operator:  {line}")
+        filters = _filter_stops_line(plan.target)
+        if filters is not None:
+            print(f"    filters:   {filters}")
         print(
             f"    battery:   {len(plan.selected)} spec(s) would run, "
             f"{len(plan.skipped_capability)} skipped for missing capabilities, "
@@ -2183,29 +2236,23 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
         elif not opts.quiet:
             done, again = resume_progress(resume_from)
             unjudged = len(unjudged_attempt_ids(resume_from))
+            # Each id once, by the artifact that is its attempt (``shared.resend``): an id holding
+            # a reply stored without a verdict and its unreadable re-send was counted in both, and
+            # the environment errors came out at -1 (audit of the scoring, 2026-10-11, LOW 1).
+            kept_ids = answered_attempt_ids(resume_from)
+            effective = one_per_attempt_id(
+                a for finding in resume_from.findings for a in finding.attempts
+            )
             # OD-21: a reply the adapter could not read is sent again (the target may have been
             # fixed since), and said apart from the environment errors.
-            kept_now = answered_attempt_ids(resume_from)
-            unread = len(
-                unreadable_attempt_ids(
-                    a
-                    for finding in resume_from.findings
-                    for a in finding.attempts
-                    if a.attempt_id not in kept_now
-                )
-            )
+            resent = [a for a in effective if a.attempt_id not in kept_ids]
+            unread = len(unreadable_attempt_ids(resent))
             errored = again - unjudged - unread
             # OD-41: a prompt the provider's input filter refused would be refused again.
             # Only among the attempts it keeps: a cut reply stored without a verdict is sent again,
             # and was counted as kept for review beside "will be sent again" (verification of
             # 91845524, finding 1).
-            kept_ids = answered_attempt_ids(resume_from)
-            prior_attempts = [
-                a
-                for finding in resume_from.findings
-                for a in finding.attempts
-                if a.attempt_id in kept_ids
-            ]
+            prior_attempts = [a for a in effective if a.attempt_id in kept_ids]
             blocked = len(blocked_attempt_ids(prior_attempts))
             # OD-42: a reply the provider's filter cut is answered, and kept like any other.
             trimmed = len(cut_attempt_ids(prior_attempts)) + len(
@@ -2682,6 +2729,13 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
         if unreachable is not None:
             incomplete[target_id] = unreachable
             states.append("unreachable")
+            continue
+        # The same false green one step further: the provider answered, and its filter answered
+        # for the model every time (u12 A-79, the amendment to OD-41 and OD-42).
+        filtered = _filtered_reason(result)
+        if filtered is not None:
+            incomplete[target_id] = filtered
+            states.append("filtered")
     run_status = RunStatus(
         state=states[0] if states else "complete",
         reason="; ".join(f"{k}: {v}" for k, v in sorted(incomplete.items())) or None,
@@ -2740,8 +2794,8 @@ def _unreachable_reason(result: CampaignResult) -> str | None:
     bad spec is not this, because the run still measured something.
 
     A prompt the provider's input filter refused is not a transport failure (OD-41): the
-    provider answered it. A run whose every attempt it refused is complete, its specs
-    inconclusive, and the summary counts the blocked attempts; it is not "unreachable".
+    provider answered it, so a run whose every attempt it refused is not "unreachable". It is
+    :func:`_filtered_reason`'s since the amendment to OD-41 (u12 A-79), and exits 3 too.
 
     A reply the adapter could not read (``ResponseMalformed``, OD-21) fails its attempt; a run
     of fewer attempts than the runner's stop (u08 A-74) that got only such replies, or such
@@ -2779,6 +2833,83 @@ def _unreachable_reason(result: CampaignResult) -> str | None:
         f"every one of the {len(attempts)} attempt(s) failed on transport, so nothing was "
         f"evaluated: {first}"
     )
+
+
+def _filtered_reason(result: CampaignResult) -> str | None:
+    """Why this target's run measured the provider's filter and not the model, or ``None``.
+
+    The rule (u12 A-79, the amendment to OD-41 and OD-42, decided 2026-10-11 under the owner's
+    delegation, best practice, revisable): every attempt was refused, cut or stopped by the
+    provider's filter, or failed before a reply could be read, at least one of them by the
+    filter, and none failed. No reply the model wrote whole was evaluated, so the run is
+    reported as not complete and exits 3, as an unreachable target does. Until the amendment it
+    was complete with every spec inconclusive and exited 0: a fully filtered run read green, and
+    a target that wrote its own filter's answer to every attack (a 400 ``content_filter`` from
+    any adapter, or an empty reply with a filter's stop) turned CI green with no exploit read
+    (security audit of 2026-10-11, MEDIUM 3).
+
+    Every attempt, not a share of them: the share that settles a spec (a pass needs more than
+    half of its attempts) would make a deployment whose filter refuses most of an attack
+    battery, the defence working, an error on every CI run, and a target that forges a filter's
+    answer can stay under any share below all. A partly filtered run keeps its exit code: each
+    spec with such an attempt is inconclusive, never a pass, and is counted apart in every
+    report. A fail, on a trace or on the text that came back, was measured, and decides.
+    """
+
+    attempts = [a for finding in result.findings for a in finding.attempts]
+    if not filtered_run(attempts):
+        return None
+    filtered = [a for a in attempts if filtered_attempt(a)]
+    blocked = sum(blocked_by_provider_filter(a) for a in filtered)
+    withheld = sum(cut_by_output_filter(a) for a in filtered)
+    unsaid = len(filtered) - blocked - withheld
+    counts = [
+        f"{blocked} refused by its input filter" if blocked else "",
+        f"{withheld} cut or replaced by its output filter" if withheld else "",
+        f"{unsaid} stopped by it on a side it did not report" if unsaid else "",
+        f"{len(attempts) - len(filtered)} failed before a reply could be read"
+        if len(attempts) > len(filtered)
+        else "",
+    ]
+    unread = " or got no reply that could be read" if len(attempts) > len(filtered) else ""
+    return (
+        f"every one of the {len(attempts)} attempt(s) was answered by the provider's filter"
+        f"{unread} ({', '.join(c for c in counts if c)}), so no reply the model wrote whole was "
+        "evaluated: the run measured the filter, not the model. To measure the model, run it "
+        "where the filter lets the attack prompts through; every such attempt is in the "
+        f"reports, none of them a pass{_unread_advice(attempts)}"
+    )
+
+
+def _unread_advice(attempts: list[Attempt]) -> str:
+    """What to check for the attempts of a filtered run that got no reply at all (u12 A-79).
+
+    The filter's advice says nothing about them, so the unreachable reason's is added: the
+    adapter's own for a reply it could not read, the endpoint for a transport failure, with the
+    first error (pre-merge audit of ``a55710e9``, LOW 1: 3 withheld and 4 transport failures were
+    told only to find a deployment whose filter lets the prompts through).
+    """
+
+    others = [a for a in attempts if not filtered_attempt(a)]
+    if not others:
+        return ""
+    unreadable = [a for a in others if unreadable_reply(a)]
+    if unreadable:
+        kept = (unreadable[0].request.metadata or {}).get(UNREADABLE_REPLY_KEY)
+        advice = kept.get("advice") if isinstance(kept, dict) else None
+        if not isinstance(advice, str):
+            advice = "check the target file's endpoint and provider"
+        what = (
+            "got a reply that could not be read as the provider's"
+            if len(unreadable) == len(others)
+            else f"failed on transport or ({len(unreadable)} of them) with a reply that could "
+            "not be read as the provider's"
+        )
+    else:
+        advice = "check the target file's endpoint, and that the target is up"
+        what = "failed on transport"
+    first = next((a.error for a in others if a.error), "no response")
+    return f". The other {len(others)} {what}: {advice}. The first: {first}"
 
 
 def probe_failure_warning(
@@ -3470,7 +3601,11 @@ def _write_reports(
     written: list[Path] = []
     for fmt, path in outputs.items():
         reporter = wiring.build_reporter(
-            fmt, specs=specs_by_id, planned_specs=planned_specs, run_status=run_status
+            fmt,
+            specs=specs_by_id,
+            planned_specs=planned_specs,
+            run_status=run_status,
+            include_needs_review=opts.include_needs_review,
         )
         payload = reporter.render(run, findings)
         path.parent.mkdir(parents=True, exist_ok=True)
