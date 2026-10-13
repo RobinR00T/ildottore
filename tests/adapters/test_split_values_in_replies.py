@@ -474,6 +474,80 @@ def test_a_secret_from_the_shown_half_past_the_cut_shows_no_beginning(
     assert not _shows(excerpt, URL_PASSWORD), excerpt[-300:]
 
 
+def _chunk_with_logprobs(piece: str, alternative: str) -> str:
+    """An OpenAI chunk as streamed with logprobs: the token's UTF-8 beside it, an alternative."""
+
+    item = {
+        "token": piece,
+        "logprob": -0.01,
+        "bytes": list(piece.encode()),
+        "top_logprobs": [
+            {"token": alternative, "logprob": -2.5, "bytes": list(alternative.encode())}
+        ],
+    }
+    choice = {"index": 0, "delta": {"content": piece}, "logprobs": {"content": [item]}}
+    return f"data: {_oai(piece, choices=[choice])}\n\n"
+
+
+def _spelled(excerpt: str) -> tuple[str, str]:
+    """What the excerpt's chunks spell: their tokens' ``bytes``, and their alternatives joined."""
+
+    numbers: list[int] = []
+    alternatives = ""
+    for line in excerpt.split("\n"):
+        with contextlib.suppress(ValueError):
+            item = json.loads(line.removeprefix("data: "))["choices"][0]["logprobs"]["content"][0]
+            numbers += item.get("bytes") or []
+            alternatives += item["top_logprobs"][0]["token"]
+    return bytes(numbers).decode("utf-8", "replace"), alternatives
+
+
+def test_an_event_stream_s_logprobs_spell_no_masked_token(no_known_secrets: None) -> None:
+    """Each chunk's logprob list holds one token, so it was no logprob list: the tokens were
+    masked as the transcript's stream, but their ``bytes`` stayed and spelled the key, and each
+    rank of alternatives was joined across the chunks as a stream of its own, which A-77 says
+    alternatives are not (masking clean replies)."""
+
+    text = f"Sure, here it is: {KEY} done"
+    pieces = [text[i : i + 3] for i in range(0, len(text), 3)]
+    body = "".join(_chunk_with_logprobs(piece, piece) for piece in pieces)
+    excerpt, _ = reply_excerpt(body, Redactor(salt="s"))
+    spelled, alternatives = _spelled(excerpt)
+    assert KEY[8:20] not in _rebuilt(excerpt)
+    assert KEY[8:20] not in spelled, spelled
+    assert KEY[8:20] not in alternatives
+    # A key in one token, masked on its own: its bytes go too.
+    body = "".join(_chunk_with_logprobs(piece, "x") for piece in ("Here: ", KEY, " ok"))
+    assert KEY[8:20] not in _spelled(reply_excerpt(body, Redactor(salt="s"))[0])[0]
+    # Alternatives no join masks: a clean reply is quoted as it came.
+    words = ["Paris", "is", "the", "capital", "of", "France", "and", "it", "has", "many"]
+    pairs = zip(words, words[::-1], strict=True)
+    clean = "".join(_chunk_with_logprobs(" " + word, other) for word, other in pairs)
+    assert _split_masked(clean, Redactor(salt="s")) is clean
+
+
+def test_a_clean_stream_of_heavy_events_past_the_window_is_quoted_as_it_came() -> None:
+    """OpenAI chunks with 20 alternatives each are heavy: a stream's last 256 characters reach
+    back into what the excerpt shows. Only its last word is its open tail."""
+
+    words = ["Paris", "is", "the", "capital", "of", "France", "and", "it", "has", "many"]
+    rows = [" " + words[i % len(words)] for i in range(400)]
+
+    def chunk(piece: str) -> str:
+        alternatives = [{"token": w, "logprob": -3.2, "bytes": list(w.encode())} for w in words * 2]
+        item = {"token": piece, "logprob": -0.01, "bytes": list(piece.encode())}
+        choice = {
+            "index": 0,
+            "delta": {"content": piece},
+            "logprobs": {"content": [item | {"top_logprobs": alternatives}]},
+        }
+        return f"data: {json.dumps({'object': 'chat.completion.chunk', 'choices': [choice]})}\n\n"
+
+    clean = "".join(chunk(row) for row in rows)
+    assert len(clean) > 400_000
+    assert _split_masked(clean, Redactor(salt="s")) is clean
+
+
 def test_what_is_no_stream_is_quoted_as_it_came() -> None:
     """One event, JSON lines that are arrays, Ollama's lines with blank lines between them."""
 
