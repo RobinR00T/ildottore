@@ -94,7 +94,9 @@ def test_the_same_uuid_in_two_places_is_masked_whole_in_both() -> None:
 @pytest.mark.parametrize("glue", ["_", "/", "+", "="])
 def test_a_token_of_glued_uuids_takes_linear_time(glue: str) -> None:
     # H2: UUIDs whose groups are all digits, glued into one token. 160 KB took 32.8 s at the
-    # audited head (main 0.08 s); twice the size must not take much more than twice the time.
+    # audited head (main 0.08 s). Four times the size takes about four times as long when the
+    # work is linear and sixteen when it is quadratic, on any runner; each size is timed at its
+    # best of three, and the ceiling only catches a hang.
     rng = random.Random(7)  # noqa: S311 - test data, not a secret
 
     def uuid() -> str:
@@ -105,14 +107,17 @@ def test_a_token_of_glued_uuids_takes_linear_time(glue: str) -> None:
         while sum(map(len, parts)) < size:
             parts.append(uuid())
         text = glue.join(parts)
-        started = time.perf_counter()
-        out = Redactor().redact_text(text)
+        best = math.inf
+        for _ in range(3):
+            started = time.perf_counter()
+            out = Redactor().redact_text(text)
+            best = min(best, time.perf_counter() - started)
         assert not any(c.isdigit() for c in re.sub(r"«REDACTED:[^»]*»", "", out))
-        return time.perf_counter() - started
+        return best
 
     small, large = timed(40_000), timed(160_000)
-    assert large < 3.0, large
-    assert large < 8 * small + 0.5, (small, large)
+    assert large < 120.0, large
+    assert large < 8 * small, (small, large)
 
 
 def test_no_stand_in_reaches_the_output() -> None:
