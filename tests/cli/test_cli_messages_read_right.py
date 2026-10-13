@@ -106,7 +106,7 @@ def test_a_spec_figure_is_not_a_phone_number(tmp_path: Path) -> None:
 def test_a_file_name_too_long_says_its_length_not_a_phone_number(tmp_path: Path) -> None:
     result = _run(tmp_path, "-t", "9" * 5000)
     assert result.exit_code == 3, result.output
-    assert "cannot read the file, a name of 5,000 characters: File name too long" in result.output
+    assert "File name too long: a name of 5,000 characters" in result.output
     assert "REDACTED:phone" not in result.output
 
 
@@ -289,7 +289,8 @@ def test_new_spec_stdout_checks_the_id_too() -> None:
 def test_new_spec_refuses_a_family_shaped_like_a_key() -> None:
     result = runner.invoke(app, ["new-spec", "--id", "PI-NEW-001", "--family", _KEY, "--stdout"])
     assert result.exit_code == 3, result.output
-    assert "shaped like a credential" in result.output and _KEY[:16] not in result.output
+    assert "--family is a high-entropy token, the shape of a key (not shown)" in result.output
+    assert _KEY[:16] not in result.output
     for family in ("prompt_injection", "deepteam-mapped", "nova-iopc-mapped", "rai01"):
         assert (
             runner.invoke(
@@ -297,3 +298,50 @@ def test_new_spec_refuses_a_family_shaped_like_a_key() -> None:
             ).exit_code
             == 0
         )
+
+
+def test_new_spec_takes_a_family_that_only_the_pii_rules_would_mask() -> None:
+    """`CVE-2021-44228` read as a phone number (round-2 audit of A-82, LOW 4)."""
+
+    for family in ("CVE-2021-44228", "alice@example.com", "+1-415-555-0100"):
+        result = runner.invoke(
+            app, ["new-spec", "--id", "PI-NEW-001", "--family", family, "--stdout"]
+        )
+        assert result.exit_code == 0, (family, result.output)
+
+
+def test_a_spec_path_name_too_long_says_its_length(tmp_path: Path) -> None:
+    """`--spec-path <5,000 digits>` printed `path not found: «REDACTED:phone»` (LOW 6)."""
+
+    result = _run(tmp_path, "--spec-path", "9" * 5000)
+    assert result.exit_code == 3, result.output
+    assert "path not found: a name of 5,000 characters" in result.output
+    assert "REDACTED" not in result.output
+
+
+def test_a_report_name_too_long_says_its_length_not_that_it_was_read(tmp_path: Path) -> None:
+    """`-oJ <5,000 characters>` said "cannot read" for a write (LOW 5)."""
+
+    result = runner.invoke(
+        app,
+        [
+            "run",
+            "-t",
+            str(write_target(tmp_path, mock_scenario="vulnerable")),
+            "--scope",
+            str(write_scope(tmp_path)),
+            "--spec",
+            "PI-DIRECT-001",
+            "--runs",
+            "1",
+            "-q",
+            "--evidence-root",
+            str(tmp_path / "ev"),
+            "--run-db",
+            str(tmp_path / "r.db"),
+            "-oJ",
+            str(tmp_path / ("r" * 5000)),
+        ],
+    )
+    assert result.exit_code == 3, result.output
+    assert "File name too long: a name of" in result.output and "cannot read" not in result.output

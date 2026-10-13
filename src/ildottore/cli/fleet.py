@@ -62,9 +62,9 @@ from pydantic import (
 )
 
 from ildottore import safe_yaml
+from ildottore.cli.key_shape import key_shape, names_a_credential
 from ildottore.cli.wiring import TARGET_PROVIDERS, shown_auth_ref
 from ildottore.policy.scope import SCOPE_VERSION
-from ildottore.redactor import Redactor
 from ildottore.shared.config_errors import (
     quoted,
     shown_endpoint,
@@ -116,15 +116,6 @@ def _known_provider(value: str | None) -> str | None:
     return value
 
 
-#: A query or fragment parameter whose name says it carries a credential (``api_key``,
-#: ``access_token``, ``client_secret``, an Azure SAS ``sig``), matched on its last word.
-_CREDENTIAL_PARAM = re.compile(
-    r"(?:^|[_.-])(?:key|apikey|token|secret|password|passwd|pwd|pass|auth|authorization|"
-    r"sig|signature|credential|credentials|session)$",
-    re.IGNORECASE,
-)
-#: A parameter name short and plain enough to print: the credential words above, never a value.
-_SHOWN_PARAM = re.compile(r"[A-Za-z0-9_.-]{1,64}")
 #: Why a credential in the URL is refused, for every refusal below.
 _ON_DISK = (
     "which fleet would copy into scope.yaml and the target file; drop it and name the "
@@ -132,38 +123,63 @@ _ON_DISK = (
 )
 
 
-def _looks_like_a_key(text: str) -> bool:
-    """Whether the redactor would mask ``text`` on its own (a key's shape, its entropy)."""
+def _parameter_credential(piece: str) -> str | None:
+    """What of one ``name=value`` parameter (or a bare component) carries a credential, or None.
 
-    return Redactor().redact_text(text) != text
+    A parameter name is not a secret and is printed as written (``'X-Amz-Credential'``,
+    ``'%2561pi_key'``); a value never is, and neither is a bare component, which is its own value.
+    """
+
+    name, has_value, value = piece.partition("=")
+    if not has_value:
+        shape = key_shape(unquote_plus(name))
+        return f"a component shaped like a key ({shape})" if shape else None
+    if names_a_credential(name):
+        return f"the parameter {quoted(name)}"
+    shape = key_shape(unquote_plus(value))
+    return f"the parameter {quoted(name)}, whose value is {shape}" if shape else None
 
 
-def _query_credential(component: str) -> str | None:
+def _component_credential(component: str) -> str | None:
     """What of a query string or a fragment carries a credential, said without its value."""
 
     for piece in re.split(r"[&;]", component):
-        if not piece:
-            continue
-        name, has_value, value = piece.partition("=")
-        name, value = unquote_plus(name), unquote_plus(value)
-        if _CREDENTIAL_PARAM.search(name):
-            shown = repr(name) if _SHOWN_PARAM.fullmatch(name) else "a parameter"
-            return f"the parameter {shown}"
-        if _looks_like_a_key(name) or (has_value and _looks_like_a_key(value)):
-            return "a value shaped like a key"
+        found = _parameter_credential(piece) if piece else None
+        if found is not None:
+            return found
+    return None
+
+
+def _path_credential(path: str) -> str | None:
+    """What of a URL's path carries a credential: a segment shaped like a key
+    (``/key/<key>/v1``) or a path parameter (``/v1;token=<key>``), never quoted."""
+
+    for segment in path.split("/"):
+        text, *parameters = segment.split(";")
+        shape = key_shape(unquote_plus(text)) if text else None
+        if shape is not None:
+            return f"a path segment shaped like a key ({shape})"
+        for parameter in parameters:
+            found = _parameter_credential(parameter) if parameter else None
+            if found is not None:
+                return f"a path parameter: {found}"
     return None
 
 
 def _endpoint_holds_no_credential(value: str) -> str:
-    """An endpoint ``fleet`` can split, with no credential in it (u12 A-82, M8; pre-merge audit
-    of A-82, MEDIUM 3).
+    """An endpoint ``fleet`` can split, with no credential in it (u12 A-82, M8; pre-merge audits
+    of A-82, MEDIUM 3 and round-2 LOWs 2, 3 and 5).
 
     Each of these was copied into ``base_url`` in ``scope.yaml`` and into the target file, a
-    credential on disk twice: ``https://user:<password>@host/...``; a query or fragment that
-    carries one (``...?api_key=<key>``, or a value shaped like a key); and a URL ``urlsplit``
-    reads with no host, ``https:/ops:<key>@host/...`` or ``https:\\ops:<key>@...``, which the
-    scope's host was then built from. A query that carries none (Azure OpenAI's
-    ``?api-version=2024-02-01``) is kept. Nothing of the value is printed.
+    credential on disk twice: ``https://user:<password>@host/...``; a path segment or a path
+    parameter shaped like a key, or a parameter named like a credential (``/key/<key>/v1``,
+    ``;token=<key>``); a query or fragment that carries one (``?api_key=<key>``,
+    ``?accessToken=...``, or a value shaped like a key); and a URL ``urlsplit`` reads with no
+    host, ``https:/ops:<key>@host/...`` or ``https:\\ops:<key>@...``, which the scope's host was
+    then built from. What a legitimate endpoint carries is kept: Azure OpenAI's
+    ``?api-version=2024-02-01``, a tenant's UUID, a trace or request id in hexadecimal, an email,
+    and names that only end like a credential's (``sort_key``, ``session``, ``max_token``). Nothing
+    of a value is printed (``cli.key_shape``).
     """
 
     try:
@@ -180,8 +196,11 @@ def _endpoint_holds_no_credential(value: str) -> str:
         raise ValueError(
             f"carries a user name or password before its host (user:password@host), {_ON_DISK}"
         )
+    found = _path_credential(parts.path)
+    if found is not None:
+        raise ValueError(f"carries a credential in its path ({found}), {_ON_DISK}")
     for where, component in (("query string", parts.query), ("fragment", parts.fragment)):
-        found = _query_credential(component)
+        found = _component_credential(component)
         if found is not None:
             raise ValueError(f"carries a credential in its {where} ({found}), {_ON_DISK}")
     return value
@@ -329,9 +348,51 @@ def load_fleet(path: str | Path) -> FleetConfig:
     try:
         return FleetConfig.model_validate(raw)
     except ValidationError as exc:
-        raise ValueError(
-            f"fleet file {path} failed validation: {validation_problems(exc)}"
+        raise FleetFileError(
+            f"fleet file {path} failed validation: {validation_problems(exc)}",
+            kept_names=_credential_names(raw),
         ) from exc
+
+
+class FleetFileError(ValueError):
+    """A fleet file refused, with the parameter names its refusal may quote (u12 A-82).
+
+    A parameter name is not a secret, and the refusal names the one that carries a credential
+    (``'X-Amz-Credential'``), which the CLI's entropy rule masked: ``kept_names`` are the names
+    the CLI prints as written, as it prints a spec file's name (round-2 audit of A-82, LOW 5).
+    """
+
+    def __init__(self, message: str, *, kept_names: tuple[str, ...] = ()) -> None:
+        super().__init__(message)
+        self.kept_names = kept_names
+
+
+def _credential_names(raw: dict[object, object]) -> tuple[str, ...]:
+    """The parameter names in the fleet's endpoints that name a credential, as written."""
+
+    endpoints: list[object] = []
+    targets = raw.get("targets")
+    if isinstance(targets, list):
+        endpoints += [t.get("endpoint") for t in targets if isinstance(t, dict)]
+    judge = raw.get("judge")
+    if isinstance(judge, dict):
+        endpoints.append(judge.get("endpoint"))
+    names: set[str] = set()
+    for endpoint in endpoints:
+        if not isinstance(endpoint, str):
+            continue
+        try:
+            parts = urlsplit(endpoint.strip())
+        except ValueError:
+            continue
+        pieces = re.split(r"[&;]", parts.query) + re.split(r"[&;]", parts.fragment)
+        pieces += [p for segment in parts.path.split("/") for p in segment.split(";")[1:]]
+        names.update(
+            name
+            for name, has_value, _ in (piece.partition("=") for piece in pieces)
+            if has_value and names_a_credential(name)
+        )
+    return tuple(sorted(names))
 
 
 #: The allowlist's own defaults (``policy.allowlist``): ``wss`` as ``https`` and ``ws`` as

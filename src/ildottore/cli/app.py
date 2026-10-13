@@ -55,7 +55,6 @@ from ildottore.redactor import (
     visible_controls,
 )
 from ildottore.reporting import report_schema
-from ildottore.shared.files import read_failure
 from ildottore.shared.schema_export import export_schemas
 from ildottore.store.replay import TamperError
 
@@ -469,7 +468,11 @@ def _os_error_text(exc: BaseException) -> str:
     """
 
     if isinstance(exc, OSError) and exc.errno == errno.ENAMETOOLONG and exc.filename:
-        return read_failure("the file", exc.filename, exc)
+        # Neither "read" nor "write": the same error comes from `-t` and from `-oJ` (round-2
+        # audit of A-82, LOW 5).
+        return (
+            f"[Errno {exc.errno}] {exc.strerror}: a name of {len(str(exc.filename)):,} characters"
+        )
     return str(exc)
 
 
@@ -506,8 +509,11 @@ def _masked(exc: BaseException) -> str:
     # author), not a value of this run. It is kept only with no token character of the entropy
     # rule (`[\w+/=-]`) on either side: keeping the tail of a longer token would leave its head
     # on its own, short enough to pass the rule's length floor in clear.
+    # A fleet refusal's parameter names (`kept_names` on FleetFileError) are kept the same way:
+    # a name is not a secret, and `X-Amz-Credential` read as high entropy (u12 A-82).
+    readable = [*getattr(exc, "spec_files", ()), *getattr(exc, "kept_names", ())]
     names = sorted(
-        {re.escape(n) for n in getattr(exc, "spec_files", ()) if isinstance(n, str) and n},
+        {re.escape(n) for n in readable if isinstance(n, str) and n},
         key=len,
         reverse=True,
     )

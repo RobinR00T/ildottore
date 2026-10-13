@@ -15,7 +15,7 @@ from pathlib import Path
 
 import yaml
 
-from ildottore.redactor import Redactor
+from ildottore.cli.key_shape import key_shape
 from ildottore.shared.enums import Category
 
 __all__ = ["scaffold_spec", "write_scaffold"]
@@ -125,12 +125,14 @@ def _check_family(family: str) -> None:
             "--family holds a control or format character (a line break, an escape, a "
             "direction override); give the spec family as plain text"
         )
-    # A value the redactor would mask is a credential pasted into the wrong flag, not a family:
-    # the scaffold would print it whole (the rerun of the audit's M7 fuzz).
-    if Redactor().redact_text(family) != family:
+    # A value shaped like a key is a credential pasted into the wrong flag, not a family: the
+    # scaffold would print it whole (the rerun of the audit's M7 fuzz). Shaped like a key, not
+    # merely what the redactor masks: its phone rule refused `CVE-2021-44228` (round-2 audit, L4).
+    shape = key_shape(family)
+    if shape is not None:
         raise ValueError(
-            "--family is shaped like a credential (a key or a token; not shown); give the spec "
-            "family, a word such as jailbreak"
+            f"--family is {shape}, the shape of a key (not shown); give the spec family, a word "
+            "such as jailbreak"
         )
 
 

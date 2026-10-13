@@ -414,14 +414,35 @@ def _find_pack_dirs(root: Path) -> list[Path]:
     return found
 
 
+#: A path name longer than this is described by its length, not printed (PATH_MAX on macOS).
+_MAX_SHOWN_PATH = 1024
+
+
+def _shown_path(path: Path) -> str:
+    """``path`` as a finding prints it: whole, or by its length when no file system could hold it.
+
+    ``--spec-path <5,000 digits>`` printed ``path not found: «REDACTED:phone»``, the CLI's
+    redactor reading the digits as a phone number (round-2 audit of A-82, LOW 6).
+    """
+
+    text = str(path)
+    if len(text) > _MAX_SHOWN_PATH or any(len(part) > 255 for part in path.parts):
+        return f"a name of {len(text):,} characters"
+    return text
+
+
 def load_path(path: Path) -> LoadResult:
     """Load every pack / loose spec discoverable under a single search path."""
     result = LoadResult()
-    if path.is_file():
+    try:
+        is_file, is_dir = path.is_file(), path.is_dir()
+    except OSError:  # a name too long to look up raises on some Pythons: no such path
+        is_file = is_dir = False
+    if is_file:
         return _load_loose_tree(path, path.parent)
-    if not path.is_dir():
+    if not is_dir:
         result.errors.append(
-            LintError(code=LintCode.PATH_NOT_FOUND, message=f"path not found: {path}")
+            LintError(code=LintCode.PATH_NOT_FOUND, message=f"path not found: {_shown_path(path)}")
         )
         return result
 

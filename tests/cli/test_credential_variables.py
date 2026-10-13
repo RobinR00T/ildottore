@@ -408,8 +408,14 @@ def test_fleet_still_writes_a_variable_name_and_the_no_credential_reference(
     [
         (f"https://api.example.com/v1?api_key={KEY}", "query string (the parameter 'api_key')"),
         (f"https://api.example.com/v1?access_token={PASSWORD}", "the parameter 'access_token'"),
-        (f"https://api.example.com/v1?q={KEY}", "query string (a value shaped like a key)"),
-        (f"https://api.example.com/v1?{KEY}", "query string (a value shaped like a key)"),
+        (
+            f"https://api.example.com/v1?q={KEY}",
+            "query string (the parameter 'q', whose value is a high-entropy token)",
+        ),
+        (
+            f"https://api.example.com/v1?{KEY}",
+            "query string (a component shaped like a key (a high-entropy token))",
+        ),
         (f"https://api.example.com/v1#token={PASSWORD}", "fragment (the parameter 'token')"),
         (f"https:/ops:{KEY}@api.example.com/v1", "has no host after its scheme"),
         (f"https:\\\\ops:{KEY}@api.example.com/v1", "has no host after its scheme"),
@@ -459,3 +465,125 @@ def test_fleet_keeps_a_query_that_carries_no_credential(tmp_path: Path) -> None:
     )
     assert result.exit_code == 0, result.output
     assert "api-version=2024-02-01" in (tmp_path / "o" / "target-a.yaml").read_text()
+
+
+# --- round-2 audit of A-82: what a fleet endpoint may and may not carry -------------------------
+
+_LOW = "s3cr3tpassw0rd"  # a credential of low entropy, caught by its parameter's name
+_JWT = (
+    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0."
+    "dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U"
+)
+
+
+@pytest.mark.parametrize(
+    "endpoint",
+    [
+        f"https://a.example.com/key/{KEY}/v1/chat/completions",
+        f"https://a.example.com/v1/chat/completions;token={KEY}",
+        f"https://a.example.com/v1/chat/completions?accessToken={_LOW}",
+        f"https://a.example.com/v1/chat/completions?bearer={_LOW}",
+        f"https://a.example.com/v1/chat/completions?jwt={_JWT}",
+        f"https://a.example.com/v1/chat/completions?code={_LOW}",
+        f"https://a.example.com/v1/chat/completions?sessionid={_LOW}",
+        f"https://a.example.com/v1/chat/completions?k={_LOW}",
+        f"https://a.example.com/v1/chat/completions?api_key[]={_LOW}",
+        f"https://a.example.com/v1/chat/completions?api_key%20={_LOW}",
+        f"https://a.example.com/v1/chat/completions?%2561pi_key={_LOW}",
+        f"https://a.example.com/v1/chat/completions?apiKey={_LOW}",
+        f"https://a.example.com/v1/chat/completions?client_secret={_LOW}",
+        f"https://a.example.com/v1/chat/completions?sv=2022-11-02&sig={_LOW}",
+        "https://s3.amazonaws.com/b/o?X-Amz-Credential=AKIAIOSFODNN7EXAMPLE%2F20261012",
+    ],
+)
+def test_fleet_refuses_a_credential_in_a_path_or_under_any_name(
+    tmp_path: Path, endpoint: str
+) -> None:
+    result = _fleet(tmp_path, f'version: "1"\ntargets:\n  - id: a\n    endpoint: "{endpoint}"\n')
+    assert result.exit_code == 3, result.output
+    assert "carries a credential" in result.output
+    for secret in (KEY[15:35], _LOW, _JWT[40:60]):
+        assert secret not in result.output
+    assert not (tmp_path / "o").exists()
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "tenant=3fa85f64-5717-4562-b3fc-2c963f66afa6",
+        "project=proj_8f7e6d5c4b3a2918",
+        "trace_id=4bf92f3577b34da6a3ce929d0e0e4736",
+        "request_id=req_8f7e6d5c4b3a29187a6b",
+        "user=alice%40example.com",
+        "sort_key=created",
+        "session=interactive",
+        "max_token=100",
+        "use_auth=true",
+        "signature_version=4",
+        "tokenizer=cl100k",
+        "api-version=2024-02-15-preview",
+        "api-key-header=x-api-key",
+        "primary_key_id=1",
+    ],
+)
+def test_fleet_keeps_what_a_legitimate_endpoint_carries(tmp_path: Path, query: str) -> None:
+    """The whole redactor (its PII and identifier rules) and a name's last word refused these
+    (round-2 audit of A-82, LOW 3)."""
+
+    endpoint = f"https://llm.internal.example/v1/chat/completions?{query}"
+    result = _fleet(tmp_path, f'version: "1"\ntargets:\n  - id: a\n    endpoint: "{endpoint}"\n')
+    assert result.exit_code == 0, result.output
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/v1/projects/my-proj-123456/locations/us-central1/publishers/google/models/"
+        "gemini-1.5-pro:generateContent",
+        "/v1/0123456789abcdef0123456789abcdef/my-gw/openai/chat/completions",
+        "/model/anthropic.claude-3-5-sonnet-20240620-v1:0/invoke",
+    ],
+)
+def test_fleet_keeps_a_legitimate_path(tmp_path: Path, path: str) -> None:
+    result = _fleet(
+        tmp_path, f'version: "1"\ntargets:\n  - id: a\n    endpoint: "https://h.example{path}"\n'
+    )
+    assert result.exit_code == 0, result.output
+
+
+@pytest.mark.parametrize(
+    ("query", "name"),
+    [
+        ("X-Amz-Credential=AKIAIOSFODNN7EXAMPLE%2F20261012", "'X-Amz-Credential'"),
+        (f"%2561pi_key={_LOW}", "'%2561pi_key'"),
+    ],
+)
+def test_a_parameter_name_is_printed_as_written(tmp_path: Path, query: str, name: str) -> None:
+    """A name is not a secret (round-2 audit of A-82, LOW 5): it printed `a parameter`, or the
+    CLI masked it as high entropy."""
+
+    endpoint = f"https://h.example/v1?{query}"
+    result = _fleet(tmp_path, f'version: "1"\ntargets:\n  - id: a\n    endpoint: "{endpoint}"\n')
+    assert result.exit_code == 3, result.output
+    assert f"(the parameter {name})" in result.output.replace("\n", "")
+
+
+def test_key_shape_reads_key_formats_and_entropy_and_no_pii() -> None:
+    from ildottore.cli.key_shape import key_shape, normalised_name
+
+    assert key_shape(KEY) == "a high-entropy token"
+    assert key_shape("AKIAIOSFODNN7EXAMPLE") == "a credential format"
+    assert key_shape(_JWT) == "a credential format"
+    for not_a_key in (
+        "alice@example.com",
+        "CVE-2021-44228",
+        "+1 415 555 0100",
+        "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+        "4bf92f3577b34da6a3ce929d0e0e4736",
+        "req_8f7e6d5c4b3a29187a6b",
+        "",
+    ):
+        assert key_shape(not_a_key) is None, not_a_key
+    assert normalised_name(" accessToken[] ") == "access_token"
+    assert normalised_name("%2561pi_key") == "api_key"
+    assert normalised_name("X-Amz-Credential") == "x_amz_credential"
