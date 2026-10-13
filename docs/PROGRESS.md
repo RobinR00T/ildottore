@@ -3,6 +3,23 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-13 (night): the round-3 audit of `3321a786` (A-82), fixed; the merge prepared
+
+- `?<key>=1`, `#<key>=x` and `;<key>=x`, accepted again by the round-2 rework, are refused (a
+  parameter name shaped like a key); twenty more credential names; a masked usage error carries no
+  chained cause, so a group of the installed click prints no raw value. The residuals are stated as
+  their class (8 to 64 hex digits, optionally after a short prefix, and low-entropy values, under
+  names outside the list; `new-spec --family <hex>`), and embedding in a plain click group as
+  supported for usage errors only.
+- The merge with `fix/cli-store-budgets-paths` is decided and planned
+  (`_ildottore-tren/scratch/fixcli3/MERGE-PLAN.md`): one root class
+  `_MaskedGroup(OperationalErrorGroup)`; A-80's exit codes (`ClickException`, `FileError`, `Abort`
+  and a stray `SystemExit` exit 3); one missing-path mechanism with A-80's wording for the default
+  path; `allow_inf_nan=False` on `timeout_seconds`. Not merged yet.
+- `make gates` green on `68b7cc48`: 5793 tests (317 new, 245 of which fail on `de122e26`), 97.81%
+  coverage; the round-3 probe (`m3c.py`) and `m3probe.py` (32/32, 35/35) clean but for the
+  declared hex values under neutral names.
+
 ## State, 2026-10-13 (evening): the round-2 audit of `e1824e99` (A-82, merge-ready), its LOWs fixed
 
 - LOW 1: the root command (`app._MaskedGroup`, Typer `cls=`) masks a usage error in place where
