@@ -18,8 +18,9 @@ versioning: [SemVer](https://semver.org/).
   <Class>: <message> (an internal error, not a scan result; rerun as `dottore -v ...` for the
   traceback)``), its traceback (masked line by line) only under the new root `dottore -v` or `run
   -v`. The command-line library's other errors (a `ClickException`, a `FileError`: exit 1 by
-  default), its `Aborted!` and an exit a library asks for with status 1, 2 or a message are exit 3
-  too. A broken output pipe is exit 3 with `error: the output stream closed before the command
+  default, from the vendored copy Typer raises from or from a click installed beside it, which a
+  plugin may raise from and which the CLI never imports itself), its `Aborted!` and an exit a
+  library asks for with status 1, 2 or a message are exit 3 too. A broken output pipe is exit 3 with `error: the output stream closed before the command
   finished (broken pipe)`: `registry ls`, `lint`, `describe`, `coverage` and `--help` into a
   reader that had gone exited 1, and so did a scan with findings, whose progress lines met the
   closed pipe (rich answers that with `SystemExit(1)`); stdout is pointed at the null device so no
@@ -37,8 +38,11 @@ versioning: [SemVer](https://semver.org/).
   (it was SQLite's 5 s default), in tries of 0.1 s with Python's sleeps between them, so Ctrl-C
   and SIGTERM stop the wait at once (one 30 s wait in C held them for about 32 s); a wait past a
   second prints `note: waiting for the run store at <path>: another process holds its lock (up to
-  30 s; Ctrl-C stops the wait)` once, and one that runs out is `the run store at <path> stayed
-  locked by another process for 30 s` (exit 3), naming the store mid-run too. The switch to WAL is
+  30 s; Ctrl-C stops the wait)` once per run, and one that runs out is `the run store at <path>
+  stayed locked by another process for 30 s` (exit 3), naming the store once, mid-run too. The
+  store layer itself says nothing of a wait: its caller passes a callback (`migrations.connect(...,
+  on_lock_wait=...)`, or `lock_waits_reported(...)` for every connection within), which the CLI
+  does. The switch to WAL is
   retried the same way (SQLite refuses it as busy at once while another connection holds the
   file), and a migration takes the write lock before it reads the version it starts from, in one
   transaction (two processes could both add the same column, and each script step committed on its
@@ -67,11 +71,12 @@ versioning: [SemVer](https://semver.org/).
 - **A report never overwrites an input.** `-oJ scope.yaml -oH target.yaml` overwrote both with the
   reports after the run. A report path that is the `--scope` file, a target file, the `--judge`
   file, the fleet file of `fleet --run`, the run store or its `-wal`, `-shm` or `-journal` file
-  (before the store exists too, and beside the file a symlinked `--run-db` names), or a file of
-  the spec path is refused before anything is sent (exit 3); an existing output is compared with
-  each input and every file of the spec path by device and inode, so a symlink, a hard link or
-  another spelling on a case-insensitive volume is caught (`-oJ SPECS/attacks/<spec>.yaml` beside
-  `--spec-path specs`). So is a report inside a run directory of the evidence store
+  (before the store exists too, and beside the file a symlinked `--run-db` names), or a file the
+  spec loader read (a spec, a suite, a `pack.yaml`, a media asset) is refused before anything is
+  sent (exit 3); an existing output is compared with each of them by device and inode, so a
+  symlink, a hard link or another spelling on a case-insensitive volume is caught (`-oJ
+  SPECS/attacks/<spec>.yaml` beside `--spec-path specs`), while a report beside them, such as the
+  previous run's `out.json` under `--spec-path .`, is not refused. So is a report inside a run directory of the evidence store
   (`<evidence-root>/<run-id>/`): one written over an artifact made the next resume refuse the run
   as tampered. `replay --run-db <directory>` is refused as `run` refuses it; it warned and replayed
   without the manifest check.

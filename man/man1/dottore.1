@@ -264,7 +264,8 @@ report.json, report.html, report.sarif, report.xml). A report directory that doe
 or two formats writing the same file (compared case-insensitively and after Unicode
 normalization), is refused before anything is sent, and so is a report path that is an input of
 the run: the --scope file, a target file, the --judge file, the fleet file, the run store (or its
--wal, -shm or -journal file) or a file of the spec path, through a symlink or a hard link too. The JSON and SARIF reports, like every JSON
+-wal, -shm or -journal file) or a file the spec loader read (a spec, a suite, pack.yaml, a media
+asset), through a symlink or a hard link too. The JSON and SARIF reports, like every JSON
 output (lint --json, coverage --json, fingerprint, schema export), write the second # of
 ##<letters>[ as \eu0023, and the JUnit report as &#35;, so a CI runner reading a printed report
 finds no log command (GitHub's legacy ##[error], Azure's ##vso[...]); every JSON or XML reader

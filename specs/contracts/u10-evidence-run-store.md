@@ -193,9 +193,12 @@ which path failed, and prove themselves before a send.** `migrations.connect` re
 while it answers busy, `BUSY_TIMEOUT_S` (30 s, was SQLite's 5 s default) in all, with Python's
 interruptible sleeps between tries, so Ctrl-C and SIGTERM stop a wait at once (a single 30 s wait
 in C held them for about 32 s, pre-merge audit of `e6a1ab9b`, LOW 1); a wait past `NOTICE_AFTER_S`
-(1 s) writes `note: waiting for the run store at <path>: another process holds its lock (up to
-30 s; Ctrl-C stops the wait)` to stderr once per connection, and one that runs out raises
-`StoreLocked` (a `sqlite3.OperationalError`) naming the store; a stale snapshot
+(1 s) is told, once per connection, to the caller's callback (`connect(on_lock_wait=...)`, or
+`lock_waits_reported(callback)` for every connection opened within, a context variable the caller
+sets and resets; nothing by default: the store wrote CLI text to stderr itself, round-2 audit of
+`f51a7d07`, LOW 4), and one that runs out raises `StoreLocked` (a `sqlite3.OperationalError`
+carrying the store and the wait) naming the store, which `SqliteRunStore` then says once (it
+read "the run store at X failed: the run store at X stayed locked ...", LOW 3); a stale snapshot
 (`SQLITE_BUSY_SNAPSHOT`) is not waited on. That covers the switch to WAL, which SQLite answers
 busy at once, without its busy handler, while another connection holds the file (18 of 80
 concurrent first opens failed, 0 of 160 after). `migrate` takes the write lock (`BEGIN IMMEDIATE`)

@@ -1274,8 +1274,11 @@ a pass, and each of these crashed or misled after the traffic it could have refu
   of 0.1 s, so Ctrl-C and SIGTERM stop the wait at once (SQLite's own 30 s timeout slept in C and
   held them for about 32 s, pre-merge audit of `e6a1ab9b`, LOW 1); a wait past a second prints
   `note: waiting for the run store at <path>: another process holds its lock (up to 30 s; Ctrl-C
-  stops the wait)` once per connection, and one that runs out is `the run store at <path> stayed
-  locked by another process for 30 s`, mid-run included (u10's half).
+  stops the wait)` once per run and store (`cli.run.lock_waits_noted`, the callback the store
+  layer is given; it was once per connection, so once per store operation, round-2 audit of
+  `f51a7d07`, LOW 3), and one that runs out is `the run store at <path> stayed locked by another
+  process for 30 s` (`cannot open the run store at <path>: another process held its lock for 30 s`
+  when it is met opening the store), the store named once, mid-run included (u10's half).
 * **The evidence root.** A `--evidence-root` that was a regular file was found by the first
   attempt's write, after its batch was paid for (125 requests, then `NotADirectoryError`, nothing
   stored, the requests counted against the resume's ceiling). It is `error: cannot write evidence
@@ -1285,8 +1288,10 @@ a pass, and each of these crashed or misled after the traffic it could have refu
   result; rerun as `dottore -v ...` for the traceback)``, the message through `_masked`; the
   traceback is printed only under `-v` (`dottore -v <command>`, or `run -v`, both counted flags),
   each line through `_masked`. The library's own errors are exit 3 too: `ClickException` and
-  `FileError` (exit 1 by default) by class, as `UsageError` already was, its `Abort` (`error:
-  aborted`), and a `SystemExit` of 1, 2 or a text (`error: unexpected exit with status ...`; 0 and
+  `FileError` (exit 1 by default) by class, as `UsageError` already was, and those of a click
+  installed beside the vendored copy, which Typer does not catch and which only a plugin raises
+  (read from `sys.modules` when one arrives; the CLI never imports that click, round-2 LOW 2),
+  its `Abort` (`error: aborted`), and a `SystemExit` of 1, 2 or a text (`error: unexpected exit with status ...`; 0 and
   3 up keep their code). A broken stdout pipe is exit 3 with `error: the output stream closed
   before the command finished (broken pipe)`, wherever it is met: in the command (the guard), in
   the root context's close callback, which reconfigures stdout and so flushes what was still
@@ -1310,10 +1315,13 @@ a pass, and each of these crashed or misled after the traffic it could have refu
   reports. A report path is refused (exit 3, before anything is sent) when it is the `--scope`
   file, a target file, the `--judge` file, the fleet file of `fleet --run`, the run store or the
   `-wal`, `-shm` or `-journal` file beside it (by resolved path, so before the store exists too,
-  for the path given and for the file a symlinked store names), or a file of the spec path; an
-  existing output is compared with each input and every file and directory of the spec path by
-  device and inode, so a symlink, a hard link or another spelling on a case-insensitive volume is
-  the same file (the first version compared resolved paths with the spec roots, and
+  for the path given and for the file a symlinked store names), or a file the spec loader read
+  (`LoadResult.files`: each `pack.yaml`, spec and suite file and each media asset a spec inlined,
+  checked once they are loaded, still before any send); an existing output is compared with each
+  of them by device and inode, so a symlink, a hard link or another spelling on a case-insensitive
+  volume is the same file. Every file under the spec path was protected at first, which refused
+  the rerun of `run --spec-path . -oJ out.json` (round-2 audit of `f51a7d07`, LOW 1); before that
+  the first version compared resolved paths with the spec roots, and
   `os.path.realpath` keeps the case it is given: `-oJ SPECS/attacks/AC-BFLA-001.yaml` beside
   `--spec-path specs` exited 2 and overwrote the spec on the macOS default volume, MEDIUM 1). A
   report inside a run directory of the evidence store (a directory under `--evidence-root` holding
@@ -1337,14 +1345,15 @@ a pass, and each of these crashed or misled after the traffic it could have refu
   exist is `error: spec path not found: <path>. Pass --spec-path <dir>; ...`, not "1 spec file(s)
   failed to load".
 
-Checked by `tests/cli/test_run_store_errors.py` (34), `tests/cli/test_evidence_root_preflight.py`
+Checked by `tests/cli/test_run_store_errors.py` (35), `tests/cli/test_evidence_root_preflight.py`
 (10), `tests/cli/test_attempt_ceiling.py` (12), `tests/cli/test_estimate_quiet.py` (2),
-`tests/cli/test_report_paths_inputs.py` (16), `tests/cli/test_fleet_run_options.py` (13),
+`tests/cli/test_report_paths_inputs.py` (19), `tests/cli/test_fleet_run_options.py` (13),
 `tests/cli/test_broken_pipe.py` (9, each in a subprocess writing into a reader closed before it
-starts), `tests/cli/test_guard_subclass.py` (16: the same exit codes through a subclass of
+starts), `tests/cli/test_guard_subclass.py` (25: the same exit codes through a subclass of
 `OperationalErrorGroup` that overrides `main` and `invoke` and calls `super()`, the way another
-root group composes with it; the group keeps no state) and `tests/store/test_store_open_errors.py`
-(16).
+root group composes with it, the group keeping no state; and the installed click's exceptions,
+with the CLI run once with click made unimportable) and `tests/store/test_store_open_errors.py`
+(19).
 
 ## §8 Out of scope / forbidden
 - MUST NOT implement attack/mutation/evaluation/scoring/reporting/fingerprint logic (u05-u11,
