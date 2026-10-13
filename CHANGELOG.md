@@ -47,8 +47,9 @@ versioning: [SemVer](https://semver.org/).
 - A fleet `endpoint` that carries a credential is refused before anything is written: user info
   (`https://user:<password>@host`), a path segment shaped like a key (`/key/<key>/v1`), a path,
   query or fragment parameter whose normalised name is a credential's (`?api_key=`,
-  `?accessToken=`, `;token=`, `#token=`, `?jwt=`, `?k=`, `?api_key[]=`) or whose value is shaped
-  like a key (a credential format, or a high-entropy token that is not a hexadecimal id or a
+  `?accessToken=`, `;token=`, `#token=`, `?jwt=`, `?k=`, `?api_key[]=`, `?oauth_token=`,
+  `?X-Goog-Signature=`, `?passcode=` and the like), whose name is itself shaped like a key
+  (`?<key>=1`), or whose value is shaped like a key (a credential format, or a high-entropy token that is not a hexadecimal id or a
   UUID), and a URL with no host after its scheme (`https:/ops:<key>@host`,
   `https:\\ops:<key>@host`), each of which was copied into both files. What a legitimate endpoint
   carries is kept (`?api-version=2024-02-01`, a tenant UUID, a hex trace or request id, an email,
@@ -84,8 +85,8 @@ versioning: [SemVer](https://semver.org/).
   Usage errors are now masked by the root command where click raises them (exit 3, as before),
   so every caller prints them masked: the script this version installs
   (`ildottore.cli.main:main`), one an older install generated (`app()`, which `pip install -e`
-  keeps), a program that takes the click command or holds it in its own group, and `python -m
-  typer`.
+  keeps), a program that takes the click command or holds it in a Typer group, and `python -m
+  typer`; in a group of the installed `click`, the message is masked and has no chained cause.
 - **What the operator typed is masked where the CLI echoes it**: `lint <path>`, `describe <id>` and
   `schema export --name <name>` printed it raw.
 - **The report schema constrains the run and each finding** (required keys, types, the verdict's

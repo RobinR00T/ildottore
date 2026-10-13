@@ -1349,10 +1349,41 @@ Amended after the round-2 audit of `e1824e99` (2026-10-13, merge-ready, its LOWs
   the CLI's mask: `'X-Amz-Credential'` read as high entropy), and a file name too long is `File
   name too long: a name of N characters` (it said `cannot read` of `-oJ`). LOW 6: `--spec-path`
   of a name no file system could hold is described by its length.
-* Not fixed, said: a key of 32 hexadecimal digits, or one of low entropy, under a parameter name
-  that is not a credential's (`?q=<hex>`) is kept, as a trace id is; a group from the installed
-  `click` (not Typer's copy) that holds the command gets the masked message, but as an exception
-  of the other copy's class, which it does not catch.
+* Not fixed, said: a value of 8 to 64 hexadecimal digits, alone or after a short lowercase
+  prefix (`ab_<40 hex>`, `req_<hex>`), and any low-entropy value, under a parameter name that is
+  not a credential's (`?q=<hex>`, a path segment `/<40 hex>/`) is kept and written, since it
+  cannot be told from a trace, request, tenant or account id; so is `new-spec --family <32 hex>`,
+  written into the scaffold as asked, a hex id being no key.
+* Embedding: a caller that takes the command (`typer.main.get_command(app)`) or holds it in a
+  Typer group is supported. In a group of the installed `click` (not Typer's vendored copy),
+  support is for usage errors only: the message is masked and its chained cause dropped, but that
+  group does not catch the other copy's exception class, so it prints a traceback that ends on
+  the masked message and exits with its own code; nothing else of this CLI's handling applies
+  there.
+
+Amended after the round-3 audit of `3321a786` (2026-10-13): `?<key>=1`, `#<key>=x` and `;<key>=x`,
+refused at `e1824e99` and accepted by the round-2 rework, are refused again (a parameter name shaped
+like a key, after the credential-name check); `CREDENTIAL_NAMES` gains application_key, app_key,
+api_secret, oauth_token, oauth_signature, private_token, personal_access_token, sas_token,
+x_goog_api_key, x_goog_signature, x_goog_credential, xapikey and xapi_key, accesskey, secretkey,
+auth_key, authkey, hapikey, token_secret and passcode; and `_mask_in_place` clears `__cause__` and
+sets `__suppress_context__`, so a group of the installed click no longer prints the raw
+conversion error chained to a masked usage error.
+
+Merge with `fix/cli-store-budgets-paths` (u12 A-80, which lands first), decided 2026-10-13 under
+the owner's delegation (best practice), revisable:
+* one root command class carries both behaviours: `_MaskedGroup(OperationalErrorGroup)`, which
+  overrides only what masking needs and calls `super()` (an unexpected exception exits 3 on one
+  masked line, its traceback only with `-v`, a broken pipe exits 3; a usage error is masked
+  where it is raised);
+* A-80's closure of A-9 decides the exit codes: `ClickException`, `FileError`, `Abort` and a
+  stray `SystemExit` exit 3, and only lint's findings exit 1 (`run_masked` follows);
+* one missing-spec-path mechanism, this clause's (`refuse_spec_paths_that_hold_nothing`, exit 3,
+  `PATH_NOT_FOUND`), with A-80's wording (`spec path not found: ...`) when the path was the default
+  one, and `lint` with no path and no `specs/` here strict (exit 3, never the installed battery);
+  A-80's match on the text `path not found: ` goes once this mechanism covers its cases;
+* `shared/models.py` keeps `allow_inf_nan=False` on `timeout_seconds`; `adapters/base.py`,
+  `adapters/websocket.py` and `cli/wiring.py` keep both sides.
 
 ## §8 Out of scope / forbidden
 - MUST NOT implement attack/mutation/evaluation/scoring/reporting/fingerprint logic (u05-u11,

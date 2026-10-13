@@ -1132,7 +1132,10 @@ command-line library printed it before any masking ran; it now reads `error: Inv
 click raises it, so every caller prints it masked: the installed script, which runs
 `ildottore.cli.main:main`, one an older install generated, which calls `app()` and which `pip
 install -e` keeps across a pull, a program that takes the command (`typer.main.get_command(app)`)
-or holds it in a group of its own, and `python -m typer ildottore.cli.main`. `lint <path>`, `describe <id>` and `schema
+or holds it in a Typer group of its own, and `python -m typer ildottore.cli.main`. In a group
+of the installed `click` (not Typer's copy) only the usage error's message is covered: it is
+masked and carries no chained cause, but that group prints it as a traceback and exits with its
+own code. `lint <path>`, `describe <id>` and `schema
 export --name <name>` mask what they echo of it the same way. Options that can only be wrong are
 refused (exit 3) before anything is sent: `--fail-on bogus`, `--timeout 0`, `--concurrency 0`,
 `--top-tests 0`, `--runs 0`, `--rate 0`, a negative `--budget-tokens`, `--budget-requests` or
