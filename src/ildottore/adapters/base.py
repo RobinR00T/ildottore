@@ -313,9 +313,9 @@ def _stream_window() -> tuple[int, int]:
     body, only the lines that start in its first half are shown (:func:`_shown_head`: masks
     shortened the text and moved the second half's into the excerpt, fourth pre-merge audit,
     MEDIUM), and a stream whose last piece lies past that half may run on past the cut, so its
-    last 256 characters as written, or a longer end that begins a registered credential, are left
-    out (:func:`ildottore.redactor.withhold_open_ends`). A stream that ended in the first half is
-    read as complete.
+    open tail as written (the run it ends with, 32 to 256 characters, or a longer end that begins
+    a registered credential) is left out (:func:`ildottore.redactor.withhold_open_ends`). A
+    stream that ended in the first half is read as complete.
     """
 
     longest = max((len(secret) for secret in registered_secrets()), default=0)
