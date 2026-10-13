@@ -3,6 +3,32 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-13 (night): the third audit of `1d3d65c7` (merge-ready), applied
+
+- MEDIUM 1: an exempt renderer could change a verdict through an import-time side effect
+  (`cli/render.py` emptying `shared.provider_filter.FILTER_STOPS`; a resume mixed verdicts). A
+  module the `dottore` entry point loads runs at the top of every run, so the renderers, every
+  command, `cli.app` and `cli.main` are covered; only `ildottore.testing` stays exempt, checked to
+  be outside the import closure of `cli.main` and named by no `import_module` or `__import__` of
+  covered code. The cost, said in u12 A-81: a resume across a help-text edit is refused.
+- MEDIUM 2: data files are covered by suffix (`.yaml`, `.sql`, `.json`, `.j2`, all the package
+  reads, a test checks), dotfiles skipped: a `.DS_Store` no longer refuses a resume.
+- LOWs: a package with no readable source is refused at run start (exit 3); each covered file's
+  8-hex digest is recorded and the refusal names up to five that differ; the interpreter
+  (implementation and `major.minor`) is recorded and compared, pydantic, httpx and websockets
+  recorded; the figure is 165 files (159 of 161 modules and 6 data files); `LANDING.md` step 1
+  redone (conflicts now in `CHANGELOG.md`, `docs/PROGRESS.md`, `USAGE.md`, `docs/MANUAL.md`,
+  `00-INDEX.md` and one import line of `cli/run.py`; u12 merges cleanly).
+- Re-run with the auditor's harness on this branch (`scratch/fixcli2/r4/`): mutations a to i, g2,
+  the two renderer side effects, `dyn-x`, `dyn-y` and the lazy import refused on resume (exit 3, 0
+  requests, the changed file named), j refused on the landed preview; the comment-only edit, the
+  `.DS_Store` and the controls resume. An in-place re-pin of a mutated tree fails the frozen-pin
+  test. Digest cost 0.32 s on 3.12 and 3.14 (0.64 s on 3.9), same digest on all three.
+- `make gates` green on `45598e8e` (`PYTHONPATH` set to the worktree's `src`, `TMPDIR` the system
+  default): 5580 tests (5476 on `main` at `de122e26`), 97.85% coverage, 75 specs lint OK, four
+  import contracts kept, mypy strict on 161 files, self-scan, bandit and pip-audit clean. Tests:
+  `tests/shared/test_judging_rules.py` 24, `tests/cli/test_resume_judging_rules.py` 34.
+
 ## State, 2026-10-13: the second audit of `6de5780b`, fixed: deny by default (u12 A-81)
 
 - The audit (`_ildottore-tren/scratch/fixcli2-audit/r2/`) reproduced H2 twice with the tripwire
