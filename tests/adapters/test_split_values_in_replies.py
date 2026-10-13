@@ -11,7 +11,10 @@ from __future__ import annotations
 
 import contextlib
 import json
+import random
 import re
+import string
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -358,6 +361,117 @@ def test_only_the_head_the_excerpt_reads_is_read_and_a_secret_past_it_is_left_ou
     )
     assert len(clean) > 200_000
     assert _split_masked(clean, Redactor(salt="s")) is clean
+
+
+#: Stream shapes in which a secret straddling the window's cut showed its beginning (fourth
+#: pre-merge audit, MEDIUM: window_attacks.py, case A).
+_CUT_SHAPES = {
+    "plain-text data": lambda c: f"data: {c}\n\n",
+    "NDJSON, as Ollama streams": lambda c: (
+        json.dumps(
+            {"model": "llama3", "message": {"role": "assistant", "content": c}, "done": False}
+        )
+        + "\n"
+    ),
+    "NDJSON, OpenAI chunks": lambda c: _oai(c) + "\n",
+}
+URL_PASSWORD = "Corr3ct!Horse#Batt3ry$Stapl3"
+
+
+def _shows(excerpt: str, private: str) -> bool:
+    """Whether six characters in a row of ``private`` are in what the excerpt quotes, joined."""
+
+    joined = re.sub("«REDACTED:[A-Za-z0-9_]+(?::[0-9a-f]{8})?»", "\0", _rebuilt(excerpt))
+    return any(private[i : i + 6] in joined for i in range(len(private) - 5))
+
+
+def _straddling(write: Callable[[str], str], text: str, k: int, seed: int) -> str:
+    """A body whose window's cut falls inside ``text``'s ``k``-th 3-character delta, after a
+    blob in 1,000-character deltas that masking collapses to one mask, so what lay near the cut
+    moves up into the 4 KiB the excerpt shows."""
+
+    from ildottore.adapters.base import _stream_window
+
+    rng = random.Random(seed)  # noqa: S311 - a seeded fixture, not a secret
+    alphabet = string.ascii_letters + string.digits
+    window, _ = _stream_window()
+    pieces = [text[i : i + 3] for i in range(0, len(text), 3)]
+    head = "".join(write(piece) for piece in pieces[:k])
+    target = window - len(head) - len(write(pieces[k])) // 2
+    blob, size = [], 0
+    while target - size > 2200:
+        blob.append(write("".join(rng.choice(alphabet) for _ in range(1000))))
+        size += len(blob[-1])
+    rest = target - size - len(write(""))
+    blob.append(write("".join(rng.choice(alphabet) for _ in range(max(1, rest)))))
+    return "".join(blob) + head + "".join(write(piece) for piece in pieces[k:])
+
+
+@pytest.mark.parametrize("shape", list(_CUT_SHAPES))
+def test_a_secret_straddling_the_window_s_cut_shows_no_beginning(
+    no_known_secrets: None, shape: str
+) -> None:
+    """Masks shortened the window's text, so its second half reached the excerpt, and the open
+    tail stopped at a symbol: a URL password showed `Corr3ct!` at 7 of 31 cuts."""
+
+    text = f" the key is https://ops:{URL_PASSWORD}@db.internal:5432/v1 and more"
+    for k in range(1, len(text) // 3):
+        body = _straddling(_CUT_SHAPES[shape], text, k, seed=k)
+        excerpt, _ = reply_excerpt(body, Redactor(salt="s"))
+        assert not _shows(excerpt, URL_PASSWORD), (k, excerpt[-300:])
+
+
+def test_a_long_registered_credential_straddling_the_cut_shows_no_beginning(
+    no_known_secrets: None,
+) -> None:
+    """A 300-character registered credential with symbols and spaces, partly masked by the
+    entropy rule, no longer ended the masked text as written: 70 of 111 cuts showed part of it."""
+
+    rng = random.Random(5)  # noqa: S311 - a seeded fixture, not a secret
+    secret = "".join(rng.choice(string.ascii_letters + string.digits + "!#$% ") for _ in range(300))
+    register_known_secret(secret)
+    text = f" the key is {secret} and more"
+    for k in range(4, len(text) // 3, 3):
+        body = _straddling(_CUT_SHAPES["plain-text data"], text, k, seed=k)
+        excerpt, _ = reply_excerpt(body, Redactor(salt="s"))
+        assert not _shows(excerpt, secret), (k, excerpt[-300:])
+
+
+def test_a_secret_from_the_shown_half_past_the_cut_shows_no_beginning(
+    no_known_secrets: None,
+) -> None:
+    """Pieces that reach from the window's first half past its cut: a registered credential in
+    1-character deltas each carrying 100 characters more, and a URL password whose beginning is
+    glued to a run of 300 letters, which the run of key characters was too long to be read as."""
+
+    from ildottore.adapters.base import _stream_window
+
+    rng = random.Random(4)  # noqa: S311 - a seeded fixture, not a secret
+    alphabet = string.ascii_letters + string.digits
+    secret = "".join(rng.choice(alphabet + "!#$% ") for _ in range(300))
+    register_known_secret(secret)
+    _, settled = _stream_window()
+
+    def event(content: str, pad: str = "") -> str:
+        return f"data: {json.dumps({'choices': [{'delta': {'content': content}}], 'pad': pad})}\n\n"
+
+    def blob(before: int) -> str:
+        out = ""
+        while settled - before - len(out) > 1500:
+            out += event("".join(rng.choice(alphabet) for _ in range(1000)))
+        return out
+
+    spread = "".join(event(c, "p" * 100) for c in secret)
+    body = blob(600) + event(" the key is ") + spread + event(" done")
+    excerpt, _ = reply_excerpt(body, Redactor(salt="s"))
+    assert not _shows(excerpt, secret), excerpt[-300:]
+    glue = "".join(rng.choice(string.ascii_lowercase) for _ in range(300))
+    head = "".join(event(c) for c in ("htt", "ps:", "//o", "ps:", "Cor", "r3c", "t!"))
+    tail = "".join(event(c, "p" * 1200) for c in "Horse#Batt3ry$Stapl3@db.internal:5432/v1")
+    pre = event(" the key is " + glue) + head
+    body = blob(len(pre) + 300) + pre + tail + event(" done")
+    excerpt, _ = reply_excerpt(body, Redactor(salt="s"))
+    assert not _shows(excerpt, URL_PASSWORD), excerpt[-300:]
 
 
 def test_what_is_no_stream_is_quoted_as_it_came() -> None:
