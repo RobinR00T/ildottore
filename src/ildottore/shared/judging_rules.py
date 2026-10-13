@@ -16,11 +16,13 @@ attempt(s) in 2 spec(s) came back cut or replaced ... never a pass`` although al
 Two records bind a run to its rules, both written when it starts and both checked by a resume:
 
 * :func:`judging_digest`, computed at run time from the installed package itself: a SHA-256 over
-  **every file of the package** but the few modules :data:`JUDGING_EXEMPT` names, Python sources
-  with their comments, docstrings and blank lines left out (decorators kept), other files byte for
-  byte. Deny by default: what is not exempted is covered, a subclass override, a default, a
-  decorator, the offline judge and a new module included, with no list to keep up to date. A
-  resume under any other digest is refused, whoever forgot what.
+  **every file of the package** but the test harness (:data:`JUDGING_EXEMPT`), Python sources
+  with their comments, docstrings and blank lines left out (decorators kept), the data files the
+  package reads (:data:`DATA_SUFFIXES`) byte for byte. Deny by default: what is not exempted is
+  covered, a subclass override, a default, a decorator, the offline judge, a renderer and a new
+  module included, with no list to keep up to date. A resume under any other digest, or another
+  interpreter (:func:`python_build`), is refused, whoever forgot what, naming the files that
+  differ (:func:`judging_files`).
 * :data:`JUDGING_RULES_VERSION`, the human name of those rules, which ``dottore --version`` prints
   and a refusal quotes. ``tests/shared/test_judging_rules.py`` pins the digest of each version, so
   a change to covered code fails it until the version is bumped (with a CHANGELOG line) or the
@@ -216,8 +218,8 @@ def _scanned(package: Path) -> tuple[str, dict[str, str]]:
 def judging_digest(package: Path = _PACKAGE) -> str:
     """The SHA-256 of the code that judges, computed from the installed package (deny by default).
 
-    Taken once per process (the files do not change under a running scan): about 0.3 s for the
-    package, the parse and the tokenizer being most of it.
+    Taken once per process (the files do not change under a running scan): 0.32 s for the 165
+    files of the package on Python 3.12 and 3.14, the parse and the tokenizer being most of it.
     """
 
     return _scanned(package)[0]

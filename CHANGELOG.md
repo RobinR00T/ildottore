@@ -21,20 +21,32 @@ versioning: [SemVer](https://semver.org/).
   verdicts the same way the same week, and `--version` printed `0.1.0` on `f12ba83`, `6d5f7ae` and
   `de122e26` alike.
 - **The code that judges is bound to the run, deny by default.** `shared.judging_rules.
-  judging_digest` is a SHA-256 over every file of the package but the modules `JUDGING_EXEMPT`
-  names, Python sources with their comments, docstrings and blank lines left out (decorators kept),
-  other files byte for byte (the SQL schema, the fingerprint signatures). A run records it when it
-  starts (`judging_digest`), computed from the installed package once per process (0.3 s for the
-  161 modules), and a resume under another digest is refused, with no flag, naming both: `run
-  '<id>' was judged under the same judging rules (1) by other code: its judging digest is <64 hex>
-  and this installation's is <64 hex> (Il Dottore's code changed since the halt: an upgrade, a
-  reinstall or a local edit ...)`. A run that records the rules and no digest is refused the same
-  way. What is not exempted is covered, so a subclass override, a default, a decorator, the offline
-  judge and a module that does not exist yet are covered with no list to keep. The 17 exemptions
-  are presentation and input only, each with its reason, and the test checks the reason, not the
-  word: fourteen are commands outside the import closure of `cli.run` (`cli.app`, `cli.lint`,
-  `cli.replay`, the golden harness ...) and three are renderers inside it (`reporting`,
-  `cli.render`, `cli.exit_codes`) that no covered module but `cli.run` and `cli.wiring` imports.
+  judging_digest` is a SHA-256 over every file of the package but `ildottore.testing` (the golden
+  harness of the test suite): 159 of the 161 modules, with their comments, docstrings and blank
+  lines left out (decorators kept), and the 6 data files the package reads, byte for byte, by
+  suffix (`.yaml`, `.sql`, `.json`, `.j2`: the fingerprint signatures, the run store schema, the
+  report schemas and the HTML template); dotfiles and any other suffix are not the package's source,
+  so a stray `.DS_Store` changes nothing. A run records it when it starts (`judging_digest`, with a
+  short digest of each file as `judging_files`), computed from the installed package once per
+  process (0.32 s on Python 3.12 and 3.14, 0.64 s on 3.9), and a resume under another digest is
+  refused, with no flag, naming both and the files that differ (five at most): `run '<id>' was
+  judged under the same judging rules (1) by other code: its judging digest is <64 hex> and this
+  installation's is <64 hex> (Il Dottore's code changed since the halt: an upgrade, a reinstall or
+  a local edit; the files that differ: ildottore.cli.render; ...)`. A run that records the rules
+  and no digest is refused the same way. A package whose source cannot be read (a zip or frozen
+  install) is refused at run start, exit 3, rather than digested as nothing. What is not exempted
+  is covered: a subclass override, a default, a decorator, the offline judge, the renderers and a
+  module that does not exist yet. The one exemption is checked to be outside the import closure of
+  the console entry point (`cli.main`) and named by no dynamic import of covered code: a module the
+  entry point loads runs its top-level code in every run's process, so an edit to an exempt
+  renderer could change a verdict as a side effect (third audit: `cli/render.py` emptying
+  `shared.provider_filter.FILTER_STOPS`). `cli.app` and `cli.main` are covered for the same
+  reason; the cost is that a resume across an edit of the help text is refused, as across any other
+  edit.
+- **The interpreter is part of what judges.** A run records `python` (the implementation and
+  `major.minor`, as `CPython 3.14`), and a resume under another one is refused (the standard
+  library's regular expressions, JSON and Unicode tables read a reply too). The pydantic, httpx and
+  websockets versions are recorded (`dependencies`), not compared.
 - **Why deny by default.** The first design listed the verdict code (an allow-list with a walk of
   what each entry referred to), and two audits found verdict code it missed under an unchanged pin:
   four one-line edits (pre-merge audit of `22269e0c`: the runner's `CUT_DECIDING_EVALUATORS`, a
@@ -43,8 +55,12 @@ versioning: [SemVer](https://semver.org/).
   override, the offline judge and a decorator (second audit of `6de5780b`, each reproduced end to
   end: a resume that mixed verdicts, exit 0). Decided under the owner's delegation (best practice,
   2026-10-13): invert the default, and bind the run to the computed digest, so correctness no
-  longer depends on anyone bumping a version. Each of the auditor's ten mutations (a to j) now
-  changes the digest, fails the pin and is refused by a resume (exit 3, 0 requests sent).
+  longer depends on anyone bumping a version. The third audit (of `1d3d65c7`) then found an
+  import-time side effect in an exempt renderer and a stray `.DS_Store` refusing every resume: the
+  renderers and every module the entry point loads are covered, and data files go by suffix. Each
+  of the auditors' mutations (a to j, the renderer side effects, the dynamic and lazy imports) now
+  changes the digest, fails the pin and is refused by a resume (exit 3, 0 requests sent, the
+  changed file named), while a comment, a `.DS_Store` and a plain resume go through.
 - **The rules keep a version, for people.** `shared.judging_rules.JUDGING_RULES_VERSION` (`1`: the
   rules as of the merge that introduced the version) names them; `dottore --version` prints
   `dottore 0.1.0 (judging rules 1)` and a refusal quotes it. `tests/shared/test_judging_rules.py`
@@ -123,19 +139,19 @@ versioning: [SemVer](https://semver.org/).
   selection key a later release adds, is left alone. `takes_sampling` and `judge_takes_sampling`
   are named apart (the message named both); a corrupt `not_destructive_tools` is refused as corrupt
   where it fell back to the target refusal.
-- **Compatibility.** The context of a run of the whole battery grows by about 40 KB (the field
-  digests: 8 hex digits per field). An older version ignores the new keys and drops them on its
+- **Compatibility.** The context of a run of the whole battery grows to about 48 KB (the spec
+  field digests, 40 KB at 8 hex digits per field, and the per-file judging digests, 7 KB). An older version ignores the new keys and drops them on its
   rewrite. The spec and target digests are unchanged, byte for byte.
 - Docs: MANUAL (the `--resume` row and resume prose of `dottore run`, the `dottore replay` note,
   five troubleshooting rows), FAQ, USAGE, `dottore(1)`, `docs/02` §3, `docs/09`, ADR-0007's OD-44
   note (corrected as below), PROGRESS; contracts u12 §7 A-81 (new) and A-24 (amended), u10 §6, the
   index rows. Where the docs say which runs are refused, they name `JUDGING_RULES_SINCE` rather
-  than a date, set once when the version lands. Tests: `tests/shared/test_judging_rules.py` (19),
-  `tests/cli/test_resume_judging_rules.py` (31), `tests/cli/test_resume_refusal_advice.py` (15) and
+  than a date, set once when the version lands. Tests: `tests/shared/test_judging_rules.py` (24),
+  `tests/cli/test_resume_judging_rules.py` (34), `tests/cli/test_resume_refusal_advice.py` (15) and
   `tests/cli/test_resume_corrupt_context.py` (31). On `de122e26` the first two do not import (the
   module is new), all 15 of the third fail and 28 of the 31 (the three that pass are the
   `sampling_defaults_applied` refusal, which existed, an unknown key and a well-formed start); on
-  `6de5780b`, the head the second audit read, the first does not import and 7 of the 31 fail. Six tests updated for the
+  `1d3d65c7`, the head the third audit read, 8 of the 24 and 3 of the 34 fail. Six tests updated for the
   messages named above or the stricter store (`--version`, the route refusal, the per-field
   sampling message, the corrupt declaration record, a scope test's fake target digest, and the
   scope-note test, whose hostile entries are now refused unquoted).

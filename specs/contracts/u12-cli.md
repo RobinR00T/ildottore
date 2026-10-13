@@ -1238,32 +1238,47 @@ are the same class.
   digest). `JUDGING_RULES_SINCE` is the day the version took its value, the one place the docs name
   for it.
 * **The code that judges, bound by its digest (deny by default).** `shared.judging_rules.
-  judging_digest` is a SHA-256 over every file of the package but the modules `JUDGING_EXEMPT`
-  names: Python sources normalized (comments, docstrings and blank lines left out by `tokenize` and
-  `ast` positions, decorators kept; the same on 3.9, 3.12 and 3.14, CI runs 3.11), other files byte
-  for byte. It is computed from the installed package once per process (0.3 s for 161 modules),
-  recorded when a run starts (`context_json.judging_digest`), and a resume under another digest, or
-  of a run that records the rules and no digest, is refused with no flag, naming both digests
-  (carried by `cli.resume.ResumeRefused.digests`, so the error masking keeps them readable). So
-  correctness does not depend on anyone bumping a version: a subclass override, a default, a
-  decorator, the offline judge and a module that does not exist yet are covered because nothing
-  exempts them. **The exemptions** (17) are presentation and input only, each with its reason, and
-  `tests/shared/test_judging_rules.py` checks the reason: a command (14: `cli.app`, `cli.main`,
-  `cli.calibrate`, `cli.coverage`, `cli.describe`, `cli.diff`, `cli.fingerprint`, `cli.fleet`,
-  `cli.lint`, `cli.new_spec`, `cli.registry`, `cli.render_media`, `cli.replay`, `testing`) must be
-  outside the import closure of `cli.run`, and a renderer (3: `reporting`, `cli.render`,
-  `cli.exit_codes`) may be inside it only if no covered module but `cli.run` and `cli.wiring`
-  imports it. Every other file is checked to be covered. **Decided under the owner's delegation
-  (best practice, 2026-10-13):** the first design listed the verdict code instead (an allow-list,
-  `JUDGING_SOURCES`, with a walk of what each entry referred to), and two audits found verdict code
-  it missed under an unchanged pin: four one-line edits (the pre-merge audit of `22269e0c`, H-1),
-  then a default of the REST template no target file carries (`cli/wiring.py` builds
-  `RestTemplate(path=...)`, every other field a default), a subclass's `filter_stops` override, the
-  offline judge (`wiring.scenario_judge_adapter`; the audit measured 33 of 75 specs turning
-  from pass to fail when its hardened verdict was flipped) and a decorator, each reproduced end to end as a resume that mixed
-  verdicts (the second audit of `6de5780b`, HIGH 1, HIGH 2, MEDIUM 3). Each of that audit's ten
-  mutations (a to j) now changes the digest, fails the pin and is refused by a resume (exit 3, 0
-  requests sent).
+  judging_digest` is a SHA-256 over every file of the package but `ildottore.testing`, the one
+  module `JUDGING_EXEMPT` names: Python sources normalized (comments, docstrings and blank lines
+  left out by `tokenize` and `ast` positions, decorators kept; the same on 3.9, 3.12 and 3.14, CI
+  runs 3.11), and the data files the package reads, byte for byte, chosen by suffix
+  (`DATA_SUFFIXES`: `.yaml`, `.sql`, `.json`, `.j2`; a test checks that every non-Python file of the
+  package has one), dotfiles and caches skipped. That is 165 files: 159 of the 161 modules and 6
+  data files. It is computed from the installed package once per process (0.32 s on 3.12 and 3.14,
+  0.64 s on 3.9), recorded when a run starts (`context_json.judging_digest`, with each file's
+  8-hex digest as `judging_files`), and a resume under another digest, or of a run that records the
+  rules and no digest, is refused with no flag, naming both digests (carried by
+  `cli.resume.ResumeRefused.digests`, so the error masking keeps them readable) and the files that
+  differ, five at most. A package whose source cannot be read (a zip or frozen install) is refused
+  at run start (`JudgingCodeUnreadable`, exit 3), never digested as nothing. So correctness does not
+  depend on anyone bumping a version: a subclass override, a default, a decorator, the offline
+  judge, a renderer and a module that does not exist yet are covered because nothing exempts them.
+  **The exemption is proved, not claimed:** `tests/shared/test_judging_rules.py` checks that it is
+  outside the import closure of the console entry point (`ildottore.cli.main`, which `dottore` and
+  `dott` call) and that no covered module imports it by name (`import_module`, `__import__`). A
+  module the entry point loads runs its top-level code in every run's process, so it is covered:
+  the renderers, every command, `cli.app` and `cli.main`. **Decided, with the reason:** covering
+  `cli.app` and `cli.main` means a resume across an edit of the help text is refused, which only
+  happens across a code change, which deny by default refuses for nearly every other edit; leaving
+  them out would leave an import-time side effect at the top of every run unbound. **Decided under
+  the owner's delegation (best practice, 2026-10-13):** the first design listed the verdict code
+  instead (an allow-list, `JUDGING_SOURCES`, with a walk of what each entry referred to), and two
+  audits found verdict code it missed under an unchanged pin: four one-line edits (the pre-merge
+  audit of `22269e0c`, H-1), then a default of the REST template no target file carries
+  (`cli/wiring.py` builds `RestTemplate(path=...)`, every other field a default), a subclass's
+  `filter_stops` override, the offline judge (`wiring.scenario_judge_adapter`; the audit measured
+  33 of 75 specs turning from pass to fail when its hardened verdict was flipped) and a decorator,
+  each reproduced end to end as a resume that mixed verdicts (the second audit of `6de5780b`). The
+  third audit (of `1d3d65c7`) then found an import-time side effect in an exempt renderer
+  (`cli/render.py` emptying `shared.provider_filter.FILTER_STOPS`, verdicts mixed) and a stray
+  `.DS_Store` refusing every resume: hence the entry-point closure and the suffixes. Each of the
+  auditors' mutations (a to j, the renderer side effects, a dynamic and a lazy import) now changes
+  the digest, fails the pin and is refused by a resume (exit 3, 0 requests sent, the changed file
+  named); a comment-only edit, a `.DS_Store` and a plain resume go through.
+* **The interpreter.** A run records `python` (implementation and `major.minor`, as `CPython 3.14`)
+  and a resume under another is refused with no flag: the standard library's regular expressions,
+  JSON and Unicode tables read a reply too. The pydantic, httpx and websockets versions are recorded
+  (`dependencies`), not compared.
 * **The pin, for people.** The test pins the digest of each version, so a change to covered code
   fails it until the version is bumped (with its CHANGELOG line) or the same version is re-pinned
   with a reason. The pins are `PIN_HISTORY`, append-only, and frozen in
@@ -1316,7 +1331,7 @@ are the same class.
   it said `0.1.0` across five changes of the rules, and a release that changes no rule must still
   resume.
 
-Checked by `tests/cli/test_resume_judging_rules.py` (31: the record, `tool_version` kept and
+Checked by `tests/cli/test_resume_judging_rules.py` (34: the record, `tool_version` kept and
 `tool_versions` appended, older and newer rules refused naming both with nothing written, a run
 with no record refused with and without `--resume-unverified`, exit 3 through the CLI for a resume,
 `--dry-run` and `--estimate` with no part masked, a newer run refused for its rules over a field it
@@ -1325,11 +1340,14 @@ error redactor, a corrupt stored version, an unshaped package version recorded a
 digest recorded, a resume under other code refused naming both digests in clear and with and
 without `--resume-unverified`, a run with no digest refused, the plugins a spec names recorded and
 a resume under others refused, only such a plugin recorded with its source digest and a change of
-its code caught, no shipped spec able to name one, and `--version`) and
-`tests/shared/test_judging_rules.py` (19: the pin, the history, the frozen pins, each exemption's
-reason checked by the import graph, every other file covered, a default, the offline judge, a
-decorator, a runner constant and a data file each changing the digest, a comment or a renderer
-not, the cost, the normalization).
+its code caught, no shipped spec able to name one, the changed files named (five at most), a
+run under another interpreter refused, and `--version`) and
+`tests/shared/test_judging_rules.py` (24: the pin, the history, the frozen pins, the exemption
+outside the entry point's import closure and named by no dynamic import, every other file covered,
+only the data suffixes the package reads, a default, the offline judge, a decorator, a runner
+constant and a data file each changing the digest, a renderer's side effect too, a comment, a
+dotfile or a stray file not, no source refused, the per-file digests, the cost, the
+normalization).
 
 ## §8 Out of scope / forbidden
 - MUST NOT implement attack/mutation/evaluation/scoring/reporting/fingerprint logic (u05-u11,

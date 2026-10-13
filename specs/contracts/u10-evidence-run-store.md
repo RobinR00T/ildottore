@@ -88,7 +88,9 @@ the u00 protocols:
 - **`context_json` since 2026-10-12 (u12 A-81, A-24 amended):** beside the fields above it holds
   `judging_rules` (the version of the rules that judge a stored attempt, an integer from 1 to
   1,000,000), `judging_digest` (the SHA-256 of the code that judges, computed from the installed
-  package, 64 hex digits), `tool_version` (the package that started the run, PEP 440 shaped,
+  package, 64 hex digits), `judging_files` (each covered file's 8-hex digest), `python` (the
+  interpreter's implementation and `major.minor`) and `dependencies` (pydantic, httpx and
+  websockets versions, recorded only), `tool_version` (the package that started the run, PEP 440 shaped,
   `VERSION_SHAPE`), `tool_versions` (every invocation's package, appended by `add_run_version` in
   an immediate transaction that a context rewrite preserves, as `mutator_orders`),
   `evaluator_plugins` (the `dottore.evaluators` entry points whose evaluator type a selected spec

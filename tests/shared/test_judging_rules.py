@@ -3,7 +3,7 @@
 ``shared.judging_rules`` binds a resume to the rules that judged its halted half twice: the
 version a person names (``JUDGING_RULES_VERSION``) and a digest computed at run time from the
 installed package (``judging_digest``). The digest is deny by default: every file of the package is
-in it but the few presentation and input modules ``JUDGING_EXEMPT`` names, each with its reason. It
+in it but the test harness, the one module ``JUDGING_EXEMPT`` names, with its reason. It
 replaced an allow-list of verdict code with a reference walk, which two audits found blind to code
 that decides verdicts: the CLI audit's H2 (a run halted before five changes to the rules resumed
 after them into a report that contradicted itself), then four one-line edits the first list missed
@@ -412,11 +412,11 @@ def test_each_covered_file_has_a_short_digest_for_the_refusal(tmp_path: Path) ->
 
 
 def test_the_digest_costs_well_under_a_second() -> None:
-    """Taken once per process, at run start and by a resume: 0.3 s measured on the 161 modules."""
+    """Taken once per process, at run start and by a resume: 0.32 s measured for 165 files."""
 
     started = time.perf_counter()
     judging_rules._digest(Path(judging_rules.__file__).resolve().parents[1])
-    assert time.perf_counter() - started < 3.0, "a regression past the measured 0.3 s"
+    assert time.perf_counter() - started < 3.0, "a regression past the measured 0.32 s"
 
 
 def test_a_comment_or_a_docstring_is_not_a_change_and_a_token_or_a_decorator_is() -> None:

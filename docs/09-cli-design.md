@@ -174,8 +174,10 @@ sends, so a change to those rules between the halt and the resume made one repor
 kind of reply two ways (CLI audit H2: 4 attempts kept as `pass` beside 2 judged cut by the
 provider's filter, and "6 of 10 cut" where all 10 were). `shared.judging_rules.
 JUDGING_RULES_VERSION` names the rules, and `judging_digest` binds the code: a SHA-256 of the
-whole package but a short list of presentation and input modules (deny by default, each
-exemption checked by the import graph), recorded at run start and compared by a resume, so a
+whole package and its data files but the test harness (deny by default; the exemption is
+checked to be outside the import closure of the entry point, since a module the entry point
+loads runs at the top of every run), recorded at run start with each file's digest and the
+interpreter, and compared by a resume, so a
 change nobody bumped the version for is refused too. A test pins the digest of each version in
 an append-only, frozen history, so a change to covered code fails until the version is bumped or
 re-pinned with a reason. The evaluator plugins a selected spec names are recorded, with a digest
