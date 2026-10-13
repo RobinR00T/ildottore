@@ -18,12 +18,14 @@ import math
 import os
 import re
 import sys
+from collections.abc import Callable, Sequence
 from functools import partial
 from itertools import chain
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, NoReturn
 
 import typer
+from typer.core import TyperGroup
 
 from ildottore import __version__
 from ildottore.adapters.base import AdapterError
@@ -60,31 +62,164 @@ from ildottore.store.replay import TamperError
 DEFAULT_SPEC_PATHS = [Path("specs")]
 
 
-class _MaskedTyper(typer.Typer):
-    """The root app, whose call runs :func:`ildottore.cli.main.main` (u12 A-82).
+def _click_classes(name: str) -> tuple[type[BaseException], ...]:
+    """``name`` from click and from Typer's vendored copy of it, whichever are installed.
 
-    A console script that an older install generated runs ``from ildottore.cli.main import app;
-    sys.exit(app())``, and ``pip install -e`` keeps that script across a ``git pull``: called the
-    Typer way, click printed a usage error itself, the value typed included, so ``dottore run
-    --runs "$KEY"`` still printed the key there (pre-merge audit of A-82, MEDIUM 1). Called with
-    ``standalone_mode=False``, as an embedding caller does to get the return value, it is Typer's
-    own call; a test runner (``typer.testing.CliRunner``) builds the command and never calls this.
+    Typer 0.26 raises from its own copy (``typer._click``), as ``_usage_errors_exit_3`` notes;
+    catching only one of the two would let the other reach the terminal unmasked.
     """
 
-    def __call__(self, *args: Any, **kwargs: Any) -> Any:
-        if kwargs.get("standalone_mode", True) is False:
-            return super().__call__(*args, **kwargs)
-        from ildottore.cli.main import main
+    import importlib
 
-        argv = kwargs.get("args", args[0] if args else None)
-        main(argv, prog_name=kwargs.get("prog_name"))
+    found: list[type[BaseException]] = []
+    for module_name in ("click.exceptions", "typer._click.exceptions"):
+        try:
+            module = importlib.import_module(module_name)
+        except ImportError:
+            continue
+        cls = getattr(module, name, None)
+        if isinstance(cls, type) and issubclass(cls, BaseException) and cls not in found:
+            found.append(cls)
+    return tuple(found)
 
 
-app = _MaskedTyper(
+def _message(exc: BaseException) -> str:
+    """A click exception's message, as click itself would print it."""
+
+    format_message = getattr(exc, "format_message", None)
+    return str(format_message()) if callable(format_message) else str(exc)
+
+
+def _mask_in_place(exc: BaseException) -> None:
+    """Make ``exc`` say its message through the CLI's mask, whoever prints it (u12 A-82).
+
+    A usage error quotes what the operator typed (a value, an option or a command name), and
+    click, Typer's standalone mode or a parent ``click.Group`` print it with
+    ``format_message()``. The masked text replaces that method and ``message`` on the instance,
+    so every printer shows it masked. A bare ``dottore``'s help (``NoArgsIsHelpError``) is left
+    as it is: it holds no value.
+    """
+
+    if type(exc).__name__ == "NoArgsIsHelpError" or getattr(exc, "_dottore_masked", False):
+        return
+    shown = _masked(ValueError(_message(exc)))
+    setattr(exc, "format_message", lambda: shown)  # noqa: B010 - an instance's method replaced
+    setattr(exc, "message", shown)  # noqa: B010
+    setattr(exc, "_dottore_masked", True)  # noqa: B010
+
+
+def _print_usage_error(exc: BaseException) -> None:
+    """Click's usage block for ``exc``, its message through the redactor (u12 A-82).
+
+    The usage line and the help hint are the command's own text; the message quotes what the
+    operator typed, so it goes through the mask, as every other ``error:`` line of this tool.
+    """
+
+    _mask_in_place(exc)
+    ctx = getattr(exc, "ctx", None)
+    if ctx is not None:
+        print(ctx.get_usage(), file=sys.stderr)
+        if ctx.command.get_help_option(ctx) is not None:
+            print(f"Try '{ctx.command_path} {ctx.help_option_names[0]}' for help.", file=sys.stderr)
+    print(f"error: {_message(exc)}", file=sys.stderr)
+
+
+def run_masked(call: Callable[[], Any]) -> NoReturn:
+    """Run ``call`` (the command tree in click's non-standalone mode) and exit with its code.
+
+    A usage error (a bad value, an unknown option or command, an extra argument) is printed
+    masked and exits 3 (``ExitCode.ERROR``, A-9); a bare ``dottore``, which prints the help,
+    keeps its exit code; any other click error is printed masked with its own code; an abort
+    exits 1, and Ctrl-C 130 (which click returns as that code), as click's standalone mode does.
+    """
+
+    try:
+        code = call()
+    except _click_classes("UsageError") as exc:
+        # The help of a bare `dottore` (no_args_is_help) was printed when the error was built;
+        # Typer prints nothing more for it either.
+        if type(exc).__name__ != "NoArgsIsHelpError":
+            _print_usage_error(exc)
+        sys.exit(int(ExitCode.ERROR))
+    except _click_classes("ClickException") as exc:
+        _mask_in_place(exc)
+        print(f"error: {_message(exc)}", file=sys.stderr)
+        sys.exit(int(getattr(exc, "exit_code", ExitCode.ERROR)))
+    except _click_classes("Abort"):
+        print("Aborted!", file=sys.stderr)
+        sys.exit(1)
+    # A command returns nothing or raises `typer.Exit(code)`, which non-standalone mode returns.
+    sys.exit(code if isinstance(code, int) and not isinstance(code, bool) else 0)
+
+
+class _MaskedGroup(TyperGroup):
+    """The root command, whose usage errors go through the CLI's mask on every path (u12 A-82).
+
+    Parsing the root's options (``make_context``) and resolving and parsing a sub-command
+    (``invoke``) is where click raises a usage error, so both mask it in place before it leaves:
+    a parent ``click.Group`` that holds this one, ``python -m typer``, and a caller that takes the
+    command (``typer.main.get_command(app)()``) print it masked. Run standalone (``main``), as the
+    console scripts, ``app()`` and a test runner do, it prints the plain usage block with an
+    ``error:`` line (:func:`run_masked`). The console script used to point at the Typer app, and
+    an install made then keeps calling it; with the masking only in ``cli.main.main``, three
+    paths printed the key (pre-merge audits of A-82, MEDIUM 1 and round 2, LOW 1).
+    """
+
+    def make_context(
+        self,
+        info_name: str | None,
+        args: list[str],
+        parent: Any = None,
+        **extra: Any,
+    ) -> Any:
+        try:
+            return super().make_context(info_name, args, parent=parent, **extra)
+        except _click_classes("ClickException") as exc:
+            _mask_in_place(exc)
+            raise
+
+    def invoke(self, ctx: Any) -> Any:
+        try:
+            return super().invoke(ctx)
+        except _click_classes("ClickException") as exc:
+            _mask_in_place(exc)
+            raise
+
+    def main(
+        self,
+        args: Sequence[str] | None = None,
+        prog_name: str | None = None,
+        complete_var: str | None = None,
+        standalone_mode: bool = True,
+        windows_expand_args: bool = True,
+        **extra: Any,
+    ) -> Any:
+        parent_main = super().main
+
+        def call() -> Any:
+            return parent_main(
+                args,
+                prog_name,
+                complete_var,
+                standalone_mode=False,
+                windows_expand_args=windows_expand_args,
+                **extra,
+            )
+
+        if not standalone_mode:
+            return call()
+        run_masked(call)
+
+
+app = typer.Typer(
     name="dottore",
     help="Il Dottore, nmap-for-AI: a spec-driven security scanner for LLMs and AI apps.",
     no_args_is_help=True,
     add_completion=False,
+    cls=_MaskedGroup,
+    # A traceback that reaches Typer's own hook (`app()` installs it) prints no locals: one of
+    # them can be a resolved credential.
+    pretty_exceptions_show_locals=False,
 )
 
 registry_app = typer.Typer(help="Inspect the attack-spec registry (read-only).")

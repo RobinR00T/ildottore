@@ -73,7 +73,12 @@ TYPED = _typed_options()
 
 #: The two ways a console script calls the CLI: the one this version installs (``main()``), and
 #: the one an older install generated and ``pip install -e`` keeps across a pull (``app()``).
-ENTRIES = {"main": lambda: main(), "app": lambda: app()}
+#: And the click command a caller takes from the app (round-2 audit of A-82, LOW 1).
+ENTRIES = {
+    "main": lambda: main(),
+    "app": lambda: app(),
+    "command": lambda: typer.main.get_command(app)(),
+}
 
 
 def _invoke(
@@ -254,15 +259,69 @@ def test_the_other_click_exceptions_are_handled_as_standalone_mode_did(
     except ImportError:  # a Typer without the vendored copy raises click's own
         from click import exceptions  # type: ignore[no-redef]
 
-    class _Raising:
-        def main(self, **_kwargs: object) -> None:
-            if raised == "Abort":
-                raise exceptions.Abort()
-            raise exceptions.ClickException(f"could not open {KEY}")
+    from ildottore.cli.app import run_masked
 
-    monkeypatch.setattr(typer.main, "get_command", lambda _app: _Raising())
-    code, out, err = _invoke(["run"], capsys)
+    def raising() -> None:
+        if raised == "Abort":
+            raise exceptions.Abort()
+        raise exceptions.ClickException(f"could not open {KEY}")
+
+    with pytest.raises(SystemExit) as exit_info:
+        run_masked(raising)
+    out, err = capsys.readouterr()
+    code = exit_info.value.code
     assert code == expected_code
     assert expected_err in err
     for fragment in FRAGMENTS:
         assert fragment not in out + err, err
+
+
+def test_a_parent_group_holding_the_command_prints_it_masked(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The root command masks a usage error where it raises it, so a group that holds it as a
+    sub-command and prints the error itself shows it masked (round-2 audit of A-82, LOW 1)."""
+
+    from typer.core import TyperGroup
+
+    parent = TyperGroup(name="outer", commands={"dottore": typer.main.get_command(app)})
+    with pytest.raises(SystemExit) as exit_info:
+        parent.main(["dottore", "run", "--runs", KEY], prog_name="outer")
+    out, err = capsys.readouterr()
+    assert exit_info.value.code == 3
+    for fragment in FRAGMENTS:
+        assert fragment not in out + err, err
+    assert "REDACTED" in err
+
+
+def test_the_error_a_parent_group_catches_is_masked_already() -> None:
+    """A caller that catches the exception itself (any click group that is not Typer's, or a
+    script) reads the masked message too."""
+
+    try:
+        from typer._click import exceptions
+    except ImportError:  # pragma: no cover - a Typer without the vendored copy
+        from click import exceptions  # type: ignore[no-redef]
+
+    command = typer.main.get_command(app)
+    with pytest.raises(exceptions.UsageError) as info:
+        command.main(["run", "--runs", KEY], standalone_mode=False)
+    for fragment in FRAGMENTS:
+        assert fragment not in info.value.format_message() and fragment not in str(info.value)
+
+
+def test_python_m_typer_prints_it_masked() -> None:
+    """`python -m typer ildottore.cli.main run ...` loads the app into Typer's own CLI."""
+
+    result = subprocess.run(  # noqa: S603 - this interpreter running Typer's CLI on this app
+        [sys.executable, "-m", "typer", "ildottore.cli.main", "run", "run", "--runs", KEY],
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+        env={**__import__("os").environ, "COLUMNS": "200"},
+    )
+    assert result.returncode != 0
+    for fragment in FRAGMENTS:
+        assert fragment not in result.stdout + result.stderr, result.stderr
+    assert "REDACTED" in result.stdout + result.stderr, result.stderr
