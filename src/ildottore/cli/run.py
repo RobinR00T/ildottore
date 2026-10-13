@@ -1495,13 +1495,14 @@ def _flag_figure(value: int) -> str:
     return f"a {'negative ' if value < 0 else ''}number of more than 21 digits"
 
 
-def _validate_options(opts: RunOptions, spec_paths: Sequence[Path] = ()) -> None:
+def _validate_options(opts: RunOptions) -> None:
     """Refuse an option the campaign would only trip over at the end, before anything is sent.
 
     ``--fail-on bogus`` and an unwritable ``-oA`` path were accepted, the whole campaign ran,
     and the run then failed with exit 3 on the way out; ``--timeout 0``, ``--concurrency -2``
     and ``--top-tests -3`` were accepted outright (audit 2026-10-03, R9). A report path that is
-    one of the run's inputs is refused too (:func:`_check_outputs_spare_inputs`).
+    one of the run's inputs is refused too (:func:`_check_outputs_spare_inputs`; the spec files,
+    once they are loaded, :func:`_check_outputs_spare_spec_files`).
     """
 
     fail_on_band(opts.fail_on)
@@ -1536,7 +1537,7 @@ def _validate_options(opts: RunOptions, spec_paths: Sequence[Path] = ()) -> None
     duplicates = sorted({path for path in resolved if resolved.count(path) > 1})
     if duplicates:
         raise ValueError(f"two report formats would write the same file: {', '.join(duplicates)}")
-    _check_outputs_spare_inputs(opts, spec_paths)
+    _check_outputs_spare_inputs(opts)
 
 
 #: How each report format is named in a refusal.
@@ -1560,15 +1561,16 @@ def _same_file(a: Path, b: Path) -> bool:
         return False
 
 
-def _check_outputs_spare_inputs(opts: RunOptions, spec_paths: Sequence[Path]) -> None:
+def _check_outputs_spare_inputs(opts: RunOptions) -> None:
     """Refuse a report path that is an input of the run (u12 A-80).
 
     ``-oJ scope.yaml -oH target.yaml`` overwrote the authorization record and the target file
     with the reports, once the run had sent its traffic. An existing output is compared with
-    each existing input, and with every file of the spec path, as a file (its device and inode:
-    a symlink, a hard link, or another spelling on a case-insensitive volume is the same file;
-    ``os.path.realpath`` keeps the case it is given, so comparing resolved paths let
-    ``-oJ SPECS/attacks/<spec>.yaml`` overwrite a spec, pre-merge audit of ``e6a1ab9b``); the run
+    each existing input as a file (its device and inode: a symlink, a hard link, or another
+    spelling on a case-insensitive volume is the same file; ``os.path.realpath`` keeps the case it
+    is given, so comparing resolved paths let ``-oJ SPECS/attacks/<spec>.yaml`` overwrite a spec,
+    pre-merge audit of ``e6a1ab9b``), and so are the spec files once loaded
+    (:func:`_check_outputs_spare_spec_files`); the run
     store, which a fresh run creates, by its resolved path and SQLite's ``-wal``, ``-shm`` and
     ``-journal`` beside it, for the path given and for the file a link names; a run directory of
     the evidence store, by whether the output lies inside one. Another output is the duplicate
@@ -1589,7 +1591,6 @@ def _check_outputs_spare_inputs(opts: RunOptions, spec_paths: Sequence[Path]) ->
         for suffix in _STORE_SIBLINGS
     }
     evidence_root = Path(opts.evidence_root or DEFAULT_EVIDENCE_ROOT)
-    spec_files: dict[tuple[int, int], Path] | None = None
     for fmt, output in _report_outputs(opts).items():
         report = f"the {_REPORT_NAMES.get(fmt, fmt)} report"
         if _folded_path(Path(output)) in stores or (
@@ -1614,13 +1615,32 @@ def _check_outputs_spare_inputs(opts: RunOptions, spec_paths: Sequence[Path]) ->
                     f"{report} would overwrite {label}; a report never replaces an input of "
                     "the run, write it elsewhere"
                 )
-        if spec_files is None:
-            spec_files = _file_identities(spec_paths)
-        shown = spec_files.get(_identity(Path(output)) or (-1, -1))
-        if shown is not None:
+
+
+def _check_outputs_spare_spec_files(opts: RunOptions, files_read: Sequence[Path]) -> None:
+    """Refuse a report path that is a file the spec loader read (u12 A-80).
+
+    By device and inode, as the other inputs: a spec, a suite, a ``pack.yaml`` or a media asset,
+    through a symlink, a hard link or another spelling on a case-insensitive volume. Only those:
+    protecting every file under the spec path refused a rerun of ``run --spec-path . -oJ
+    out.json``, whose first run had written ``out.json`` there (round-2 audit of ``f51a7d07``).
+    """
+
+    outputs = [(fmt, Path(path)) for fmt, path in _report_outputs(opts).items()]
+    outputs = [(fmt, path) for fmt, path in outputs if path.exists()]
+    if not outputs:
+        return
+    read: dict[tuple[int, int], Path] = {}
+    for path in files_read:
+        identity = _identity(path)
+        if identity is not None:
+            read.setdefault(identity, path)
+    for fmt, output in outputs:
+        hit = read.get(_identity(output) or (-1, -1))
+        if hit is not None:
             raise ValueError(
-                f"{report} would overwrite a file of the spec path {shown} ({output}); "
-                "write it elsewhere"
+                f"the {_REPORT_NAMES.get(fmt, fmt)} report would overwrite a file of the spec "
+                f"path, {hit} ({output}); write it elsewhere"
             )
 
 
@@ -1632,25 +1652,6 @@ def _identity(path: Path) -> tuple[int, int] | None:
     except OSError:
         return None
     return info.st_dev, info.st_ino
-
-
-def _file_identities(spec_paths: Sequence[Path]) -> dict[tuple[int, int], Path]:
-    """Every file and directory of each spec path, by device and inode, to the path it is under.
-
-    Read only when a report path exists already, once per run.
-    """
-
-    found: dict[tuple[int, int], Path] = {}
-    for root in spec_paths:
-        entries = [Path(root)]
-        if Path(root).is_dir():
-            for directory, dirs, files in os.walk(root):
-                entries += [Path(directory, name) for name in (*dirs, *files)]
-        for entry in entries:
-            identity = _identity(entry)
-            if identity is not None:
-                found.setdefault(identity, Path(root))
-    return found
 
 
 def _run_directory_holding(
@@ -1851,7 +1852,7 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
             f"--rate must be greater than 0 requests per second (got {opts.rate}); omit it to "
             "use the timing template's rate"
         )
-    _validate_options(opts, spec_paths)
+    _validate_options(opts)
     if opts.scope is None:
         raise ScopeRequiredError(
             "run requires --scope <scope.yaml>: the authorization record is mandatory "
@@ -1934,7 +1935,7 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
     # A spec file that fails to load is refused, not dropped. `build_registry` keeps only what
     # parsed, so a one-letter typo removed a spec from the battery and the run still printed
     # "Specs run: 1 of 1 planned" and `complete` (audit 2026-10-03, F-10).
-    registry, load_errors = wiring.load_registry(spec_paths)
+    registry, load_errors, files_read = wiring.load_registry_reading(spec_paths)
     missing = [
         e.message.removeprefix(_PATH_NOT_FOUND)
         for e in load_errors
@@ -1962,6 +1963,9 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
             f"battery: {shown}{more}. Run `dottore lint` on the spec path and fix them first.",
             spec_files=_spec_files_on_disk(spec_paths, [e.path for e in load_errors[:5] if e.path]),
         )
+    # Before anything is sent, and against what the loader read: a report over a spec, a suite,
+    # a pack.yaml or a media asset is refused, one beside them is not (u12 A-80).
+    _check_outputs_spare_spec_files(opts, files_read)
     all_specs = registry.list()
     specs_by_id = {s.id: s for s in all_specs}
 

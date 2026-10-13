@@ -247,8 +247,22 @@ def load_registry(spec_paths: list[Path]) -> tuple[Registry, list[LintError]]:
     no numerator, so it has to be reported rather than quietly subtracted.
     """
 
+    registry, errors, _ = load_registry_reading(spec_paths)
+    return registry, errors
+
+
+def load_registry_reading(
+    spec_paths: list[Path],
+) -> tuple[Registry, list[LintError], list[Path]]:
+    """:func:`load_registry`, plus every file the load read (u12 A-80).
+
+    Each ``pack.yaml``, spec and suite file and each media asset a spec inlined: what a run's
+    report may not overwrite. A file under a spec path the loader does not read (a report an
+    earlier run wrote there) is not one of them.
+    """
+
     result = load_paths(spec_paths)
-    return Registry.from_packs(result.packs), list(result.errors)
+    return Registry.from_packs(result.packs), list(result.errors), list(result.files)
 
 
 # --- policy / scope ----------------------------------------------------------------

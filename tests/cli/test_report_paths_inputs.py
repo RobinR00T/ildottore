@@ -243,3 +243,85 @@ def test_a_report_beside_the_run_directories_is_still_written(tmp_path: Path) ->
     code, shown = _run(tmp_path, "-oJ", str(tmp_path / "ev" / "report.json"))
     assert code == 2, shown
     assert (tmp_path / "ev" / "report.json").is_file()
+
+
+# --- round-2 audit of f51a7d07, LOW 1: only the files the loader read are protected ----------
+
+
+def _pack_at(root: Path) -> None:
+    (root / "pack.yaml").write_text("id: mine\npack_version: '1.0'\nname: mine\n")
+    (root / "attacks").mkdir()
+    spec = make_spec("PI-DIRECT-001")
+    (root / "attacks" / "PI-DIRECT-001.yaml").write_text(spec.model_dump_json(indent=2))
+
+
+def _run_in(root: Path, *extra: str) -> tuple[int, str]:
+    target = write_target(root, mock_scenario="vulnerable")
+    scope = write_scope(root)
+    result = CliRunner().invoke(
+        app,
+        [
+            "run",
+            str(target),
+            "--scope",
+            str(scope),
+            "--evidence-root",
+            str(root / "ev"),
+            "--run-db",
+            str(root / "runs.sqlite"),
+            "--runs",
+            "1",
+            "-q",
+            "--no-color",
+            *extra,
+        ],
+    )
+    return result.exit_code, result.output
+
+
+def test_a_rerun_writing_its_report_inside_the_spec_path_is_not_refused(tmp_path: Path) -> None:
+    """`run --spec-path . -oJ out.json` twice: the second run refused "would overwrite a file of
+    the spec path . (out.json)", a file the loader never reads (main allows it)."""
+
+    _pack_at(tmp_path)
+    report = tmp_path / "out.json"
+    for _ in range(2):
+        code, shown = _run_in(tmp_path, "--spec-path", str(tmp_path), "-oJ", str(report))
+        assert code == 2, shown
+    assert report.is_file()
+
+
+def test_a_file_the_loader_read_inside_the_spec_path_is_still_protected(
+    tmp_path: Path, no_sends: list[str]
+) -> None:
+    _pack_at(tmp_path)
+    for name in ("pack.yaml", "attacks/PI-DIRECT-001.yaml"):
+        code, shown = _run_in(tmp_path, "--spec-path", str(tmp_path), "-oJ", str(tmp_path / name))
+        assert code == 3, (name, shown)
+        assert "would overwrite a file of the spec path" in shown
+    assert (tmp_path / "pack.yaml").read_text().startswith("id: mine")
+
+
+def test_a_media_asset_the_loader_read_is_protected(tmp_path: Path, no_sends: list[str]) -> None:
+    """A spec's media asset (an audio clip beside it) is read by the loader too."""
+
+    import shutil
+
+    repo = Path(__file__).resolve().parents[2]
+    pack = tmp_path / "pack"
+    (pack / "attacks").mkdir(parents=True)
+    (pack / "pack.yaml").write_text("id: mine\npack_version: '1.0'\nname: mine\n")
+    audio = next(
+        p for p in (repo / "specs" / "attacks").glob("*.yaml") if "asset:" in p.read_text()
+    )
+    shutil.copy(audio, pack / "attacks" / audio.name)
+    for line in audio.read_text().splitlines():
+        if "asset:" in line:
+            asset = line.split("asset:", 1)[1].strip().strip("'\"")
+            (pack / "attacks" / asset).parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy(audio.parent / asset, pack / "attacks" / asset)
+    code, shown = _run_in(
+        tmp_path, "--spec-path", str(pack), "-oJ", str(pack / "attacks" / asset)
+    )
+    assert code == 3, shown
+    assert "would overwrite a file of the spec path" in shown

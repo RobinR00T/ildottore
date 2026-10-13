@@ -45,7 +45,7 @@ class _AssetError(ValueError):
     """A media ``asset`` reference could not be safely resolved."""
 
 
-def _resolve_asset_bytes(spec_dir: Path, asset: str) -> bytes:
+def _resolve_asset_bytes(spec_dir: Path, asset: str, read: list[Path] | None = None) -> bytes:
     """Read a media ``asset`` file, refusing any path that escapes the spec's own directory.
 
     A binary carrier (an audio clip) is stored as a file next to the spec and referenced by a
@@ -73,6 +73,8 @@ def _resolve_asset_bytes(spec_dir: Path, asset: str) -> bytes:
             raise _AssetError(
                 f"asset {asset!r} is {size} bytes, over the {_MAX_ASSET_BYTES}-byte cap"
             )
+        if read is not None:
+            read.append(resolved)
         return resolved.read_bytes()
     except _AssetError:
         raise
@@ -80,7 +82,9 @@ def _resolve_asset_bytes(spec_dir: Path, asset: str) -> bytes:
         raise _AssetError(f"could not read asset {asset!r}: {exc}") from exc
 
 
-def _inline_media_assets(data: dict[str, object], spec_dir: Path) -> None:
+def _inline_media_assets(
+    data: dict[str, object], spec_dir: Path, read: list[Path] | None = None
+) -> None:
     """Resolve every ``attack.media[*].asset`` into ``data_b64`` in place (safe, load-time).
 
     Downstream (``shared.media``, adapters) then only sees pinned bytes, so no component needs
@@ -98,7 +102,7 @@ def _inline_media_assets(data: dict[str, object], spec_dir: Path) -> None:
             continue
         asset = part.get("asset")
         if isinstance(asset, str) and asset and not part.get("data_b64"):
-            part["data_b64"] = base64.b64encode(_resolve_asset_bytes(spec_dir, asset)).decode(
+            part["data_b64"] = base64.b64encode(_resolve_asset_bytes(spec_dir, asset, read)).decode(
                 "ascii"
             )
 
@@ -137,11 +141,16 @@ class LoadResult:
 
     packs: list[LoadedPack] = field(default_factory=list)
     errors: list[LintError] = field(default_factory=list)
+    #: Every file the pass read: each ``pack.yaml``, spec and suite file, and each media asset a
+    #: spec inlined. What a run's report may not overwrite (u12 A-80): the files under a spec path
+    #: that the loader never reads (a report written there by an earlier run) are not in it.
+    files: list[Path] = field(default_factory=list)
 
     def extend(self, other: LoadResult) -> None:
         """Merge another result into this one (preserving order)."""
         self.packs.extend(other.packs)
         self.errors.extend(other.errors)
+        self.files.extend(other.files)
 
 
 def _rel(path: Path, root: Path) -> str:
@@ -153,7 +162,10 @@ def _rel(path: Path, root: Path) -> str:
 
 
 def _load_attack_spec(
-    path: Path, display_root: Path, pack_root: Path | None = None
+    path: Path,
+    display_root: Path,
+    pack_root: Path | None = None,
+    read: list[Path] | None = None,
 ) -> tuple[AttackSpec | None, list[LintError]]:
     """Parse + schema-validate + construct a single attack spec YAML file."""
     rel = _rel(path, display_root)
@@ -182,7 +194,7 @@ def _load_attack_spec(
     # Resolve any media asset references (a binary carrier stored next to the spec) into inline
     # bytes, refusing a path that escapes the spec directory (a path-traversal guard).
     try:
-        _inline_media_assets(data, path.parent)
+        _inline_media_assets(data, path.parent, read)
     except _AssetError as exc:
         spec_id = _short_id(data)
         return None, [
@@ -250,6 +262,7 @@ def _yaml_files(root: Path) -> list[Path]:
 def _load_pack_dir(pack_dir: Path, display_root: Path) -> LoadResult:
     """Load one directory that contains a ``pack.yaml`` manifest."""
     result = LoadResult()
+    result.files.append(pack_dir / "pack.yaml")
     manifest, merr = _load_pack_manifest(pack_dir / "pack.yaml", display_root)
     result.errors.extend(merr)
     if manifest is None:
@@ -259,7 +272,8 @@ def _load_pack_dir(pack_dir: Path, display_root: Path) -> LoadResult:
     attacks_dir = pack_dir / "attacks"
     if attacks_dir.is_dir():
         for f in _yaml_files(attacks_dir):
-            spec, errs = _load_attack_spec(f, display_root, pack_dir)
+            result.files.append(f)
+            spec, errs = _load_attack_spec(f, display_root, pack_dir, result.files)
             result.errors.extend(errs)
             if spec is not None:
                 specs.append(spec)
@@ -268,6 +282,7 @@ def _load_pack_dir(pack_dir: Path, display_root: Path) -> LoadResult:
     suites_dir = pack_dir / "suites"
     if suites_dir.is_dir():
         for f in _yaml_files(suites_dir):
+            result.files.append(f)
             suite, errs = _load_suite(f, display_root, pack_dir)
             result.errors.extend(errs)
             if suite is not None:
@@ -285,7 +300,10 @@ def _load_loose_tree(root: Path, display_root: Path) -> LoadResult:
     for f in files:
         # A file named on the command line is the operator's choice; one found in a directory
         # must resolve inside it, like a pack's.
-        spec, errs = _load_attack_spec(f, display_root, None if root.is_file() else root)
+        result.files.append(f)
+        spec, errs = _load_attack_spec(
+            f, display_root, None if root.is_file() else root, result.files
+        )
         result.errors.extend(errs)
         if spec is not None:
             specs.append(spec)
