@@ -309,11 +309,13 @@ def _stream_window() -> tuple[int, int]:
     then a margin for a registered credential or a short key-shaped token crossing that cut,
     :func:`reply_excerpt`). A window of four times that leaves the excerpt reading well inside
     the rewritten part even where masks shorten it, and nothing past the window is read: a 4 MiB
-    stream of tiny events cost up to 12.8 s and costs what 37 KiB does. A stream cut by the
-    window may run on past it, so the part of each stream whose last piece lies past half the
-    window that may be a secret's head (a run of key characters, a registered credential's
-    beginning) is left out (:func:`ildottore.redactor.withhold_open_ends`): no span crossing the
-    cut is shown in part. One that ended in the first half is read as complete.
+    stream of tiny events cost up to 12.8 s and costs what 37 KiB does. When the window cuts the
+    body, only the lines that start in its first half are shown (:func:`_shown_head`: masks
+    shortened the text and moved the second half's into the excerpt, fourth pre-merge audit,
+    MEDIUM), and a stream whose last piece lies past that half may run on past the cut, so its
+    last 256 characters as written, or a longer end that begins a registered credential, are left
+    out (:func:`ildottore.redactor.withhold_open_ends`). A stream that ended in the first half is
+    read as complete.
     """
 
     longest = max((len(secret) for secret in registered_secrets()), default=0)
@@ -385,20 +387,28 @@ def _offsets(lines: list[list[str]]) -> list[int]:
     return out
 
 
-def _shown_head(lines: list[list[str]], offsets: list[int], *, cut: bool, settled: int) -> str:
-    """The lines as written again: all of them, or, when the body was cut, those that start in
-    the first half of the window (fourth pre-merge audit, MEDIUM).
+def _shown_head(
+    head: str, lines: list[list[str]], offsets: list[int], *, cut: bool, settled: int
+) -> str | None:
+    """The lines of ``head`` as written again: all of them, or, when the body was cut, those
+    that start in the first half of the window, and None when those are as they came (fourth
+    pre-merge audit, MEDIUM).
 
     Masks shorten a text, so what the second half held moved up into the 4 KiB the excerpt
     shows, and a secret whose pieces straddle the cut showed its beginning there (a URL password
     with symbols at 7 of 31 offsets, a 300-character registered credential at 70 of 111). The
-    excerpt reads less than half the window, so it never needs that half; a piece shown lies
-    more than half a window before the cut, and a secret that reaches from there past the cut has
-    its beginning left out by the open tail (:func:`ildottore.redactor.withhold_open_ends`).
+    excerpt reads less than half the window (:func:`_stream_window`), so it never needs that
+    half; a piece shown lies more than half a window before the cut, and a secret that reaches
+    from there past the cut has its beginning left out by the open tail
+    (:func:`ildottore.redactor.withhold_open_ends`). When nothing the first half shows changed,
+    the body is quoted as it came, as when nothing was masked.
     """
 
     kept = [pair for pair, at in zip(lines, offsets, strict=True) if not cut or at < settled]
-    return "".join(line + ending for line, ending in kept)
+    shown = "".join(line + ending for line, ending in kept)
+    if cut and shown == head[: next((at for at in offsets if at >= settled), len(head))]:
+        return None
+    return shown
 
 
 def _sse_masked(text: str, redactor: Redactor) -> str | None:
@@ -420,7 +430,8 @@ def _sse_masked(text: str, redactor: Redactor) -> str | None:
     only when the format's masked nothing, so one masked event kept a block's key in clear (third
     pre-merge audit, LOW 3). Only the head the excerpt can read is read (:func:`_stream_window`).
     A masked unit is written again on one ``data`` line (a text holding LF, on as many), every
-    other line as it came; the text returned is that head.
+    other line as it came; the text returned is that head, or its first half when the body was
+    cut (:func:`_shown_head`).
     """
 
     window, settled = _stream_window()
@@ -473,7 +484,7 @@ def _sse_masked(text: str, redactor: Redactor) -> str | None:
         ]
         for index in event[1:]:
             lines[index] = ["", ""]
-    return _shown_head(lines, offsets, cut=cut, settled=settled)
+    return _shown_head(head, lines, offsets, cut=cut, settled=settled)
 
 
 def _stream_line(value: Any) -> bool:
@@ -501,8 +512,8 @@ def _ndjson_masked(text: str, redactor: Redactor) -> str | None:
     Any other body of JSON lines is a list of records (a log), masked string by string as every
     list of records is: read as a stream, the fields of 181 of 217 clean logs were joined across
     the records and masked, and the excerpt was not `main`'s (third pre-merge audit, LOW 2). Only
-    the head the excerpt can read is read (:func:`_stream_window`); lines not masked are kept as
-    they came.
+    the head the excerpt can read is read (:func:`_stream_window`), and of a body cut there only
+    the first half is returned (:func:`_shown_head`); lines not masked are kept as they came.
     """
 
     window, settled = _stream_window()
@@ -525,7 +536,7 @@ def _ndjson_masked(text: str, redactor: Redactor) -> str | None:
     for (event, kind, before), after in zip(units, masked, strict=True):
         if after != before:
             lines[event[0]][0] = _written(kind, after, lines[event[0]][0])
-    return _shown_head(lines, offsets, cut=cut, settled=settled)
+    return _shown_head(head, lines, offsets, cut=cut, settled=settled)
 
 
 def _split_masked(body: bytes | str, redactor: Redactor) -> bytes | str:
