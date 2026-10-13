@@ -5,28 +5,43 @@ versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed (what the fifth pre-merge audit, of `6d7d990e`, found in A-77, before it lands)
+
+- **A cut stream's excerpt reaches no further into the body than `main`'s (parity).** Its lines,
+  emptied of their streamed text, are short, so the 4 KiB excerpt reached lines `main`'s never
+  reached, and what it keeps outside the streamed text (comment, `event:` and `id:` lines, an
+  event's `id` or `model`, Ollama's `created_at` and `done_reason`, Anthropic's `type`) showed
+  more of a secret a target placed there than `main` did: 11 of 11 pieces where `main` showed 8
+  (`reach.py`), and one more piece than `main` in 3 of 96 kept-field cases. Only the lines that
+  `main`'s excerpt of the body shows whole are kept now, found by redacting them as `main` does:
+  a fixed 4 KiB of the body was not enough where `main`'s own masks lengthen what it shows (short
+  emails in every event: `main` none of 11 pieces, 4 KiB 8). `reach.py` 0 of 15 cases and
+  `kept_fields.py` 0 of 96 show more than `main`, and none fewer; `window_attacks.py` 36 of 36
+  clean; clean bodies past the window 240 of 320 differ from `main` only by the withheld text and
+  the notice (20,308 events and lines checked); `cost3.py` 0.01 to 0.20 s on 4 MiB bodies.
+
 ### Fixed (what the fourth pre-merge audit, of `5dd87b42`, found in A-77, before it lands)
 
 - **A cut stream's excerpt shows no streamed text (MEDIUM, a regression against `main`).** The
-  window read only a long stream's head, but masks shorten a text, so what lay near the window's
-  cut moved up into the 4 KiB the excerpt shows, and a secret whose pieces crossed the cut, never
-  read whole, showed its beginning: a URL password with symbols at 7 of 31 cuts in three stream
-  shapes, a 300-character registered credential at 70 of 111 (`window_attacks.py`, case A; `main`
-  0). Showing only the window's first half and leaving out each stream's open tail still let a
-  600-character URL password of words show 20 to 61 of its characters, where `main` showed 0 to 3,
-  and a stream that paused past the window show its secret's head (case B, 16 of 36 rows). By the
-  owner's decision of 2026-10-13, under the delegation (best practice), the excerpt fails closed:
-  it may show less than `main`, never more. A body streamed as events or as JSON lines in a shape
-  known to stream, and longer than the window (36 KiB with no long registered credential), keeps
-  in its excerpt the lines that start before the window's midpoint with every streamed text value
-  emptied (content and delta text, a `response`, a logprob token and its alternatives, a `data:`
-  line's text; `bytes` and Ollama's `context` nulled), its keys, structure, numbers and protocol
-  fields, roles, finish and stop reasons kept, under a first line that says the text is withheld.
-  Case A and case B: 0 of 36 rows each; the long password 0 characters at every start; clean bodies
-  that fit the window `main`'s excerpt byte for byte (1,498 of 1,498); clean bodies past it differ
-  from `main` only by the withheld text and the notice (240 of 320, the six shapes that stream,
-  every shown event or line checked, 27,226); `cost3.py` 0.01 to 0.20 s on 4 MiB bodies (0.01 to
-  0.21 s on `5dd87b42`).
+  window read only a long stream's head, but masks shorten a text, so what lay near the window's cut
+  moved up into the 4 KiB the excerpt shows, and a secret whose pieces crossed the cut, never read
+  whole, showed its beginning: a URL password with symbols at 7 of 31 cuts in three stream shapes, a
+  300-character registered credential at 70 of 111 (`window_attacks.py`, case A; `main` 0). Showing
+  only the window's first half and leaving out each stream's open tail still let a 600-character URL
+  password of words show 20 to 61 of its characters, where `main` showed 0 to 3, and a stream that
+  paused past the window show its secret's head (case B, 16 of 36 rows). By the owner's decision of
+  2026-10-13, under the delegation (best practice), the excerpt fails closed: it may show less than
+  `main`, never more. A body streamed as events or as JSON lines in a shape known to stream, and
+  longer than the window (36 KiB with no long registered credential), keeps in its excerpt the lines
+  `main`'s excerpt shows whole (since the fifth pre-merge audit, above) with every streamed text
+  value emptied (content and delta text, a `response`, a logprob token and its alternatives, a
+  `data:` line's text; `bytes` and Ollama's `context` nulled), its keys, structure, numbers and
+  protocol fields, roles, finish and stop reasons kept, under a first line that says the text is
+  withheld. Case A and case B: 0 of 36 rows each; the long password 0 characters at every start;
+  clean bodies that fit the window `main`'s excerpt byte for byte (1,498 of 1,498); clean bodies
+  past it differ from `main` only by the withheld text and the notice (240 of 320, the six shapes
+  that stream, every shown event or line checked, 20,308); `cost3.py` 0.01 to 0.20 s on 4 MiB bodies
+  (0.01 to 0.21 s on `5dd87b42`).
 - **An event stream's logprobs spell no masked token (found with that fix, not by the audit).**
   An OpenAI chunk streamed with logprobs holds a logprob list of one item, which was no logprob
   list: the excerpt masked its token as the stream's piece but kept its `bytes`, which spelled

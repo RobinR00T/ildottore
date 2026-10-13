@@ -392,7 +392,7 @@ reads as U+FFFD, since httpx decodes the stream as text.
   with no long credential. A body that fits that head is masked as above. One longer than it has its
   streamed text withheld instead (the owner's decision of 2026-10-13, under the delegation, best
   practice: fail closed, an excerpt may show less than `main`, never more): the excerpt keeps the
-  lines that start before the head's midpoint, with every streamed text value in them emptied
+  lines `main`'s excerpt of the body shows whole, with every streamed text value in them emptied
   (content and delta text, a `response`, a message's content, a logprob token and its alternatives,
   a `data:` line's text; `bytes` and Ollama's `context` nulled), and keeps keys, structure, numbers,
   booleans and the protocol's fields above, and a `role`, a `finish_reason`, a `stop_reason` and a
@@ -406,11 +406,16 @@ reads as U+FFFD, since httpx decodes the stream as text.
   characters and a stream that paused past the head showed its secret's beginning. Withheld, none
   shows; a clean body past the head differs from `main`'s excerpt only by that text and the notice
   (240 of 320 in the auditor's eight shapes, the six that stream; every event or line shown equals
-  the body's with its text emptied, 27,226 checked), and one that fits is `main`'s byte for byte
-  (1,498 of 1,498). The excerpt is read from that head alone (LOW 4: a 4 MiB stream of tiny events
-  cost up to 12.8 s, `main` 0.00 s; now under 0.25 s on every shape of the audit's `cost3.py`). A
-  masked unit is written again on one `data` line (a text holding LF, on as many), JSON in the
-  compact form it had, every other line as it came. A body rewritten (a JSON body or a stream) is
+  the body's with its text emptied, 20,308 checked), and one that fits is `main`'s byte for byte
+  (1,498 of 1,498). Only `main`'s whole lines are kept since the fifth pre-merge audit: emptied, the
+  lines are short, so the 4 KiB reached lines `main`'s never reached, and a secret placed outside
+  the streamed text (comment, `event:` or `id:` lines, an event's `id` or `model`) showed 11 of 11
+  pieces where `main` showed 8; a fixed 4 KiB of the body was not enough either, since `main`'s own
+  masks lengthen what it shows (short emails in every event: `main` none of 11, 4 KiB 8). The
+  excerpt is read from that head alone (LOW 4: a 4 MiB stream of tiny events cost up to 12.8 s,
+  `main` 0.00 s; now under 0.25 s on every shape of the audit's `cost3.py`). A masked unit is
+  written again on one `data` line (a text holding LF, on as many), JSON in the compact form it had,
+  every other line as it came. A body rewritten (a JSON body or a stream) is
   written with `ensure_ascii` off, as the target wrote it: escaped, a phone or a card grouped by
   U+00A0 or U+202F outside any stream reached the excerpt's redaction as `\u00a0` and was shown
   where `main` masked it (second pre-merge audit, MEDIUM 1), and a WebSocket turn's frames are
