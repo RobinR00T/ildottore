@@ -74,3 +74,16 @@ def test_a_run_into_a_closed_reader_exits_3(tmp_path: Path, mode: str) -> None:
     assert code == 3, err
     assert "broken pipe" in err
     assert "Exception ignored" not in err
+
+
+@pytest.mark.parametrize(
+    "argv", [["--help"], ["run", "--help"], []], ids=["help", "run-help", "none"]
+)
+def test_help_into_a_closed_reader_exits_3(tmp_path: Path, argv: list[str]) -> None:
+    """Help is printed while the root context is being made, outside the guard, and the library
+    answered its broken pipe with exit 1 (found re-running the audit's pipe checks)."""
+
+    code, err = _into_a_closed_reader(tmp_path, *argv)
+    assert code == 3, err
+    assert "broken pipe" in err
+    assert "Exception ignored" not in err

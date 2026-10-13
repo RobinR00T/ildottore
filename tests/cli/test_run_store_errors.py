@@ -451,3 +451,14 @@ def test_replay_refuses_a_directory_as_its_run_store(tmp_path: Path) -> None:
     )
     assert result.exit_code == 3, result.output
     assert f"cannot open the run store at {store}: it is a directory, not a file" in result.output
+
+
+def test_an_abort_while_the_root_context_is_made_exits_3(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Outside the guard, the library prints "Aborted!" for an end of input and exits 1."""
+
+    def eof(*args: object, **kwargs: object) -> list[str]:
+        raise EOFError
+
+    monkeypatch.setattr(app_mod.OperationalErrorGroup, "parse_args", eof)
+    result = CliRunner().invoke(app, ["registry", "ls"])
+    assert result.exit_code == 3, result.output

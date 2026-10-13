@@ -103,6 +103,26 @@ class OperationalErrorGroup(TyperGroup):
     an exception in this sense and keeps its 130.
     """
 
+    def main(self, *args: Any, **kwargs: Any) -> Any:
+        """The library's own handling around the root context, with its two exits 1 made 3.
+
+        Help (``--help``, or no command at all) is printed while the root context is being made,
+        before :meth:`invoke` and its guard: a broken pipe there, and an ``Aborted!`` raised
+        there, were turned into exit 1 by the library itself.
+        """
+
+        try:
+            return super().main(*args, **kwargs)
+        except SystemExit as exc:
+            context = exc.__context__
+            if exc.code != 1 or context is None:
+                raise
+            if isinstance(context, OSError) and context.errno == errno.EPIPE:
+                _say_broken_pipe()
+            elif not isinstance(context, _ABORTS):
+                raise
+            raise SystemExit(int(ExitCode.ERROR)) from exc
+
     def invoke(self, ctx: Any) -> Any:
         try:
             return super().invoke(ctx)

@@ -20,10 +20,10 @@ versioning: [SemVer](https://semver.org/).
   -v`. The command-line library's other errors (a `ClickException`, a `FileError`: exit 1 by
   default), its `Aborted!` and an exit a library asks for with status 1, 2 or a message are exit 3
   too. A broken output pipe is exit 3 with `error: the output stream closed before the command
-  finished (broken pipe)`: `registry ls`, `lint`, `describe` and `coverage` into a reader that had
-  gone exited 1, as did a scan with findings, whose progress lines met the closed pipe (rich
-  answers that with `SystemExit(1)`); stdout is pointed at the null device so no later flush meets
-  the pipe again. Ctrl-C keeps 130; `lint` still exits 1 on lint findings.
+  finished (broken pipe)`: `registry ls`, `lint`, `describe`, `coverage` and `--help` into a
+  reader that had gone exited 1, and so did a scan with findings, whose progress lines met the
+  closed pipe (rich answers that with `SystemExit(1)`); stdout is pointed at the null device so no
+  later flush meets the pipe again. Ctrl-C keeps 130; `lint` still exits 1 on lint findings.
 - **The stores are checked before the first send.** Every mode checks `--run-db` and
   `--evidence-root` without writing (the dry run, the estimate and `-sn` included, which still
   write nothing), and a sending run opens the run store and proves each run's `attempts/` (and

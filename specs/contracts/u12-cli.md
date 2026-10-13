@@ -1290,7 +1290,9 @@ a pass, and each of these crashed or misled after the traffic it could have refu
   3 up keep their code). A broken stdout pipe is exit 3 with `error: the output stream closed
   before the command finished (broken pipe)`, wherever it is met: in the command (the guard), in
   the root context's close callback, which reconfigures stdout and so flushes what was still
-  buffered (`_restore_stream`), or in rich, which answers it with `SystemExit(1)`; stdout is then
+  buffered (`_restore_stream`), in rich, which answers it with `SystemExit(1)`, or around the root
+  context, where help is printed and the library itself exited 1 (`OperationalErrorGroup.main`,
+  which also makes the library's `Aborted!` there exit 3); stdout is then
   pointed at the null device, so no later flush meets the pipe. The first version of this clause
   stopped at the guard, and the close callback's flush turned the 3 back into 1 (`registry ls`,
   `lint`, `describe`, `coverage`, and a live scan with findings, which sent its requests and exited
@@ -1335,10 +1337,11 @@ a pass, and each of these crashed or misled after the traffic it could have refu
   exist is `error: spec path not found: <path>. Pass --spec-path <dir>; ...`, not "1 spec file(s)
   failed to load".
 
-Checked by `tests/cli/test_run_store_errors.py` (21), `tests/cli/test_evidence_root_preflight.py`
+Checked by `tests/cli/test_run_store_errors.py` (34), `tests/cli/test_evidence_root_preflight.py`
 (10), `tests/cli/test_attempt_ceiling.py` (12), `tests/cli/test_estimate_quiet.py` (2),
-`tests/cli/test_report_paths_inputs.py` (11), `tests/cli/test_fleet_run_options.py` (7) and
-`tests/store/test_store_open_errors.py` (8).
+`tests/cli/test_report_paths_inputs.py` (16), `tests/cli/test_fleet_run_options.py` (13),
+`tests/cli/test_broken_pipe.py` (9, each in a subprocess writing into a reader closed before it
+starts) and `tests/store/test_store_open_errors.py` (16).
 
 ## §8 Out of scope / forbidden
 - MUST NOT implement attack/mutation/evaluation/scoring/reporting/fingerprint logic (u05-u11,
