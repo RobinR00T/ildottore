@@ -31,7 +31,11 @@ from ildottore.shared.digest import (
     target_field_digests,
 )
 from ildottore.shared.enums import ScanBand, VerdictStatus
-from ildottore.shared.judging_rules import JUDGING_RULES_SINCE, JUDGING_RULES_VERSION
+from ildottore.shared.judging_rules import (
+    JUDGING_RULES_SINCE,
+    JUDGING_RULES_VERSION,
+    judging_digest,
+)
 from ildottore.shared.models import (
     AttackSpec,
     Attempt,
@@ -46,9 +50,11 @@ from ildottore.store.replay import replay_run
 
 __all__ = [
     "RESUME_PLACEHOLDER_RISK",
+    "ResumeRefused",
     "adopt_resumed",
     "declared_not_destructive",
     "evaluator_plugins",
+    "evaluator_types",
     "load_resume_run",
     "recorded_version",
     "selection_record",
@@ -127,6 +133,10 @@ def load_resume_run(
             hardened=hardened,
         )
         if specs is not None:
+            from ildottore.store.run_sqlite import SqliteRunStore
+
+            with SqliteRunStore(Path(run_db)) as store:
+                _assert_same_plugins(run_id, store.get_run_context(run_id) or {}, specs)
             _assert_same_specs(
                 run_db, run_id, specs, allow_unverified=allow_unverified, selection=selection
             )
@@ -774,7 +784,7 @@ def _assert_same_rules(run_id: str, context: dict[str, object]) -> None:
             "never written: refusing rather than continuing."
         )
     if stored == JUDGING_RULES_VERSION:
-        _assert_same_plugins(run_id, context)
+        _assert_same_code(run_id, context)
         return
     # Each version written with a `v` in front: a bare `1.2.3.4` read as an IPv4 address and a
     # bare `2026.10.12` as a phone number to the redactor every error goes through (L-5).
@@ -808,6 +818,57 @@ def _assert_same_rules(run_id: str, context: dict[str, object]) -> None:
     )
 
 
+class ResumeRefused(ValueError):
+    """A resume refused with the digests it names, which the CLI's error masking keeps readable.
+
+    A bare SHA-256 reads as a high-entropy secret to the redactor every error goes through: an
+    exception that carries the digests it computed in ``digests`` has them kept (as a tampered
+    artifact's are, ``store.replay.TamperError``).
+    """
+
+    def __init__(self, message: str, *, digests: tuple[str, ...] = ()) -> None:
+        super().__init__(message)
+        self.digests = digests
+
+
+def _assert_same_code(run_id: str, context: dict[str, object]) -> None:
+    """Refuse a resume whose halted half was judged by other code under the same version (A-81).
+
+    The version names the rules and is bumped by a person; the digest is computed from the
+    installed package (deny by default, ``shared.judging_rules.judging_digest``), so a change no
+    one bumped the version for is caught too: the second audit of the first design edited a default
+    of the REST template, a subclass's override, the offline judge and a decorator, each under the
+    same version and an unchanged pin, and the resume mixed verdicts. A run that records no digest
+    (one a build before it made) is refused the same way. No flag waives it.
+    """
+
+    stored = context.get("judging_digest")
+    current = judging_digest()
+    if stored == current:
+        return
+    this = (
+        f"this is Il Dottore {_shown_version(__version__)}, judging rules {JUDGING_RULES_VERSION}"
+    )
+    advice = (
+        "A resume keeps the attempts the halted half stored with the verdicts that code gave them "
+        "and judges only what it sends, so one report would judge the same kind of reply two ways; "
+        "the stored replies are redacted, so they cannot be judged again. There is no flag for "
+        "this: finish it with the installation that started it, or start a fresh run."
+    )
+    if stored is None:
+        raise ResumeRefused(
+            f"run {run_id!r} records judging rules {JUDGING_RULES_VERSION} and no judging digest, "
+            f"so the code that judged it cannot be told from this one ({this}). {advice}"
+        )
+    raise ResumeRefused(
+        f"run {run_id!r} was judged under the same judging rules ({JUDGING_RULES_VERSION}) by "
+        f"other code: its judging digest is {stored} and this installation's is {current} (Il "
+        f"Dottore's code changed since the halt: an upgrade, a reinstall or a local edit; {this}). "
+        f"{advice}",
+        digests=(str(stored), current),
+    )
+
+
 def _is_version(value: object) -> bool:
     from ildottore.store.run_sqlite import VERSION_SHAPE
 
@@ -829,13 +890,38 @@ def _shown_version(version: object) -> str:
     return f"v{version}" if _is_version(version) else "of an unknown version"
 
 
-def evaluator_plugins() -> list[str]:
-    """The evaluators plugins register (``dottore.evaluators`` entry points), as a run records them.
+def _plugin_source_digest(point: object) -> str:
+    """SHA-256 of a plugin's installed Python sources, so a change under the same version shows."""
 
-    Each is ``<name>=<object> (<distribution> <version>)``, sorted, every string masked with the
-    store's fixed identity salt. A plugin's evaluator decides verdicts from outside this package,
-    where ``JUDGING_SOURCES`` cannot watch it (pre-merge audit of 22269e0c, H-1), so the run
-    records which ones it loaded and a resume under others is refused, as under other rules.
+    import hashlib
+    from importlib.util import find_spec
+
+    dist = getattr(point, "dist", None)
+    files: list[Path] = []
+    if dist is not None and getattr(dist, "files", None):
+        files = [Path(str(dist.locate_file(f))) for f in dist.files if str(f).endswith(".py")]
+    if not files:
+        module = str(getattr(point, "value", "")).partition(":")[0]
+        spec = find_spec(module) if module else None
+        if spec is not None and spec.origin and spec.origin.endswith(".py"):
+            files = [Path(spec.origin)]
+    digest = hashlib.sha256()
+    for path in sorted(files, key=str):
+        if path.is_file():
+            digest.update(path.name.encode() + b"\0" + path.read_bytes() + b"\0")
+    return digest.hexdigest() if files else "unknown"
+
+
+def evaluator_plugins(types: set[str]) -> list[str]:
+    """The evaluator plugins that provide a type in ``types``, as a run records them (A-81).
+
+    ``types`` are the evaluator types the selected specs name. Each plugin (a ``dottore.evaluators``
+    entry point) whose evaluator is one of them is recorded as ``<name>=<object> (<distribution>
+    <version>) sha256:<digest of its Python sources>``, sorted, masked with the store's fixed
+    identity salt; a plugin no selected spec names decides nothing in the run and is left out (the
+    second audit of the first design: a resume was refused over a plugin no spec used). Today none
+    can match: a spec names a type of the schema's ``EvaluatorType`` and a plugin may not reuse a
+    built-in type, so the record is empty until the schema admits plugin types.
     """
 
     from importlib.metadata import entry_points
@@ -845,18 +931,35 @@ def evaluator_plugins() -> list[str]:
 
     found = []
     for point in entry_points(group=ENTRY_POINT_GROUP):
+        try:
+            kind = getattr(point.load(), "type", None)
+        except Exception:  # its type cannot be read, so it may be one a spec names: recorded
+            kind = None
+        else:
+            if not isinstance(kind, str) or kind not in types:
+                continue
         dist = getattr(point, "dist", None)
         origin = f" ({dist.name} {dist.version})" if dist is not None else ""
-        found.append(redact_identity(f"{point.name}={point.value}{origin}"))
+        found.append(
+            redact_identity(
+                f"{point.name}={point.value}{origin} sha256:{_plugin_source_digest(point)}"
+            )
+        )
     return sorted(found)
 
 
-def _assert_same_plugins(run_id: str, context: dict[str, object]) -> None:
+def evaluator_types(specs: list[AttackSpec]) -> set[str]:
+    """The evaluator types the ``specs`` name."""
+
+    return {str(getattr(c.type, "value", c.type)) for spec in specs for c in spec.evaluators}
+
+
+def _assert_same_plugins(run_id: str, context: dict[str, object], specs: list[AttackSpec]) -> None:
     """Refuse a resume under other evaluator plugins than the run was judged with (A-81)."""
 
     stored = context.get("evaluator_plugins", [])
     stored_list = [str(item) for item in stored] if isinstance(stored, list) else []
-    current = evaluator_plugins()
+    current = evaluator_plugins(evaluator_types(specs))
     if sorted(stored_list) == current:
         return
 
@@ -865,10 +968,10 @@ def _assert_same_plugins(run_id: str, context: dict[str, object]) -> None:
 
     raise ValueError(
         f"run {run_id!r} was judged with the evaluator plugins {listed(sorted(stored_list))}, and "
-        f"this invocation loads {listed(current)} (dottore.evaluators entry points). A plugin's "
-        "evaluator decides verdicts, so one report would judge the same kind of reply two ways. "
-        "There is no flag for this: finish it with the plugins it was made with, or start a fresh "
-        "run."
+        f"this invocation loads {listed(current)} for the evaluator types its specs name "
+        "(dottore.evaluators entry points). A plugin's evaluator decides verdicts, so one report "
+        "would judge the same kind of reply two ways. There is no flag for this: finish it with "
+        "the plugins it was made with, or start a fresh run."
     )
 
 

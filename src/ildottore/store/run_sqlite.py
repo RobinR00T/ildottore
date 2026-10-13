@@ -795,6 +795,11 @@ _CONTEXT_FIELDS: Final[dict[str, tuple[bool, Any, str]]] = {
         "a list of package versions",
     ),
     "evaluator_plugins": (False, _is_names, "a list of evaluator plugins"),
+    "judging_digest": (
+        False,
+        lambda v: isinstance(v, str) and _SHA256.fullmatch(v) is not None,
+        "a sha256 digest",
+    ),
     "route": (False, _is_name, "a route name"),
     "selection": (False, _is_selection, "the selection flags this tool records"),
     "spec_fields": (

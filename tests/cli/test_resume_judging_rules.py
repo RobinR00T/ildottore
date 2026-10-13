@@ -294,41 +294,142 @@ def test_each_invocation_records_its_package_version(
     assert context["tool_version"] == __version__
 
 
-def test_a_run_records_the_evaluator_plugins_it_loaded_and_a_resume_under_others_is_refused(
+def test_a_run_records_the_evaluator_plugins_its_specs_use_and_a_resume_under_others_is_refused(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A plugin's evaluator judges from outside the package the version covers (H-1)."""
+    """A plugin's evaluator judges from outside the package the digest covers (H-1, M-5)."""
 
-    monkeypatch.setattr(resume_mod, "evaluator_plugins", lambda: ["leak=acme.ev:Leak (acme 1.0)"])
+    seen: list[set[str]] = []
+
+    def plugins(version: str) -> object:
+        def listed(types: set[str]) -> list[str]:
+            seen.append(types)
+            return [f"leak=acme.ev:Leak (acme {version}) sha256:{'0' * 64}"]
+
+        return listed
+
+    monkeypatch.setattr(resume_mod, "evaluator_plugins", plugins("1.0"))
     run_id, spec_dir = _halted(tmp_path)
-    assert _context(tmp_path)["evaluator_plugins"] == ["leak=acme.ev:Leak (acme 1.0)"]
+    assert _context(tmp_path)["evaluator_plugins"] == [
+        f"leak=acme.ev:Leak (acme 1.0) sha256:{'0' * 64}"
+    ]
+    assert seen[0] == {"refusal"}, "only the evaluator types the selected specs name are asked"
     stored = _stored(tmp_path)
 
-    monkeypatch.setattr(resume_mod, "evaluator_plugins", lambda: ["leak=acme.ev:Leak (acme 1.1)"])
+    monkeypatch.setattr(resume_mod, "evaluator_plugins", plugins("1.1"))
     with pytest.raises(ValueError) as refused:
         execute_run(_opts(tmp_path, resume=run_id, budget_requests=100), [spec_dir])
     message = str(refused.value)
-    assert "leak=acme.ev:Leak (acme 1.0)" in message and "(acme 1.1)" in message
+    assert "(acme 1.0)" in message and "(acme 1.1)" in message
     assert "There is no flag for this" in message
     assert _stored(tmp_path) == stored
 
-    monkeypatch.setattr(resume_mod, "evaluator_plugins", lambda: ["leak=acme.ev:Leak (acme 1.0)"])
+    monkeypatch.setattr(resume_mod, "evaluator_plugins", plugins("1.0"))
     outcome = execute_run(_opts(tmp_path, resume=run_id, budget_requests=100), [spec_dir])
     assert outcome.exit_code in {ExitCode.FINDINGS_AT_OR_ABOVE, ExitCode.FINDINGS_BELOW}
 
 
-def test_the_plugins_are_read_from_the_entry_points(monkeypatch: pytest.MonkeyPatch) -> None:
-    import importlib.metadata
-    from types import SimpleNamespace
+def _plugin_tree(tmp_path: Path, kind: str, body: str) -> Path:
+    """A plugin distribution on disk: a module and its dist-info with one entry point."""
 
-    points = [
-        SimpleNamespace(
-            name="leak", value="acme.ev:Leak", dist=SimpleNamespace(name="acme", version="1.0")
-        ),
-        SimpleNamespace(name="bare", value="x:Y", dist=None),
-    ]
-    monkeypatch.setattr(importlib.metadata, "entry_points", lambda group: points)
-    assert resume_mod.evaluator_plugins() == ["bare=x:Y", "leak=acme.ev:Leak (acme 1.0)"]
+    root = tmp_path / "plugins"
+    info = root / "acmeplug-1.0.dist-info"
+    info.mkdir(parents=True)
+    (root / "acmeplug.py").write_text(
+        f"class Leak:\n    type = {kind!r}\n    async def evaluate(self, ctx):\n        {body}\n",
+        encoding="utf-8",
+    )
+    (info / "METADATA").write_text("Metadata-Version: 2.1\nName: acmeplug\nVersion: 1.0\n")
+    (info / "entry_points.txt").write_text("[dottore.evaluators]\nleak = acmeplug:Leak\n")
+    (info / "RECORD").write_text("acmeplug.py,,\nacmeplug-1.0.dist-info/METADATA,,\n")
+    return root
+
+
+def test_only_a_plugin_whose_type_a_spec_names_is_recorded_with_its_source_digest(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A plugin no selected spec names decides nothing and is left out (M-5); one a spec names is
+    recorded with a digest of its sources, so a change under the same version is caught."""
+
+    import importlib
+    import sys
+
+    root = _plugin_tree(tmp_path, "refusal", "return None")
+    monkeypatch.syspath_prepend(str(root))
+    importlib.invalidate_caches()
+    assert resume_mod.evaluator_plugins({"regex_presence"}) == []
+    first = resume_mod.evaluator_plugins({"refusal"})
+    assert len(first) == 1 and first[0].startswith("leak=acmeplug:Leak (acmeplug 1.0) sha256:")
+
+    (root / "acmeplug.py").write_text(
+        "class Leak:\n    type = 'refusal'\n    async def evaluate(self, ctx):\n        return 1\n",
+        encoding="utf-8",
+    )
+    sys.modules.pop("acmeplug", None)
+    second = resume_mod.evaluator_plugins({"refusal"})
+    assert second != first, "the same version with other code is another plugin"
+
+
+def test_no_shipped_spec_can_name_a_plugin_type(tmp_path: Path) -> None:
+    """Why the record is empty today: a spec's evaluator type is one of the schema's own."""
+
+    from ildottore.shared.enums import EvaluatorType
+
+    _halted(tmp_path)
+    assert _context(tmp_path)["evaluator_plugins"] == []
+    assert resume_mod.evaluator_types([make_spec("PI-DIRECT-001")]) <= {
+        t.value for t in EvaluatorType
+    }
+
+
+def test_a_run_records_the_digest_of_the_code_that_judged_it(tmp_path: Path) -> None:
+    from ildottore.shared.judging_rules import judging_digest
+
+    _halted(tmp_path)
+    assert _context(tmp_path)["judging_digest"] == judging_digest()
+
+
+def test_a_resume_under_other_code_and_the_same_version_is_refused_naming_both_digests(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The second audit edited a default, an override, the offline judge and a decorator under an
+    unchanged version and pin, and the resume mixed verdicts; the digest it recorded refuses it."""
+
+    run_id, spec_dir = _halted(tmp_path)
+    before, stored = _context(tmp_path), _stored(tmp_path)
+    other = "f" * 64
+    monkeypatch.setattr(resume_mod, "judging_digest", lambda: other)
+    for unverified in (False, True):
+        with pytest.raises(resume_mod.ResumeRefused) as refused:
+            execute_run(
+                _opts(tmp_path, resume=run_id, budget_requests=100, resume_unverified=unverified),
+                [spec_dir],
+            )
+        message = str(refused.value)
+        assert f"under the same judging rules ({JUDGING_RULES_VERSION}) by other code" in message
+        assert str(before["judging_digest"]) in message and other in message
+        assert "There is no flag for this" in message
+        assert refused.value.digests == (before["judging_digest"], other)
+    assert _context(tmp_path) == before and _stored(tmp_path) == stored
+
+
+def test_the_digest_refusal_reads_in_clear_through_the_cli(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from ildottore.cli.app import _masked
+
+    exc = resume_mod.ResumeRefused(
+        f"its judging digest is {'a' * 64} and this installation's is {'b' * 64}",
+        digests=("a" * 64, "b" * 64),
+    )
+    assert _masked(exc) == str(exc)
+
+
+def test_a_run_that_records_the_rules_and_no_digest_is_refused(tmp_path: Path) -> None:
+    run_id, spec_dir = _halted(tmp_path)
+    _rewrite(tmp_path, judging_digest=...)
+    with pytest.raises(ValueError, match="no judging digest"):
+        execute_run(_opts(tmp_path, resume=run_id, budget_requests=100), [spec_dir])
 
 
 def test_a_package_version_with_no_pep_440_shape_is_recorded_as_unknown(

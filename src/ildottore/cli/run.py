@@ -83,7 +83,7 @@ from ildottore.shared.digest import (
     target_field_digests,
 )
 from ildottore.shared.enums import Category, EvaluatorType
-from ildottore.shared.judging_rules import JUDGING_RULES_VERSION
+from ildottore.shared.judging_rules import JUDGING_RULES_VERSION, judging_digest
 from ildottore.shared.models import (
     AttackSpec,
     Finding,
@@ -3031,7 +3031,12 @@ def _persist_run_integrity(
                 "tool_version": started_by,
                 # The evaluators plugins register, which judge from outside this package: a
                 # resume under others is refused as under other rules (u12 A-81).
-                "evaluator_plugins": resume_mod.evaluator_plugins(),
+                "evaluator_plugins": resume_mod.evaluator_plugins(
+                    resume_mod.evaluator_types(specs)
+                ),
+                # The code that judges, computed from the installed package (deny by default):
+                # a resume under other code is refused even when nobody bumped the version.
+                "judging_digest": judging_digest(),
                 # What a refused resume names (M1): the field of a spec or of the target that
                 # changed, the route, and the selection flags the run was made with.
                 "spec_fields": {spec.id: spec_field_digests(spec) for spec in specs},
