@@ -713,6 +713,37 @@ def test_a_cut_stream_s_excerpt_reaches_no_further_into_the_body_than_main_s() -
         assert shown(excerpt) <= shown(main), (where, first, sorted(shown(excerpt) - shown(main)))
 
 
+#: A value no rule masks alone, which `main` masks through the label in the text before it.
+_LABELLED_VALUE = "Tr0ub4dor-and-3"
+#: Sixth pre-merge audit (context_loss.py): plain-text data ending in a label, then the value on a
+#: line that is no field of the format; `main` masks it through the label, which the cut excerpt
+#: empties, so it showed the value.
+_LABEL_THEN_VALUE = {
+    "a comment": f"data: password:\n: {_LABELLED_VALUE}\n\n",
+    "a blank line, then a comment": f"data: password\n\n: {_LABELLED_VALUE}\n\n",
+    "a line starting with a space": f"data: password:\n {_LABELLED_VALUE}\n\n",
+    "a line starting with =": f"data: password\n={_LABELLED_VALUE}\n\n",
+    "token=, then a comment": f"data: token=\n: {_LABELLED_VALUE}\n\n",
+}
+
+
+@pytest.mark.parametrize("form", list(_LABEL_THEN_VALUE))
+def test_a_cut_excerpt_keeps_no_line_whose_mask_came_from_the_withheld_text(form: str) -> None:
+    """A cut excerpt keeps only blank lines, JSON lines and the format's fields (`data`, `event`,
+    `id`, `retry`): a line that is none of them can take its mask from the text withheld."""
+
+    from ildottore.adapters.base import _quoted
+
+    filler = f"data: {_oai('filler words here')}\n\n"
+    body = _LABEL_THEN_VALUE[form] * 3
+    while len(body) < 40_000:
+        body += filler
+    assert _LABELLED_VALUE not in _quoted(body.encode(), Redactor(salt="s"))  # main masks it
+    excerpt, _ = reply_excerpt(body, Redactor(salt="s"))
+    assert excerpt.startswith("[il dottore: ")
+    assert _LABELLED_VALUE not in excerpt, excerpt[:400]
+
+
 def test_what_is_no_stream_is_quoted_as_it_came() -> None:
     """One event, JSON lines that are arrays, Ollama's lines with blank lines between them."""
 
