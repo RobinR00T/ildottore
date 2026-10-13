@@ -3,6 +3,41 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-13 (evening): the pre-merge audit of `e6a1ab9b`, fixed, and `main` merged in
+
+- The pre-merge audit of `fix/cli-store-budgets-paths` at `e6a1ab9b` found three MEDIUMs and
+  eight LOWs; the core held (0 failures in 416 concurrent opens, the pre-send checks, the attempts
+  ceiling, the guard's masking). Fixed in new commits on the branch, then `main` (`0be0be71`, #111
+  and #112) merged in with a merge commit; the conflicts were documentation only.
+- MEDIUM 1: the spec-file protection compared resolved paths, which keep the case they are given,
+  so `-oJ SPECS/attacks/AC-BFLA-001.yaml` beside `--spec-path specs` overwrote the spec on the
+  macOS default volume (exit 2). Every file of the spec path is compared by device and inode now.
+- MEDIUM 2: a real broken pipe still exited 1: the close callback reconfigured stdout and flushed
+  into the closed pipe after the guard's exit 3, and rich answers a broken pipe with
+  `SystemExit(1)` (a live scan with findings piped into a closed reader sent 25 requests here, then
+  exited 1 with nothing said). The close callback, the guard and `OperationalErrorGroup.main` (help,
+  found re-running the audit's pipe checks) make it exit 3, and stdout is pointed at the null
+  device. Every command into a closed reader: exit 3 (`registry ls`, `lint`, `describe`,
+  `coverage`, `run --dry-run`, `run --estimate`, a mock run, a live run with findings, `schema
+  export`, `diff`, `calibrate`, `replay`, `fingerprint --offline`, `fleet`, `--help`).
+- MEDIUM 3: the default spec path made `lint` pass the built-in battery in a pack's own
+  repository ("lint OK ... across 75 spec(s)", exit 0). By the rule decided for this branch and
+  `fix/cli-input-validation`: `lint` with no path and no `specs/` is refused, exit 3, `spec path
+  not found: specs. Pass the spec path to lint ...`; the commands that fall back say on stderr which
+  tree they read.
+- LOWs: a lock wait is Python's loop over 0.1 s tries (Ctrl-C at 2 s during a held lock: exit 130
+  after 2.19 s, where it took about 32 s), said once on stderr, and named when it runs out (`the run
+  store at <path> stayed locked by another process for 30 s`); the store's siblings are taken beside
+  the file a symlinked `--run-db` names; a report inside a run directory of the evidence store is
+  refused; `ClickException`, `FileError`, `Abort` and a stray `SystemExit` of 1, 2 or a text are
+  exit 3; `replay --run-db <directory>` is refused; `migrate` no longer commits a caller's
+  transaction; `-v` reads as a flag in the help; the figures the audit found wrong are corrected
+  (the `--runs 200` command needs `--budget-tokens` and `--budget-wall` raised; the concurrency
+  figures are 5 of 6 in the first audit, 1 and 2 of 18 in two re-measurements; a wheel ships
+  neither the battery nor the schemas).
+- Gates on the merged tree (`PYTHONPATH=<wt>/src:<wt>`, TMPDIR at the system default): see the
+  report of this session for the figures of the final head.
+
 ## State, 2026-10-12 (morning): the CLI audit of `de122e26`, fixed (u12 A-80)
 
 - Branch `fix/cli-store-budgets-paths` from `de122e26`, not pushed. Six findings of the full CLI
