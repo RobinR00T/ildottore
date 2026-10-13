@@ -2255,9 +2255,8 @@ def withhold_split(obj: object) -> object:
     return _withheld(obj)[0]
 
 
-#: The longest run of characters other than white space read as a head: a longer one is long
-#: enough for the rules on its own (the excerpt's cut uses the same bound), and a field every event
-#: repeats (``text_delta``) joins into one run as long as the stream, which is no secret's head.
+#: How much of the end of a stream cut by the window is read as a head that may run on: a head
+#: longer than that is long enough for the rules on its own (the excerpt's cut uses the same bound).
 _TAIL_RUN: Final = 256
 
 
@@ -2265,21 +2264,17 @@ def _open_tail(joined: str) -> int:
     """Where the part of ``joined`` that may run on past its end starts (``len`` when none).
 
     ``joined`` is a stream's text as the target wrote it, not as masked: masked, a registered
-    credential's beginning no longer reads as written (fourth pre-merge audit, MEDIUM). The run of
-    characters other than white space it ends with, when no longer than :data:`_TAIL_RUN` (any
-    such character, `!`, `#` and `$` among them: only key characters left a URL password's
-    beginning out, up to its first symbol), and the longest end of it that begins a registered
-    credential, spaces and all: either may be the head of a secret whose rest was not read, which
-    no rule recognises in part.
+    credential's beginning no longer reads as written (fourth pre-merge audit, MEDIUM). The part
+    is its last :data:`_TAIL_RUN` characters, whatever they are, and more when a longer end of it
+    begins a registered credential: either may hold the head of a secret whose rest was not read,
+    which no rule recognises in part. A run of key characters was not enough: it stopped at the
+    first `!`, `#`, `$` or space, and a head glued to a longer run of other characters was never
+    read as one.
     """
 
-    start = len(joined)
-    while start > 0 and len(joined) - start <= _TAIL_RUN and not joined[start - 1].isspace():
-        start -= 1
-    if len(joined) - start > _TAIL_RUN:
-        start = len(joined)
+    start = max(0, len(joined) - _TAIL_RUN)
     for secret in _known_secrets():
-        for size in range(min(len(secret) - 1, len(joined)), 0, -1):
+        for size in range(min(len(secret) - 1, len(joined)), _TAIL_RUN, -1):
             if joined.endswith(secret[:size]):
                 start = min(start, len(joined) - size)
                 break
