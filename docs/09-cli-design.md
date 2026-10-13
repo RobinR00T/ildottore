@@ -173,11 +173,15 @@ keeps carry the verdicts the version that judged them gave, and a resume judges 
 sends, so a change to those rules between the halt and the resume made one report judge the same
 kind of reply two ways (CLI audit H2: 4 attempts kept as `pass` beside 2 judged cut by the
 provider's filter, and "6 of 10 cut" where all 10 were). `shared.judging_rules.
-JUDGING_RULES_VERSION` names the rules; a test pins a digest of the code that decides a stored
-verdict to each version, so a change to that code fails until the version is bumped, and walks
-what that code refers to, so a constant or helper on the verdict path that is neither listed nor
-exempted with its reason fails too; the pins are an append-only history. The evaluator plugins a
-run loads are recorded and bound the same way. A run records
+JUDGING_RULES_VERSION` names the rules, and `judging_digest` binds the code: a SHA-256 of the
+whole package but a short list of presentation and input modules (deny by default, each
+exemption checked by the import graph), recorded at run start and compared by a resume, so a
+change nobody bumped the version for is refused too. A test pins the digest of each version in
+an append-only, frozen history, so a change to covered code fails until the version is bumped or
+re-pinned with a reason. The evaluator plugins a selected spec names are recorded, with a digest
+of their sources, and bound the same way. The first design listed the verdict code instead, and
+two audits found code it missed (2026-10-12 and 13): the default was inverted under the owner's
+delegation. A run records
 it (`context_json.judging_rules`, beside `tool_version`) when it starts, `--version` prints it, and
 a resume under other rules, or of a run that records none, is refused before it sends, with no
 flag: the stored replies are redacted, so judging the kept ones again is not possible. The other

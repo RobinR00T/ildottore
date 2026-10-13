@@ -231,8 +231,9 @@ without them; stderr says so (dottore-scope(5)).
 A run judged by other rules than this version's, or one that records none (halted by a
 version from before shared.judging_rules.JUDGING_RULES_SINCE), is refused before anything is
 sent, with no flag to waive it: its kept attempts carry that version's verdicts and the stored
-replies are redacted, so they cannot be judged again. So is a run judged with other evaluator
-plugins (dottore.evaluators entry points). Finish it with the version and plugins that started
+replies are redacted, so they cannot be judged again. So is a run judged by other code under the
+same version (the run records a digest of the installed code that judges), and one judged with
+other evaluator plugins (dottore.evaluators entry points). Finish it with the version and plugins that started
 it (--version names its judging rules), or start a fresh run. A refusal names what changed and the flag that restores it: the spec field
 and --spec-path, the selection flags the run was made with, or the route (--hardened); a
 corrupt run-store value is refused naming its field.

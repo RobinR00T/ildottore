@@ -3,6 +3,34 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-13: the second audit of `6de5780b`, fixed: deny by default (u12 A-81)
+
+- The audit (`_ildottore-tren/scratch/fixcli2-audit/r2/`) reproduced H2 twice with the tripwire
+  green: a default of the REST template no target file carries (`finish_path`), and a subclass's
+  `filter_stops` override on the landed tree, each a resume that mixed verdicts; with more verdict
+  code the allow-list missed (`canary_binding`, the `in_band` tag, `needs_seeding`, the offline
+  judge, decorators), an in-place re-pin that passed, a plugin check that refused over a plugin no
+  spec used and missed a code change under the same version, and two exemption reasons that
+  claimed too much.
+- Decided under the owner's delegation (best practice): invert the default. `judging_digest` (in
+  `shared.judging_rules`) covers every file of the package but 17 presentation and input modules,
+  each exemption checked by the import graph (14 commands outside the run's import closure, 3
+  renderers only `cli.run` and `cli.wiring` import); the allow-list and its walk are removed. A run
+  records the digest, computed from the installed package (0.3 s, once per process), and a resume
+  under another one is refused with no flag, naming both digests in clear. The pins are frozen in
+  `tests/shared/judging_pins.frozen`, so an in-place re-pin fails. Plugins are recorded only when
+  a selected spec names their type, with their source digest (none can today).
+- Re-run: the auditor's mutations a to j each change the digest, fail the pin and are refused by
+  a resume (exit 3, 0 requests sent; controls resume as before); the unrelated-plugin case resumes;
+  the digest is the same on Python 3.9.6, 3.12.13 and 3.14.7; a dry run on `main` at `0be0be71`
+  (#111 and #112 landed) merged with this branch fails only the pin, as it must, with one import
+  line of `cli/run.py` to resolve (`scratch/fixcli2/LANDING.md`).
+- Tests: `tests/shared/test_judging_rules.py` 19, `tests/cli/test_resume_judging_rules.py` 31.
+  `make gates` green on `0186bb44` (`PYTHONPATH` set to the worktree's `src`, `TMPDIR` the system
+  default): 5572 tests (5476 on `main` at `de122e26`), 97.86% coverage (`shared/judging_rules.py`
+  100%, `cli/resume.py` 94%), 75 specs lint OK, four import contracts kept, mypy strict on 161
+  files, self-scan, bandit and pip-audit clean.
+
 ## State, 2026-10-12 (later): the pre-merge audit of `22269e0c`, fixed (H-1, M-1, M-2, L-1 to L-8)
 
 - The audit (`_ildottore-tren/scratch/fixcli2-audit/`) confirmed H2, M1 and L6, and found the

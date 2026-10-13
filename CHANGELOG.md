@@ -20,36 +20,47 @@ versioning: [SemVer](https://semver.org/).
   cut or replaced`, although all 10 were cut, exit 0. OD-16, OD-19, OD-21 and OD-41 changed
   verdicts the same way the same week, and `--version` printed `0.1.0` on `f12ba83`, `6d5f7ae` and
   `de122e26` alike.
-- **The rules have a version.** `shared.judging_rules.JUDGING_RULES_VERSION` (`1`: the rules as of
-  the merge that introduced the version) is bumped whenever a change can alter the verdict stored
-  for an attempt: an evaluator, the combination rule, how a provider's stop reason, a filter block
-  or an unreadable reply is read (the adapters' reply mapping included), what the runner's
-  `_evaluate` decides. A rule applied when a finding is scored from stored verdicts (risk, band,
-  confirmation, which copy of an attempt counts) is applied to both halves alike and needs no
-  bump. `dottore --version` prints `dottore 0.1.0 (judging rules 1)`.
-- **A tripwire forces the bump.** `tests/shared/test_judging_rules.py` pins a digest of the code
-  that decides a stored verdict (`JUDGING_SOURCES`: the evaluators package, nine `shared` modules
-  and names of three more, the redactor's own detectors the PII and secret evaluators import, the
-  runner's verdict functions and constants, its spec loop and identity sweep, `execute_attempt`,
-  the conversation executor and each
-  adapter's reply-to-stop mapping; an entry may be a function, a class or a module-level
-  assignment), with comments, docstrings and blank lines left out (the same digest on Python 3.9,
-  3.12 and 3.14). A change to that code fails until the version is bumped and the new digest
-  pinned. **A closure check** walks every `ildottore` name a listed entry refers to: it must be
-  listed, or exempted in `JUDGING_EXEMPT` with its reason (a data shape, an enumeration, an
-  interface, money, the words of a message, what is sent, a rule applied when a finding is scored,
-  which specs are sent, the target's own configuration); it follows imports, module names and
-  `self.<member>`, a class attribute a base class sets included, so a new verdict module, a
-  renamed helper or a new constant cannot be left out unseen. The first list missed four one-line edits that each changed a verdict
-  (pre-merge audit of `22269e0c`, H-1: the runner's `CUT_DECIDING_EVALUATORS`, a line of
-  `execute_attempt`, `setup_delivery.TRACE_EVALUATORS` and the redactor's `is_date_stamp`); each
-  fails the pin now. **The pins are an append-only history** (`PIN_HISTORY`): a re-pin of a
-  version is a new line whose reason says why, never an edit, and the test checks the current pin
-  against it. **Evaluator plugins** (`dottore.evaluators` entry points) judge from outside the
-  package: a run records which it loaded (`evaluator_plugins`, with distribution and version), and
-  a resume under others is refused the same way.
+- **The code that judges is bound to the run, deny by default.** `shared.judging_rules.
+  judging_digest` is a SHA-256 over every file of the package but the modules `JUDGING_EXEMPT`
+  names, Python sources with their comments, docstrings and blank lines left out (decorators kept),
+  other files byte for byte (the SQL schema, the fingerprint signatures). A run records it when it
+  starts (`judging_digest`), computed from the installed package once per process (0.3 s for the
+  161 modules), and a resume under another digest is refused, with no flag, naming both: `run
+  '<id>' was judged under the same judging rules (1) by other code: its judging digest is <64 hex>
+  and this installation's is <64 hex> (Il Dottore's code changed since the halt: an upgrade, a
+  reinstall or a local edit ...)`. A run that records the rules and no digest is refused the same
+  way. What is not exempted is covered, so a subclass override, a default, a decorator, the offline
+  judge and a module that does not exist yet are covered with no list to keep. The 17 exemptions
+  are presentation and input only, each with its reason, and the test checks the reason, not the
+  word: fourteen are commands outside the import closure of `cli.run` (`cli.app`, `cli.lint`,
+  `cli.replay`, the golden harness ...) and three are renderers inside it (`reporting`,
+  `cli.render`, `cli.exit_codes`) that no covered module but `cli.run` and `cli.wiring` imports.
+- **Why deny by default.** The first design listed the verdict code (an allow-list with a walk of
+  what each entry referred to), and two audits found verdict code it missed under an unchanged pin:
+  four one-line edits (pre-merge audit of `22269e0c`: the runner's `CUT_DECIDING_EVALUATORS`, a
+  line of `execute_attempt`, `setup_delivery.TRACE_EVALUATORS`, the redactor's `is_date_stamp`),
+  then a default of the REST template no target file carries, a subclass's `filter_stops`
+  override, the offline judge and a decorator (second audit of `6de5780b`, each reproduced end to
+  end: a resume that mixed verdicts, exit 0). Decided under the owner's delegation (best practice,
+  2026-10-13): invert the default, and bind the run to the computed digest, so correctness no
+  longer depends on anyone bumping a version. Each of the auditor's ten mutations (a to j) now
+  changes the digest, fails the pin and is refused by a resume (exit 3, 0 requests sent).
+- **The rules keep a version, for people.** `shared.judging_rules.JUDGING_RULES_VERSION` (`1`: the
+  rules as of the merge that introduced the version) names them; `dottore --version` prints
+  `dottore 0.1.0 (judging rules 1)` and a refusal quotes it. `tests/shared/test_judging_rules.py`
+  pins the digest of each version, so a change to covered code fails until the version is bumped
+  (with its CHANGELOG line) or the same version is re-pinned with a reason. The pins are an
+  append-only history (`PIN_HISTORY`), frozen in `tests/shared/judging_pins.frozen`: the history
+  must start with the frozen pins, so an edit in place of a pin and `PINNED` together (as the second
+  audit made) fails. The digest is the same on Python 3.9, 3.12 and 3.14.
+- **Evaluator plugins** (`dottore.evaluators` entry points) judge from outside the package: a run
+  records those whose evaluator type a selected spec names (`evaluator_plugins`, with distribution,
+  version and a SHA-256 of their installed Python sources, so a change under the same version is
+  caught), and a resume under others is refused. A plugin no selected spec names decides nothing
+  and is not recorded (the second audit: a resume was refused over one). Today the record is empty:
+  a spec names a type of the schema's `EvaluatorType`, and a plugin may not reuse a built-in type.
 - **Recorded when a run starts, and checked before a resume sends anything.** `context_json`
-  holds `judging_rules`, `tool_version` (the package that started the run) and `tool_versions`
+  holds `judging_rules`, `judging_digest`, `tool_version` (the package that started the run) and `tool_versions`
   (every invocation's, in order; a package version with no PEP 440 shape is recorded as
   `unknown`). A resume under other rules, older or newer, is refused (exit 3)
   with both versions named, why, and what to do: `run '<id>' was judged by the rules of an older Il
@@ -119,13 +130,12 @@ versioning: [SemVer](https://semver.org/).
   five troubleshooting rows), FAQ, USAGE, `dottore(1)`, `docs/02` §3, `docs/09`, ADR-0007's OD-44
   note (corrected as below), PROGRESS; contracts u12 §7 A-81 (new) and A-24 (amended), u10 §6, the
   index rows. Where the docs say which runs are refused, they name `JUDGING_RULES_SINCE` rather
-  than a date, set once when the version lands. Tests: `tests/shared/test_judging_rules.py` (14),
-  `tests/cli/test_resume_judging_rules.py` (26), `tests/cli/test_resume_refusal_advice.py` (15) and
+  than a date, set once when the version lands. Tests: `tests/shared/test_judging_rules.py` (19),
+  `tests/cli/test_resume_judging_rules.py` (31), `tests/cli/test_resume_refusal_advice.py` (15) and
   `tests/cli/test_resume_corrupt_context.py` (31). On `de122e26` the first two do not import (the
   module is new), all 15 of the third fail and 28 of the 31 (the three that pass are the
   `sampling_defaults_applied` refusal, which existed, an unknown key and a well-formed start); on
-  `22269e0c`, the head the pre-merge audit read, the first does not import, 19 of the 26 fail and 2
-  of the 15. Six tests updated for the
+  `6de5780b`, the head the second audit read, the first does not import and 7 of the 31 fail. Six tests updated for the
   messages named above or the stricter store (`--version`, the route refusal, the per-field
   sampling message, the corrupt declaration record, a scope test's fake target digest, and the
   scope-note test, whose hostile entries are now refused unquoted).

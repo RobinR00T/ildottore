@@ -1213,7 +1213,8 @@ attempt(s)`, verification of `07aa0b3a`, LOW 2). The report schema's `status` de
 Checked by `tests/cli/test_malformed_reply_campaign.py`.
 
 **A-81 A resume is bound to the rules that judged its halted half (added 2026-10-12, CLI audit of
-2026-10-11, H2; amended the same day after the pre-merge audit of `22269e0c`).** A resume keeps the
+2026-10-11, H2; amended the same day after the pre-merge audit of `22269e0c`, and on 2026-10-13
+after the second audit of `6de5780b`, deny by default).** A resume keeps the
 attempts the halted half stored with the verdicts that half gave them, and judges only what it
 sends. Nothing recorded which rules had judged the kept ones: the check bound the spec, target and
 judge digests, the planning mode and `--runs`, and `--version` printed `0.1.0` on every commit.
@@ -1236,40 +1237,51 @@ are the same class.
   alike. Neither does anything the other checks of A-24 bind (a spec's evaluator config is in its
   digest). `JUDGING_RULES_SINCE` is the day the version took its value, the one place the docs name
   for it.
-* **A tripwire that forces the bump.** `JUDGING_SOURCES` lists the code that decides a stored
-  verdict: modules (the evaluators package, walked, so a new evaluator is covered; nine `shared`
-  modules) and names (a function, a class, a method or a module-level assignment: the runner's
-  verdict functions and constants, its spec loop (`_run_spec`) and identity sweep,
-  `execute_attempt`, `_unreadable_result`, the conversation
-  executor, `setup_delivery`'s trace constants and tool-name mapping, the redactor's detectors the
-  PII and secret evaluators import, `shared.nesting`, `shared.amounts.is_count`, the adapters'
-  error classes and each adapter's mapping of a reply to text, tool calls, logprobs, a stop reason
-  and its side). `tests/shared/test_judging_rules.py` pins a SHA-256 of it, comments, docstrings
-  and blank lines left out (by `tokenize` and `ast` positions rather than an `ast.dump`, whose text
-  differs between Python versions; checked equal on 3.9, 3.12 and 3.14, and CI runs 3.11), to each
-  version. A change to that code fails the test until the version is bumped and the new digest
-  pinned. **The closure:** the same test walks every `ildottore` name each listed entry refers to
-  (a module's imports; a function's or a class's imports, module names and `self.<member>`, a method
-  or a class attribute of the class or of a base it inherits),
-  and fails on one that is neither listed nor exempted in `JUDGING_EXEMPT`, each exemption with its
-  reason (a data shape, an enumeration stored by value, an interface, money and pacing, a rule
-  applied when a finding is scored, which specs are sent, the target's own configuration, the words
-  of a message or the masking of what a verdict quotes, what is sent). The first list held the
-  functions and not the constants and helpers they read: four one-line edits changed verdicts under
-  an unchanged digest (the pre-merge audit's H-1: `runner.CUT_DECIDING_EVALUATORS`, the
-  `filter_cut` line of `execute_attempt`, `setup_delivery.TRACE_EVALUATORS`, the redactor's
-  `is_date_stamp`), and each fails the pin now. **The history:** the pins are `PIN_HISTORY`,
-  append-only: a new version is a new line, a re-pin of a version (the re-pin of version 1 when it
-  lands, or a change that cannot alter a verdict) a new line whose reason says `re-pin` and why;
-  the test checks that the current pin is the last line for its version, that versions run from 1
-  to the current one, and that no code is pinned to two versions. A tripwire, not a proof: data
-  flow the walk cannot see (a value passed in rather than referred to) still needs the rule above,
-  which is what review holds a change to.
+* **The code that judges, bound by its digest (deny by default).** `shared.judging_rules.
+  judging_digest` is a SHA-256 over every file of the package but the modules `JUDGING_EXEMPT`
+  names: Python sources normalized (comments, docstrings and blank lines left out by `tokenize` and
+  `ast` positions, decorators kept; the same on 3.9, 3.12 and 3.14, CI runs 3.11), other files byte
+  for byte. It is computed from the installed package once per process (0.3 s for 161 modules),
+  recorded when a run starts (`context_json.judging_digest`), and a resume under another digest, or
+  of a run that records the rules and no digest, is refused with no flag, naming both digests
+  (carried by `cli.resume.ResumeRefused.digests`, so the error masking keeps them readable). So
+  correctness does not depend on anyone bumping a version: a subclass override, a default, a
+  decorator, the offline judge and a module that does not exist yet are covered because nothing
+  exempts them. **The exemptions** (17) are presentation and input only, each with its reason, and
+  `tests/shared/test_judging_rules.py` checks the reason: a command (14: `cli.app`, `cli.main`,
+  `cli.calibrate`, `cli.coverage`, `cli.describe`, `cli.diff`, `cli.fingerprint`, `cli.fleet`,
+  `cli.lint`, `cli.new_spec`, `cli.registry`, `cli.render_media`, `cli.replay`, `testing`) must be
+  outside the import closure of `cli.run`, and a renderer (3: `reporting`, `cli.render`,
+  `cli.exit_codes`) may be inside it only if no covered module but `cli.run` and `cli.wiring`
+  imports it. Every other file is checked to be covered. **Decided under the owner's delegation
+  (best practice, 2026-10-13):** the first design listed the verdict code instead (an allow-list,
+  `JUDGING_SOURCES`, with a walk of what each entry referred to), and two audits found verdict code
+  it missed under an unchanged pin: four one-line edits (the pre-merge audit of `22269e0c`, H-1),
+  then a default of the REST template no target file carries (`cli/wiring.py` builds
+  `RestTemplate(path=...)`, every other field a default), a subclass's `filter_stops` override, the
+  offline judge (`wiring.scenario_judge_adapter`; the audit measured 33 of 75 specs turning
+  from pass to fail when its hardened verdict was flipped) and a decorator, each reproduced end to end as a resume that mixed
+  verdicts (the second audit of `6de5780b`, HIGH 1, HIGH 2, MEDIUM 3). Each of that audit's ten
+  mutations (a to j) now changes the digest, fails the pin and is refused by a resume (exit 3, 0
+  requests sent).
+* **The pin, for people.** The test pins the digest of each version, so a change to covered code
+  fails it until the version is bumped (with its CHANGELOG line) or the same version is re-pinned
+  with a reason. The pins are `PIN_HISTORY`, append-only, and frozen in
+  `tests/shared/judging_pins.frozen`: the history must start with the frozen pins (at most one more,
+  the pin being made), so an edit in place of a pin and `PINNED` together, which the second audit
+  made and which passed, fails (MEDIUM 4). The test also checks that the current pin is the last
+  line for its version, that versions run from 1, that a second line says `re-pin`, and that no
+  code is pinned to two versions.
 * **Plugins.** An evaluator a plugin registers (`dottore.evaluators` entry points) judges from
-  outside the package: the run records which it loaded (`evaluator_plugins`: `<name>=<object>
-  (<distribution> <version>)`, sorted, masked with the fixed identity salt), and a resume under
-  others is refused, with no flag, naming both lists.
-* **Recorded when a run starts.** `context_json.judging_rules`, `tool_version` (the package that
+  outside the package. The run records those whose evaluator type a selected spec names
+  (`evaluator_plugins`: `<name>=<object> (<distribution> <version>) sha256:<digest of its
+  installed Python sources>`, sorted, masked with the fixed identity salt), so a change under the
+  same version is caught, and a resume under others is refused, with no flag, naming both lists. A
+  plugin no selected spec names decides nothing and is left out (MEDIUM 5: a resume was refused
+  over one); a plugin that cannot be loaded is recorded, its type being unknown. Today the record
+  is empty: a spec names a type of the schema's `EvaluatorType`, and a plugin may not reuse a
+  built-in type (the registry refuses a duplicate).
+* **Recorded when a run starts.** `context_json.judging_rules`, `judging_digest`, `tool_version` (the package that
   started the run, kept by its resumes) and `tool_versions` (every invocation's package, in order,
   appended as `mutator_orders` is). `dottore --version` prints `dottore <version> (judging rules
   <n>)`.
@@ -1295,26 +1307,29 @@ are the same class.
   be asked again, which is traffic the resume did not plan. A re-judged report would be wrong in
   the direction that costs.
 * **Landing.** Version `1` is the rules as of the merge that introduced it, whatever lands before:
-  at that merge `JUDGING_SOURCES` is brought up to date by the closure test, version 1 is re-pinned
-  on the final tree (a `PIN_HISTORY` line), and `JUDGING_RULES_SINCE` is set to the merge day.
+  at that merge version 1 is re-pinned on the final tree (a `PIN_HISTORY` and frozen line) and
+  `JUDGING_RULES_SINCE` is set to the merge day. Nothing has to be listed: what landed before is
+  covered by default.
 * **Limits, said.** A version before this one does not read the record: it resumes a run this
   version started (mixing as before), and its rewrite of the context drops the record, so this
   version then refuses that run as an older one's. The package version is recorded, not compared:
   it said `0.1.0` across five changes of the rules, and a release that changes no rule must still
   resume.
 
-Checked by `tests/cli/test_resume_judging_rules.py` (26: the record, `tool_version` kept and
+Checked by `tests/cli/test_resume_judging_rules.py` (31: the record, `tool_version` kept and
 `tool_versions` appended, older and newer rules refused naming both with nothing written, a run
 with no record refused with and without `--resume-unverified`, exit 3 through the CLI for a resume,
 `--dry-run` and `--estimate` with no part masked, a newer run refused for its rules over a field it
 does not know, a selection key a later release adds left alone, eleven version shapes through the
-error redactor, a corrupt stored version, an unshaped package version recorded as `unknown`,
-the plugins recorded, a resume under others refused, and
-their entry points read, and `--version`) and `tests/shared/test_judging_rules.py` (14: the pin,
-the history, the closure, the entries and exemptions resolve, an assignment can be listed, the
-walk naming a new module a listed one imports and a renamed helper, a new constant and an
-inherited class attribute in a synthetic tree, the normalization keeps code and drops comments
-and docstrings).
+error redactor, a corrupt stored version, an unshaped package version recorded as `unknown`, the
+digest recorded, a resume under other code refused naming both digests in clear and with and
+without `--resume-unverified`, a run with no digest refused, the plugins a spec names recorded and
+a resume under others refused, only such a plugin recorded with its source digest and a change of
+its code caught, no shipped spec able to name one, and `--version`) and
+`tests/shared/test_judging_rules.py` (19: the pin, the history, the frozen pins, each exemption's
+reason checked by the import graph, every other file covered, a default, the offline judge, a
+decorator, a runner constant and a data file each changing the digest, a comment or a renderer
+not, the cost, the normalization).
 
 ## §8 Out of scope / forbidden
 - MUST NOT implement attack/mutation/evaluation/scoring/reporting/fingerprint logic (u05-u11,

@@ -162,8 +162,10 @@ replaced` where all 10 were. So each run records the version of the judging rule
 (`dottore --version` prints it: `dottore 0.1.0 (judging rules 1)`), and a resume under other
 rules, or of a run that records none (any run a version from before
 `shared.judging_rules.JUDGING_RULES_SINCE` halted), is refused with both named. So is a resume
-under other evaluator plugins than the run was judged with. Finish the run with the version (and
-plugins) that started it, or start a fresh run; no flag waives it. Other refusals name what changed
+under other evaluator plugins than the run was judged with, and one under other code with the
+same version (the run also records a digest of the installed code that judged it, so an upgrade
+or a local edit nobody bumped the version for is caught). Finish the run with the installation
+(and plugins) that started it, or start a fresh run; no flag waives it. Other refusals name what changed
 and the flag that puts it back: the spec field and `--spec-path`, the selection flags the run was
 made with, or the route (`--hardened`).
 

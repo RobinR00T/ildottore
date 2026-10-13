@@ -87,10 +87,12 @@ the u00 protocols:
   `probes/` after `-sV`) only, and the run record is the SQLite row.
 - **`context_json` since 2026-10-12 (u12 A-81, A-24 amended):** beside the fields above it holds
   `judging_rules` (the version of the rules that judge a stored attempt, an integer from 1 to
-  1,000,000), `tool_version` (the package that started the run, PEP 440 shaped,
+  1,000,000), `judging_digest` (the SHA-256 of the code that judges, computed from the installed
+  package, 64 hex digits), `tool_version` (the package that started the run, PEP 440 shaped,
   `VERSION_SHAPE`), `tool_versions` (every invocation's package, appended by `add_run_version` in
   an immediate transaction that a context rewrite preserves, as `mutator_orders`),
-  `evaluator_plugins` (the `dottore.evaluators` entry points the run loaded), `selection` (the
+  `evaluator_plugins` (the `dottore.evaluators` entry points whose evaluator type a selected spec
+  names, each with its distribution, version and source digest), `selection` (the
   selection flags, each string masked with the fixed identity salt; a key a later release adds is
   left alone), `spec_fields` and `target_fields` (an 8-hex digest of each field of the spec and
   target digest projections, so a refusal names the field) and `route`.
