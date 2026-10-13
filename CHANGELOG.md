@@ -82,7 +82,8 @@ versioning: [SemVer](https://semver.org/).
   package (a source checkout or an editable install; a wheel ships neither the battery nor the
   schemas), and say on stderr when they fall back (`note: there is no specs/ directory here, so
   this reads the battery beside the installed package: <path> ...`). `dottore lint` does not fall
-  back: in a pack's own repository with no `specs/` it still exits 1 (`path not found: specs`)
+  back: in a pack's own repository with no `specs/` it refuses with exit 3 (`spec path not found:
+  specs. Pass the spec path to lint ...`)
   rather than passing the built-in battery. A spec path that does not exist is `spec path not
   found: <path>. Pass --spec-path <dir>; ...` instead of `1 spec file(s) failed to load ...: ?:
   path not found: specs`.

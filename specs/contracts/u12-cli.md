@@ -1257,7 +1257,10 @@ a pass, and each of these crashed or misled after the traffic it could have refu
   on stderr when they fall back (`note: there is no specs/ directory here, so this reads the
   battery beside the installed package: <path> (pass --spec-path to read another)`). `dottore lint`
   does not fall back: falling back, it linted the built-in battery in a pack's own repository and
-  printed "lint OK ... across 75 spec(s)", exit 0, over a broken spec of the pack (MEDIUM 3). `fleet` takes
+  printed "lint OK ... across 75 spec(s)", exit 0, over a broken spec of the pack (MEDIUM 3); with
+  no path and no `specs/` here it refuses, exit 3, `error: spec path not found: specs. Pass the
+  spec path to lint (dottore lint <dir>); ...` (the rule decided for this branch and
+  `fix/cli-input-validation`, which keeps one refusal mechanism for missing spec paths). `fleet` takes
   `--spec-path`, `--evidence-root`, `--run-db` and `-oJ/-oH/-oS/-oX/-oA` with `run`'s meaning and,
   without `--run`, carries them into the `dottore run` line it prints. A spec path that does not
   exist is `error: spec path not found: <path>. Pass --spec-path <dir>; ...`, not "1 spec file(s)

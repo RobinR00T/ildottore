@@ -1141,7 +1141,16 @@ def lint(
 
     # Strict: `specs/` here or the paths given, never the packaged battery. Linting that in a
     # pack's own repository printed "lint OK ... across 75 spec(s)" over a broken spec of the
-    # pack, exit 0, where main exits 1 (pre-merge audit of e6a1ab9b, MEDIUM 3).
+    # pack, exit 0 (pre-merge audit of e6a1ab9b, MEDIUM 3). With no path and no `specs/` here
+    # it is refused as the reading commands refuse a missing spec path (exit 3).
+    if not paths and not Path("specs").is_dir():
+        typer.echo(
+            "error: spec path not found: specs. Pass the spec path to lint (dottore lint <dir>); "
+            "with none, lint reads specs/ in the working directory and never the battery beside "
+            "the installed package.",
+            err=True,
+        )
+        raise typer.Exit(ExitCode.ERROR)
     search = list(paths) if paths else [Path("specs")]
     code, output = run_lint(search, as_json=as_json)
     typer.echo(output)

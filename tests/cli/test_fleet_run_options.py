@@ -212,13 +212,17 @@ def test_lint_with_no_specs_here_does_not_lint_the_packaged_battery(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The branch linted the built-in battery and printed "lint OK ... across 75 spec(s)",
-    exit 0, in a pack repository whose own spec was broken; main exits 1 there."""
+    exit 0, in a pack repository whose own spec was broken. It is refused, exit 3, as a missing
+    spec path is (the rule decided for this branch and fix/cli-input-validation)."""
 
     monkeypatch.chdir(_pack_repo(tmp_path))
     result = CliRunner().invoke(app, ["lint"])
-    assert result.exit_code == 1, result.output
+    assert result.exit_code == 3, result.output
     assert "lint OK" not in result.output
-    assert "path not found: specs" in result.output
+    assert result.stderr.startswith("error: spec path not found: specs. Pass the spec path")
+    # An explicit path is linted as before: the pack's broken spec is a lint finding.
+    result = CliRunner().invoke(app, ["lint", "."])
+    assert result.exit_code == 1, result.output
 
 
 @pytest.mark.parametrize(
