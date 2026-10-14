@@ -187,6 +187,21 @@ it (the record left out otherwise, so every other artifact is byte for byte as b
 an attempt's status and a footer line with their count. Checked by
 `tests/cli/test_operator_declaration_campaign.py`.
 
+**A-78 (u01's clause; this unit's half, added 2026-10-11) The run store keeps one row a finding
+across the change of the identity masks.** A-78's patterns change the identity mask
+(`redact_identity`, fixed salt) of a value holding a UUID, a run of 32 hex digits, a key format or
+a JWT after `_`: a finding id (`<spec>::<target>`) of such a target was keyed under another string
+by the redactor before A-78. `_upsert_finding` writes a finding under the current mask and drops the
+row under the mask `redactor.identity_masks` gives for before A-78, when they differ, so a resume
+across the change keeps one row a finding (it kept two). The spec, target and judge digests and the
+scope digests stay unredacted, and the evidence store keeps `request.metadata.media_sha256` as
+written, as before: the hex rule reads none of them. The reports name a target by the rules
+before A-78 (u11), while the store keeps its identity mask by the current ones, which the resume
+checks read, in the run row's `target_id` and, since the round-2 audit (R2-L6), in its
+`meta_json.target_ids`, which took the store's per-process salt. Checked by `tests/store/test_identity_masks_before_a78.py` (12 tests; on `de122e26` the
+file stops at collection, which has no `identity_masks`, and 9 fail with the compatibility code
+taken out).
+
 **A-80 (u12's clause; this unit's half, added 2026-10-12) The stores open under contention, say
 which path failed, and prove themselves before a send.** `migrations.connect` returns a
 `StoreConnection`: SQLite waits 0.1 s per try, and `execute`, `executemany` and `commit` retry

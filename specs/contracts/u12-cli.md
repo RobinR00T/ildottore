@@ -1254,6 +1254,34 @@ after output, the same text without a filter word; 9 fail on `de122e26`), and by
 `test_provider_filter_campaign.py` and `test_provider_output_filter_campaign.py` whose every
 attempt was filtered, which now expect exit 3.
 
+**A-78 (u01's clause; this unit's half, added 2026-10-11) The CLI masks the key formats last, and
+refuses a credential under 8 characters before anything is sent.** `_masked` runs the late patterns
+on each stretch of the message its entropy pass reads, after that pass, and keeps what it keeps (an
+existing path, a carried digest, a spec file name) from them too: run over the whole message, as in
+the first version of this half, they masked the UUID directory of an existing evidence root, which
+`de122e26` printed as written (pre-merge audit of A-78, L5). Its two redactors run without them, so
+`x_<key>` is masked as the token the entropy pass masks and a mask of a late type written in an
+error is read as text, as before; without the UUID pattern its first redactor masks a number read
+inside a UUID as `de122e26` did, so the paths left to keep are the same, and such a UUID in an error
+shows as it did (one with no number in it is masked whole). `check_target_credential`, the
+pre-flight of the target and the judge, refuses a credential shorter than 8 characters (a
+`ValueError` with the adapters' message; not for a target the run routes to the offline mock, read
+from the file it loaded, nor for a stdio MCP target), and `check_identity_credentials` refuses one
+of a scope identity for each plan that sweeps identities, naming it, so `--dry-run`, `-sn` and
+`--estimate` exit 3 as the run would; the first version checked the sweep's identities only at the
+send, and its three pre-flight modes exited 0 for such a scope (L4). The stdio exemption asks for
+`provider: mcp` as well as `transport: stdio` (`wiring._launched_locally`): only the MCP adapter
+launches a local server, and an OpenAI target with that field passed the pre-flight and stopped at
+the send (L4). `build_real_adapter` refuses it too; the identity sweep names the identity
+(`live, identity 'second': the credential is shorter than 8 characters, ...`); and the judge raises
+the adapters' `CredentialTooShort` rather than abstain, which made every judged spec inconclusive
+and exited 0 without a word. Against a loopback stub on `de122e26` a 7-character key was sent with
+every request, a judge's too (exit 0); now each case exits 3 with nothing sent. Checked by
+`tests/cli/test_short_credential_cli.py` (17 tests, 14 fail on `de122e26` and 6 on `0b4b1f14`; the
+2 of an offline mock failed on the first version of this half, which also read the target file
+twice, breaking a piped `-t <(...)`) and `tests/cli/test_uuid_identifiers_readable.py` (4; 2 fail on
+`de122e26` and 2 on `0b4b1f14`).
+
 **A-80 A run checks its stores and its paths before it sends, and nothing but findings exits 1
 (added 2026-10-12, CLI audit of `de122e26`; the stores' half is u10, the ledger's u08).**
 Exit 1 means "findings below `--fail-on`", so a CI step that lets 1 through read a crashed scan as

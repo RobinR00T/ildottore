@@ -43,6 +43,7 @@ from ildottore.adapters.base import (
     ResponseTooLarge,
     RetryConfig,
     read_capped,
+    refuse_short_credential,
 )
 from ildottore.policy import EndpointAllowlist
 from ildottore.redactor import Redactor
@@ -151,6 +152,7 @@ class MCPAdapter:
             return self._cached
 
         self._check_allowlist()  # BEFORE any egress, unbypassable (S3).
+        refuse_short_credential(self.id, self.api_key, self.base_url)  # u04 A-78
         owns_client = self.client is None
         client = self.client or httpx.AsyncClient(timeout=self.retry.timeout_s)
         try:

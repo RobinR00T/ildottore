@@ -100,6 +100,130 @@ The carryover ledger. Every agent session updates this so context survives even 
   path inside the evidence root is not refused; `replay --run-db <directory>` warns and goes on
   without the manifest check, as before.
 
+## State, 2026-10-13 (early morning): the second pre-merge audit of A-78 (`3a9a4dfa`), fixed
+
+- Round 2 found one HIGH and six LOW. R2-H1: the record of the A-78 masks the process had written
+  (two bounded generations) was overflowed by a campaign of 3.8 MiB replies; the first turn's
+  masks were forgotten, read as text when the evidence store checked the attempt again, changed,
+  and the write was refused (`RedactionLeakError`, exit 3, where main completes). Design chosen:
+  (c), a stateless rule. A mask of an A-78 type is kept as written, as the older types are; the
+  labelled rule alone reads one as text, as main did, so `password: «REDACTED:uuid»<secret>`
+  stays masked whole (L3 closed); the redactor writes none where that rule would take it (a
+  labelled value of 32 hex letters or more is masked as a labelled secret, `_plain_word`).
+  Chosen over (a) carrying the mask spans to the store and (b) a per-attempt record because only
+  a rule without state reads the same in a resume, a report or a replay in another process
+  (R2-L3), and it removes the forgeable record (R2-L1).
+- The auditor's 3.8 MiB scan (JB-CRESCENDO-001, loopback stub): exit 0 on the branch, on main and
+  on a trial merge with `fix/no-secret-in-fragments` at `06caf3c3`. Halt and resume in two
+  processes with the random salt: 0 broken masks in the resumed reports (8 of 20 before).
+- R2-L2: the Private Use Area block scan is one pass (all 137,468 characters: 0.025 s, was 2.2 s).
+  R2-L4: unreachable branches removed (a redactor without the entropy rule uses no stand-ins),
+  the guards tested. R2-L5: the public identity salt's linkability documented (MANUAL, S6, A-78).
+  R2-L6: the run row's `target_ids` use the identity mask; stale notes corrected.
+- The merge note in the entry below is stale: `fix/no-secret-in-fragments` changed its filler
+  itself (75ca00ac), and the trial merge passes without it.
+- `make gates` green on `1e9d8329` (`PYTHONPATH` at the worktree's `src`, `TMPDIR` the system's),
+  05:38 to 05:47 CEST: 6210 tests, 97.86% coverage (main 97.84%; `redactor.py` misses 4 statements,
+  as main does), mypy 160 files, 4 import contracts kept, 75 specs lint OK, self-scan, bandit and
+  pip-audit clean.
+- Round 3 (head `59349ba8`): merge-ready. The unused `SqliteRunStore._redact_json` removed
+  (`38aacbd5`); `origin/main` at `0be0be71` (#111, #112) merged in `0621f576`, conflicts in
+  CHANGELOG, PROGRESS, u04, u11 and `adapters/base.py` resolved keeping both sides. On the merged
+  tree: `make gates` green, 21:59 to 22:07 CEST, 6397 tests, 97.91% coverage, mypy 162 files; the
+  auditor's clean-grammar differential fuzz against `0be0be71`'s redactor, 8 x 60,000 texts, 0
+  regressions and no stand-in in any output; the 3.8 MiB flood scan exit 0, no token readable (148
+  on `0be0be71`, also exit 0).
+- CI of PR #113 (Gate 12, coverage on Python 3.11): a time-bound test of the evidence keys took
+  16.4 s against 15 s; a short text cost 1.7 times main's. A prefilter skips the late patterns and
+  the stand-ins where a text holds nothing they need (`d38580d2`, byte-identical output on 240,000
+  fuzz texts; 24,000 keys 0.74 s against main's 0.67 s, 1.12 s before), and that test and the
+  glued-UUID one assert the ratio of two sizes under 8 with a 120 s hang ceiling (`39fcf6f1`;
+  ratio 4.0 plain and under both of coverage's tracers, 2.5 s under the C tracer). Fuzz against
+  `de122e26`: clean 8 x 60,000 0, mixed 4 x 40,000 the same 52; against `0be0be71` clean 0.
+  `make gates` green on `5fb69556`, 23:09 to 23:16 CEST: 6397 tests, 97.91% coverage.
+
+## State, 2026-10-12 (morning): the pre-merge audit of A-78 (`0b4b1f14`), fixed
+
+- The audit found the branch NOT READY: H1, H2, M1, M2 and L1 to L5. Fixed on
+  `fix/redactor-key-formats`, one commit a finding, no amend; u01 A-78 revised in place, with its
+  halves in u04, u10, u11 and u12 and the index row; no new clause or OD.
+- H2, M1, L1: a number the card or phone rule reads inside a UUID is written in same-length
+  stand-ins from a free block of the Private Use Area (`redactor._Cuts`), which every later rule
+  reads as main's mask; the entropy rule judges main's pieces once each (`_cut_spans`), the late
+  patterns read the stand-ins back, and a stand-in no mask took becomes main's number mask. Glued
+  digit UUIDs: 160 KB 32.80 s on `0b4b1f14`, 0.11 s now (main 0.08 s); 4 MB 2.79 s (main 2.12 s).
+  A value glued between two cut UUIDs: 157 of 200,000 tokens readable on `0b4b1f14`, 0 now.
+- L2: the URL rule as written tells a URL its rule read with every mask one neutral character
+  (`_AsWritten.in_view`). L3: a mask of the nine A-78 types is kept only when this process wrote it
+  (`_LATE_MASK_TYPES`, `_EMITTED`). H1: reports name the target by the rules before A-78 with the
+  identity salt (`redactor.report_identity`); a baseline written by `de122e26` diffs against a run
+  of the branch (exit 0). L4: the pre-flight checks the sweep identities' credentials
+  (`check_identity_credentials`), and the stdio exemption needs `provider: mcp`. L5: the CLI runs the
+  late patterns only on what it does not keep, and the model-name twin drops the UUID pattern.
+- M2: the docs, the PR body and A-78 now say what the reruns show: no regression against main in
+  any text without U+0000 or U+0001 (the auditor's fuzzers and the author's, 1,100,000 and
+  1,500,000 texts), 19 in texts holding one (the `redact_text` retry, pre-existing); `diff --json`
+  does not exist; the two test files that stop at collection on `de122e26` are said to (the
+  adapter one: 19 of 39 fail with stand-ins for its two imports; the store one: 9 of 12 with the
+  compatibility code taken out, not 3).
+- Merge note for `fix/no-secret-in-fragments`: its
+  `tests/core/test_judge_note_redaction.py::test_a_cut_moves_before_a_token_rather_than_through_it`
+  needs `reasoning = "q" * (_JUDGE_NOTE_CHARS - 10) + " ZYNAP_CANARY_run-4c397602a2e0 end"`
+  (`"a"` is a hex digit, masked as `hex_token` here); checked on the auditor's union-merged tree.
+- Open, for the owner: the `redact_text` retry with U+0000/U+0001; a UUID in a CLI error that the
+  number rules read a number in is masked as before A-78; a mask of an A-78 type written by another
+  process is read as text (a URL user one gets a `url_password` mask on its tail in a later report).
+- Tests: 6196 (61 more than `0b4b1f14`); new files `test_redactor_number_cuts.py` (14),
+  `test_redactor_url_read_check.py` (4), `test_redactor_own_late_masks.py` (26),
+  `cli/test_report_target_id.py` (5), `cli/test_uuid_identifiers_readable.py` (4). `make gates`
+  green on `fe6b4672` (`PYTHONPATH` at the worktree's `src`, `TMPDIR` the system's): 6196 tests,
+  97.63% coverage, mypy 160 files, 4 import contracts kept, 75 specs lint OK, self-scan, bandit
+  and pip-audit clean.
+
+## State, 2026-10-12 (night): key formats, hex runs and UUIDs masked whatever their entropy; short credentials refused everywhere (u01 A-78)
+
+- Fixes MEDIUM 4 and LOW 6 of the pre-merge security audit of 2026-10-11, on
+  `fix/redactor-key-formats` from `de122e26`. New clause u01 A-78, with halves in u04, u10, u11
+  and u12 and the index row.
+- MEDIUM 4: the documented key formats of 11 providers (OpenAI, Anthropic, GitHub, GitLab, AWS,
+  Google, Hugging Face, Slack, Stripe, npm, PyPI), a JWT after `_` and the UUID shape are late
+  patterns (`redactor._late_patterns`, each sourced), started with `(?<![A-Za-z0-9])`, hashed,
+  run after the labelled rule, the entropy rule and the URL rule as written, so they only add
+  masks; a run of 32 hex digits or more is the entropy rule's (`hex_token`); a token masked whole
+  is typed by the format it holds; the number rules leave a UUID whole (`_number_mask`) and the
+  entropy rule masks with it the pieces it would have masked (`_uuid_spans`). A first version
+  ran them as ordinary patterns and the differential fuzz against main showed text main masks in
+  5,120 of 20,000 texts: it was redesigned before any review.
+- Figures, auditor's generators: 32-hex 74.7% to 0%, 40-hex 47.5% to 0%, 64-hex 5.5% to 0%, UUID
+  v4 46.8% to 0%; every prefix 0 of 200 after `_`, `=` and `-` padding. Differential fuzz, five
+  draws of 300,000 texts: 2 texts show 8 characters of a planted secret main hides and 24 a
+  stretch of glue, all holding U+0000 or U+0001 (the `redact_text` retry, pre-existing, flipped
+  more often); none without.
+- The tool's own values: the hex rule belongs to the entropy rule, so the CLI's carried digests,
+  evidence names, existing paths and model names keep out of it; the reports now restore
+  `media_sha256` (main masked 24 of 28) and each evidence reference's attempt id. A full offline
+  run of the battery with the salt and run id pinned writes every output byte for byte as main
+  but those 24 digests; no tool-own value masked anywhere.
+- A run halted before A-78 resumes against its own target (`redactor.identity_masks`), and the
+  store keeps one row a finding.
+- LOW 6: `refuse_short_credential` (`CredentialTooShort`, the WebSocket adapter's message) in
+  every adapter, `build_real_adapter`, the identity sweep and the pre-flight (`--dry-run`, `-sn`,
+  `--estimate` exit 3); the judge raises it; an offline mock and a stdio MCP server are not
+  checked.
+- Open, for the owner: the `redact_text` retry with U+0000/U+0001 (masks depend on whether
+  anything else in the text is masked, on main too); a key glued to a letter or a digit stays the
+  entropy rule's; the `secret_shape` evaluator still detects only `sk-`, `gh*_`, `AKIA`, `xox`,
+  JWT and PEM; a credential written as an endpoint URL's user is not registered.
+- Tests: `tests/test_redactor_key_formats.py` (589, 415 fail on `de122e26`),
+  `tests/reporting/test_own_values_readable.py` (9, 2), `tests/store/test_identity_masks_before_a78.py`
+  (12, 3 without the compatibility code), `tests/adapters/test_short_credentials.py` (39, 19),
+  `tests/cli/test_short_credential_cli.py` (10, 7). `make gates` green on `09b1b0a2` (with `PYTHONPATH` set to the worktree's `src`): 6135 tests (5476 on `main` at `de122e26`, 659 new), 97.83% coverage (`redactor.py` 99%), 75 specs lint OK, four import contracts kept, self-scan, bandit and pip-audit clean.
+- Corrected by the pre-merge audit of `0b4b1f14` (the entry above): "they only add masks" and
+  "none without U+0000/U+0001" did not hold (a value between two cut UUIDs, a line joined by a
+  phone mask, a URL password behind a mask's `:`, a target-written mask of a new type), the
+  identity masks file fails 9 of 12 without the compatibility code, not 3, and it and the adapter
+  file stop at collection on `de122e26`; `diff --json` is no option.
+
 ## State, 2026-10-12 (morning): the pre-merge audit of `d07a1088`, fixed
 
 - On `fix/scoring-audit-2026-10-11`: the independent pre-merge audit of `d07a1088` closed the
