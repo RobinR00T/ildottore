@@ -196,3 +196,37 @@ def test_registry_ls_and_coverage_of_the_shipped_pack_are_unchanged() -> None:
         == 0
     )
     assert runner.invoke(app, ["coverage", specs]).exit_code == 0
+
+
+@pytest.mark.parametrize(
+    ("args", "how", "who"),
+    [
+        (["registry", "ls"], "--spec-path <dir>", "registry ls"),
+        (["describe", "PI-DIRECT-001"], "--spec-path <dir>", "describe"),
+        (["coverage"], "the spec path to coverage (dottore coverage <dir>)", "coverage"),
+    ],
+    ids=["registry", "describe", "coverage"],
+)
+def test_a_default_spec_path_that_is_not_there_says_how_to_pass_one(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, args: list[str], how: str, who: str
+) -> None:
+    """No spec path given, no `specs/` here and no battery beside the package: the refusal is the
+    one `run` gives (u12 A-80's wording, one mechanism since the merge of A-80 and A-82), with
+    each command's own way to pass a path; one given that does not exist keeps A-82's."""
+
+    from ildottore.cli import wiring
+
+    monkeypatch.setattr(wiring, "PACKAGED_SPEC_PATH", tmp_path / "no-battery")
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, args)
+    assert result.exit_code == 3, result.output
+    assert (
+        f"error: spec path not found: specs. Pass {how}; without it {who} reads specs/ in the "
+        "working directory, else the battery beside the installed package when that is a source "
+        "checkout."
+    ) in result.output
+    given = ["coverage", "nope"] if args == ["coverage"] else [*args, "--spec-path", "nope"]
+    result = runner.invoke(app, given)
+    assert result.exit_code == 3, result.output
+    assert "error: a spec path gives nothing to " in result.output
+    assert "path not found: nope" in result.output
