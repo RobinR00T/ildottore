@@ -3,6 +3,32 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-14 (morning): merged with main `030b79e0` (#111, #112, #113)
+
+- `git merge --no-ff origin/main` (`f91bf617`), resolved as `scratch/fixfrag/MERGE-PLAN.md`
+  plans: the runner keeps main's `_failed_on_trace`, send numbers and "cite anew" with
+  `self._stored` (the withheld path) in place of `self._evidence.put`, `store_withholding` beside
+  them, this branch's `_one_line` and `_clipped`, and main's note on an identity left out of the
+  sweep wrapped in `_clipped` (a test in `tests/core/test_multi_identity.py` fails without it:
+  1,030 characters against 240); the adapters, the redactor and the report masking take both
+  sides' names; docs keep both, this branch's on top.
+- Checks on the merged tree: the withheld e2e test passes; `fuzz_rejoin.py` 3 x 1000 0 refusals
+  and 0 recoverable; `force_refusal.py` 3 x 1500 and `late_fuzz.py` 2 x 1500 stored every case;
+  `sse_variants.py` 2 / 1 rebuilt, `sse_min.py` 0 of 5; `window_attacks.py` 36 of 36 clean;
+  against main `030b79e0` `reach.py` 0 of 15 more (3 fewer), `kept_fields.py` 0 of 96,
+  `context_loss.py` 0 of 17 more (5 fewer). The fixkeys auditor's clean-grammar differential
+  fuzz with `030b79e0` as the baseline: 4 x 60,000 texts and 60,000 each without the entropy
+  rule, with registered credentials and through `redact_identity`, 0 regressions and 0 outputs
+  that differ. Cut into pieces of 1 to 4 characters, as logprob tokens and as WebSocket deltas
+  (120,000 texts), the joined pieces leave readable nothing `030b79e0` masks in the whole text:
+  188 flagged by the plain checker are cases where they show less (a literal between two merged
+  masks dropped, or a mask merged with its neighbour), and no masked token keeps its `bytes`.
+- Tests: 6514 on the merged tree, 6397 on `030b79e0` (117 new). `make gates` green on `f91bf617`
+  (`PYTHONPATH` set to the worktree's `src` and root, `TMPDIR` at the system default, nothing under
+  `/tmp`): ruff and format clean (441 files), mypy strict (163), four import contracts kept, 75
+  specs lint OK, 6514 tests, 97.92% coverage, self-scan 0 high or critical, bandit and pip-audit
+  clean.
+
 ## State, 2026-10-13 (near midnight): the sixth pre-merge audit, of `31cf86bf` (A-77), fixed
 
 - `_main_reach` confirmed (`_quoted` AST-identical to `main`'s `reply_excerpt` tail; reach 0 of 15,
