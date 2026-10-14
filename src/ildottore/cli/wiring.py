@@ -218,6 +218,29 @@ def build_registry(spec_paths: list[Path]) -> Registry:
     return load_registry(spec_paths)[0]
 
 
+#: The battery of a source checkout or an editable install, ``<repo>/specs``, found from the
+#: package itself (``<repo>/src/ildottore/cli/wiring.py``), as ``registry.schema`` finds
+#: ``<repo>/schemas``. A wheel built from this repository ships neither.
+PACKAGED_SPEC_PATH = Path(__file__).resolve().parents[3] / "specs"
+
+
+def default_spec_paths() -> list[Path]:
+    """Where every command reads specs when it is given no spec path (u12 A-80).
+
+    ``specs/`` in the working directory when it is a directory (the repository root, or a
+    project that keeps its own pack there, as before), else the battery beside the installed
+    package, else ``specs/`` (whose absence the commands report). ``fleet --run`` had no
+    ``--spec-path`` and read ``specs/`` only, so it worked from the repository root only.
+    """
+
+    local = Path("specs")
+    if local.is_dir():
+        return [local]
+    if PACKAGED_SPEC_PATH.is_dir():
+        return [PACKAGED_SPEC_PATH]
+    return [local]
+
+
 def load_registry(spec_paths: list[Path]) -> tuple[Registry, list[LintError]]:
     """:func:`build_registry`, plus the load-time findings it would otherwise drop.
 
@@ -225,8 +248,22 @@ def load_registry(spec_paths: list[Path]) -> tuple[Registry, list[LintError]]:
     no numerator, so it has to be reported rather than quietly subtracted.
     """
 
+    registry, errors, _ = load_registry_reading(spec_paths)
+    return registry, errors
+
+
+def load_registry_reading(
+    spec_paths: list[Path],
+) -> tuple[Registry, list[LintError], list[Path]]:
+    """:func:`load_registry`, plus every file the load read (u12 A-80).
+
+    Each ``pack.yaml``, spec and suite file and each media asset a spec inlined: what a run's
+    report may not overwrite. A file under a spec path the loader does not read (a report an
+    earlier run wrote there) is not one of them.
+    """
+
     result = load_paths(spec_paths)
-    return Registry.from_packs(result.packs), list(result.errors)
+    return Registry.from_packs(result.packs), list(result.errors), list(result.files)
 
 
 # --- policy / scope ----------------------------------------------------------------

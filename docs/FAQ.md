@@ -156,6 +156,32 @@ In the SARIF you upload to code scanning, a fail that needs review is at most a 
 2026-10-11), so code scanning, which by default fails a pull request's check on an `error`, does
 not fail one that `--fail-on` lets through; a confirmed fail keeps its band's level.
 
+`1` means findings below the band and nothing else. Until 2026-10-12 a crash (a run store that
+could not be opened, a lock, any exception no command handled) was a traceback with exit `1`, so
+a gate that lets `1` through read it as an almost clean scan. It is exit `3` now, with one line
+(`error: unexpected <Class>: ...` for an internal error; `dottore -v <command>` prints its
+traceback). A gate should still fail on anything above `1` it does not expect.
+
+### Can several runs share one `--run-db`?
+
+Yes, a new one included: a write waits up to 30 s for a lock another process holds (Ctrl-C stops
+the wait at once, and a wait past a second is said on stderr), and runs creating the store
+together set it up once. Until 2026-10-12 some of the runs started together on a new store died
+with `database is locked` and exit 1 (1 and 2 of 18 in two measurements, 5 of 6 in the audit
+that found it). A store path that cannot be one (a directory, a file that is not SQLite) is
+refused with exit `3` before anything is sent, `replay --run-db` included, as is an
+`--evidence-root` that is a regular file; `--dry-run` and `--estimate` say so too, writing
+nothing.
+
+### Why did `--budget-requests` not let my campaign finish past 20,000 attempts?
+
+Before 2026-10-12 the attempts ceiling was derived on its own and capped at 20,000, and no flag
+raised it: `--runs 200 --budget-requests 60000 --budget-tokens 30000000 --budget-wall 7200` over
+the battery halted on `max_attempts` with requests to spare. The
+attempts ceiling is the request ceiling now (an attempt is at least one request, and it counts
+only once its first request is accepted), so `--budget-requests` raises both. `--estimate` prints
+the ceilings a run will have.
+
 ### What is "confirmed" vs "needs-review"?
 
 Risk and confidence are separate. Every report puts a finding in one of four states:
@@ -461,7 +487,9 @@ off.
 ### Where does evidence live, and is it safe to keep?
 
 Under `.dottore/` (evidence store + run SQLite) by default; override with `--evidence-root`
-and `--run-db`. Secrets and PII are redacted at rest. Do not commit `.dottore/`.
+and `--run-db` (`dottore fleet --run` takes both too). Secrets and PII are redacted at rest. Do not
+commit `.dottore/`. A report (`-oJ` and the others) is never written over the scope, a target, the
+judge, the fleet file, the run store or a spec file: such a path is refused before the run sends.
 
 ### Why does a report show `«REDACTED:uuid:…»` or `«REDACTED:hex_token:…»` for an id my target returned?
 

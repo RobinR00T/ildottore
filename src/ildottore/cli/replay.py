@@ -22,6 +22,7 @@ from ildottore.shared.provider_filter import (
 )
 from ildottore.shared.unreadable import unreadable_reply
 from ildottore.store import ReplayResult, SqliteRunStore, check_manifest, replay_run
+from ildottore.store.run_sqlite import check_store_path
 
 __all__ = ["render_replay", "replay", "replay_checked"]
 
@@ -47,6 +48,11 @@ def replay_checked(
     same tampered run exited 3 with its store and 0 without it (review of PR #32).
     """
 
+    if run_db is not None:
+        # A directory, a file that is not SQLite, or a path under a regular file, refused as
+        # `run` refuses it: a directory read as "no run store" and replayed without the
+        # manifest check (pre-merge audit of e6a1ab9b, LOW 7). A missing file is the warning.
+        check_store_path(run_db)
     result = replay_run(evidence_root, run_id)
     warning: str | None = None
     if run_db is None or not run_db.is_file():

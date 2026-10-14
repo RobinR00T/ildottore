@@ -30,6 +30,54 @@ class RedactionLeakError(RuntimeError):
     """A raw secret/PII shape survived redaction - the write is refused (DL2)."""
 
 
+class EvidenceStoreError(OSError):
+    """The evidence root cannot take a run's artifacts; the message names the root (u10 A-80)."""
+
+
+def check_root_path(root: Path) -> None:
+    """Refuse, writing nothing, an evidence root that cannot hold a directory (u10 A-80).
+
+    For the commands that promise to write nothing: a root that is a regular file, or lies
+    under one, is refused there too. The run itself proves the root with :func:`prepare_run`.
+    """
+
+    root = Path(root)
+    if root.exists():
+        if not root.is_dir():
+            raise EvidenceStoreError(f"cannot write evidence under {root}: it is not a directory")
+        return
+    ancestor = paths.nearest_existing(root.parent)
+    if ancestor is not None and not ancestor.is_dir():
+        raise EvidenceStoreError(
+            f"cannot write evidence under {root}: {ancestor} is not a directory"
+        )
+
+
+def prepare_run(root: Path, run_id: str, *, probes: bool = False) -> None:
+    """Create ``<root>/<run_id>/attempts`` (and ``probes``) and prove a file can be written there.
+
+    Called before a run sends anything. A root that was a regular file used to be found by the
+    first attempt's write, after the batch it belonged to was paid for (125 requests, then
+    ``NotADirectoryError``, nothing stored, and the requests counted against the resume's
+    ceiling). The proof is a temporary file created and removed in each directory, the way every
+    artifact is written (``_atomic_write``); the reader lists ``*.json`` only.
+    """
+
+    directories = [paths.attempts_dir(root, run_id)]
+    if probes:
+        directories.append(paths.probes_dir(root, run_id))
+    for directory in directories:
+        try:
+            directory.mkdir(parents=True, exist_ok=True)
+            descriptor, name = tempfile.mkstemp(
+                dir=directory, prefix=".write-check-", suffix=".tmp"
+            )
+            os.close(descriptor)
+            os.unlink(name)
+        except OSError as exc:
+            raise EvidenceStoreError(f"cannot write evidence under {root}: {exc}") from exc
+
+
 def _strip_media_carrier_bytes(obj: object) -> None:
     """Elide multimodal carrier bytes anywhere in the dumped attempt (in place, recursive).
 

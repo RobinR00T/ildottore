@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import re
+import sqlite3
 from pathlib import Path
 from types import TracebackType
 from typing import Any
@@ -21,7 +22,7 @@ from typing import Any
 from ildottore.redactor import Redactor, identity_masks, redact_evidence_ref, redact_identity
 from ildottore.shared.amounts import is_amount
 from ildottore.shared.models import Finding, TestRun
-from ildottore.store import migrations
+from ildottore.store import migrations, paths
 
 
 def finding_id_of(finding: Finding) -> str:
@@ -34,14 +35,77 @@ def finding_id_of(finding: Finding) -> str:
     return f"{finding.spec_id}::{finding.target_id}"
 
 
+class RunStoreError(OSError):
+    """The run store could not be opened, or failed while open; the message names its path.
+
+    An ``OSError``, so every CLI handler that maps an I/O failure to exit 3 maps this one too: a
+    bare ``sqlite3`` error reached the terminal as a traceback with exit 1, which this tool uses
+    for "findings below --fail-on" (u10 A-80).
+    """
+
+
+#: The first 16 bytes of every SQLite database file.
+_SQLITE_HEADER = b"SQLite format 3\x00"
+
+
+def check_store_path(db_path: Path) -> None:
+    """Refuse, writing nothing, a path that cannot hold a run store (u10 A-80).
+
+    For the commands that promise to write nothing (``--dry-run``, ``--estimate``, ``-sn``),
+    which used to say nothing about a ``--run-db`` naming a directory or another kind of file:
+    the run then failed on it. A missing file is fine (the run creates it), an empty one is a
+    new store, and anything else must start with SQLite's header. Opening it is the real test,
+    which a run makes before it sends anything.
+    """
+
+    path = Path(db_path)
+    if str(path) == ":memory:":
+        return
+    if path.is_dir():
+        raise RunStoreError(f"cannot open the run store at {path}: it is a directory, not a file")
+    if path.exists():
+        try:
+            with path.open("rb") as handle:
+                head = handle.read(len(_SQLITE_HEADER))
+        except OSError as exc:
+            raise RunStoreError(f"cannot open the run store at {path}: {exc}") from exc
+        if head and head != _SQLITE_HEADER:
+            raise RunStoreError(f"cannot open the run store at {path}: file is not a database")
+        return
+    ancestor = paths.nearest_existing(path.parent)
+    if ancestor is not None and not ancestor.is_dir():
+        raise RunStoreError(f"cannot open the run store at {path}: {ancestor} is not a directory")
+
+
+def _open_reason(db_path: Path, exc: BaseException) -> str:
+    """Why ``db_path`` could not be opened, in the words an operator acts on."""
+
+    if db_path.is_dir():
+        return "it is a directory, not a file"
+    if isinstance(exc, migrations.StoreLocked):
+        return exc.reason  # the message names the store already
+    return str(exc)
+
+
 class SqliteRunStore:
     """RunStore over a single SQLite file; opened/migrated on construction."""
 
     def __init__(self, db_path: Path, *, redactor: Redactor | None = None) -> None:
         self._db_path = Path(db_path)
         self._redactor = redactor if redactor is not None else Redactor()
-        self._conn = migrations.connect(self._db_path)
-        migrations.migrate(self._conn)
+        try:
+            self._conn = migrations.connect(self._db_path)
+        except (sqlite3.Error, OSError) as exc:
+            raise RunStoreError(
+                f"cannot open the run store at {self._db_path}: {_open_reason(self._db_path, exc)}"
+            ) from exc
+        try:
+            migrations.migrate(self._conn)
+        except (sqlite3.Error, OSError) as exc:
+            self._conn.close()
+            raise RunStoreError(
+                f"cannot open the run store at {self._db_path}: {_open_reason(self._db_path, exc)}"
+            ) from exc
 
     # --- lifecycle -----------------------------------------------------------
 
@@ -58,6 +122,14 @@ class SqliteRunStore:
         tb: TracebackType | None,
     ) -> None:
         self.close()
+        if isinstance(exc, migrations.StoreLocked):
+            # It names the store itself: said twice, it read "the run store at X failed: the run
+            # store at X stayed locked ..." (round-2 audit of f51a7d07, LOW 3).
+            raise RunStoreError(str(exc)) from exc
+        if isinstance(exc, sqlite3.Error):
+            # Named, so a disk that filled up says which store failed, and reaches the CLI as
+            # the I/O error it is (exit 3, u10 A-80).
+            raise RunStoreError(f"the run store at {self._db_path} failed: {exc}") from exc
 
     # --- writes --------------------------------------------------------------
 
