@@ -18,7 +18,7 @@ from pathlib import Path
 from types import TracebackType
 from typing import Any
 
-from ildottore.redactor import Redactor, redact_evidence_ref, redact_identity
+from ildottore.redactor import Redactor, identity_masks, redact_evidence_ref, redact_identity
 from ildottore.shared.amounts import is_amount
 from ildottore.shared.models import Finding, TestRun
 from ildottore.store import migrations
@@ -66,11 +66,17 @@ class SqliteRunStore:
 
         target_id = run.targets[0].id if run.targets else None
         status = _dominant_status(run)
-        meta = self._redact_json(
+        # The target ids with the fixed identity salt, as the `target_id` column: with this
+        # store's salt they took another mask in every run once A-78 masked a UUID (round-2 audit
+        # of A-78, R2-L6).
+        meta = json.dumps(
             {
-                "summary": run.summary.model_dump(mode="json"),
-                "target_ids": [t.id for t in run.targets],
-            }
+                "summary": self._redactor.redact(run.summary.model_dump(mode="json")),
+                "target_ids": [redact_identity(t.id) for t in run.targets],
+            },
+            sort_keys=True,
+            ensure_ascii=False,
+            separators=(",", ":"),
         )
         with self._conn:
             self._conn.execute(
@@ -133,7 +139,14 @@ class SqliteRunStore:
         # like any other stored identifier (DL2), with the FIXED identity salt: the general
         # redactor's salt is random per process, and a resume in a new process must hit the
         # same row on conflict or it would duplicate every finding.
-        finding_id = redact_identity(finding_id_of(f))
+        finding_id, *before = identity_masks(finding_id_of(f))
+        # A row a run halted before u01 A-78 keyed under the identity mask of then: the finding is
+        # written again below under the current one, so the old row goes, or a resume across the
+        # change kept two rows for one finding.
+        for old in before:
+            self._conn.execute(
+                "DELETE FROM findings WHERE run_id = ? AND finding_id = ?", (run_id, old)
+            )
         self._conn.execute(
             """
             INSERT INTO findings
@@ -551,10 +564,6 @@ class SqliteRunStore:
         if value is None:
             return None
         return self._redactor.redact_text(value)
-
-    def _redact_json(self, obj: object) -> str:
-        redacted = self._redactor.redact(obj)
-        return json.dumps(redacted, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
 
 
 _SHA256 = re.compile(r"[0-9a-f]{64}")

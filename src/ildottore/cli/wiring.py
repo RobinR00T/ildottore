@@ -42,6 +42,7 @@ from ildottore.adapters import (
 )
 from ildottore.adapters.anthropic import sent_sampling as anthropic_sent_sampling
 from ildottore.adapters.anthropic import takes_no_sampling
+from ildottore.adapters.base import CredentialTooShort, refuse_short_credential
 from ildottore.adapters.comprehending import ComprehendingMock
 from ildottore.adapters.mock import MockScenario, MockTarget, bare_scenario
 from ildottore.adapters.openai import sent_sampling as openai_sent_sampling
@@ -98,6 +99,11 @@ from ildottore.shared.config_errors import (
 from ildottore.shared.digits import described, too_long
 from ildottore.shared.enums import Category, TargetType
 from ildottore.shared.files import read_text_capped
+from ildottore.shared.filter_stops import (
+    documented_stops,
+    own_filter_stops_of,
+    target_filter_stops,
+)
 from ildottore.shared.models import (
     AttackSpec,
     Attempt,
@@ -315,14 +321,23 @@ def build_reporter(
     specs: dict[str, AttackSpec] | None = None,
     planned_specs: int | None = None,
     run_status: RunStatus | None = None,
+    include_needs_review: bool = False,
 ) -> Reporter:
     """Instantiate the u11 reporter for ``fmt`` (json|html|sarif|junit).
 
     ``planned_specs``/``run_status`` let a report state what the run intended and whether it
     finished, instead of presenting a budget-truncated campaign as a complete one.
+    ``include_needs_review`` is the run's flag: with it, a SARIF fail that needs review keeps
+    its band's level, as it trips ``--fail-on``.
     """
 
-    return get_reporter(fmt, specs=specs, planned_specs=planned_specs, run_status=run_status)
+    return get_reporter(
+        fmt,
+        specs=specs,
+        planned_specs=planned_specs,
+        run_status=run_status,
+        include_needs_review=include_needs_review,
+    )
 
 
 # --- fingerprint -------------------------------------------------------------------
@@ -771,6 +786,7 @@ def build_real_adapter(
             )
         # MCP posts JSON-RPC to the endpoint PATH itself (e.g. /mcp), so the adapter keeps the
         # full URL as base_url (unlike openai/anthropic, whose path is a fixed _endpoint_path).
+        refuse_short_credential(target.id, api_key, target.endpoint)
         return MCPAdapter(
             id=target.id,
             base_url=target.endpoint or origin,
@@ -779,6 +795,9 @@ def build_real_adapter(
             model=target.model,
             **extra,
         )
+    # Refused before anything is built, so a run sends nothing to the target when the judge's is
+    # the short one (u04 A-78); each adapter refuses it again before its own first request.
+    refuse_short_credential(target.id, api_key, target.endpoint)
     if provider == "websocket":
         if target.websocket is None:  # load_target refuses the file; a hand-built Target
             raise ValueError(
@@ -812,6 +831,7 @@ def build_real_adapter(
             **extra,
             path_override=declared_path,
             sampling_enabled=takes,
+            declared_filter_stops=_declared_filter_stops(target),
         )
     if provider == "anthropic":
         return AnthropicAdapter(
@@ -823,6 +843,7 @@ def build_real_adapter(
             **extra,
             path_override=declared_path,
             sampling_enabled=takes,
+            declared_filter_stops=_declared_filter_stops(target),
         )
     template = RestTemplate(path=parts.path or "/")
     return RestAdapter(
@@ -837,6 +858,36 @@ def build_real_adapter(
         advice=REST_TARGET_FILE_ADVICE,
         **extra,
     )
+
+
+def _declared_filter_stops(target: Target) -> frozenset[str] | None:
+    """The target file's ``filter_stops`` as the adapter reads them, or ``None`` (u04 A-79)."""
+
+    return None if target.filter_stops is None else documented_stops(target.filter_stops)
+
+
+def _filter_stops(path: Path, raw: object, provider: object) -> list[str] | None:
+    """A target file's ``filter_stops``, checked (u04 A-79; pre-merge audit of ``a55710e9``).
+
+    For an ``openai`` or ``anthropic`` target only, and only the provider's own words: ``[]``
+    switches the provider's filter reading off, on a reply with text or a tool call and on
+    Azure's 400, for an endpoint that speaks its API and has no such filter behind it (a local
+    server); an empty reply on the provider's own word is still its filter's (pre-merge audit of
+    ``10cb526b``, MEDIUM). Refused anywhere else: a WebSocket target declares its stops under
+    ``websocket.response.filter_stops``, and a REST target file reads none. The rule is
+    ``shared.filter_stops.target_filter_stops``, which the ``Target`` model applies too; here it
+    is read first, so the refusal names the file and the field, never a value (A-53).
+    """
+
+    if raw is None:
+        return None
+    try:
+        own_filter_stops_of(provider)
+        if not (isinstance(raw, list) and all(isinstance(stop, str) for stop in raw)):
+            raise ValueError("'filter_stops' must be a list of stop reasons")
+        return sorted(target_filter_stops(provider, raw))
+    except ValueError as exc:
+        raise ValueError(f"target file {path} {exc}") from exc
 
 
 #: What a target file's ``provider: rest`` target is told to check when no reply can be read.
@@ -875,7 +926,7 @@ def _authorized_api_key(scope: Scope, target: Target) -> str | None:
     return resolve_auth_ref(target.auth_ref)
 
 
-def check_target_credential(scope: Scope, target: Target) -> None:
+def check_target_credential(scope: Scope, target: Target, *, sends: bool = True) -> None:
     """Assert the scope authorized ``target``'s ``auth_ref`` (raises ``ValueError`` if not).
 
     The same check :func:`real_adapter_factory` performs, exposed so a command can run it as
@@ -884,7 +935,51 @@ def check_target_credential(scope: Scope, target: Target) -> None:
     dead in the other.
     """
 
-    _authorized_api_key(scope, target)
+    api_key = _authorized_api_key(scope, target)
+    # A credential the redactor could not mask by value is refused here too, so `--dry-run`, `-sn`
+    # and `--estimate` answer what the run would (u04 A-78); a stdio MCP server and an offline
+    # mock (``sends`` false) are sent no key.
+    if sends and not _launched_locally(target):
+        try:
+            refuse_short_credential(target.id, api_key, target.endpoint)
+        except CredentialTooShort as exc:
+            raise ValueError(str(exc)) from None
+
+
+def check_identity_credentials(scope: Scope, target: Target) -> None:
+    """Refuse, pre-flight, a scope identity's credential the identity sweep would refuse.
+
+    The sweep sends a spec once as each scope identity of a live target, with that identity's
+    own credential (:func:`build_identity_probes`), which refuses one shorter than
+    ``MIN_CREDENTIAL_LEN`` (u04 A-78). `--dry-run`, `-sn` and `--estimate` checked only the
+    target's and the judge's credentials, so they exited 0 for a scope whose run then stopped
+    at exit 3 (pre-merge audit of A-78, L4). Raises ``ValueError`` with the run's message.
+    """
+
+    scope_target = scope.target(target.id)
+    if scope_target is None or len(scope_target.identities) < 2 or _launched_locally(target):
+        return
+    for ident in scope_target.identities:
+        try:
+            refuse_short_credential(
+                f"{target.id}, identity {quoted(ident.name)}",
+                resolve_auth_ref(ident.auth_ref),
+                target.endpoint,
+            )
+        except CredentialTooShort as exc:
+            raise ValueError(str(exc)) from None
+
+
+def _launched_locally(target: Target) -> bool:
+    """True for a stdio MCP target: a local subprocess, sent no key.
+
+    Only the MCP adapter honours ``transport: stdio``; any other provider sends its key over
+    the wire whatever the field says, so its credential is checked (pre-merge audit of A-78, L4).
+    """
+
+    return (target.provider or "").strip().lower() == "mcp" and (
+        target.transport or ""
+    ).strip().lower() == "stdio"
 
 
 @dataclass
@@ -1318,10 +1413,15 @@ def build_identity_probes(scope: Scope, target: Target) -> list[IdentityProbe]:
     commands = tuple(scope_target.commands)
     probes: list[IdentityProbe] = []
     for ident in scope_target.identities:
+        api_key = resolve_auth_ref(ident.auth_ref)
+        if not _launched_locally(target):
+            # Named with its identity: the target's own id alone did not say whose key it was.
+            identity = f"{target.id}, identity {quoted(ident.name)}"
+            refuse_short_credential(identity, api_key, target.endpoint)  # u04 A-78
         adapter = build_real_adapter(
             target,
             allowlist,
-            api_key=resolve_auth_ref(ident.auth_ref),
+            api_key=api_key,
             authorized_commands=commands,
             retry=NO_ADAPTER_RETRIES,
         )
@@ -1592,6 +1692,7 @@ def _target_from(path: Path, raw: dict[str, Any]) -> Target:
         command=command,
         seeded_setup=seeded,
         websocket=websocket,
+        filter_stops=_filter_stops(path, raw.get("filter_stops"), provider),
     )
 
 

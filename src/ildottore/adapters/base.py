@@ -37,11 +37,13 @@ from abc import ABC, abstractmethod
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, ClassVar, Final, cast
+from urllib.parse import unquote, urlsplit
 
 import httpx
 
 from ildottore.policy import EndpointAllowlist
 from ildottore.redactor import (
+    KNOWN_SECRET_MIN_LEN,
     TRANSCRIPT_FRAMES,
     TRANSCRIPT_PROTOCOL_PATHS,
     Redactor,
@@ -49,6 +51,7 @@ from ildottore.redactor import (
     redact_split,
     registered_secrets,
 )
+from ildottore.shared.filter_stops import NO_FILTER_STOPS, OPENAI_FILTER_STOPS
 from ildottore.shared.logprobs import readable_logprob
 from ildottore.shared.models import (
     Capabilities,
@@ -57,19 +60,21 @@ from ildottore.shared.models import (
     TokenLogprob,
 )
 from ildottore.shared.nesting import NestedTooDeeply, bounded_loads
-from ildottore.shared.provider_filter import INPUT_FILTER_REFUSED
+from ildottore.shared.provider_filter import INPUT_FILTER_REFUSED, stop_provenance
 from ildottore.shared.toolcalls import check_argument_nesting
 from ildottore.shared.wellformed import well_formed_json
 
 __all__ = [
     "ACCEPT_ENCODING",
     "FILTER_REFUSED",
+    "MIN_CREDENTIAL_LEN",
     "UNREADABLE_EXCERPT_BYTES",
     "AdapterEnvError",
     "AdapterError",
     "AdapterProductError",
     "AdapterStatusError",
     "BaseAdapter",
+    "CredentialTooShort",
     "EndpointNotAllowed",
     "ProviderFilterBlock",
     "ResponseMalformed",
@@ -82,6 +87,7 @@ __all__ = [
     "map_logprobs",
     "read_capped",
     "redact_ids",
+    "refuse_short_credential",
     "reply_excerpt",
     "sampling_params_named",
 ]
@@ -92,6 +98,13 @@ _RETRYABLE_STATUS: frozenset[int] = frozenset({429, 500, 502, 503, 504})
 #: Largest response body read from a target, in bytes (4 MiB). A model reply is orders of
 #: magnitude smaller; anything above this is refused unread past the cap (SEC-07).
 MAX_RESPONSE_BYTES = 4 * 1024 * 1024
+
+#: Shortest credential an adapter sends (u04 A-78). The redactor masks a credential by value only
+#: from this length (``redactor.KNOWN_SECRET_MIN_LEN``): a shorter one is not registered, so a
+#: target that echoes it puts it in the evidence and every report. The WebSocket adapter refused
+#: one since its pre-commit audit (F5); the HTTP adapters registered nothing and sent it
+#: (pre-merge security audit of 2026-10-11, LOW 6).
+MIN_CREDENTIAL_LEN: Final = KNOWN_SECRET_MIN_LEN
 
 
 class AdapterError(Exception):
@@ -714,6 +727,39 @@ class AdapterProductError(AdapterError):
     """
 
 
+class CredentialTooShort(AdapterProductError):
+    """A credential the redactor could not mask by value, refused before any request (u04 A-78).
+
+    Its own class so the judge does not read it as an outage: it refuses every request alike, and
+    read as one it made every judged spec inconclusive and the run exited 0 without a word, as a
+    sampling refusal did before u12 A-68. The judge raises it, and the run stops naming it.
+    """
+
+
+def refuse_short_credential(adapter_id: str, api_key: str | None, url: str | None = None) -> None:
+    """Refuse, before any request, a credential the redactor could not mask by value.
+
+    ``api_key`` is the resolved ``auth_ref``; ``url`` the endpoint the adapter requests, whose
+    password (as written, and as it reads once percent-decoded) is sent too. An empty password is
+    no credential (``https://<token>:@host`` sends a user only) and passes. The message names
+    the adapter and never the value, as the WebSocket adapter's always did.
+    """
+
+    credentials: list[str] = [] if api_key is None else [api_key]
+    if url:
+        try:
+            password = urlsplit(url).password
+        except ValueError:
+            password = None  # the allowlist gate, run first, refused a URL that cannot be read
+        if password:
+            credentials += (password, unquote(password))
+    if any(len(credential) < MIN_CREDENTIAL_LEN for credential in credentials):
+        raise CredentialTooShort(
+            f"{adapter_id}: the credential is shorter than {MIN_CREDENTIAL_LEN} characters, "
+            "which the redactor cannot mask by value; nothing was sent"
+        )
+
+
 class AdapterStatusError(AdapterProductError):
     """A non-retryable HTTP status (a 4xx, or a status the retries do not cover): a product error.
 
@@ -1192,6 +1238,33 @@ class BaseAdapter(ABC):
 
         return "check the target's endpoint and provider"
 
+    @property
+    def filter_stops(self) -> frozenset[str]:
+        """The stop reasons this adapter reads as its provider's filter (u04 A-79).
+
+        None here: a provider documents its own, and the adapter that speaks it says which
+        (OpenAI's ``content_filter``, Anthropic's ``refusal``, a REST template's). Any other
+        filter word in a reply is some other provider's: it is marked ``foreign_stop`` and read
+        as an ordinary stop, so a target cannot hide its reply behind a word it chose. Azure's
+        HTTP 400 ``content_filter`` (OD-41) is read only by an adapter that reads that stop.
+        """
+
+        return NO_FILTER_STOPS
+
+    @property
+    def own_filter_stops(self) -> frozenset[str]:
+        """The stop reasons this adapter's provider documents for its filter, whatever is declared.
+
+        :attr:`filter_stops` without a declaration; a declaration may only narrow it (u04 A-79).
+        A reply with no text and no tool call that ends on one of these is the filter's withheld
+        reply even when the target file's declaration leaves the word out: a gateway in front of
+        Azure OpenAI relays Azure's empty ``content_filter``, and there is nothing of the model's
+        in it to score (``shared.provider_filter.stop_provenance``; pre-merge audit of
+        ``10cb526b``, MEDIUM). None here.
+        """
+
+        return NO_FILTER_STOPS
+
     #: True for an adapter whose replies may be a JSON array (a REST template rooted at an index).
     @property
     def reads_array_body(self) -> bool:
@@ -1218,7 +1291,9 @@ class BaseAdapter(ABC):
                 raise ResponseTooDeep(
                     f"{label} has a tool call whose arguments are {exc}; not evaluated"
                 ) from exc
-        return parsed
+        # Every success reply leaves through here: its stop is read as a filter's only when this
+        # adapter's provider documents it (u04 A-79), and its own word on an empty reply always.
+        return stop_provenance(parsed, self.filter_stops, self.own_filter_stops)
 
     def _unreadable(self, message: str, body: bytes | str) -> ResponseMalformed:
         """A :class:`ResponseMalformed` with an excerpt of ``body`` and this adapter's advice."""
@@ -1269,6 +1344,7 @@ class BaseAdapter(ABC):
 
         url = self._full_url()
         self._check_allowlist(url)  # BEFORE httpx - unbypassable.
+        refuse_short_credential(self.id, self.api_key, url)
 
         body, headers = self._build_request(request)
         owns_client = self.client is None
@@ -1392,8 +1468,14 @@ class BaseAdapter(ABC):
             return self._checked(parsed, label)
 
         # The provider's input filter refused the prompt (OD-41): the attempt is blocked, not a
-        # defect. Read first: its 400 names the prompt, never a sampling parameter.
-        filtered = azure_prompt_filter(response.status_code, raw)
+        # defect. Read first: its 400 names the prompt, never a sampling parameter. Only by an
+        # adapter that reads Azure's filter vocabulary (u04 A-79): from another provider that
+        # body is not its filter's, and any 4xx it does not document stops the campaign.
+        filtered = (
+            azure_prompt_filter(response.status_code, raw)
+            if self.filter_stops & OPENAI_FILTER_STOPS
+            else None
+        )
         if filtered is not None:
             raise ProviderFilterBlock(
                 f"{self.id}: non-retryable HTTP {response.status_code} from "

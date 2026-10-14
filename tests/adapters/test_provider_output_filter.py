@@ -319,7 +319,19 @@ def test_the_guardrail_trace_is_read_only_beside_bedrocks_stop_reason() -> None:
     }
     elsewhere = _send(_rest(other), "https://llm.example.com/x", body)
     assert elsewhere.filter_side is None
-    assert filter_side(elsewhere) == "unknown"
+    # A template in neither Bedrock's nor Gemini's shape reads no provider's filter stop unless it
+    # declares one (u04 A-79): Bedrock's word there is an ordinary stop, kept as sent.
+    assert elsewhere.foreign_stop is True and filter_side(elsewhere) is None
+    declared = RestTemplate(
+        path="/x",
+        prompt_field="input",
+        text_path="output.message.content.0.text",
+        finish_path="meta.stopReason",
+        filter_stops=frozenset({"guardrail_intervened"}),
+    )
+    stopped = _send(_rest(declared), "https://llm.example.com/x", body)
+    assert stopped.filter_side is None and not stopped.foreign_stop
+    assert filter_side(stopped) == "unknown"
 
 
 def test_content_filtered_has_no_side_bedrock_documents() -> None:

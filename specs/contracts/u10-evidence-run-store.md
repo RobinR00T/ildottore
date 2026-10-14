@@ -138,6 +138,15 @@ attempt id, by the verdict's reason or, without a verdict, by the error's mark
 `inconclusive (unreadable_reply)` on their line and a footer line for the count. A resume sends
 such an attempt again (the mark is not the not-retryable one). Checked by
 `tests/cli/test_malformed_reply_campaign.py` and `tests/core/test_unreadable_replies.py`.
+**Amended 2026-10-11 after the audit of the scoring (HIGH 1, u08 A-74):** which artifact of an id
+is the attempt, for `effective_attempts()` and every count above, is the runner's rule, read from
+one place (`shared.resend.one_per_attempt_id`): the replay kept the first artifact at a tie in
+file-name order, the content hash, so it could count another attempt than the report. Every
+attempt artifact carries `request.metadata.send_number` (`1` for an id's first send in the run,
+one more for each re-send), so a re-send is never byte-identical to the try it replaces and is an
+artifact of its own; an artifact stored before the stamp reads as sent before every stamped one, so
+an older run replays and resumes as it did, ties between two of its artifacts going to an outcome
+that never lets its spec pass. Checked by `tests/core/test_resend_is_the_attempt.py`.
 
 **A-70 (u08's clause; this unit's half, added 2026-10-11, OD-42) The evidence keeps a cut reply as
 it came, and a replay re-derives it.** A reply the provider's filter cut or replaced is stored with
@@ -146,7 +155,16 @@ guardrail trace, `response.filter_side`, beside the verdict `inconclusive:
 cut_by_provider_output_filter` or `provider_filter_side_unknown`; an input-side block read from a
 reply keeps the reply and an error ending in ` [blocked_by_provider_filter]` (A-69). A reply without
 a filter stop is stored byte for byte as before (`filter_side` is left out of a dump when unset, so
-content hashes do not move). `ReplayResult.cut_by_provider_output_filter()` and
+content hashes do not move). Since A-79 (u08) a reply whose stop is another provider's filter word
+is stored with `foreign_stop: true` (left out when false, so no other hash moves) and read back as
+a reply with an ordinary stop; a target file's `websocket.response.filter_stops` (and an `openai` or `anthropic` file's
+`filter_stops`) is in the target digest only when declared, so a run stored before it resumes.
+**Open, for the judging-rules version (`fix/resume-judging-rules`):** a resume across this upgrade
+keeps the verdicts its stored attempts were judged with under the earlier rules: a reply stored
+before A-79 carries no `foreign_stop`, which is not recomputed, so an attempt another provider's
+filter word made a cut stays a cut, a judge's fail recorded beside a cut stays inconclusive, and a
+guardrail message's deterministic fail stays a fail. Nothing here bumps a version; that branch's
+re-judge-or-refuse rule is where it is settled (pre-merge audit of `a55710e9`, LOW 6). `ReplayResult.cut_by_provider_output_filter()` and
 `provider_filter_side_unknown()` count them, one per attempt id, by the verdict's reason or, on a
 reply stored without a verdict, by its stop reason (`shared.provider_filter`); they stay in `N` and
 are never a success. `dottore replay` writes `inconclusive (cut_by_provider_output_filter)` or
@@ -194,6 +212,21 @@ was put back unread and is now redacted like any value (LOW 7). Checked by
 `tests/store/test_split_values_at_rest.py` (three of its first five tests fail on `de122e26`; the
 two that pass there check that replay and the evaluator read what they read before; its 18 URL
 cases fail on `c4bd2012`).
+
+**A-78 (u01's clause; this unit's half, added 2026-10-11) The run store keeps one row a finding
+across the change of the identity masks.** A-78's patterns change the identity mask
+(`redact_identity`, fixed salt) of a value holding a UUID, a run of 32 hex digits, a key format or
+a JWT after `_`: a finding id (`<spec>::<target>`) of such a target was keyed under another string
+by the redactor before A-78. `_upsert_finding` writes a finding under the current mask and drops the
+row under the mask `redactor.identity_masks` gives for before A-78, when they differ, so a resume
+across the change keeps one row a finding (it kept two). The spec, target and judge digests and the
+scope digests stay unredacted, and the evidence store keeps `request.metadata.media_sha256` as
+written, as before: the hex rule reads none of them. The reports name a target by the rules
+before A-78 (u11), while the store keeps its identity mask by the current ones, which the resume
+checks read, in the run row's `target_id` and, since the round-2 audit (R2-L6), in its
+`meta_json.target_ids`, which took the store's per-process salt. Checked by `tests/store/test_identity_masks_before_a78.py` (12 tests; on `de122e26` the
+file stops at collection, which has no `identity_masks`, and 9 fail with the compatibility code
+taken out).
 
 ## §8 Out of scope / forbidden
 - MUST NOT compute scores/severity (u07), evaluate responses (u06), or render reports (u11) -

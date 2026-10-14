@@ -56,8 +56,8 @@ the state in each result's `properties.state`.
   else, so the attack text of a `test_only` spec is readable in the JSON report. The HTML report
   shows no prompts.)
 - KEEP: SARIF output is 2.1.0, `level` mapped from band per `docs/05 §3`
-  (critical/high→`error`, medium→`warning`, low/info→`note`); ruleId = spec id; rules carry
-  OWASP/ATLAS/NIST tags.
+  (critical/high→`error`, medium→`warning`, low/info→`note`), a fail whose state is
+  `needs_review` at most `warning` (A-73); ruleId = spec id; rules carry OWASP/ATLAS/NIST tags.
 - KEEP: masking is mandatory and applied centrally before any format writer runs (single choke
   point in `masking.py`), so a new format can't bypass it.
 - DECIDE: whether HTML embeds evidence excerpts inline or links to store refs only (propose:
@@ -171,6 +171,28 @@ and `[]`), so the golden JSON snapshot gains it and the SARIF, JUnit and HTML on
 Checked by `tests/cli/test_provider_filter_campaign.py` (every format of one run, the JSON against
 the schema).
 
+**A-73 (u06's clause; this unit's half, added 2026-10-11 after the audit of the scoring, LOW 4) A
+fail that needs review is no `error` in SARIF.** A fail only the judge reported is never confirmed
+(OD-19), and neither is one not reproduced on every attempt of a variant: `--fail-on` gates neither
+without `--include-needs-review`. SARIF gave such a fail its band's level, so a judge-only critical
+fail was an `error`, which GitHub code scanning fails a pull request's check on by default
+("Triaging code scanning alerts in pull requests": a result "with a severity of `error`,
+`critical`, or `high`" fails the check, read 2026-10-12), while `dottore` exited 0 for it. A `fail` result whose `properties.state` is `needs_review` is now at most
+`warning` (`error` becomes `warning`; `warning` and `note` stay), its band unchanged in
+`properties.band`; a confirmed fail keeps its band's level, and every other kind keeps `none`.
+The golden SARIF snapshot does not move (its fail is confirmed). Checked by
+`tests/reporting/test_sarif_reporter.py` (6 cases; the critical and high ones fail on `de122e26`).
+**Amended 2026-10-12 after the pre-merge audit of `d07a1088` (LOW 3):** the cap holds only
+without `--include-needs-review`. With it such a fail trips `--fail-on`, and capped at `warning`
+it let code scanning pass the check `dottore` exited 2 on. The flag reaches the writer as
+`include_needs_review` (`BaseReporter`, `get_reporter`, `cli.wiring.build_reporter`, from
+`RunOptions` in `cli.run._write_reports`); with it a needs-review fail keeps its band's level and
+the SARIF run's `properties` carry `"include_needs_review": true` (absent without it, so the
+golden snapshot does not move). The other formats take the flag and do not read it. Checked by
+`tests/reporting/test_sarif_reporter.py` (5 more cases, the 4 with the flag failing on
+`d07a1088`) and `tests/cli/test_flags.py` (2 cases through `_write_reports` beside
+`exit_code_for`, the one with the flag failing on `d07a1088`).
+
 **A-74 (u08's clause; this unit's half, added 2026-10-11, OD-21; pre-merge audit of `598f0858`,
 HIGH 1) The replies the adapter could not read are counted apart in every format.** Such an attempt
 is never the model's refusal, and the reply that broke may be the one an attack changed (a wrapper
@@ -261,6 +283,37 @@ reads too; second pre-merge audit, LOW 3). Checked by
 `tests/reporting/test_split_values_and_keys.py` (three of its seven tests fail on `de122e26`;
 SARIF, JUnit and HTML carried none of those values there either) and through the CLI by
 `tests/cli/test_split_values_e2e.py`.
+
+**A-78 (u01's clause; this unit's half, added 2026-10-11) Every report keeps the media digests and
+the attempt each evidence reference names.** The hex rule masks every run of 32 hex digits or more,
+so what the tool computed in that shape is put back after the masking pass, as the evidence
+references and the scope digest already were (R1, F12): `_restore_tool_fields` puts back each
+attempt's `request.metadata.media_sha256` when it is a list of 64 lowercase hex digits, the shape the
+runner writes (anything else is masked as any value), and each evidence reference's `attempt_id` as
+written, as the attempts' own ids are, in both copies of a finding the JSON report carries. On
+`de122e26` the JSON report of a multimodal battery at `--runs 2` masked 24 of its 28 media digests
+(`high_entropy`). Every report names the target as reports named it before A-78, with the fixed
+identity salt: `_restore_tool_fields` sets each finding's `target_id`, and `mask_run` each
+`run.targets[].id`, to `redactor.report_identity(id)`, the rules before A-78 (no late patterns, no
+hex rule, numbers read inside a UUID) under the identity salt. With the per-process salt, an id
+holding a UUID (`tenant-<uuid>`) had another mask in every run once A-78 masked UUIDs, and
+`dottore diff` refused two reports of one target, exit 3 (pre-merge audit of A-78, H1; `de122e26`
+fails the same way for a high-entropy id, which now masks to one text in every process). A baseline
+written by `de122e26` compares with a run of this change (exit 0). The rest of a run's outputs are
+byte for byte as before, timestamps aside. Checked by `tests/reporting/test_own_values_readable.py`
+(2 of its 9 tests fail on `de122e26`) and `tests/cli/test_report_target_id.py` (5; 4 fail on
+`de122e26`, where only the end-to-end case passes, and 5 on `0b4b1f14`).
+
+**A-79 (u08's clause; this unit's half, added 2026-10-11, the amendment to OD-41 and OD-42) A run
+the provider's filter answered every time carries the state `filtered`.** The CLI sets it (u12
+A-79) and every format reports it as it reports `unreachable`: the JSON summary's `status`
+(`{"state": "filtered", "complete": false, "reason": ...}`, the schema's description naming it),
+SARIF's `run_status` and its notification, JUnit's `run-filtered` error case, the HTML banner.
+No key is added. An attempt whose reply carries `foreign_stop: true` (u00, u04 A-79) is counted as
+any reply: it is not a cut, and the evidence keeps the word as the target sent it. A cut attempt
+the judge's fail decided (u08 A-79) is a `fail`, needing review, and no longer counted under
+`cut_by_provider_output_filter`, as a cut a deterministic fail decided was not. Checked by
+`tests/cli/test_filter_stop_provenance_campaign.py` (the JSON state).
 
 ## §8 Out of scope / forbidden
 - MUST NOT compute risk scores, bands, or confirmed/needs-review state (that is u07): only read.

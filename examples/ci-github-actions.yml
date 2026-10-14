@@ -43,6 +43,12 @@ jobs:
             --fail-on high \
             -oS ildottore.sarif -oJ ildottore.json
 
+      # A confirmed fail is a SARIF `error` (critical/high) or `warning` (medium); a fail that
+      # needs review (one only the judge reported, or not reproduced on every attempt of a
+      # variant) is at most a `warning`, so code scanning, which by default fails a pull
+      # request's check on an `error`, agrees with the `--fail-on` gate above. Pass
+      # `--include-needs-review` to the scan to gate on those too: they then keep their band's
+      # level, so code scanning fails the check exactly when the scan exits 2.
       - name: Upload findings to code-scanning
         if: always()
         uses: github/codeql-action/upload-sarif@v3

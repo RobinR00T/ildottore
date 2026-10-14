@@ -33,7 +33,7 @@ runner = CliRunner()
 
 #: Shaped like a key pasted in the wrong place: pydantic quoted it in full when it was short
 #: and kept its start and its tail when it truncated it in the middle.
-PASTED = "797c48a81f494d0f3e8d13bd49459b6f" * 2
+PASTED = "Zq8LmPw3" * 8  # low entropy and no hex run, so the CLI redactor leaves it (A-78)
 
 
 def good(spec_id: str = "PI-A") -> dict[str, Any]:
