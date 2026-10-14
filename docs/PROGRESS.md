@@ -3,6 +3,29 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-14 (evening): merged with `fix/no-secret-in-fragments` (`33782ad3`), which main now holds
+
+- `33782ad3` (#115, with #114 `7cdd91a2` and main `030b79e0`) merged in as `007e3c41`, a real
+  merge, as `scratch/fixcli3/MERGE-PLAN.md` decided; #114 and #115 have since landed, and main
+  `d526747e` has the tree of `33782ad3`. One root class, `_MaskedGroup(OperationalErrorGroup)`,
+  with Typer's public names only (`_click_classes` is gone); A-80's exit codes (`run_masked`: any
+  other click error and an abort exit 3); one missing-spec-path mechanism, A-80's wording when no
+  spec path was given (run, fleet --run, registry ls, describe, coverage; test added at
+  `d3e748e4`, 3 of 3 failing on both parents); strict `lint`; `allow_inf_nan=False` kept.
+- Found by the merge and resolved: A-80's `LoadResult.files` (a list) beside this branch's count,
+  now `spec_files_read`; A-78's UUID pattern left out of `credential_patterns()` and `key_shape`
+  reading the late key formats through `without_entropy()`, so a tenant UUID in a fleet endpoint
+  is kept; an Anthropic key is now "a credential format"; a credential variable that is not set or
+  holds only blanks is named by A-82's check rather than refused as shorter than 8 characters;
+  A-78's stdio test reads A-82's transport refusal. Each listed in u12 A-82's merge paragraph.
+- `make gates` green on the merged tree (`007e3c41`): 6,984 tests (6,983 passed, 1 skipped), 97.68% coverage,
+  75 specs lint OK, four contracts kept, self-scan, bandit and pip-audit clean; the same 6,984 with
+  `GITHUB_ACTIONS=true CI=true`, and the whole suite against Typer 0.27.3 (the extracted wheel
+  first on `PYTHONPATH`, nothing installed). The M7 fuzz (687 cases, `main()`, `app()` and the
+  click command), `m3probe.py` (32 of 32 legitimate endpoints kept, 35 of 35 hostile refused),
+  `m3c.py`, the family fuzz and the M4 live checks give the same results as before the merge; the
+  22 new CLI test files of both branches pass on Typer 0.27.3 (529, 1 skipped).
+
 ## State, 2026-10-13 (night): the round-3 audit of `3321a786` (A-82), fixed; the merge prepared
 
 - `?<key>=1`, `#<key>=x` and `;<key>=x`, accepted again by the round-2 rework, are refused (a
