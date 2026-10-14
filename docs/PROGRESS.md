@@ -22,6 +22,16 @@ The carryover ledger. Every agent session updates this so context survives even 
   `replay` do.
 - The heads-up's subclass-friendly `OperationalErrorGroup`: no source change was needed;
   `tests/cli/test_guard_subclass.py` pins the closure through a subclass.
+- 2026-10-14: `main` merged in again once #113 landed (`030b79e0`, merge `304d1dc3`), conflicts in
+  documentation only. Gates on that tree: green, 6,541 tests (6,397 on `030b79e0`, +144),
+  coverage 97.68 %, lint 0/0 over 75 specs, 14 suites, 1 pack, contracts 4 kept, self-scan 0
+  high/critical, bandit and pip-audit clean. Re-run there: 0 of 320 concurrent first opens failed
+  (8 x 10, 16 x 10), 0 of 30 concurrent CLI runs; `--budget-requests 100` 85 attempts for 100
+  requests and none more on a resume; `--runs 200` exit 2 with 20,600 attempts; 15 commands into
+  a closed reader, each exit 3. `git diff origin/main HEAD` holds this branch's changes only: no
+  line #111, #112 or #113 added is removed (the threat model's S6 row is #113's with this branch's
+  sentence added), and #113's `redactor.py`, `adapters/base.py` and `reporting/masking.py` are
+  main's byte for byte.
 
 ## State, 2026-10-13 (evening): the pre-merge audit of `e6a1ab9b`, fixed, and `main` merged in
 
