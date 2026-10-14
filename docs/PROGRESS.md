@@ -3,6 +3,21 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-14 (afternoon): stacked on #114 (fix/cli-store-budgets-paths, `7cdd91a2`)
+
+- `git merge --no-ff 7cdd91a2` (`10d73aac`): #114 holds main `030b79e0` and lands first. The code
+  merged without a conflict (#114 touches cli/, store/ and the core's budgets: the attempt debit,
+  `debit_request(opens_attempt=True)`, in execute, conversation and reproduce, which the withheld
+  path does not read); docs keep both sides, this branch's on top, S6 with both sides' sentences.
+- The branch's code over #114 is its code over main: `git diff 7cdd91a2 10d73aac -- src tests` and
+  `git diff 030b79e0 c0ff4d36 -- src tests` change the same 20 files with the same added and
+  removed lines (3,485 and 83).
+- `make gates` green on `10d73aac` (`PYTHONPATH` set to the worktree's `src` and root, `TMPDIR` at
+  the system default): ruff and format clean (450 files), mypy strict (163), four import contracts
+  kept, 75 specs lint OK, 6664 tests (6547 on `7cdd91a2`), 97.70% coverage, self-scan 0 high or
+  critical, bandit and pip-audit clean; the coverage run once more with `GITHUB_ACTIONS=true` and
+  `CI=true`: 6664 passed, 97.70%. The withheld e2e test passes; `window_attacks.py` 36 of 36 clean.
+
 ## State, 2026-10-14 (morning): merged with main `030b79e0` (#111, #112, #113)
 
 - `git merge --no-ff origin/main` (`f91bf617`), resolved as `scratch/fixfrag/MERGE-PLAN.md`
