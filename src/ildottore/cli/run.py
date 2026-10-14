@@ -1718,8 +1718,12 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
     # the judge got this check, so `--dry-run` printed a green plan for a target whose
     # auth_ref the scope refuses and the real run then failed at exit 3: the command whose
     # job is answering "is my wiring right?" gave the wrong answer about the credential.
-    for _, candidate in to_authorize:
-        wiring.check_target_credential(scope, candidate)
+    # An offline mock is sent nothing, so its credential's length is not checked (u04 A-78); read
+    # from the loaded file, not again from its path, which may be a pipe read once.
+    mocks = {loaded.target.id for loaded in loaded_targets if loaded.uses_mock}
+    for index, (_, candidate) in enumerate(to_authorize):
+        sends = index >= len(loaded_targets) or candidate.id not in mocks  # the judge always sends
+        wiring.check_target_credential(scope, candidate, sends=sends)
 
     # A spec file that fails to load is refused, not dropped. `build_registry` keeps only what
     # parsed, so a one-letter typo removed a spec from the battery and the run still printed
@@ -2336,6 +2340,15 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
                 else ""
             )
         )
+
+    # The identity sweep's credentials too, for every plan that sweeps (u04 A-78): checked at
+    # send time only, `--dry-run`, `-sn` and `--estimate` exited 0 for a scope identity whose
+    # key the run then refused at exit 3 (pre-merge audit of A-78, L4).
+    for plan in plans:
+        if plan.identities >= 2 and any(
+            sweeps_identities(spec, plan.target) for spec in plan.selected
+        ):
+            wiring.check_identity_credentials(scope, plan.target)
 
     # Resolved BEFORE the three modes that send nothing, so a typo in the id is caught by the
     # command whose job is validation, and so the estimate prices the work that is actually

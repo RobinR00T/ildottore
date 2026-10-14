@@ -132,7 +132,7 @@ def _openai(model: str, texts: list[str]):  # type: ignore[no-untyped-def]
         id="live",
         base_url="https://api.example.test",
         allowlist=EndpointAllowlist([Endpoint(host="api.example.test", path_prefixes=["/"])]),
-        api_key="k",
+        api_key="test-key-1",
         model="m",
         client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
     )

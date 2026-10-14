@@ -55,6 +55,10 @@ from websockets.exceptions import ConnectionClosed, InvalidHandshake, InvalidSta
 
 from ildottore.adapters.base import (
     MAX_RESPONSE_BYTES,
+    # Shortest credential accepted. The redactor masks a registered credential by value only from
+    # 8 characters, and a shorter one echoed in a close reason reached the evidence (pre-commit
+    # audit, F5); the adapter refuses it before any dial, as the HTTP adapters do since u04 A-78.
+    MIN_CREDENTIAL_LEN,
     AdapterEnvError,
     AdapterProductError,
     EndpointNotAllowed,
@@ -64,6 +68,7 @@ from ildottore.adapters.base import (
     ResponseUndecodable,
     RetryConfig,
     redact_ids,
+    refuse_short_credential,
 )
 from ildottore.adapters.rest import get_path
 from ildottore.policy import EndpointAllowlist
@@ -154,10 +159,6 @@ MAX_FRAME_DEPTH: Final = 64
 #: used to be, closing a socket mid-turn: pre-commit audit, F4): past this, a new conversation
 #: is refused as an environment error. The runner's concurrency keeps it far below.
 MAX_OPEN_CONVERSATIONS: Final = 256
-#: Shortest credential accepted. The redactor masks a registered credential by value only from
-#: 8 characters, and a shorter one echoed in a close reason reached the evidence (pre-commit
-#: audit, F5); the adapter refuses it before any dial.
-MIN_CREDENTIAL_LEN: Final = 8
 #: Upgrade statuses that mean "try again later", as for the HTTP adapters.
 _RETRYABLE_STATUS: frozenset[int] = frozenset({429, 500, 502, 503, 504})
 #: How long a close handshake may take before the socket is abandoned.
@@ -492,11 +493,7 @@ class WebSocketAdapter:
     def _check_credential(self) -> None:
         """Refuse a credential the redactor could not mask by value, before any dial."""
 
-        if self.api_key is not None and len(self.api_key) < MIN_CREDENTIAL_LEN:
-            raise AdapterProductError(
-                f"{self.id}: the credential is shorter than {MIN_CREDENTIAL_LEN} characters, "
-                "which the redactor cannot mask by value; nothing was sent"
-            )
+        refuse_short_credential(self.id, self.api_key)
 
     async def _drop(self, key: str) -> None:
         conversation = self._conversations.pop(key, None)

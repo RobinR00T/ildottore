@@ -250,10 +250,12 @@ def _assert_same_target(
     # '«REDACTED:high_entropy:...»'", which is both false and unrecoverable by any flag. The
     # store masks it with a FIXED identity salt (``redact_identity``), so redacting this side
     # the same way restores the comparison; the general redactor's salt is random per process.
+    # Either mask the store may hold: a run halted before u01 A-78 wrote another for an id with a
+    # UUID, a hex run or a key format in it, and was refused here as made against another target.
     if stored is not None and stored != target.id:
-        from ildottore.redactor import redact_identity
+        from ildottore.redactor import identity_masks
 
-        if stored == redact_identity(target.id):
+        if stored in identity_masks(target.id):
             stored = target.id
     if stored is None:
         # A row with no target id verifies nothing, and `_ensure_run_row` can mint exactly such
@@ -429,6 +431,17 @@ def declared_not_destructive(target: Target) -> list[str]:
     return [redact_identity(name) for name in seeded.not_destructive]
 
 
+def _declared_before_a78(target: Target) -> list[str]:
+    """:func:`declared_not_destructive` as a run store recorded it before u01 A-78, sorted."""
+
+    from ildottore.redactor import identity_masks
+
+    seeded = target.seeded_setup
+    if seeded is None:
+        return []
+    return sorted(identity_masks(name)[-1] for name in seeded.not_destructive)
+
+
 def _declaration_changed(context: dict[str, object], target: Target) -> str | None:
     """How the target file's declaration differs from the halted run's, or ``None``.
 
@@ -440,7 +453,7 @@ def _declaration_changed(context: dict[str, object], target: Target) -> str | No
     if not (isinstance(stored, list) and all(isinstance(name, str) for name in stored)):
         return None
     current = sorted(declared_not_destructive(target))
-    if sorted(stored) == current:
+    if sorted(stored) == current or sorted(stored) == _declared_before_a78(target):
         return None
 
     def listed(names: list[str]) -> str:

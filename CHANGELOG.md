@@ -5,6 +5,82 @@ versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed (key formats, hex runs and UUIDs masked whatever their entropy; a credential under 8 characters refused by every adapter, u01 A-78)
+
+Found by the pre-merge security audit of 2026-10-11 (MEDIUM 4 and LOW 6).
+
+- **The documented key formats of 11 providers are masked whatever their entropy.** Only `sk-`,
+  `ghp_`, `AKIA` and `xox` had a rule; `sk-ant-`, `sk-proj-` (whose `-` cut the `sk-` rule),
+  `github_pat_`, `AIza`, `glpat-` and `hf_` rested on the entropy rule, so a body of low entropy was
+  printed, and a key after a run of `_` (`\b` refused a start after a word character) was diluted
+  by it: 30 `_` before printed 155 of 200 `ghp_` tokens and every `AKIA`, `glpat-` and `hf_` one,
+  20 `=` on either side every `AIza`, `glpat-` and `hf_` one, 20 `-` before every `glpat-` one; now
+  0 of 200 for every prefix. Covered, each sourced from the provider's documentation: OpenAI
+  (`sk-`, `sk-proj-`, `sk-svcacct-`, `sk-admin-`, `sk-None-`), Anthropic (`sk-ant-`), GitHub
+  (`ghp_`, `gho_`, `ghu_`, `ghs_`, `ghr_`, `github_pat_`), GitLab (13 prefixes), AWS (`AKIA`,
+  `ASIA`, `ABIA`, `ACCA`), Google (`AIza`), Hugging Face (`hf_`), Slack (`xox[abeprs]-`,
+  `xoxe.xoxb-`, `xoxe.xoxp-`, `xapp-`, `xoxe.xapp-`, `xwfp-`), Stripe (`sk_live_`, `sk_test_`,
+  `rk_live_`, `rk_test_`, `sk_org_`, `whsec_`), npm (`npm_`) and PyPI (`pypi-`), typed
+  (`«REDACTED:anthropic_key:<digest>»`), plus a JWT written after `_`.
+- **Every run of 32 hex digits or more, and the UUID shape, are masked whatever their entropy.**
+  The threshold printed 74.7% of random 32-hex keys (an Azure key), 47.5% of 40-hex, 5.5% of
+  64-hex and 47.7% of v4 UUIDs; now 0%. A hex run is `«REDACTED:hex_token:<digest>»` (a `0x` in
+  front included), a UUID `«REDACTED:uuid:<digest>»`, whole even when its groups are all digits,
+  which the phone and card rules take as numbers: what they read of it is held in stand-ins of the
+  same length, which every later rule reads as their mask, so the text around a UUID is judged as
+  before, piece by piece, in linear time.
+- **They add masks and take none away, but in a text holding U+0000 or U+0001.** They run after
+  every other rule, and a token the entropy rule masks with a word glued to a key is still masked
+  whole, now named by the key's type. A first version that ran them before the labelled and
+  entropy rules left readable what those rules had masked (`x_` before a key, a label glued after
+  a greedy body and its secret, the rest of an address holding a UUID). The pre-merge audit of the
+  second version found four more ways it showed what the redactor before A-78 masked: a value
+  glued between two UUIDs the number rules cut, a line joined by a phone mask so that a labelled
+  value took the next label, a URL password behind a mask's `:`, and a target writing
+  `password: «REDACTED:uuid»<secret>`, a mask of a new type that was kept as the tool's own; and a
+  token of glued UUIDs took quadratic time (32.8 s at 160 KB). All fixed: a mask of a new type is
+  read as text by the labelled rule, as before A-78, and the URL rule as written tells a URL its
+  rule read with every mask one neutral character. A mask of a new type is kept as written
+  elsewhere, as the older ones are, in every pass and every process: a second version kept one
+  only while the process remembered writing it, so a long campaign of large replies forgot the
+  first turn's, the evidence store's re-check failed and the scan stopped (exit 3; second audit). Differential fuzz against the redactor before A-78, five draws
+  of 300,000 texts and the auditor's 1,100,000 texts and 300,000 tokens: what it hid and this one
+  shows appears only in texts holding U+0000 or U+0001 (19 of the 1,500,000, 3 of them with 8 characters of a planted secret), whose redaction
+  depends on whether anything else in them is masked, before A-78 too; none in any other text.
+- **What the tool computes stays readable.** The hex rule belongs to the entropy rule, so the
+  CLI's carried digests and evidence file names, an existing path and a model name keep out of it
+  as before; the reports now restore the SHA-256 of each media part a request records (the JSON
+  report of a multimodal battery masked 24 of its 28) and each evidence reference's attempt id. A
+  full offline run of the battery writes every report, the evidence and the run store byte for byte
+  as before, timestamps aside, but those 24 digests (and, in the run store, the identity mask of a
+  target whose id holds a UUID).
+- **A report names its target as before, the same way in every run.** Every report masked the
+  target id with the per-process salt, so a target named `tenant-<uuid>` had another mask in every
+  run once UUIDs were masked, and `dottore diff` refused two reports of it (exit 3; a high-entropy
+  id did the same before). Reports now mask it by the rules before A-78 with the fixed identity
+  salt: such an id reads as written, a baseline written before this change still compares, and a
+  high-entropy id masks to the same text in every run.
+- **A UUID in an existing path a CLI error names, or in a provider's model name, stays readable**,
+  as before: the CLI runs the new rules only on what it does not keep, and a model name skips the
+  UUID shape with the entropy rule (the key formats still apply).
+- **A run halted before this change resumes against its own target**, though the identity mask of
+  an id holding a UUID, a hex run or a key format changed, and keeps one row a finding.
+- **A credential shorter than 8 characters is refused by every adapter, and before the run.** The
+  redactor masks a credential by value only from 8 characters; the WebSocket adapter refused a
+  shorter one, the OpenAI, Anthropic, REST and MCP adapters sent it (a target that echoed it put it
+  in every report). Now each refuses it before its first request, with the WebSocket adapter's
+  message, and so do the pre-flight (`--dry-run`, `-sn` and `--estimate` exit 3 as the run would,
+  for the target, the judge and each identity a sweep would send as), the identity sweep (naming
+  the identity) and the judge, which used to abstain on every spec and exit 0. A password in the
+  endpoint is checked as written and percent-decoded; an empty one passes, and an offline mock or a
+  stdio MCP target (`provider: mcp`), sent no key, is not checked.
+- Cost: 4 MB of prose 1.18 s (1.02 s before), of base64 tokens 3.50 s (2.71 s), of UUIDs 3.41 s
+  (4.61 s), of UUIDs whose groups are all digits 6.91 s (2.80 s), the same glued into one token by
+  `_` 2.79 s (2.12 s); 24,000 short texts (evidence keys) 0.74 s (0.67 s), after a prefilter that
+  skips the new rules in a text that holds nothing they start with. Not covered: a key glued to a
+  letter or a digit, a random token with no prefix the entropy rule passes, and a UUID in a CLI
+  error that the number rules read a number in, masked as before.
+
 ### Fixed (an audit of the scoring and its pre-merge audit: three false passes, a silent sweep and five lows, 2026-10-11 and 2026-10-12)
 
 - **A resume's re-send is scored as the attempt it replaces, by one rule the report and `dottore

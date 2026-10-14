@@ -391,6 +391,29 @@ reads as U+FFFD, since httpx decodes the stream as text.
   Checked by `tests/adapters/test_provider_output_filter.py` (49 tests; it does not collect on
   `6d5f7ae`).
 
+- **A-78 (u01's clause; this unit's half, added 2026-10-11, pre-merge security audit, LOW 6) Every
+  adapter refuses a credential shorter than 8 characters before its first request.** The redactor
+  masks a registered credential by value only from 8 characters, so a shorter one a target echoes
+  reaches the evidence and every report. The WebSocket adapter refused one before any dial (its
+  pre-commit audit, F5); the OpenAI, Anthropic and REST adapters (`BaseAdapter.send`) and the MCP
+  adapter over HTTP sent it, the resolved `auth_ref` and a password in the endpoint URL alike.
+  `adapters.base.refuse_short_credential(id, api_key, url)` runs right after the allowlist gate in
+  each of them, the WebSocket adapter's included, and raises `CredentialTooShort` (an
+  `AdapterProductError`) with the WebSocket adapter's message: `<id>: the credential is shorter than
+  8 characters, which the redactor cannot mask by value; nothing was sent`. A password is checked as
+  written and as it reads percent-decoded; an empty one is no credential and passes
+  (`https://<token>:@host` sends a user only); a stdio MCP server, which is sent no key, is not
+  checked (only the MCP adapter honours `transport: stdio`: on any other provider the field is
+  ignored, the key goes over the wire, and the CLI checks it, pre-merge audit of A-78, L4).
+  `MIN_CREDENTIAL_LEN` is `redactor.KNOWN_SECRET_MIN_LEN`, re-exported by the WebSocket module. The
+  CLI refuses it earlier too (u12). Checked by `tests/adapters/test_short_credentials.py` (39 tests;
+  on `de122e26` the file stops at collection, which lacks `MIN_CREDENTIAL_LEN` and
+  `refuse_short_credential`, and 19 fail with the two given stand-ins in a copy of the file; the test
+  adapters that used the key `k` use one of 10). The no-entropy twin a model name goes through
+  (`redact_ids`, `Redactor.without_entropy`) drops the UUID pattern with the entropy rule, so a
+  deployment's model name holding one reads as before A-78 for the fingerprint's metadata layer
+  (u01's clause, L5).
+
 - **A-79 (this unit's half; the clause is u08's, added 2026-10-11, the amendment to OD-41 and
   OD-42, decided under the owner's delegation, best practice, revisable) A stop is a filter's only
   from the provider that documents it.** A target writes its own stop reason and error body, and

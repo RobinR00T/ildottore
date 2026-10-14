@@ -73,11 +73,12 @@ def test_model_comparison_table_multi_target() -> None:
 
 
 def test_long_reasoning_is_excerpted() -> None:
-    long_reason = "A" * 500
+    # Not a hex digit: a run of 32 or more is masked whatever its entropy (u01 A-78).
+    long_reason = "Z" * 500
     run = make_run(findings=[make_finding(reasoning=long_reason)])
     html = _html(HtmlReporter(), run)
     assert "…" in html
-    assert "A" * 500 not in html
+    assert "Z" * 500 not in html
 
 
 def test_none_reasoning_omits_block() -> None:
