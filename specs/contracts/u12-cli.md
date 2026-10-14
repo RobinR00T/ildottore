@@ -1373,7 +1373,7 @@ a pass, and each of these crashed or misled after the traffic it could have refu
   exist is `error: spec path not found: <path>. Pass --spec-path <dir>; ...`, not "1 spec file(s)
   failed to load".
 
-Checked by `tests/cli/test_run_store_errors.py` (35), `tests/cli/test_evidence_root_preflight.py`
+Checked by `tests/cli/test_run_store_errors.py` (36), `tests/cli/test_evidence_root_preflight.py`
 (10), `tests/cli/test_attempt_ceiling.py` (12), `tests/cli/test_estimate_quiet.py` (2),
 `tests/cli/test_report_paths_inputs.py` (19), `tests/cli/test_fleet_run_options.py` (13),
 `tests/cli/test_broken_pipe.py` (9, each in a subprocess writing into a reader closed before it

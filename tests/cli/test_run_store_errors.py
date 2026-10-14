@@ -15,6 +15,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from typing import Any
 
 import pytest
 from typer.testing import CliRunner
@@ -370,14 +371,60 @@ def test_a_stray_exit_0_is_still_0(tmp_path: Path, monkeypatch: pytest.MonkeyPat
     assert code == 0
 
 
-def test_the_root_verbose_option_reads_as_a_counted_flag() -> None:
-    """LOW 8: its help read `-v, --verbose  INTEGER  [default: 0]`, as if it took a value."""
+def _verbose_options() -> list[tuple[Any, Any]]:
+    """Each `--verbose` option of the CLI (the root's and run's), with a real context for it."""
 
-    result = CliRunner().invoke(app, ["--help"])
+    import typer
+
+    root = typer.main.get_command(app)
+    found = []
+    root_ctx = root.make_context("dottore", ["--help"], resilient_parsing=True)
+    for command, ctx in [(root, root_ctx)] + [
+        (sub, sub.make_context(name, [], parent=root_ctx, resilient_parsing=True))
+        for name, sub in root.commands.items()  # type: ignore[attr-defined]
+        if name == "run"
+    ]:
+        found += [(param, ctx) for param in command.params if "--verbose" in param.opts]
+    return found
+
+
+def test_the_verbose_options_are_counted_flags_that_show_no_value() -> None:
+    """LOW 8: the help read `-v, --verbose  INTEGER  [default: 0]`, as if it took a value.
+
+    Asserted on the options themselves, not on rendered help: on CI (GitHub Actions, no TTY) rich
+    forces colour and styles `-` and `-verbose` apart, so no line held "--verbose" and the first
+    version of this test failed there."""
+
+    options = _verbose_options()
+    assert len(options) == 2  # the root's and run's
+    for param, ctx in options:
+        assert param.count is True
+        assert param.show_default is False
+        # The rich help prints a type's name unless it is "boolean"; the plain help, its record.
+        assert param.type.name == "boolean"
+        record = param.get_help_record(ctx)
+        assert record is not None
+        assert "INTEGER" not in " ".join(record)
+        assert "default: 0" not in " ".join(record)
+
+
+def test_the_rendered_root_help_shows_no_value_for_verbose() -> None:
+    """The rendered help too, with its width and colour pinned and any escape sequence removed."""
+
+    import re
+
+    result = CliRunner().invoke(
+        app,
+        ["--help"],
+        env={"COLUMNS": "200", "NO_COLOR": "1", "TERM": "dumb"},
+        terminal_width=200,
+    )
     assert result.exit_code == 0
-    line = next(row for row in result.output.splitlines() if "--verbose" in row)
-    assert "INTEGER" not in line
-    assert "default: 0" not in line
+    plain = re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", result.output)
+    lines = [row for row in plain.splitlines() if "--verbose" in row]
+    assert len(lines) == 1, plain
+    assert "INTEGER" not in lines[0]
+    assert "default: 0" not in lines[0]
 
 
 def test_a_store_another_process_keeps_locked_exits_3_naming_it_before_any_send(
