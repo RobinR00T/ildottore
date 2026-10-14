@@ -187,6 +187,33 @@ it (the record left out otherwise, so every other artifact is byte for byte as b
 an attempt's status and a footer line with their count. Checked by
 `tests/cli/test_operator_declaration_campaign.py`.
 
+**A-77 (u01's clause; this unit's half, added 2026-10-12, audit of main `de122e26`, HIGH 1 and
+LOW 7) No secret is rebuilt from the pieces the evidence keeps, and the guard reads them joined.**
+`put` masks an attempt's keys first (`redactor.mask_keys`, the numbering of two keys that mask
+alike as before), then its values with `redactor.redact_split`: each string, and each stream's
+joined text (a logprob list's tokens, a WebSocket transcript's received content field by field),
+so the run's canary, which the store registers,
+a key and a registered credential in 3-character tokens or in 3 deltas are masked in the pieces
+too; keys first, so the streams are joined under the names the guard reads. The fail-closed guard
+redacts every joined text of the stored payload's streams (`redactor.split_texts`) as it redacts
+every string, and refuses the write when one changes: before, it scanned one string at a time and
+passed the pieces. The figures, the token count and the shape are as before, so `replay_run`
+validates the attempt and `logprob_membership` scores it to the same verdict and confidence. The
+guard's criterion stands: since the pre-merge audit of `c4bd2012`, joined, the pieces show each
+mask once and never more than the redacted text (less only where a literal between two masks
+could stand in more than one place: 8 of 1,500 realistic replies, 309 of 1,500 hostile ones), so
+a reply the redactor masked passes it (a mask repeated in every
+piece it covered read, joined, as a run the URL rule masked again, and the guard refused 18 of 18
+connection strings). A refusal is a `RedactionLeakError` with the marker `evidence_refused`, which
+the runner answers, for an attempt and for a probe (`put_probe`), by storing it again with its
+pieces withheld (u08's half). The
+media digest (`request.metadata.media_sha256`) is put back verbatim only in the shape the runner
+writes, a list of SHA-256 hex digests; anything else under that name (a text, a list holding one)
+was put back unread and is now redacted like any value (LOW 7). Checked by
+`tests/store/test_split_values_at_rest.py` (three of its first five tests fail on `de122e26`; the
+two that pass there check that replay and the evaluator read what they read before; its 18 URL
+cases fail on `c4bd2012`).
+
 **A-78 (u01's clause; this unit's half, added 2026-10-11) The run store keeps one row a finding
 across the change of the identity masks.** A-78's patterns change the identity mask
 (`redact_identity`, fixed salt) of a value holding a UUID, a run of 32 hex digits, a key format or

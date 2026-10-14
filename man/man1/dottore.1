@@ -397,12 +397,14 @@ A success reply the adapter cannot read (not JSON, not an object, not the provid
 template's shape, a WebSocket frame or an MCP reply included) fails its attempt, inconclusive
 with the reason unreadable_reply, and is not sent again in the run (a resume sends it again); the
 run goes on, but the spec it belongs to is never a pass, the attempt keeps an excerpt of the
-body under request.metadata.unreadable_reply, and the summary says how many ("Unreadable
-replies: N attempt(s) in S spec(s)"). A tool the model called on an earlier turn of a
-conversation that such a reply, or an environment error, then ended is still scored: a forbidden
-call fails the attempt, the error kept under request.metadata.conversation_error. An identity of
-the multi-identity sweep whose reply could not be read, or whose send failed, is named in the
-verdict and keeps authz_leak from passing. At 5 such replies in a row before any reply was read, or 20
+body under request.metadata.unreadable_reply (of a reply streamed as events or JSON lines and
+longer than 36 KiB, its structure only, the text it streams withheld and said so), and the
+summary says how many ("Unreadable replies: N attempt(s) in S spec(s)"). A tool the model
+called on an earlier turn of a conversation that such a reply, or an environment error, then
+ended is still scored: a forbidden call fails the attempt, the error kept under
+request.metadata.conversation_error. An identity of the multi-identity sweep whose reply could
+not be read, or whose send failed, is named in the verdict and keeps authz_leak from passing.
+At 5 such replies in a row before any reply was read, or 20
 in a row after (a target that broke mid-run), one benign request is sent first; only when that one
 cannot be read either does the run stop with exit 3, saying what to check for the target's
 provider. A content filter that answers attack prompts with a block page lets the check through,

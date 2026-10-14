@@ -5,6 +5,211 @@ versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed (what the sixth pre-merge audit, of `31cf86bf`, found in A-77, before it lands)
+
+- **A cut excerpt keeps no line whose mask came from the text it withholds (parity).** A line
+  that is no field of an event stream (a comment, a line starting with a space or `=`) can take
+  its mask in `main`'s excerpt from the text before it: plain-text data ending in `password:`,
+  `password` or `token=`, then the value as a comment, after a blank line or not, or on a line
+  starting with a space or `=`, is masked by `main` through the label, but the cut excerpt
+  emptied the label and showed `Tr0ub4dor-and-3` (`context_loss.py`, 5 of 17 forms). A cut
+  excerpt now keeps only blank lines, JSON lines and the format's `data`, `event`, `id` and
+  `retry` fields (the auditor's `patch-drop-nonfield-lines.diff`): 0 of 17 forms show more than
+  `main` (5 show less); `reach.py` 0 of 15 more (3 fewer: comment lines go), `kept_fields.py` 0 of
+  96, `window_attacks.py` 36 of 36 clean, clean bodies that fit the window 0 of 1,498 differ from
+  `main`; `cost3.py` 0.01 to 0.21 s on 4 MiB bodies.
+
+### Fixed (what the fifth pre-merge audit, of `6d7d990e`, found in A-77, before it lands)
+
+- **A cut stream's excerpt reaches no further into the body than `main`'s (parity).** Its lines,
+  emptied of their streamed text, are short, so the 4 KiB excerpt reached lines `main`'s never
+  reached, and what it keeps outside the streamed text (comment, `event:` and `id:` lines, an
+  event's `id` or `model`, Ollama's `created_at` and `done_reason`, Anthropic's `type`) showed
+  more of a secret a target placed there than `main` did: 11 of 11 pieces where `main` showed 8
+  (`reach.py`), and one more piece than `main` in 3 of 96 kept-field cases. Only the lines that
+  `main`'s excerpt of the body shows whole are kept now, found by redacting them as `main` does:
+  a fixed 4 KiB of the body was not enough where `main`'s own masks lengthen what it shows (short
+  emails in every event: `main` none of 11 pieces, 4 KiB 8). `reach.py` 0 of 15 cases and
+  `kept_fields.py` 0 of 96 show more than `main`, and none fewer; `window_attacks.py` 36 of 36
+  clean; clean bodies past the window 240 of 320 differ from `main` only by the withheld text and
+  the notice (20,308 events and lines checked); `cost3.py` 0.01 to 0.20 s on 4 MiB bodies.
+
+### Fixed (what the fourth pre-merge audit, of `5dd87b42`, found in A-77, before it lands)
+
+- **A cut stream's excerpt shows no streamed text (MEDIUM, a regression against `main`).** The
+  window read only a long stream's head, but masks shorten a text, so what lay near the window's cut
+  moved up into the 4 KiB the excerpt shows, and a secret whose pieces crossed the cut, never read
+  whole, showed its beginning: a URL password with symbols at 7 of 31 cuts in three stream shapes, a
+  300-character registered credential at 70 of 111 (`window_attacks.py`, case A; `main` 0). Showing
+  only the window's first half and leaving out each stream's open tail still let a 600-character URL
+  password of words show 20 to 61 of its characters, where `main` showed 0 to 3, and a stream that
+  paused past the window show its secret's head (case B, 16 of 36 rows). By the owner's decision of
+  2026-10-13, under the delegation (best practice), the excerpt fails closed: it may show less than
+  `main`, never more. A body streamed as events or as JSON lines in a shape known to stream, and
+  longer than the window (36 KiB with no long registered credential), keeps in its excerpt the lines
+  `main`'s excerpt shows whole (since the fifth pre-merge audit, above) with every streamed text
+  value emptied (content and delta text, a `response`, a logprob token and its alternatives, a
+  `data:` line's text; `bytes` and Ollama's `context` nulled), its keys, structure, numbers and
+  protocol fields, roles, finish and stop reasons kept, under a first line that says the text is
+  withheld. Case A and case B: 0 of 36 rows each; the long password 0 characters at every start;
+  clean bodies that fit the window `main`'s excerpt byte for byte (1,498 of 1,498); clean bodies
+  past it differ from `main` only by the withheld text and the notice (240 of 320, the six shapes
+  that stream, every shown event or line checked, 20,308); `cost3.py` 0.01 to 0.20 s on 4 MiB bodies
+  (0.01 to 0.21 s on `5dd87b42`).
+- **An event stream's logprobs spell no masked token (found with that fix, not by the audit).**
+  An OpenAI chunk streamed with logprobs holds a logprob list of one item, which was no logprob
+  list: the excerpt masked its token as the stream's piece but kept its `bytes`, which spelled
+  the key in order (on `main` too), and joined each rank of alternatives across the chunks, which
+  A-77 says alternatives are not, so 4 of 6 clean replies streamed with alternatives were quoted
+  otherwise than by `main`. A transcript's alternatives are no stream, and a transcript's piece
+  that is a logprob item's token has the item's alternatives masked and its `bytes` dropped, as
+  a list's token has; a one-item list has the `bytes` of a token masked on its own dropped. Now
+  no rebuild, and 0 of 6 differ from `main`.
+
+### Fixed (what the third pre-merge audit, of `74ace451`, found in A-77, before it lands)
+
+- **A log of JSON lines is quoted as main quotes it (LOW).** Any body whose lines were all JSON
+  objects was read as a stream, so a log's fields were joined across its records and masked
+  (`"msg":"emoji"` became a high-entropy mask, later fields went empty, rewritten lines lost their
+  compact form): 181 of 217 clean JSON Lines logs were quoted otherwise than by `main`, now 0 of
+  217. Only lines in a shape known to stream are a stream (Ollama's, a `done` beside a `message`
+  or a `response`; OpenAI's chunks); any other body of JSON lines is records, string by string.
+  A line rewritten keeps its compact form.
+- **A block of `data:` lines is read line by line beside a masked event (LOW).** The line-by-line
+  reading ran only when the format's masked nothing, so one masked event let a block of `data:`
+  lines with no blank line between them keep a key in clear; an event of several `data:` lines
+  that make no JSON object or array is now read line by line in the one reading, so a clean
+  stream is read once.
+- **An excerpt reads only the head it can show (LOW).** A 4 MiB hostile stream cost up to 12.8 s
+  in the audit (18.0 s here, `data` events with no colon; `main` 0.00 s); the excerpt keeps at most
+  4 KiB, so only four times the part it reads is read (36 KiB with no long registered
+  credential), and each stream that reaches past half that window has its open tail left out (a
+  run of key characters up to 256 long, a registered credential's beginning). That did not keep
+  a secret's beginning out of the excerpt where masks shortened the head; since the fourth
+  pre-merge audit's fix, above, a body the window cuts has its streamed text withheld instead.
+  `cost3.py` on 4 MiB bodies: 0.01 to 0.24 s, was 0.10 to 17.98 s.
+- **Figures (LOW).** The second audit's `sse_variants.py` figure was the key in 9 of 19 shapes
+  and the credential in 9, not 10. A-77's not-covered list is made exact.
+
+### Fixed (what the second pre-merge audit, of `ea13562f`, found in A-77, before it lands)
+
+- **A rewritten excerpt keeps a grouped phone or card masked (MEDIUM, a regression against
+  `main`).** The excerpt of a reply the adapters could not read is rewritten when it holds a reply
+  in pieces, and was written with `json.dumps`' ASCII escaping, so the text outside any stream
+  reached the excerpt's redaction `\u00a0`-escaped: `Appelez le +33 6 12 34 56 78 merci.` grouped
+  by no-break spaces, in an OpenAI-compatible body whose `content` is a list of parts, was shown
+  where `main` printed `«REDACTED:phone»`, and so was a card grouped by U+00A0 or U+202F, in the
+  JSON-body path and the event-stream path (`reserialize_leak.py`: 3 of 3 visible in both, now
+  masked). Both are written as the target wrote them, and so is a WebSocket turn's excerpt.
+- **An event stream is read as the format says, and NDJSON too (MEDIUM).** The excerpt split the
+  stream with `str.splitlines` and read one JSON object per `data:` line, so a raw U+2028 or
+  U+0085 inside an event's JSON, an event's JSON over two `data:` lines, plain-text data and
+  JSON-string data were rebuilt (`sse_variants.py`: the key rebuilt in 9 of 19 shapes and the
+  credential in 9, now in 2 and 1, neither an event of the format: a `data:` after a space,
+  deltas on plain lines). Lines end at
+  CRLF, LF or CR only, a leading U+FEFF is dropped, a blank line ends an event, comments and
+  fields are read as the format writes them, an event's `data` lines join with LF, data that is
+  a JSON object or array is masked field by field across the events and any other data as the
+  text of one stream, a page of `data:` lines with no blank line between them is read line by
+  line, and a body of JSON lines in the shape Ollama or OpenAI's chunks stream is masked the same
+  way (the third pre-merge audit narrowed it from any JSON lines, below). Not covered, in A-77:
+  the excerpt shapes its list names.
+- **A withheld reply is said in SARIF and on the terminal, and probes are withheld too (LOW).**
+  SARIF adds the finding's "stored with the pieces of the reply withheld" to the result's message
+  and an `evidence_withheld` count to the result and the run; the terminal prints an `Evidence
+  withheld:` line naming the specs. A recognition probe whose write is refused (the watch's
+  benign check, `-sV`) is stored withheld the same way, where it ended the run.
+- **Figures and wording (LOW).** Joined, the pieces show each mask once and never more than the
+  redacted text; they show less where a literal between two masks could stand in more than one
+  place (the masks merge and that literal goes: 8 of 1,500 realistic replies, 309 of 1,500
+  hostile ones), where the docs said they read as the redacted text. The rank figure below is
+  6.9% of all the alternatives of clean replies (5,794 of 83,950), each beside a token that was
+  kept.
+
+### Fixed (what the pre-merge audit of `c4bd2012` found in A-77, before it lands)
+
+- **A URL password masked in pieces no longer makes the guard refuse the reply and end the run
+  (HIGH).** Each piece a mask covered showed the mask, so the pieces joined read
+  `user:«REDACTED:url_password»«REDACTED:url_password»...@host`, which the URL rule masks again as
+  one, and the guard refused a reply masked correctly: `postgresql://user:password@localhost:5432/mydb`
+  in 3-character tokens aborted the campaign (`aborted on RedactionLeakError ... 1 of 1 specs never
+  ran`, exit 3, where `main` exits 0), and so did 18 of 18 connection strings at token sizes 1 to
+  8 and two in WebSocket deltas. The first piece a mask covers now shows it and the others lose
+  the text under it, so the pieces joined show each mask once: 18 of 18 stored, the run
+  exits 0, and the auditor's fuzz counts 0 refusals in 3,000 cases (110 to 122 per 1,000 before).
+  A refused write no longer ends the campaign alone: the attempt is stored with the pieces of its
+  reply withheld, its text, figures and verdict kept and `request.metadata.evidence_withheld`
+  saying why, and the finding's line says `stored with the pieces of the reply withheld`; a second
+  refusal ends the run as before.
+- **An alternative keeps nothing of a masked token (MEDIUM).** A rank's own edit landed after the
+  alternatives were masked and left 10 characters of a labelled password in one. They are masked
+  once the item's every edit is made, an alternative written as the token showing what the token
+  shows.
+- **A reply streamed as server-sent events is quoted masked (MEDIUM).** A body that is not JSON
+  was quoted as it came, each delta redacted alone, so a key or a registered credential in
+  3-character deltas was rebuilt from the excerpt; its events, one JSON object per `data:` line
+  in this round, are masked across the events as a transcript is (the second pre-merge audit
+  widened it to the format, above).
+- **The `bytes` of every masked token and alternative are dropped (LOW),** whether the mask comes
+  from its stream or from the token alone: they spelled a key a rank's mask hid.
+- **A rank of alternatives is no stream (LOW).** Side by side, alternatives are text no one wrote:
+  joining a rank masked 6.9% of all the alternatives of clean replies (5,794 of 83,950 on the
+  auditor's 898 clean replies), each beside a token that was kept; none now. Not covered,
+  recorded in A-77: a secret that the alternatives
+  alone spell beside kept tokens.
+
+### Fixed (a secret kept in pieces is masked as the text they make: u01 A-77, audit of main `de122e26`)
+
+- **No secret is rebuilt from a reply's logprob tokens or a transcript's deltas (HIGH 1).** The
+  redactor masked each string on its own, and the evidence store and the reports inherit that:
+  `response.text` read masked while the same text was kept in pieces of 1 to 4 characters in
+  `response.logprobs[*].token` and each token's `top` alternatives (the OpenAI adapter asks for
+  logprobs by default, so every `provider: openai` target) and in the deltas of
+  `raw_ids.websocket.frames`. Joined, they gave back the run's canary and an `sk-proj-` key from
+  the evidence and `r.json` (the auditor's loopback stub, `PI-DIRECT-001`: the joined tokens held
+  both in all three evidence files and in `r.json`; now in none), and a registered credential, an
+  email and a key from a transcript's three deltas (rebuilt in all three cases; now in none). A
+  logprob list's tokens, and a transcript's received content field by field, are now joined and
+  redacted once; the first piece a mask covers shows it and the others lose the text under it,
+  so the pieces joined show each mask once and never more than the redacted text, and a masked
+  token's alternatives show its
+  masks and lose the `bytes` OpenAI writes beside them. The figures,
+  the token count and every other piece are kept, so `dottore replay` and `logprob_membership`
+  read the run as before. The pieces are masked rather than dropped because the alternatives and
+  a transcript's other content are in no other field, and a figure is read with its token.
+- **The evidence store's guard reads the pieces joined.** The fail-closed guard redacted one
+  string at a time and passed the pieces; it now redacts every joined text of the stored streams
+  too, and refuses the write when one still masks something; the runner then stores the attempt
+  with the pieces of its reply withheld instead of ending the campaign.
+- **Evidence written before this change keeps the pieces.** An attempt stored by an earlier
+  build against a `provider: openai` target (its `response.logprobs`) or a `provider: websocket`
+  one (its `raw_ids.websocket.frames`) may hold a secret the text masks, rebuilt by joining the
+  pieces: treat such evidence trees as holding the reply in clear, and delete or re-run them.
+- **A WebSocket transcript names its protocol's fields.** `raw_ids.websocket` gains
+  `protocol_paths`, the frame fields the target file declares (`type_path`, `final_path`,
+  `error_path`, the ids, `usage_path`, `tool_calls_path`, the `expect` paths): joined, every frame
+  type read as one high-entropy token and was masked, so those fields are never joined, and the
+  rest of a frame received is masked across the frames as the text it makes, in memory, at rest
+  and in reports. A turn with no text quotes its frames in the excerpt masked the same way, and an
+  unreadable JSON body's OpenAI logprobs are quoted masked; any other excerpt is byte for byte as
+  before.
+- **The JSON report masks the keys of an attempt's free-form fields (MEDIUM 2).** `redact()` masks
+  values only, and the report had no key masking: a tool call whose argument names were an
+  `sk-proj-` key, a registered credential and an email showed all three in `r.json`, and so did
+  `usage` and frame keys. Each attempt's `request.messages`, `tools`, `media` and `metadata` and
+  `response.tool_calls`, `raw_ids` and `usage` now have their keys masked as the evidence store
+  masks them, two that mask alike numbered apart (`«REDACTED:email»`, `«REDACTED:email», #2`); the
+  model's own keys stay, so the report validates. The key masking moved to
+  `redactor.mask_keys`, which the store and the reports share.
+- **A judge's words beside a cut reply are redacted before they are cut (LOW 5).**
+  `_judge_record` and `_judge_not_consulted` folded the text and cut it at 240 characters before
+  any redaction: 61 of the auditor's 305 placements of a secret across the cut left 6 or more of
+  its characters readable, and a credential registered with a tab was shown whole. They now
+  redact, fold, redact again and cut, never inside a mask or a token: 0 of 305.
+- **`media_sha256` is put back verbatim only as SHA-256 hex digests (LOW 7).** The evidence store
+  exempted the value by its key name; anything but a list of 64-hex digests is now redacted like
+  any value.
+
 ### Fixed (the CLI audit of `de122e26`: crashes that exited 1, a ceiling no flag raised, reports over inputs, u12 A-80)
 
 - **Nothing but findings exits 1.** Exit 1 means "findings below `--fail-on`", so a CI gate that

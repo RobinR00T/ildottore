@@ -535,7 +535,12 @@ such a reply is never a pass. The criterion:
   that documents it.) On a partial reply (text the model
   wrote before an output-side stop or Anthropic's `refusal`, not a Bedrock replacement) the judge
   is consulted and its verdict recorded after the reasoning, `; semantic_judge on what came back,
-  recorded and not deciding: <status> (<confidence>): <its words, at most 240 characters>` (L8);
+  recorded and not deciding: <status> (<confidence>): <its words, at most 240 characters>` (L8;
+  since 2026-10-12 redacted, folded onto one line, redacted again and then cut, never inside a
+  mask or a token, and so is the note below: cut first, a secret across the cut kept a head no
+  rule recognises, 61 of 305 placements leaving 6 or more characters readable, and folded first,
+  a credential registered with a tab was shown whole; audit of main `de122e26`, LOW 5, checked by
+  `tests/core/test_judge_note_redaction.py`, six of whose seven tests fail on `de122e26`);
   on an empty or replaced reply it is not asked. It runs after the deciding evaluators and in a
   call of its own, so a request ceiling that refuses it, or any error of its own, is the note
   `; semantic_judge on what came back not consulted, and not deciding: <class>: <message>` and
@@ -826,6 +831,31 @@ wrapper with the JSON, SARIF, JUnit and HTML reports, a target that breaks mid-r
 behind a filter on attack words that finishes its battery, and three on the unreachable reason's
 words). Not built: the `-sV` probe pass seeding the watch, which would stop a run whose
 every probe was unreadable after its probes (u09 A-35).
+
+**A-77 (u01's clause; this unit's half, added 2026-10-12, pre-merge audit of `c4bd2012`, HIGH 1)
+A refused evidence write withholds the reply's pieces; it never ends the campaign alone.** The
+evidence store refuses a write whose redacted payload is not a fixed point of the redactor (u10),
+which is right, and the refusal propagated out of the spec and ended the campaign: `aborted on
+RedactionLeakError ... 1 of 1 specs never ran or did not finish`, exit 3, for a reply holding a
+URL password the redactor had masked, which `main` stored (exit 0). The runner stores each
+attempt through `store_withholding`, and so are the recognition probes (the watch's benign
+check, `-sV`'s probes, since the second pre-merge audit, LOW 4: a refused probe raised): a refusal
+the store marks (`evidence_refused`, a structural marker, since `core` imports no store) is
+answered by storing the attempt again with every piece of its
+reply's streams empty (`redactor.withhold_split`: the logprob tokens and their alternatives, a
+transcript's content), the reply's text, the figures and the verdict kept, and
+`request.metadata.evidence_withheld` (`shared.withheld`) saying what was withheld and quoting
+the refusal. That attempt is the one scored, stored and reported, and the finding's line counts it
+(`; <k>/<n> stored with the pieces of the reply withheld, since the redactor could not prove them
+masked as one text (A-77)`), which the JSON, JUnit and HTML reports quote; SARIF adds the same
+words to the result's message and an `evidence_withheld` count to the result and the run, and the
+terminal summary prints an `Evidence withheld:` line naming the specs (second pre-merge audit, LOW
+3). A probe's note is in its artifact; no finding counts it. A second refusal, or one for a reply
+with no piece to withhold, ends the campaign as before: nothing raw is ever written. Checked by
+`tests/cli/test_split_values_e2e.py` (a store refusing every reply's pieces, with `-sV`: both
+specs run, every attempt and probe is stored withheld, each finding, each SARIF result and the
+terminal say so; on `c4bd2012` the run aborts, on `ea13562f` the probes stop it) and
+`tests/core/test_stored_withholds_pieces.py`.
 
 **A-79 A target cannot forge a filter stop to hide a judged exploit or turn CI green (added
 2026-10-11, the amendment to OD-41 and OD-42, decided under the owner's delegation, best

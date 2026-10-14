@@ -19,10 +19,17 @@ from collections.abc import Mapping
 from typing import Protocol, runtime_checkable
 
 from ildottore.redactor import Redactor as _DefaultRedactorImpl
-from ildottore.redactor import redact_evidence_ref, report_identity
+from ildottore.redactor import mask_keys, redact_evidence_ref, redact_split, report_identity
 from ildottore.shared.models import Finding, TestRun
 
 _SHA256 = re.compile(r"[0-9a-f]{64}")
+
+#: An attempt's free-form fields, by part: what a target, a spec or the tool wrote, keys
+#: included. Every other key of an attempt is the model's own, kept so the dump validates.
+_FREE_FORM: dict[str, tuple[str, ...]] = {
+    "request": ("messages", "tools", "media", "metadata"),
+    "response": ("tool_calls", "raw_ids", "usage"),
+}
 
 __all__ = ["MaskingContext", "Redactor", "mask_findings", "mask_run", "mask_text"]
 
@@ -63,12 +70,13 @@ def mask_run(run: TestRun, redactor: Redactor) -> TestRun:
     """
 
     raw = run.model_dump(mode="json")
+    findings = raw.pop("findings", None) or []
     masked = redactor.redact(raw)
     if not isinstance(masked, dict):  # pragma: no cover - redact preserves shape
         raise TypeError("redactor changed the shape of a run dump")
     masked["findings"] = [
-        _restore_tool_fields(masked_finding, finding, redactor)
-        for masked_finding, finding in zip(masked.get("findings") or [], run.findings, strict=True)
+        _restore_tool_fields(_masked_finding(raw_finding, redactor), finding, redactor)
+        for raw_finding, finding in zip(findings, run.findings, strict=True)
     ]
     # Each target is named as its findings name it (`report_identity`).
     for masked_target, target in zip(masked.get("targets") or [], run.targets, strict=True):
@@ -78,6 +86,46 @@ def mask_run(run: TestRun, redactor: Redactor) -> TestRun:
     if run.scope_sha256 is not None and _SHA256.fullmatch(run.scope_sha256):
         masked["scope_sha256"] = run.scope_sha256
     return TestRun.model_validate(masked)
+
+
+def _masked_finding(raw: dict[str, object], redactor: Redactor) -> dict[str, object]:
+    """A finding's dump masked: its attempts as :func:`_masked_attempt` masks one, the rest
+    string by string."""
+
+    attempts = raw.pop("attempts", None) or []
+    masked = redactor.redact(raw)
+    if not isinstance(masked, dict) or not isinstance(attempts, list):  # pragma: no cover
+        raise TypeError("redactor changed the shape of a finding dump")
+    masked["attempts"] = [_masked_attempt(attempt, redactor) for attempt in attempts]
+    return masked
+
+
+def _masked_attempt(raw: object, redactor: Redactor) -> dict[str, object]:
+    """An attempt's dump masked as the evidence store masks it (A-77, audit of main de122e26).
+
+    The keys of its free-form fields are masked (:data:`_FREE_FORM`; a tool call's argument
+    names, a usage field's, a WebSocket frame's, the report wrote them in clear: MEDIUM 2), two
+    that mask alike numbered apart, and its values as the store masks them
+    (:func:`ildottore.redactor.redact_split`): each string, and each stream's joined text, so a
+    reply kept in pieces (a logprob list's tokens, a transcript's deltas) is masked as the text
+    it makes, a masked token's alternatives with it (HIGH 1). The model's own keys stay as they
+    are, so the dump validates.
+    """
+
+    if not isinstance(raw, dict):  # pragma: no cover - an attempt dumps to a dict
+        raise TypeError("an attempt dump is not an object")
+    keyed = dict(raw)
+    for part_name, fields in _FREE_FORM.items():
+        part = keyed.get(part_name)
+        if isinstance(part, dict):
+            keyed[part_name] = {
+                name: mask_keys(redactor, value) if name in fields else value
+                for name, value in part.items()
+            }
+    masked = redact_split(redactor, keyed)
+    if not isinstance(masked, dict):  # pragma: no cover - redact preserves shape
+        raise TypeError("redactor changed the shape of an attempt dump")
+    return masked
 
 
 def _restore_tool_fields(masked: object, finding: Finding, redactor: Redactor) -> dict[str, object]:
@@ -151,7 +199,7 @@ def mask_findings(findings: list[Finding], redactor: Redactor) -> list[Finding]:
     return [
         Finding.model_validate(
             _restore_tool_fields(
-                redactor.redact(finding.model_dump(mode="json")), finding, redactor
+                _masked_finding(finding.model_dump(mode="json"), redactor), finding, redactor
             )
         )
         for finding in findings

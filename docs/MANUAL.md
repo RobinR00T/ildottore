@@ -1013,8 +1013,15 @@ is `setup_not_delivered` too; a memory seed needs `{{system_prompt}}` in a templ
 (`response.raw_ids.websocket.frames`, in order, with its direction: the transport's own key of
 `raw_ids`, not a field of its own, by decision, OD-34) and filed by the evidence
 store redacted at rest, so `dottore replay` re-derives the verdict from what went over the
-socket. In a multi-turn attempt the stored attempt is built from the final turn, whose record
-carries the whole conversation's frames (an intermediate turn's record carries only its own).
+socket. Beside the frames the record names the fields the target file declares as the protocol's
+(`raw_ids.websocket.protocol_paths`: `type_path`, `final_path`, `error_path`, the ids, `usage_path`,
+`tool_calls_path` and the `expect` paths, never `text_path`); every other field of a frame received
+is the reply's content, masked across the frames as the text it makes (§10, A-77), so a secret
+streamed in deltas is masked where it starts and its later deltas lose its text, and the
+protocol's fields read as the server wrote them. A turn the adapter cannot read quotes its frames
+in the attempt's excerpt the same way. In a multi-turn attempt the stored attempt is built from
+the final turn, whose record carries the whole conversation's frames (an intermediate turn's
+record carries only its own).
 The credential is inserted in memory at send time and recorded as `{{token}}`; a server that
 echoes it back, in a frame, an error frame or a close reason, has it scrubbed by value from
 the record and from the error message, which is redacted too. `-sV` probes a WebSocket target
@@ -2430,6 +2437,36 @@ whose every attempt was cut with a canary in each exits 2, not 3.
   content-addressed and redacted at rest, in `<run-id>/attempts/`. Recognition traffic from
   `-sV` is stored the same way in `<run-id>/probes/`, kept apart so it cannot be counted as
   attack traffic. The run store is a SQLite db (`--run-db`).
+- **A reply kept in pieces.** An OpenAI target's reply is kept twice, whole in `response.text`
+  and as tokens of 1 to 4 characters with their alternatives in `response.logprobs` (the adapter
+  asks for logprobs on every request), and a WebSocket target's as the deltas it was streamed in
+  (`response.raw_ids.websocket.frames`). The evidence and every report mask those pieces as the
+  text they make: a logprob list's tokens, and the content of the frames received field by field,
+  are joined and redacted once; the first piece a mask covers shows it and the others lose the
+  text under it, so, joined, the pieces show each mask once and never more than `response.text`
+  shows (a few show less, when a literal between two masks could stand in more than one place),
+  and a masked token's alternatives and `bytes` are masked with it. A key streamed in three deltas is stored as
+  `«REDACTED:high_entropy:<digest>»`, `""`, `""`; a refusal is stored as it came. The figures, the
+  token count and the frames' protocol fields are kept, so `dottore replay` and the membership
+  evaluator read the same run. The evidence store refuses a write in which a joined text still
+  masks something, as it refuses one in which a string does; the attempt is then stored with the
+  pieces of its reply withheld (empty tokens and content, the text, figures and verdict kept,
+  `request.metadata.evidence_withheld` saying why) and its finding's line says `stored with the
+  pieces of the reply withheld`, which SARIF's message repeats with an `evidence_withheld` count,
+  and the terminal prints an `Evidence withheld:` line, so the run goes on (A-77). A recognition
+  probe refused is stored withheld the same way. An unreadable reply's excerpt is masked the same
+  way: a body streamed as server-sent events is read as the format says, and so are JSON lines
+  in Ollama's or OpenAI's chunk shape (any other JSON lines, a log, are quoted as they came); only
+  the head the excerpt can show is read (36 KiB with no long registered credential). A longer body's
+  excerpt withholds the text it streams: the lines `main`'s excerpt would show whole are shown,
+  comments and other lines that are no field of the format left out, with every streamed text value
+  emptied, keys, structure, types, roles, ids and finish reasons kept, under a first line that says
+  so, since a secret streamed across the cut could not be masked whole. A chunk streamed with
+  logprobs has its masked tokens' alternatives and `bytes` masked too. Evidence written before A-77
+  keeps an OpenAI or WebSocket target's reply in pieces as it came. The keys of an attempt's
+  free-form fields (a tool call's argument names, `usage`, a frame's fields) are masked in the
+  reports as in the evidence, two that mask alike numbered apart (`«REDACTED:email»`,
+  `«REDACTED:email», #2`).
 - **File permissions.** Attempt and probe files are readable by their owner only (0600), and
   so are a run store and a report file the tool creates. A report that already exists keeps
   its mode when it is rewritten, and so does an existing run store. A report another user must

@@ -363,6 +363,34 @@ async def test_identities_left_out_for_different_reasons_are_named_by_reason(
     )
 
 
+class _DownAtLength(_Down):
+    """An identity whose send failed with a long error, as a proxy's HTML page can make it."""
+
+    async def send(self, request):  # type: ignore[no-untyped-def]
+        raise ConnectionError("identity endpoint down: " + "the proxy said no " * 55)
+
+
+async def test_an_identity_left_out_is_named_in_a_note_no_longer_than_a_judge_s(
+    evaluators, mutators, scorer, stores
+) -> None:
+    """The note on an identity not heard from was cut by ``_one_line`` at 240 characters; since
+    A-77 that redacts and does not cut, so the merge wraps it in ``_clipped``: a 1,000-character
+    error gave a 1,012-character note (pre-merge audit of fix/no-secret-in-fragments, round 5)."""
+
+    from ildottore.core.runner import _JUDGE_NOTE_CHARS
+
+    probes = _three_with(_DownAtLength(), "only tenant C data")
+    runner = _runner(
+        lambda _t: probes, evaluators=evaluators, mutators=mutators, scorer=scorer, stores=stores
+    )
+    result = await runner.run(run_id="r1", target=_mi_target(), specs=[_xtenant_spec()])
+
+    reasoning = result.findings[0].attempts[0].verdict.reasoning  # type: ignore[union-attr]
+    note = reasoning.split("the identity sweep left out tenant-a (", 1)[1].split("): ", 1)[0]
+    assert note.startswith("ConnectionError: identity endpoint down")
+    assert len(note) <= _JUDGE_NOTE_CHARS, len(note)
+
+
 class _Blocked:
     """An identity whose prompt the provider's input filter refused (OD-41): Azure's 400."""
 

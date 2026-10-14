@@ -38,6 +38,7 @@ from ildottore.shared.provider_filter import (
     side_unknown_attempt_ids,
 )
 from ildottore.shared.unreadable import unreadable_attempt_ids
+from ildottore.shared.withheld import withheld_attempt_ids
 
 __all__ = ["SARIF_SCHEMA_VERSION", "SarifReporter", "band_to_level", "load_sarif_schema"]
 
@@ -174,6 +175,13 @@ def _result(finding: Finding, rule_index: int, *, include_needs_review: bool) ->
             f"; {unreadable} of {sent} attempt(s) whose reply could not be read as the "
             "provider's, which may be the one an attack changed: review them"
         )
+    # Attempts stored with the pieces of their reply withheld (A-77): said and counted too.
+    withheld = len(withheld_attempt_ids(finding.attempts))
+    if withheld:
+        message += (
+            f"; {withheld} of {sent} attempt(s) stored with the pieces of the reply withheld, "
+            "since the redactor could not prove them masked as one text (A-77)"
+        )
     # Attempts whose verdict the operator's target file changed (OD-43): said in the message,
     # and counted in the properties, only when there are any.
     declared = len(declared_attempt_ids(finding.attempts))
@@ -210,6 +218,7 @@ def _result(finding: Finding, rule_index: int, *, include_needs_review: bool) ->
             **({"provider_filter_side_unknown": unsaid} if unsaid else {}),
             **({"unreadable_reply": unreadable} if unreadable else {}),
             **({"operator_declaration_attempts": declared} if declared else {}),
+            **({"evidence_withheld": withheld} if withheld else {}),
         },
     }
     return result
@@ -252,6 +261,8 @@ def _blocked_property(findings: list[Finding]) -> dict[str, int]:
         ),
         # The replies the adapter could not read (OD-21, u08 A-74).
         "unreadable_reply": sum(len(unreadable_attempt_ids(f.attempts)) for f in findings),
+        # Attempts stored with the pieces of their reply withheld (A-77).
+        "evidence_withheld": sum(len(withheld_attempt_ids(f.attempts)) for f in findings),
     }
     return {key: count for key, count in counts.items() if count}
 

@@ -350,6 +350,88 @@ reads as U+FFFD, since httpx decodes the stream as text.
   this one (`test_base.py`, `test_openai.py`, `test_anthropic.py`, `test_rest.py`,
   `test_deep_replies.py`, `test_websocket.py`, `test_websocket_premerge.py`,
   `test_provider_filter_block.py`).
+- **A-77 (u01's clause; this unit's half, added 2026-10-12, audit of main `de122e26`, HIGH 1) A
+  WebSocket transcript names its protocol's fields, and nothing the adapter quotes rebuilds a
+  secret from its pieces.** The transcript is `raw_ids["websocket"] = {"frames": [...],
+  "protocol_paths": [...]}`: beside the frames (OD-34, unchanged), the dotted paths the target file
+  declares as the protocol's (`type_path`, `final_path`, `error_path`, `tool_calls_path`,
+  `usage_path`, `model_path`, `id_path`, and the `expect` path of the handshake and of the session
+  start), never `text_path` or a path above it. Every other field of a frame received is the
+  reply's content, which the redactor joins across the frames field by field (`redact_split`, u01
+  A-77), in memory where `redact_ids` builds the record and again at rest and in the reports, which
+  read the paths from the transcript without the target file (a transcript stored before them is
+  read with the frame type at `type`, the default `type_path`). A secret the server streams in deltas
+  was redacted delta by delta and rebuilt from the evidence (an `sk-proj-` key, a registered
+  credential and an email in three deltas, measured with the loopback fake chat server). A turn
+  with no text quotes its frames received in the excerpt with that content masked as one text
+  (`mask_split` over the transcript): the frames were `json.dumps`ed and redacted as one string, so
+  each delta was masked alone. `reply_excerpt` reads a JSON body's logprob streams the same way
+  (`_split_masked`: OpenAI's `logprobs.content` tokens, their `top_logprobs` shown masked beside a
+  masked token, and the `bytes` of every masked token or alternative, which spell it, dropped; an
+  event stream's chunk holding one logprob item has the same done to it, its alternatives no
+  stream, so its `bytes` no longer spell a key its tokens no longer show), and
+  a body streamed as server-sent events when no stream was asked for, masked across the events
+  as a transcript is (it is not JSON, so it was quoted as it came, each delta redacted alone,
+  pre-merge audit of `c4bd2012`, MEDIUM 3). The stream is read as the format says (WHATWG HTML,
+  server-sent events, since the second pre-merge audit, MEDIUM 2): a line ends at CRLF, LF or CR
+  only (a raw U+2028 or U+0085 inside an event's JSON no longer splits it), a leading U+FEFF is
+  dropped, a blank line ends an event, a line starting with a colon is a comment, a field is what
+  precedes the first colon with one space after it dropped, and an event's `data` lines join with
+  LF; data that is a JSON object or array is masked field by field across the events (`type`,
+  `event`, `object`, `id`, `model`, `created`, `created_at`, `system_fingerprint`, `done` and
+  `done_reason` its protocol's fields), and any other data (a bare delta, a JSON string, decoded)
+  as the text of one stream. An event of several `data:` lines that make no object or array
+  joined (a page of `data:` lines with no blank line between them, which the format reads as one
+  event) is read line by line, each line a unit, in the same reading (third pre-merge audit,
+  LOW 3: a second reading ran only when the first masked nothing, so a masked event beside such a
+  block kept its key). A body of JSON lines is a stream only in a shape known to stream (each line
+  Ollama's, a `done` beside a `message` or a `response`, or an OpenAI chunk); any other is records,
+  masked string by string as `main` masks it (LOW 2: 181 of 217 clean JSON Lines logs were quoted
+  otherwise). Only the head the excerpt can read is read: four times its read extent (twice what
+  it keeps plus four times the longest registered credential or 256), cut at a line end, 36 KiB
+  with no long credential. A body that fits that head is masked as above. One longer than it has its
+  streamed text withheld instead (the owner's decision of 2026-10-13, under the delegation, best
+  practice: fail closed, an excerpt may show less than `main`, never more): the excerpt keeps the
+  lines `main`'s excerpt of the body shows whole and that are blank, JSON or a `data`, `event`, `id`
+  or `retry` field (a comment or a line starting with a space or `=` can take its mask in `main`'s
+  excerpt from a label in the text withheld: sixth pre-merge audit, `Tr0ub4dor-and-3` shown in 5 of
+  17 forms), with every streamed text value in them emptied (content and delta text, a `response`, a
+  message's content, a logprob token and its alternatives, a `data:` line's text; `bytes` and
+  Ollama's `context` nulled), and keeps keys, structure, numbers, booleans and the protocol's fields
+  above, and a `role`, a `finish_reason`, a `stop_reason` and a `service_tier`, at any depth (an
+  event's `delta.type`, a tool call's `id`); its first line says, once, that the text it streams is
+  withheld because the reply is longer than the head the excerpt reads. A secret whose pieces cross
+  the head's cut is never read whole, so no rule can mask it: masked across the head, what lay near
+  the cut moved up into the 4 KiB the excerpt keeps (fourth pre-merge audit, MEDIUM: a URL password
+  with symbols showed its beginning at 7 of 31 cuts, a 300-character registered credential at 70 of
+  111), and with only the head's first half shown and a stream's open tail left out, a 600-character
+  URL password of words still showed 20 to 61 of its characters and a stream that paused past the
+  head showed its secret's beginning. Withheld, none shows; a clean body past the head differs from
+  `main`'s excerpt only by that text and the notice (240 of 320 in the auditor's eight shapes, the
+  six that stream; every event or line shown equals the body's with its text emptied, 20,308
+  checked), and one that fits is `main`'s byte for byte (1,498 of 1,498). Only `main`'s whole lines
+  are kept since the fifth pre-merge audit: emptied, the lines are short, so the 4 KiB reached lines
+  `main`'s never reached, and a secret placed outside the streamed text (comment, `event:` or `id:`
+  lines, an event's `id` or `model`) showed 11 of 11 pieces where `main` showed 8; a fixed 4 KiB of
+  the body was not enough either, since `main`'s own masks lengthen what it shows (short emails in
+  every event: `main` none of 11, 4 KiB 8). The excerpt is read from that head alone (LOW 4: a 4 MiB
+  stream of tiny events cost up to 12.8 s, `main` 0.00 s; now under 0.25 s on every shape of the
+  audit's `cost3.py`). A masked unit is written again on one `data` line (a text holding LF, on as
+  many), JSON in the compact form it had, every other line as it came. A body rewritten (a JSON body
+  or a stream) is written with `ensure_ascii` off, as the target wrote it: escaped, a phone or a
+  card grouped by U+00A0 or U+202F outside any stream reached the excerpt's redaction as `\u00a0`
+  and was shown where `main` masked it (second pre-merge audit, MEDIUM 1), and a WebSocket turn's
+  frames are quoted the same way. Not read: what u01 A-77's not-covered list names for the excerpt
+  (a line that is no field of the format, pieces in a comment, `event:` or `id:` line, JSON lines in
+  another shape, among them). Any other body, or one holding no such stream, is quoted byte for byte
+  as before; its `size` is the body's as it came. Checked by
+  `tests/adapters/test_split_values_in_replies.py` (its first seven fail on `de122e26`, the three
+  event-stream cases on `c4bd2012`, the six grouped-number cases and 12 of the 20 stream shapes on
+  `ea13562f`, the log, block and window cases on `74ace451`, on `5dd87b42` the five cases of a
+  secret straddling the window's cut or reaching past it from the shown half and an event stream's
+  logprobs, on `5646b218` a secret at any offset of a cut stream, a paused stream, and a clean
+  stream past the window, on `6d7d990e` a cut excerpt's reach, and on `31cf86bf` the five forms of a
+  value after a label in the withheld text).
 
 - **A reply the provider's filter stopped keeps its stop reason, and the REST adapter reads a
   Bedrock guardrail's side (added 2026-10-11, OD-42; the runner's half is u08 A-70).** The stop

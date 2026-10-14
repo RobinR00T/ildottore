@@ -14,7 +14,9 @@ checked **before** the socket is dialled (an off-allowlist URL opens zero connec
 redirect at the upgrade is never followed (the scope authorized one URL), the credential is
 inserted in memory at send time and recorded in evidence as its placeholder (``{{token}}``),
 every frame sent and received is kept in ``raw_ids["websocket"]["frames"]`` so the evidence
-store files it redacted, and a turn is bounded in time, bytes and frames.
+store files it redacted, beside the fields the target file declares as the protocol's
+(``protocol_paths``), so the content of the frames received is masked as the text it makes
+(u01 A-77), and a turn is bounded in time, bytes and frames.
 
 One connection per conversation: a single-turn attempt opens, queries and closes; a multi-turn
 attempt keeps its connection across turns (the runner's ``conversation`` metadata names it) and
@@ -48,7 +50,7 @@ import json
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Any, ClassVar, Final, Literal
+from typing import Any, ClassVar, Final, Literal, cast
 
 from websockets.asyncio.client import ClientConnection, connect
 from websockets.exceptions import ConnectionClosed, InvalidHandshake, InvalidStatus, InvalidURI
@@ -72,7 +74,12 @@ from ildottore.adapters.base import (
 )
 from ildottore.adapters.rest import get_path
 from ildottore.policy import EndpointAllowlist
-from ildottore.redactor import Redactor
+from ildottore.redactor import (
+    TRANSCRIPT_FRAMES,
+    TRANSCRIPT_PROTOCOL_PATHS,
+    Redactor,
+    mask_split,
+)
 from ildottore.shared.config_errors import quoted
 from ildottore.shared.filter_stops import FILTER_STOPS, normalized_stop
 from ildottore.shared.models import (
@@ -743,6 +750,10 @@ class WebSocketAdapter:
             and stop not in self.filter_stops
             and (not parts or (stop in FILTER_STOPS and blank_text(text)))
         ):
+            # The frames are quoted with the content they carry masked as one text: a secret
+            # streamed in deltas was redacted delta by delta and read whole from the excerpt.
+            received = [e for e in frames[start:] if e.get("direction") == "received"]
+            shown = cast("dict[str, Any]", mask_split(self.redactor, self._transcript(received)))
             raise self._unreadable(
                 (
                     f"{self.id}: no frame of the turn carried text at path "
@@ -754,13 +765,12 @@ class WebSocketAdapter:
                     "not a filter stop the file declares; not evaluated"
                 ),
                 json.dumps(
-                    [e["frame"] for e in frames[start:] if e.get("direction") == "received"],
-                    default=str,
+                    [e["frame"] for e in shown[TRANSCRIPT_FRAMES]], default=str, ensure_ascii=False
                 ),
             )
         recorded = frames if whole else frames[start:]
         conversation.reported = len(frames)
-        ids["websocket"] = {"frames": [dict(f) for f in recorded]}
+        ids["websocket"] = self._transcript([dict(f) for f in recorded])
         reply = ModelResponse(
             text=text,
             tool_calls=calls,
@@ -891,6 +901,47 @@ class WebSocketAdapter:
         if reading.final_value is None:
             return value is not None
         return _same(value, reading.final_value)
+
+    def _transcript(self, frames: list[JsonDict]) -> dict[str, Any]:
+        """The transcript ``raw_ids["websocket"]`` keeps: the frames, and which of their fields
+        are the protocol's (A-77).
+
+        Every other field of a frame received is the reply's content, which the redactor joins
+        across the frames, field by field, and masks as one text (``redactor.mask_split``): the
+        evidence store, the reports and the store's guard read the same fields from the
+        transcript, without the target file. The protocol's fields are the ones the target file
+        declares (the frame type, the final marker, an error, the ids, usage, tool calls, what a
+        handshake or a session start must say), never the text's path or one above it, and are
+        kept apart: joined, the type of every frame read as one high-entropy token.
+        """
+
+        reading = self.spec.response
+        declared = [
+            reading.type_path,
+            reading.final_path,
+            reading.error_path,
+            reading.tool_calls_path,
+            reading.usage_path,
+            reading.model_path,
+            reading.id_path,
+            *(
+                expect.path
+                for expect in (
+                    self.spec.handshake.expect if self.spec.handshake is not None else None,
+                    self.spec.session.expect,
+                )
+                if expect is not None
+            ),
+        ]
+        text = reading.text_path.split(".")
+        protocol = sorted(
+            {
+                path
+                for path in declared
+                if path is not None and text[: len(path.split("."))] != path.split(".")
+            }
+        )
+        return {TRANSCRIPT_FRAMES: frames, TRANSCRIPT_PROTOCOL_PATHS: protocol}
 
     def _safe(self, text: str) -> str:
         """Text from the wire for an error message: the credential scrubbed, then redacted."""

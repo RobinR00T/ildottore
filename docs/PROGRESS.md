@@ -3,6 +3,267 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-14 (afternoon): stacked on #114 (fix/cli-store-budgets-paths, `7cdd91a2`)
+
+- `git merge --no-ff 7cdd91a2` (`10d73aac`): #114 holds main `030b79e0` and lands first. The code
+  merged without a conflict (#114 touches cli/, store/ and the core's budgets: the attempt debit,
+  `debit_request(opens_attempt=True)`, in execute, conversation and reproduce, which the withheld
+  path does not read); docs keep both sides, this branch's on top, S6 with both sides' sentences.
+- The branch's code over #114 is its code over main: `git diff 7cdd91a2 10d73aac -- src tests` and
+  `git diff 030b79e0 c0ff4d36 -- src tests` change the same 20 files with the same added and
+  removed lines (3,485 and 83).
+- `make gates` green on `10d73aac` (`PYTHONPATH` set to the worktree's `src` and root, `TMPDIR` at
+  the system default): ruff and format clean (450 files), mypy strict (163), four import contracts
+  kept, 75 specs lint OK, 6664 tests (6547 on `7cdd91a2`), 97.70% coverage, self-scan 0 high or
+  critical, bandit and pip-audit clean; the coverage run once more with `GITHUB_ACTIONS=true` and
+  `CI=true`: 6664 passed, 97.70%. The withheld e2e test passes; `window_attacks.py` 36 of 36 clean.
+
+## State, 2026-10-14 (morning): merged with main `030b79e0` (#111, #112, #113)
+
+- `git merge --no-ff origin/main` (`f91bf617`), resolved as `scratch/fixfrag/MERGE-PLAN.md`
+  plans: the runner keeps main's `_failed_on_trace`, send numbers and "cite anew" with
+  `self._stored` (the withheld path) in place of `self._evidence.put`, `store_withholding` beside
+  them, this branch's `_one_line` and `_clipped`, and main's note on an identity left out of the
+  sweep wrapped in `_clipped` (a test in `tests/core/test_multi_identity.py` fails without it:
+  1,030 characters against 240); the adapters, the redactor and the report masking take both
+  sides' names; docs keep both, this branch's on top.
+- Checks on the merged tree: the withheld e2e test passes; `fuzz_rejoin.py` 3 x 1000 0 refusals
+  and 0 recoverable; `force_refusal.py` 3 x 1500 and `late_fuzz.py` 2 x 1500 stored every case;
+  `sse_variants.py` 2 / 1 rebuilt, `sse_min.py` 0 of 5; `window_attacks.py` 36 of 36 clean;
+  against main `030b79e0` `reach.py` 0 of 15 more (3 fewer), `kept_fields.py` 0 of 96,
+  `context_loss.py` 0 of 17 more (5 fewer). The fixkeys auditor's clean-grammar differential
+  fuzz with `030b79e0` as the baseline: 4 x 60,000 texts and 60,000 each without the entropy
+  rule, with registered credentials and through `redact_identity`, 0 regressions and 0 outputs
+  that differ. Cut into pieces of 1 to 4 characters, as logprob tokens and as WebSocket deltas
+  (120,000 texts), the joined pieces leave readable nothing `030b79e0` masks in the whole text:
+  188 flagged by the plain checker are cases where they show less (a literal between two merged
+  masks dropped, or a mask merged with its neighbour), and no masked token keeps its `bytes`.
+- Tests: 6514 on the merged tree, 6397 on `030b79e0` (117 new). `make gates` green on `f91bf617`
+  (`PYTHONPATH` set to the worktree's `src` and root, `TMPDIR` at the system default, nothing under
+  `/tmp`): ruff and format clean (441 files), mypy strict (163), four import contracts kept, 75
+  specs lint OK, 6514 tests, 97.92% coverage, self-scan 0 high or critical, bandit and pip-audit
+  clean.
+
+## State, 2026-10-13 (near midnight): the sixth pre-merge audit, of `31cf86bf` (A-77), fixed
+
+- `_main_reach` confirmed (`_quoted` AST-identical to `main`'s `reply_excerpt` tail; reach 0 of 15,
+  kept_fields 0 of 96, expand 12 of 12 equal). One narrow case against the parity bar: plain-text
+  data ending in a label (`password`, `password:`, `token=`), then the value on a line that is no
+  field of the format (a comment, after a blank line or not, a line starting with a space or
+  `=`): `main` masks it through the label, the cut excerpt emptied the label and showed it
+  (`r6/context_loss.py`, 5 of 17 forms).
+- Fixed (`ce8cd987`, the auditor's `patch-drop-nonfield-lines.diff`): a cut excerpt keeps only
+  blank lines, JSON lines and `data`, `event`, `id` and `retry` fields (`_a_field`). Now 0 of 17
+  forms show more than `main` (5 show less), reach 0 more of 15 (3 fewer), kept_fields 0 of 96,
+  window_attacks 36 of 36 clean, emptying check 0 mismatches, clean bodies that fit the window 0
+  of 1,498 differ, `cost3.py` 0.01 to 0.21 s.
+- The merge with main still waits for PR #113 (`scratch/fixfrag/MERGE-PLAN.md`).
+- Tests: 116 new against `main` (5476 there, 5592 here), 5 since `31cf86bf`. `make gates` green on
+  `ca458c4b` (`PYTHONPATH` set to the worktree's `src` and root, `TMPDIR` at the system default,
+  nothing under `/tmp`): ruff and format clean (423 files), mypy strict (161), four import
+  contracts kept, 75 specs lint OK, 5592 tests, 97.86% coverage, self-scan 0 high or critical,
+  bandit and pip-audit clean.
+
+## State, 2026-10-13 (late night): the fifth pre-merge audit, of `6d7d990e` (A-77), fixed
+
+- Merge-ready on `6d7d990e` but for the parity bar (window_attacks 36 of 36 clean, the long
+  password 0, unrecognised shapes as `main`, only the excerpt changes; trial merges with main
+  `0be0be71` 5,773 passed, with fixkeys 6,507). The finding: a cut excerpt reached further into
+  the body than `main`'s, since its emptied lines are short, and showed more of a secret placed
+  outside the streamed text (`r5/reach.py`: 11 of 11 pieces, `main` 8; `kept_fields.py` more in 3
+  of 96).
+- Fixed (`18ba093a`): only the lines `main`'s excerpt of the body shows whole are kept
+  (`_main_reach`, by redacting them as `main` does, with `_quoted`, `reply_excerpt`'s tail). The
+  auditor's fixed 4 KiB bound was not enough where `main`'s own masks lengthen its text (short
+  emails in every event: `main` none of 11 pieces, 4 KiB 8; `scratch/fixfrag/r8/expand.py`).
+  Now `reach.py` 0 of 15 and `kept_fields.py` 0 of 96 more than `main`, none fewer; `expand.py`
+  equal to `main` in 12 of 12; window_attacks 36 of 36 clean; `emptying_check.py` 0 mismatches;
+  clean bodies that fit the window 0 of 1,498 differ, past it 240 of 320 differ only by the
+  withheld text and the notice (20,308 checked); `cost3.py` 0.01 to 0.20 s.
+- Merge with main: planned in `scratch/fixfrag/MERGE-PLAN.md`, to run once PR #113 (fixkeys) has
+  landed (the coordinator says when), with the auditor's resolutions and the `_clipped` wrap of
+  main's new `filtered[...]` note.
+- Tests: 111 new against `main` (5476 there, 5587 here), 1 since `6d7d990e`. `make gates` green on
+  `bd699191` (`PYTHONPATH` set to the worktree's `src` and root, `TMPDIR` at the system default,
+  nothing under `/tmp`): ruff and format clean (423 files), mypy strict (161), four import
+  contracts kept, 75 specs lint OK, 5587 tests, 97.86% coverage, self-scan 0 high or critical,
+  bandit and pip-audit clean.
+
+## State, 2026-10-13 (night): a cut stream's excerpt fails closed (owner's decision)
+
+- The coordinator decided the case left open below, under the owner's delegation (best
+  practice): fail closed, an excerpt may show less than `main`, never more. A body streamed as
+  events or JSON lines in a known shape and longer than the window (36 KiB with no long
+  registered credential) keeps in its excerpt the lines before the window's midpoint, every
+  streamed text value emptied (content, text, `response`, tokens, alternatives, a `data:` line's
+  text; `bytes` and Ollama's `context` nulled), keys, structure, numbers, protocol fields, roles,
+  finish and stop reasons kept, under one notice (`adapters/base.py` `_withheld_units`,
+  `_without_text`, `_withheld_notice`). A body that fits the window is masked as before; other
+  shapes are quoted as before. `withhold_open_ends` and the open tail are gone, and so is the
+  test that pinned the tail's floor.
+- Figures (`scratch/fixfrag/r7`): `window_attacks.py` case A 0 of 36 rows, case B 0 of 36 (16 on
+  `5646b218`); the 600-character URL password of words 0 characters at all 8 starts (20 to 61);
+  long-span and glued probes 0 of 16; clean bodies that fit the window 0 of 1,498 differ from
+  `main`; clean bodies past it 240 of 320 differ (the six shapes that stream; JSON bodies with
+  logprobs and JSON Lines logs 0 of 80), and every event or line they show equals the body's with
+  its text emptied under an independent emptying (27,226 checked, 0 mismatches).
+  `clean_excerpts.py`: 0 of 217 clean texts per shape differ from `main`, but 60 OpenAI SSE bodies
+  longer than the window, now withheld. Unchanged against `5dd87b42`: `diff_main.py` 0 of 1,500
+  summaries differ (replay 1500/781), every earlier round's script but for the digests the salt
+  sets, `cost3.py` 0.01 to 0.20 s on 4 MiB (0.01 to 0.21 there). `e2e_bigsse.py`: inconclusive
+  `unreadable_reply`, bytes 376515, the notice first, no raw key or canary.
+- Tests: 110 new against `main` (5476 there, 5586 here): since `5646b218` two new and one removed
+  (the tail's floor). `make gates` green on `cad92051` (`PYTHONPATH` set to the worktree's `src` and
+  root, `TMPDIR` at the system default, nothing written under `/tmp`): ruff and format clean (423
+  files), mypy strict (161), four import contracts kept, 75 specs lint OK, 5586 tests, 97.85%
+  coverage, self-scan 0 high or critical, bandit and pip-audit clean.
+
+## State, 2026-10-13: the fourth pre-merge audit, of `5dd87b42` (A-77), fixed
+
+- Not merge-ready on `5dd87b42`: one MEDIUM, a regression against `main`. The work stopped twice
+  (a network error, then the org spend limit at about 05:50); the coordinator saved the first
+  stop's work as `e22a3cc2`, and new commits sit on top of it, no history rewritten.
+- MEDIUM: a cut stream's excerpt showed a secret's beginning. Masks shorten the window's text,
+  so its second half moved up into the 4 KiB the excerpt shows, and the open tail was a run of
+  key characters read after masking. `window_attacks.py` case A: 4 of 36 rows leaked on
+  `5dd87b42` (a URL password with symbols at 7 of 31 cuts in three shapes, a 300-character
+  registered credential at 70 of 111), now 0 of 36; case B (a pause past the window) 16 of 36 on
+  both, as on `main`, and in A-77's list. When the window cuts the body only the lines that
+  start in its first half are shown (the auditor's patch), and a body whose first half is as it
+  came is quoted as it came. The open tail is read on the raw stream: the run of characters other
+  than white space it ends with, 32 to 256 characters, or a registered credential's beginning.
+  Scratch probes `r6/longspan.py`, `r6/glued2.py`: 11 of 16 leaked on `5dd87b42`, 0 now. A last
+  256 characters rule, tried first (`453247f0`), emptied what the excerpt shows in heavy events
+  (3 of 6 clean streams with 5 or 20 alternatives quoted otherwise than by `main`), so the run
+  rule replaced it (`e7f1b5a3`).
+- Left open that afternoon, closed the same night (above): an unregistered secret no rule masks
+  in part, longer than 256 characters or holding white space and longer than 32, reaching from
+  the shown half past the cut (`r6/over256b.py`: a 600-character URL password of words showed 20
+  to 61 characters, 52 to 61 on `5dd87b42`, 0 to 3 on `main`).
+- Found while fixing, not by the audit: an event stream of OpenAI chunks with logprobs kept each
+  masked token's `bytes`, which spelled the key in the excerpt (`main` and `5dd87b42`), and joined
+  each rank of alternatives across the chunks (4 of 6 clean replies with alternatives quoted
+  otherwise than by `main`). A transcript's alternatives are no stream, and a transcript's token
+  in a logprob item masks its alternatives and drops its `bytes` (`df0cd422`): no rebuild, 0 of 6.
+- Unchanged: clean bodies past the window 0 of 320 differ from `main`, `clean_excerpts.py` 0 of
+  217 in every shape, `diff_main.py` 0 of 1,500 summaries differ from `5dd87b42` (replay 1500/781),
+  `cost3.py` 0.01 to 0.20 s on 4 MiB, every earlier round's script the same output as on
+  `5dd87b42` but for the digests, which follow the salt (with one salt, `fuzz_rejoin.py` seeds 1
+  to 3 give the same counts on both, 0 refusals), and `e2e_bigsse.py` inconclusive
+  `unreadable_reply`, bytes 376515, no raw key or canary, its excerpt 1,663 characters (4,092 on
+  `5dd87b42`: only the first half is shown).
+- Tests: 109 new against `main` (5476 there, 5585 here), 7 of them since `5dd87b42`. `make gates` green on `f435cdcc` (`PYTHONPATH` set to the worktree's `src` and root, `TMPDIR` at the system default, nothing written under `/tmp`): ruff and format clean (423 files), mypy strict (161), four import contracts kept, 75 specs lint OK, 5585 tests, 97.83% coverage, self-scan 0 high or critical, bandit and pip-audit clean.
+
+## State, 2026-10-12 (late morning): the third pre-merge audit, of `74ace451` (A-77), fixed
+
+- Merge-ready on `74ace451` (no HIGH or MEDIUM; reports 0 of 400 differ from `main`; a trial
+  merge with `fix/redactor-key-formats` passed 6,294 tests), with five LOWs, fixed as new commits.
+- LOW 1: the second audit's `sse_variants.py` figure is the key in 9 of 19 shapes and the
+  credential in 9 (the docs said 10), corrected from `scratch/fixfrag/r3-before/out.txt`.
+- LOW 2: only JSON lines in a shape known to stream (Ollama's, OpenAI's chunks) are a stream;
+  any other is records, as `main` quotes it: clean JSON Lines logs quoted otherwise than by `main`,
+  181 of 217 on `74ace451`, now 0 of 217 (`clean_excerpts.py`, 300 texts, every other shape 0
+  of 217 on both). A rewritten line keeps its compact form.
+- LOW 3: a block of `data:` lines with no blank line between them is read line by line in the
+  one reading (`reader_attacks.py` "masked event + a block": rebuilt, now masked), and a clean
+  stream is read once.
+- LOW 4: only four times the excerpt's read extent is read (36 KiB), and a stream reaching past
+  half of it has its open tail left out (`redactor.withhold_open_ends`). `cost3.py` on 4 MiB
+  bodies: 0.10 to 17.98 s on `74ace451` here, now 0.01 to 0.24 s; `scale3.py` flat (0.03 to
+  0.20 s from 0.5 to 4 MiB).
+- LOW 5: A-77's not-covered list names every excerpt shape the audit's `reader_attacks.py` still
+  rebuilds (10 of 26 on both trees; the set changed: the block case is masked now, and JSON lines
+  in another shape than Ollama's or OpenAI's chunks, the one with a raw U+2028, are records).
+- Tests: 102 new against `main` (5476 there, 5578 here), 4 of them since `74ace451`. `make gates` green on `06caf3c3` (`PYTHONPATH` set to the worktree's `src`, `TMPDIR` at the system default): ruff and format clean (423 files), mypy strict (161), four import contracts kept, 75 specs lint OK, 5578 tests, 97.81% coverage, self-scan 0 high or critical, bandit and pip-audit clean.
+
+## State, 2026-10-12 (morning): the second pre-merge audit, of `ea13562f` (A-77), fixed
+
+- Not merge-ready on `ea13562f`: two MEDIUMs (one a regression against `main`) and four LOWs;
+  every first-round figure re-ran as claimed. Fixed as new commits on
+  `fix/no-secret-in-fragments`, no history rewritten; the org spend limit stopped the work at
+  about 02:30 and it resumed at 09:23 on `c21879dd`.
+- MEDIUM 1 (regression): a rewritten excerpt went through `json.dumps` with ASCII escaping, so
+  text outside any stream reached the excerpt's redaction `\u00a0`-escaped and a phone or a card
+  grouped by U+00A0 or U+202F was shown where `main` masked it. Written with `ensure_ascii` off in
+  the JSON-body, event-stream and WebSocket paths (`reserialize_leak.py`: 3 of 3 visible in both
+  paths, now 0; `nbsp_realistic.py`: 3 of 3, now masked).
+- MEDIUM 2: an event stream is read as the format says (lines end at CRLF, LF or CR only, an
+  event's data lines join, data that is no object or array is text of one stream), a page of
+  `data:` lines is read line by line, and NDJSON is masked the same way (`sse_variants.py`: the key
+  rebuilt in 9 of 19 shapes and the credential in 9, now 2 and 1, both not events of the format;
+  `sse_min.py`: 4 of 5 rebuilt, now 0).
+- LOW 3: SARIF's result message and an `evidence_withheld` count, and an `Evidence withheld:`
+  terminal line (`e2e_withheld.py` forced: SARIF 0 mentions, now 2 results and a run count of 12;
+  terminal line now). LOW 4: recognition probes go through `store_withholding`. LOW 5 and LOW 6:
+  the join invariant stated as measured (never more than the redacted text, less in 8 of 1,500
+  realistic replies and 309 of 1,500 hostile ones), the rank figure as 6.9% of all the
+  alternatives of clean replies, the test counts, and the stale docstrings and docs.
+- Merge prep with `fix/redactor-key-formats`: the judge-note test's filler is ordinary words
+  (its 230 letters were a hex run to A-78).
+- Tests: 98 new against `main` (5476 there, 5574 here), 27 of them since `ea13562f`. `make gates` green on `3714473b` (with `PYTHONPATH` set to the worktree's `src` and `TMPDIR` at the system default): ruff and format clean (423 files), mypy strict (161), four import contracts kept, 75 specs lint OK, 5574 tests, 97.83% coverage, self-scan 0 high or critical, bandit and pip-audit clean.
+
+## State, 2026-10-12 (night, later): the pre-merge audit of `c4bd2012` (A-77), fixed
+
+- Not merge-ready on `c4bd2012`: one HIGH regression and two MEDIUMs, plus two LOWs; fixed as new
+  commits on `fix/no-secret-in-fragments` (no history rewritten).
+- HIGH: a mask shown in every piece it covered read, joined, as a run of masks behind `user:`,
+  which the URL rule masks again as one, so the store's guard refused a URL password the
+  redactor had masked and the run aborted (`aborted on RedactionLeakError`, exit 3; `main` exits
+  0). The first piece a mask covers now shows it and the others lose the text under it, so the
+  pieces joined show each mask once and never more than the redacted text. Measured: `url_tokens.py` 18 of 18 refused, now 18
+  stored; `ws_dsn.py` 2 of 2 refused, now stored; the auditor's DSN run exit 3, now 0;
+  `fuzz_rejoin.py` 110, 120 and 122 refusals per 1,000 cases (seeds 1 to 3), now 0. A refused
+  write no longer ends the campaign alone: the runner stores the attempt again with its
+  pieces withheld (`redactor.withhold_split`), `request.metadata.evidence_withheld` and the
+  finding's line saying so; a second refusal ends it as before. The A-77 property test now cuts
+  four URLs with a password too and checks every joined text is a fixed point (it fails on
+  `c4bd2012`).
+- MEDIUM 2: an item's alternatives are masked once its every edit is made (`clobber.py`: 10
+  characters of a labelled password in an alternative, now none). MEDIUM 3: a body streamed as
+  server-sent events is quoted with its events masked across the events (`sse_excerpt.py`: key
+  and credential rebuilt, now neither). LOW 4: the `bytes` of every masked token and alternative
+  are dropped. LOW 5: alternatives are no stream, neither a rank nor one token's; joining a rank
+  masked 6.9% of all the alternatives of clean replies (5,794 of 83,950 on the auditor's 898
+  clean replies), each beside a token that was kept, now none, and `fuzz_rejoin.py` rank leaks 19
+  to 25 per 1,000, now 0. Left, in A-77's
+  not-covered list: a secret the alternatives alone spell beside kept tokens (`excerpt_bytes.py`
+  case B), and evidence written before A-77 (a CHANGELOG line says so).
+- Tests: 71 new against `main` (5476 there, 5547 here), 31 of them since `c4bd2012`. `make gates` green on `78f94404` (with `PYTHONPATH` set to the worktree's `src`): ruff and format clean (422 files), mypy strict (160), four import contracts kept, 75 specs lint OK, 5547 tests, 97.81% coverage, self-scan 0 high or critical, bandit and pip-audit clean.
+
+## State, 2026-10-12 (night): a secret kept in pieces, the report's keys, judge notes (A-77)
+
+- On `fix/no-secret-in-fragments`, from `main` at `de122e26`: four findings of the security audit
+  of `de122e26` (HIGH 1, MEDIUM 2, LOW 5, LOW 7), one new clause, u01 A-77, with halves in u04,
+  u10 and u11 and u08 A-70's judge note amended; no new open decision.
+- HIGH 1: `response.text` was masked while the same text sat in 1 to 4 character pieces in
+  `response.logprobs[*].token`, each token's `top`, and a WebSocket transcript's deltas, and the
+  store's guard scanned one string at a time. A logprob list's tokens and each rank of their
+  alternatives, and a transcript's received content field by field, are now joined, redacted
+  once, and each piece a mask covers shows it (`redactor.redact_split`, the masks placed back on
+  the joined text by `_placed_masks`); a masked token's alternatives show its masks and its
+  OpenAI `bytes` are dropped; the guard redacts every joined text (`split_texts`). Kept, not
+  dropped: the alternatives, the figures' tokens and a transcript's other content are in no other
+  field. Joining every list was tried first and masked the type of every frame of every
+  transcript (`auth_oksessiondeltaping...` joined is one high-entropy token), so only streams are
+  joined, and the transcript names its protocol's fields (`raw_ids.websocket.protocol_paths`,
+  written by the adapter from the target file; one stored before them is read with `type`).
+  Auditor's reproductions: `e2e_logprobs.py` canary and key rebuilt from the tokens in 3 evidence
+  files and `r.json`, now in none; `ws_frames.py` 3 of 3 rebuilt, now 0; the excerpt of a turn
+  with its text off `text_path` 3 of 3, now 0; `fuzz_sinks.py` logprob and frame rebuilds, now
+  none.
+- MEDIUM 2: `r.json` wrote a tool call's argument names, `usage` and frame keys in clear. Each
+  attempt in a report is masked as the store masks it: the keys of its free-form fields through
+  `redactor.mask_keys` (moved from the store, numbering kept), its values through `redact_split`;
+  `keys_in_reports.py` json 3 of 3 leaked, now 0.
+- LOW 5: the judge's words are redacted, folded, redacted again and cut, never inside a mask or a
+  token; `judge_record.py` 61 of 305 placements leaked 6+ characters, now 0. LOW 7: `media_sha256`
+  is put back verbatim only as a list of SHA-256 hex digests.
+- Tests: 40 new (5476 on `main`, 5516 here), 33 failing on `de122e26` and 7 passing there (replay
+  and `logprob_membership` read the stored attempt alike, the shape, the model's keys, SARIF,
+  JUnit and HTML, a labelled secret across the judge cut). `make gates` green on `143c94ae` (with `PYTHONPATH` set to the worktree's `src`): ruff and format clean (421 files), mypy strict (160), four import contracts kept, 75 specs lint OK, 5516 tests, 97.84% coverage (`reporting/masking.py` 100%, `redactor.py` 98%), self-scan 0 high or critical, bandit and pip-audit clean.
+- Open: a secret a target splits over a list of its own JSON that is no stream, or encodes;
+  evidence written before this change keeps its pieces on disk.
+
 ## State, 2026-10-14 (morning): CI of #114 on Typer 0.27.3, fixed
 
 - PR #114's CI (typer 0.27.3, click 8.5.0; this machine has typer 0.26.8) failed collecting

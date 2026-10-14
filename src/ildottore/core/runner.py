@@ -42,6 +42,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import re
 import time
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -82,6 +83,7 @@ from ildottore.core.setup_delivery import (
     tool_name_map,
     trace_gap,
 )
+from ildottore.redactor import Redactor, withhold_split
 from ildottore.shared.combination import combine_verdicts, decided_by_judge_alone
 from ildottore.shared.combination import union_matched as _union_matched
 from ildottore.shared.enums import (
@@ -137,6 +139,7 @@ from ildottore.shared.resend import NEVER_A_PASS, one_per_attempt_id, send_numbe
 from ildottore.shared.tool_abuse import OPERATOR_DECLARATION, operator_cleared_calls, operator_note
 from ildottore.shared.toolcalls import call_name
 from ildottore.shared.unreadable import UNREADABLE_REPLY_KEY, unreadable_attempt_ids
+from ildottore.shared.withheld import EVIDENCE_WITHHELD, withheld_attempt_ids
 
 __all__ = [
     "CONVERSATION_ERROR",
@@ -878,11 +881,14 @@ class CampaignRunner:
         return findings, None, None
 
     def _record_probe(self, run_id: str, attempt: Attempt) -> None:
-        """File the watch's benign check with the recognition probes, where the store has them."""
+        """File the watch's benign check with the recognition probes, where the store has them.
+
+        A refused write is stored with the pieces of the reply withheld, as an attempt's is.
+        """
 
         put_probe = getattr(self._evidence, "put_probe", None)
         if callable(put_probe):
-            put_probe(run_id, attempt)
+            store_withholding(put_probe, run_id, attempt)
 
     def _holds_plan(
         self, done: set[str] | frozenset[str], spec_id: str, mutators: Sequence[str]
@@ -1145,8 +1151,10 @@ class CampaignRunner:
                     stored = with_send_number(stored, sends[stored.attempt_id])
                     # Never byte-identical to an artifact the prior run cited, so it is cited
                     # anew: a re-send that failed the same way used to land on the first try's
-                    # artifact, which then stood for both.
-                    evidence_refs.append(self._evidence.put(run_id, stored))
+                    # artifact, which then stood for both. Stored with the pieces of its reply
+                    # withheld when the store refuses them as one text (A-77).
+                    ref, stored = self._stored(run_id, stored)
+                    evidence_refs.append(ref)
                     attempts.append(stored)
                 if halt is not None:
                     raise halt
@@ -1163,6 +1171,15 @@ class CampaignRunner:
         return self._score_finding(
             spec, target, attempts=attempts, verdicts=verdicts, evidence=evidence_refs
         )
+
+    def _stored(self, run_id: str, attempt: Attempt) -> tuple[EvidenceRef, Attempt]:
+        """Store ``attempt``; refused, store it with the pieces of its reply withheld (A-77).
+
+        That attempt is the one scored and reported, and the finding's line counts it
+        (:func:`store_withholding`).
+        """
+
+        return store_withholding(self._evidence.put, run_id, attempt)
 
     async def _reproduce_single_turn(
         self,
@@ -1398,7 +1415,8 @@ class CampaignRunner:
                     why = _LEFT_FILTERED
                 else:
                     why = _LEFT_UNANSWERED
-                filtered[probe.identity_id] = (_one_line(f"{type(exc).__name__}: {exc}"), why)
+                note = _clipped(_one_line(f"{type(exc).__name__}: {exc}"))  # one line, cut
+                filtered[probe.identity_id] = (note, why)
                 continue
             # A reply the provider's filter stopped is left out too (OD-42, pre-merge audit of
             # ``a55e953``, M2): an empty or canned reply holds no canary, so authz_leak read the
@@ -1925,6 +1943,7 @@ class CampaignRunner:
         cut = len(cut_attempt_ids(attempts))
         unsaid = len(side_unknown_attempt_ids(attempts))
         unreadable = len(unreadable_attempt_ids(attempts))
+        withheld = len(withheld_attempt_ids(attempts))
         return Finding(
             spec_id=spec.id,
             target_id=target.id,
@@ -1938,7 +1957,13 @@ class CampaignRunner:
             attempts=attempts,
             evidence=evidence,
             reasoning=_finding_reasoning(
-                status, verdicts, blocked=blocked, cut=cut, unsaid=unsaid, unreadable=unreadable
+                status,
+                verdicts,
+                blocked=blocked,
+                cut=cut,
+                unsaid=unsaid,
+                unreadable=unreadable,
+                withheld=withheld,
             ),
         )
 
@@ -2216,6 +2241,10 @@ def _evaluators_for_filtered_reply(
 
 #: The most of the judge's own words a cut verdict records (they are the judge model's text).
 _JUDGE_NOTE_CHARS = 240
+#: Redacts a judge's words before they are cut, as the report redacts every reasoning after.
+_NOTE_REDACTOR: Final = Redactor()
+#: A character a token of the redactor's rules can be made of, as the adapters' excerpt reads it.
+_TOKEN_CHAR: Final = re.compile(r"[\w+/=.:@-]")
 
 
 def _tagged_seeded(attempt: Attempt, seeded_tools: dict[str, str]) -> Attempt:
@@ -2538,35 +2567,60 @@ def _swept_note(verdict: Verdict, spec: AttackSpec, filtered: _LeftOut | None) -
 
 
 def _one_line(text: str) -> str:
-    """``text`` on one line, cut at :data:`_JUDGE_NOTE_CHARS` (an error or a judge's words)."""
+    """``text`` redacted, on one line, and redacted again.
 
-    words = " ".join(text.split())
-    if len(words) > _JUDGE_NOTE_CHARS:
-        words = words[: _JUDGE_NOTE_CHARS - 3] + "..."
-    return words
+    Redacted before anything else, as ``websocket._shown`` does: cut first, a secret across the
+    cut kept its head, which no rule recognises (61 of 305 placements left 6 or more characters
+    readable), and folded first, a credential holding a tab no longer read as registered and
+    was shown whole (audit of main de122e26, LOW 5). Again after the fold, since joining the
+    lines can make a text a rule reads (a credential registered with a space, written over
+    two lines).
+    """
+
+    return _NOTE_REDACTOR.redact_text(" ".join(_NOTE_REDACTOR.redact_text(text).split()))
+
+
+def _clipped(words: str) -> str:
+    """``words`` cut at :data:`_JUDGE_NOTE_CHARS`, never inside a mask or a token.
+
+    A cut inside a mask moves before it, and one inside a run of the characters a key is made of
+    moves before the run, so no head of a value the later redactors know (a canary planted by
+    the run) is kept where its whole would be masked.
+    """
+
+    if len(words) <= _JUDGE_NOTE_CHARS:
+        return words
+    cut = _JUDGE_NOTE_CHARS - 3
+    opened = words.rfind("«", 0, cut)
+    if opened != -1 and words.find("»", opened) >= cut:
+        cut = opened
+    while cut > 0 and _TOKEN_CHAR.match(words, cut) and _TOKEN_CHAR.match(words, cut - 1):
+        cut -= 1
+    return words[:cut] + "..."
 
 
 def _judge_not_consulted(exc: Exception) -> str:
     """The note a cut verdict carries when the recording-only judge could not be consulted."""
 
-    words = _one_line(f"{type(exc).__name__}: {exc}")
+    words = _clipped(_one_line(f"{type(exc).__name__}: {exc}"))
     return f"semantic_judge on what came back not consulted, and not deciding: {words}"
 
 
 def _judge_record(verdict: Verdict) -> str:
     """The judge's verdict on a cut reply, as recorded beside the cut and not deciding (OD-42).
 
-    Its own words are the judge model's text: cut at :data:`_JUDGE_NOTE_CHARS`, one line, and the
-    report's redactor masks them as it masks every reasoning.
+    Its own words are the judge model's text: redacted, one line, and cut at
+    :data:`_JUDGE_NOTE_CHARS` (:func:`_one_line`, :func:`_clipped`); the report's redactor masks
+    them again as it masks every reasoning.
     """
 
     # The judge's words never read as the operator's note (OD-43): nothing counts from that text
     # now, and a reader should not take a judge's echo of it for one (audit of `ed381359`, L1).
-    words = " ".join(verdict.reasoning.split()).replace(
-        OPERATOR_DECLARATION, "[the judge wrote: operator declaration]"
+    words = _clipped(
+        _one_line(verdict.reasoning).replace(
+            OPERATOR_DECLARATION, "[the judge wrote: operator declaration]"
+        )
     )
-    if len(words) > _JUDGE_NOTE_CHARS:
-        words = words[: _JUDGE_NOTE_CHARS - 3] + "..."
     return (
         f"semantic_judge on what came back, recorded and not deciding: {verdict.status.value} "
         f"({verdict.confidence:.2f}): {words}"
@@ -2670,6 +2724,47 @@ PROVIDER_FILTER_CUT = "provider_filter_cut"
 CONVERSATION_ERROR = "conversation_error"
 
 
+def store_withholding(
+    put: Callable[[str, Attempt], EvidenceRef], run_id: str, attempt: Attempt
+) -> tuple[EvidenceRef, Attempt]:
+    """``put(run_id, attempt)``; refused, the same with the pieces of the reply withheld (A-77).
+
+    The evidence store refuses a write whose redacted payload is not a fixed point of the
+    redactor, which is right, and the refusal used to end the campaign: every spec after it
+    never ran, for one reply the redactor had in fact masked (pre-merge audit of c4bd2012,
+    HIGH 1). A refusal the store marks (``evidence_refused``) is answered by storing the attempt
+    again with every piece of its streams empty (``redactor.withhold_split``: its logprob tokens
+    and their alternatives, a transcript's content), the reply's text, the figures and the
+    verdict kept, and ``request.metadata`` naming what was withheld and why
+    (:data:`~ildottore.shared.withheld.EVIDENCE_WITHHELD`). A second refusal, or one with no
+    piece to withhold, is raised as before: nothing raw is ever written. The attempts of a spec
+    and the recognition probes (the watch's benign check, ``-sV``) are stored through it.
+    Returns the reference and the attempt as stored.
+    """
+
+    try:
+        return put(run_id, attempt), attempt
+    except Exception as exc:
+        if not getattr(exc, "evidence_refused", False) or attempt.response is None:
+            raise
+        dumped = attempt.response.model_dump(mode="json")
+        kept = withhold_split(dumped)
+        if kept is dumped:
+            raise
+        note = (
+            "the pieces of this reply (its logprob tokens and their alternatives, a "
+            f"transcript's content) were withheld from the evidence: {exc}"
+        )
+        metadata: JsonDict = {**(attempt.request.metadata or {}), EVIDENCE_WITHHELD: note}
+        withheld = attempt.model_copy(
+            update={
+                "response": ModelResponse.model_validate(kept),
+                "request": attempt.request.model_copy(update={"metadata": metadata}),
+            }
+        )
+        return put(run_id, withheld), withheld
+
+
 def _failed_on_trace(attempt: Attempt, key: str, *, otherwise: Attempt | None = None) -> Attempt:
     """A conversation stopped short after a trace that failed it, as stored: a fail, or as it was.
 
@@ -2699,6 +2794,7 @@ def _finding_reasoning(
     cut: int = 0,
     unsaid: int = 0,
     unreadable: int = 0,
+    withheld: int = 0,
 ) -> str:
     """The finding's one-line account, with how many attempts the provider's filter stopped.
 
@@ -2735,6 +2831,11 @@ def _finding_reasoning(
         line += (
             f"; {unreadable}/{total} could not be read as the provider's reply, which may be the "
             "one an attack changed"
+        )
+    if withheld:
+        line += (
+            f"; {withheld}/{total} stored with the pieces of the reply withheld, since the "
+            "redactor could not prove them masked as one text (A-77)"
         )
     # The attempts whose verdict the operator's target file changed (OD-43), counted from their
     # record and naming the tools, so the line SARIF, JUnit, the HTML and the terminal show for a
