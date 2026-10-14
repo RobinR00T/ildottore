@@ -27,8 +27,7 @@ from pathlib import Path
 from typing import Annotated, Any, NoReturn
 
 import typer
-from typer._click.types import IntRange as TyperIntRange
-from typer.core import TyperGroup
+from typer.core import TyperGroup, TyperOption
 
 from ildottore import __version__
 from ildottore.adapters.base import AdapterError
@@ -65,30 +64,29 @@ from ildottore.store.replay import TamperError
 _VERBOSE_KEY = "ildottore.verbose"
 
 
-def _library_classes(name: str) -> tuple[type[BaseException], ...]:
-    """The exception class ``name`` of the command-line library Typer raises from.
+def _typer_error(name: str) -> type[Exception]:
+    """The error class ``name`` (``ClickException``, ``UsageError``) Typer raises and catches.
 
-    Typer 0.26 raises from its vendored copy of click, and only that copy's exceptions does it
-    catch itself. A click installed beside it is never imported here: a plugin that raises one
-    of its exceptions has imported it already, and :func:`_installed_click_kind` reads it from
-    ``sys.modules`` when one arrives.
+    Found from public Typer names, whatever module the copy of click Typer raises from lives in:
+    the ancestry of ``typer.BadParameter``. Looked up in ``typer._click.exceptions`` by name, an
+    ``Abort`` that moved to ``typer.exceptions`` in Typer 0.27 resolved to nothing and the guard
+    quietly stopped mapping it (CI of #114). A class that cannot be found fails the import, so a
+    future change of layout stops the CLI rather than changing its exit codes.
     """
 
-    import importlib
-
-    try:
-        return (getattr(importlib.import_module("typer._click.exceptions"), name),)
-    except (ImportError, AttributeError):  # a Typer without the vendored copy
-        return ()
+    for cls in typer.BadParameter.__mro__:
+        if cls.__name__ == name and issubclass(cls, Exception):
+            return cls
+    raise ImportError(f"typer.BadParameter derives from no {name}: an unknown Typer layout")
 
 
-#: An exit asked for: let through with its code.
-_EXITS: tuple[type[BaseException], ...] = (typer.Exit, *_library_classes("Exit"))
+#: An exit asked for: let through with its code. `typer.Exit` is the class Typer catches.
+_EXITS: tuple[type[BaseException], ...] = (typer.Exit,)
 #: The library's errors (a usage error, a file it could not open): let through, as exit 3
 #: (`_click_errors_exit_3` sets the class's code; `ClickException`'s default was 1).
-_CLICK_ERRORS = _library_classes("ClickException")
-#: The library's "Aborted!", exit 1 by default.
-_ABORTS = _library_classes("Abort")
+_CLICK_ERRORS: tuple[type[BaseException], ...] = (_typer_error("ClickException"),)
+#: The library's "Aborted!", exit 1 by default. `typer.Abort` is the class Typer catches.
+_ABORTS: tuple[type[BaseException], ...] = (typer.Abort,)
 _PASS_THROUGH: tuple[type[BaseException], ...] = (*_EXITS, *_CLICK_ERRORS)
 
 
@@ -101,8 +99,8 @@ def _installed_click_kind(exc: BaseException) -> str | None:
     """
 
     module = sys.modules.get("click.exceptions")
-    if module is None or getattr(module, "Exit", None) in _EXITS:
-        return None
+    if module is None or getattr(module, "ClickException", None) in _CLICK_ERRORS:
+        return None  # not loaded, or it is the copy Typer raises from (a Typer that vendors none)
     for kind, name in (("exit", "Exit"), ("abort", "Abort"), ("error", "ClickException")):
         cls = getattr(module, name, None)
         if isinstance(cls, type) and isinstance(exc, cls):
@@ -236,21 +234,30 @@ def _point_at_null(stream: Any) -> bool:
     return True
 
 
+class _QuietStream:
+    """A stream whose flush into a closed pipe is dropped; everything else is the stream's."""
+
+    def __init__(self, wrapped: Any) -> None:
+        self._wrapped = wrapped
+
+    def flush(self) -> None:
+        try:
+            self._wrapped.flush()
+        except OSError as exc:
+            if exc.errno != errno.EPIPE:
+                raise
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._wrapped, name)
+
+
 def _say_broken_pipe() -> None:
     """Silence the closed stdout and say why on stderr (silenced too when it is closed as well)."""
 
     if not _point_at_null(sys.stdout):
-        import importlib
-
-        # A stream with no descriptor (a test runner's buffer): quiet it as the command-line
-        # library does, through its vendored copy or click's own.
-        for name in ("typer._click.utils", "click.utils"):
-            try:
-                pacify = importlib.import_module(name).PacifyFlushWrapper
-            except (ImportError, AttributeError):
-                continue
-            sys.stdout = pacify(sys.stdout)
-            break
+        # A stream with no descriptor (a test runner's buffer): quiet it here, as the
+        # command-line library's own wrapper does (no private module of it is imported for that).
+        sys.stdout = _QuietStream(sys.stdout)
     try:
         typer.echo(_BROKEN_PIPE, err=True)
     except OSError:
@@ -263,18 +270,17 @@ def _echo_err(text: str) -> None:
         typer.echo(text, err=True)
 
 
-class _Counted(TyperIntRange):
+def _counted() -> Any:
     """A counted flag's type (``-v``, ``-vv``), named so the help shows no value after it.
 
     The help printed ``-v, --verbose  INTEGER  [default: 0]``, as if it took a number (pre-merge
-    audit of e6a1ab9b, LOW 8); the rich help leaves out a type named ``boolean``.
+    audit of e6a1ab9b, LOW 8); the rich help leaves out a type named ``boolean``. The base is the
+    type Typer gives a counted option itself, read off one, not imported from a private module.
     """
 
-    name = "boolean"
-
-
-def _counted() -> _Counted:
-    return _Counted(min=0)
+    base = type(TyperOption(param_decls=["-v"], count=True).type)
+    counted = type("_Counted", (base,), {"name": "boolean", "__doc__": _counted.__doc__})
+    return counted(min=0)
 
 
 app = typer.Typer(
@@ -295,20 +301,14 @@ app.add_typer(schema_app, name="schema")
 # default is 2, which in this tool means "findings at or above --fail-on", so a CI step with a
 # typo in its flags reported a finding the scan never made (audit 2026-10-03, R17 / A-9). Any
 # other error of the library (`ClickException`, `FileError`) exited 1, which means findings
-# below --fail-on (pre-merge audit of e6a1ab9b, LOW 5). Typer 0.26 raises from its own vendored
-# copy of click, whose classes are set here; a separately installed click's are mapped where
-# one arrives (`_installed_click_kind`), and a Typer without the vendored copy skips this.
+# below --fail-on (pre-merge audit of e6a1ab9b, LOW 5). The classes set are those Typer raises
+# and catches, whichever copy of click they come from.
 def _click_errors_exit_3() -> None:
-    import importlib
-
-    # The vendored copy only: importing a separately installed click here would load it for
-    # nothing, and its exceptions are mapped where one arrives (`_installed_click_kind`).
-    try:
-        module = importlib.import_module("typer._click.exceptions")
-    except ImportError:
-        return
-    module.UsageError.exit_code = int(ExitCode.ERROR)
-    module.ClickException.exit_code = int(ExitCode.ERROR)
+    # The classes Typer raises, found as the guard finds them (`_typer_error`), never through a
+    # private module path; a separately installed click is not imported here, its exceptions are
+    # mapped where one arrives (`_installed_click_kind`).
+    for name in ("UsageError", "ClickException"):
+        _typer_error(name).exit_code = int(ExitCode.ERROR)  # type: ignore[attr-defined]
 
 
 _click_errors_exit_3()

@@ -337,15 +337,19 @@ def test_nothing_the_command_line_library_raises_exits_1(
     """A `ClickException` (exit 1 by default), an `Abort` (exit 1, "Aborted!") and a stray
     `SystemExit(1)` (rich's answer to a broken pipe) passed the guard with exit 1."""
 
-    import typer._click.exceptions as click_errors
+    import sys
+
+    import typer
+
+    module = sys.modules[typer.BadParameter.__module__]  # the copy Typer raises from (public)
 
     def boom(*args: object, **kwargs: object) -> object:
         if raised == "click-exception":
-            raise click_errors.ClickException("boom")
+            raise module.ClickException("boom")
         if raised == "file-error":
-            raise click_errors.FileError("x.yaml", hint="cannot read")
+            raise module.FileError("x.yaml", hint="cannot read")
         if raised == "abort":
-            raise click_errors.Abort()
+            raise typer.Abort()
         if raised == "system-exit-1":
             raise SystemExit(1)
         if raised == "system-exit-2":

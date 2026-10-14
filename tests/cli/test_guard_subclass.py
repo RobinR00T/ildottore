@@ -8,14 +8,35 @@ exit 3, an asked-for exit keeps its code, and Ctrl-C keeps 130.
 
 from __future__ import annotations
 
+import sys
 from typing import Any, ClassVar
 
 import pytest
 import typer
-import typer._click.exceptions as click_errors
 from typer.testing import CliRunner
 
+from ildottore.cli import app as app_mod
 from ildottore.cli.app import OperationalErrorGroup
+
+
+def _typer_error(name: str) -> type[Exception]:
+    """An error class of the copy of click Typer raises from, reached from a public Typer name.
+
+    `typer._click.exceptions` lost `Abort` and `Exit` in Typer 0.27 (they moved to
+    `typer.exceptions`), which broke this file's collection in CI; the classes are taken from
+    `typer.BadParameter`'s ancestry, or its module, and fail loudly if they move again.
+    """
+
+    for cls in typer.BadParameter.__mro__:
+        if cls.__name__ == name:
+            return cls
+    found: type[Exception] = getattr(sys.modules[typer.BadParameter.__module__], name)
+    return found
+
+
+ClickException = _typer_error("ClickException")
+UsageError = _typer_error("UsageError")
+FileError = _typer_error("FileError")
 
 
 class _Composed(OperationalErrorGroup):
@@ -36,10 +57,10 @@ _RAISED: dict[str, BaseException] = {
     "runtime": RuntimeError("boom"),
     "key": KeyError("x"),
     "broken-pipe": BrokenPipeError(32, "Broken pipe"),
-    "click-exception": click_errors.ClickException("boom"),
-    "file-error": click_errors.FileError("x.yaml"),
-    "usage": click_errors.UsageError("bad option"),
-    "abort": click_errors.Abort(),
+    "click-exception": ClickException("boom"),
+    "file-error": FileError("x.yaml"),
+    "usage": UsageError("bad option"),
+    "abort": typer.Abort(),
     "exit-1": SystemExit(1),
     "exit-2": SystemExit(2),
     "exit-text": SystemExit("stopped"),
@@ -160,3 +181,73 @@ def test_the_cli_runs_with_no_click_installed() -> None:
         [sys.executable, "-c", probe, str(repo / "src")], capture_output=True, text=True
     )
     assert out.stdout.strip() == "0 3 None", out.stderr
+
+
+# --- the classes the guard maps are the ones Typer raises (CI on Typer 0.27.3) -------------------
+
+
+def test_the_mapped_classes_resolved_to_something() -> None:
+    """On Typer 0.27.3 the lookup of `Abort` in the vendored module found nothing and the guard
+    quietly stopped mapping it, so `Aborted!` would have exited 1 again."""
+
+    assert app_mod._EXITS and app_mod._CLICK_ERRORS and app_mod._ABORTS
+    assert typer.Exit in app_mod._EXITS
+    assert typer.Abort in app_mod._ABORTS
+
+
+def _raising_app(seen: list[BaseException], action: Any) -> typer.Typer:
+    app = typer.Typer(cls=_Composed, add_completion=False)
+
+    @app.command()
+    def act(ctx: typer.Context) -> None:
+        try:
+            action(ctx)
+        except BaseException as exc:
+            seen.append(exc)
+            raise
+
+    @app.command()
+    def other() -> None:
+        return None
+
+    return app
+
+
+def test_the_abort_typer_raises_is_mapped_to_3() -> None:
+    seen: list[BaseException] = []
+    app = _raising_app(seen, lambda ctx: typer.confirm("Go on?", abort=True))
+    result = CliRunner().invoke(app, ["act"], input="n\n")
+    assert len(seen) == 1 and isinstance(seen[0], app_mod._ABORTS), seen
+    assert result.exit_code == 3, result.output
+    assert "error: aborted" in result.output
+
+
+def test_the_usage_error_typer_raises_is_a_click_error_and_exits_3() -> None:
+    seen: list[BaseException] = []
+    app = _raising_app(seen, lambda ctx: ctx.fail("no such thing"))
+    result = CliRunner().invoke(app, ["act"])
+    assert len(seen) == 1 and isinstance(seen[0], app_mod._CLICK_ERRORS), seen
+    assert result.exit_code == 3, result.output
+
+
+def test_a_bad_value_typer_refuses_exits_3() -> None:
+    app = typer.Typer(cls=_Composed, add_completion=False)
+
+    @app.command()
+    def count(n: int) -> None:
+        return None
+
+    @app.command()
+    def other() -> None:
+        return None
+
+    result = CliRunner().invoke(app, ["count", "not-a-number"])
+    assert result.exit_code == 3, result.output
+
+
+def test_the_exit_typer_raises_keeps_its_code() -> None:
+    seen: list[BaseException] = []
+    app = _raising_app(seen, lambda ctx: ctx.exit(5))
+    result = CliRunner().invoke(app, ["act"])
+    assert len(seen) == 1 and isinstance(seen[0], app_mod._EXITS), seen
+    assert result.exit_code == 5
