@@ -210,6 +210,105 @@ versioning: [SemVer](https://semver.org/).
   exempted the value by its key name; anything but a list of 64-hex digests is now redacted like
   any value.
 
+### Fixed (the CLI audit of `de122e26`: crashes that exited 1, a ceiling no flag raised, reports over inputs, u12 A-80)
+
+- **Nothing but findings exits 1.** Exit 1 means "findings below `--fail-on`", so a CI gate that
+  lets 1 through read a crashed scan as a pass. A `--run-db` naming a directory or a file that is
+  not SQLite, `replay --run-db <garbage>`, and some of several `dottore run` started together on a
+  new `--run-db` (`OperationalError: database is locked`; 5 of 6 in the audit, 1 and 2 of 18 in
+  two re-measurements) ended in a traceback with exit 1. They are
+  now `error: cannot open the run store at <path>: <reason>` (exit 3), a sqlite3 error later in a
+  run is `error: the run store at <path> failed: <reason>` (exit 3), and the root command group
+  turns any exception no command handles into exit 3 with one masked line (``error: unexpected
+  <Class>: <message> (an internal error, not a scan result; rerun as `dottore -v ...` for the
+  traceback)``), its traceback (masked line by line) only under the new root `dottore -v` or `run
+  -v`. The command-line library's other errors (a `ClickException`, a `FileError`: exit 1 by
+  default, from the vendored copy Typer raises from or from a click installed beside it, which a
+  plugin may raise from and which the CLI never imports itself), its `Aborted!` and an exit a
+  library asks for with status 1, 2 or a message are exit 3 too. The classes are found from
+  Typer's public names (`typer.Exit`, `typer.Abort`, the ancestry of `typer.BadParameter`), so
+  Typer 0.26 and 0.27, which moved `Abort` and `Exit` out of its vendored copy of click, map the
+  same. A broken output pipe is exit 3 with `error: the output stream closed before the command
+  finished (broken pipe)`: `registry ls`, `lint`, `describe`, `coverage` and `--help` into a
+  reader that had gone exited 1, and so did a scan with findings, whose progress lines met the
+  closed pipe (rich answers that with `SystemExit(1)`); stdout is pointed at the null device so no
+  later flush meets the pipe again. Ctrl-C keeps 130; `lint` still exits 1 on lint findings.
+- **The stores are checked before the first send.** Every mode checks `--run-db` and
+  `--evidence-root` without writing (the dry run, the estimate and `-sn` included, which still
+  write nothing), and a sending run opens the run store and proves each run's `attempts/` (and
+  `probes/` with `-sV`) writable before its first request. With `-sV` the store used to be opened
+  after the 18 probes, and a `--evidence-root` that was a regular file was found by the first
+  attempt's write, after its batch was paid for (125 requests in the audit, then
+  `NotADirectoryError`, nothing stored, and the requests counted against the resume's ceiling).
+  Against a loopback stub: `-sV --run-db <garbage>` sent 18 requests then exited 1, now 0 and 3;
+  `--quick --evidence-root <file>` sent 5 then exited 3, now 0 and 3.
+- **Concurrent runs on one store.** A statement waits up to 30 s for a lock another process holds
+  (it was SQLite's 5 s default), in tries of 0.1 s with Python's sleeps between them, so Ctrl-C
+  and SIGTERM stop the wait at once (one 30 s wait in C held them for about 32 s); a wait past a
+  second prints `note: waiting for the run store at <path>: another process holds its lock (up to
+  30 s; Ctrl-C stops the wait)` once per run, and one that runs out is `the run store at <path>
+  stayed locked by another process for 30 s` (exit 3), naming the store once, mid-run too. The
+  store layer itself says nothing of a wait: its caller passes a callback (`migrations.connect(...,
+  on_lock_wait=...)`, or `lock_waits_reported(...)` for every connection within), which the CLI
+  does. The switch to WAL is
+  retried the same way (SQLite refuses it as busy at once while another connection holds the
+  file), and a migration takes the write lock before it reads the version it starts from, in one
+  transaction (two processes could both add the same column, and each script step committed on its
+  own; it no longer commits a caller's open transaction either). Measured: 18 of 80 concurrent
+  first opens failed before (8 processes, 10 rounds), 0 of 160 after; through the CLI, 1 of 18 runs
+  died before (three rounds of six), 0 of 30 after (five rounds).
+- **A campaign over 20,000 attempts finishes.** The attempts ceiling was derived from the estimate
+  and capped at 20,000 on its own, the `--budget-*` overrides left it out and no flag raised it:
+  `--runs 200 --budget-requests 60000 --budget-tokens 30000000 --budget-wall 7200` over the
+  battery halted on `max_attempts` (limit
+  20,000) with 2 of 75 specs unfinished, exit 3. The attempts ceiling is the request ceiling now
+  (an attempt is at least one request), so it cannot stop a run before the request ceiling and
+  `--budget-requests` raises both; the same run completes (20,600 attempts, 29,400 requests, exit
+  2). A library caller can still name an attempts ceiling of its own.
+- **An attempt counts once its request is accepted.** It was debited before its first request, so
+  one the ceiling refused still counted, and the runner, which keeps starting specs after a
+  ceiling, added one per spec: the battery under `--budget-requests 100` recorded 128 attempts for
+  100 requests and a resume at the same ceiling 43 more; now 85 (multi-turn attempts take several
+  requests) and none more. The ledger counts an attempt in the same atomic debit as its first
+  request (`debit_request(opens_attempt=True)`). A resume of a run recorded before this reads its
+  attempts as at most its requests.
+- **`--estimate` shows the ceilings, and prints under `-q`.** It prints `ceilings: <n> requests,
+  <n> attempts (one per accepted request), <n> tokens, <n>s wall` (one line per target when they
+  differ), and the dry run's `budgets:` line adds the attempts. `--estimate -q` printed nothing and
+  exited 0; it prints one line now, as `--dry-run -q` does.
+- **A report never overwrites an input.** `-oJ scope.yaml -oH target.yaml` overwrote both with the
+  reports after the run. A report path that is the `--scope` file, a target file, the `--judge`
+  file, the fleet file of `fleet --run`, the run store or its `-wal`, `-shm` or `-journal` file
+  (before the store exists too, and beside the file a symlinked `--run-db` names), or a file the
+  spec loader read (a spec, a suite, a `pack.yaml`, a media asset) is refused before anything is
+  sent (exit 3); an existing output is compared with each of them by device and inode, so a
+  symlink, a hard link or another spelling on a case-insensitive volume is caught (`-oJ
+  SPECS/attacks/<spec>.yaml` beside `--spec-path specs`), while a report beside them, such as the
+  previous run's `out.json` under `--spec-path .`, is not refused. So is a report inside a run directory of the evidence store
+  (`<evidence-root>/<run-id>/`): one written over an artifact made the next resume refuse the run
+  as tampered. `replay --run-db <directory>` is refused as `run` refuses it; it warned and replayed
+  without the manifest check.
+- **One default spec path, and `fleet --run` from anywhere.** `fleet --run` read `specs/` in the
+  working directory with no option to change it (`path not found: specs` outside the repository
+  root). `run`, `fleet --run`, `registry ls`, `describe`, `coverage` and `render-media` now read
+  `specs/` in the working directory when it is a directory, else the battery beside the installed
+  package (a source checkout or an editable install; a wheel ships neither the battery nor the
+  schemas), and say on stderr when they fall back (`note: there is no specs/ directory here, so
+  this reads the battery beside the installed package: <path> ...`). `dottore lint` does not fall
+  back: in a pack's own repository with no `specs/` it refuses with exit 3 (`spec path not found:
+  specs. Pass the spec path to lint ...`)
+  rather than passing the built-in battery. A spec path that does not exist is `spec path not
+  found: <path>. Pass --spec-path <dir>; ...` instead of `1 spec file(s) failed to load ...: ?:
+  path not found: specs`.
+
+### Added (`fleet` takes run's store and report options; a root `-v`)
+
+- `dottore fleet` takes `--spec-path`, `--evidence-root`, `--run-db` and `-oJ/-oH/-oS/-oX/-oA` with
+  `run`'s meaning; without `--run` they are carried into the `dottore run` line it prints.
+- `dottore -v <command>` prints the traceback of an internal error for any command (`run -v` does
+  too, beside printing the plan). Both read as counted flags in the help (`INTEGER [default: 0]`
+  before).
+
 ### Fixed (key formats, hex runs and UUIDs masked whatever their entropy; a credential under 8 characters refused by every adapter, u01 A-78)
 
 Found by the pre-merge security audit of 2026-10-11 (MEDIUM 4 and LOW 6).

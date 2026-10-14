@@ -138,9 +138,10 @@ async def reproduce(
 ) -> list[AttemptResult]:
     """Execute ``request`` ``n`` times, returning the raw per-run results in order.
 
-    Each run debits one *attempt* against the budget (adaptive/escalation attempts
-    would count too) plus one *request* per send inside :func:`execute_attempt`. A
-    :class:`~ildottore.core.budgets.BudgetExhausted` from either debit propagates so
+    Each run debits one *request* per send inside :func:`execute_attempt`, and its first
+    send counts the *attempt* in the same debit (adaptive/escalation attempts count too), so
+    an attempt refused at a ceiling is not counted (u08 A-80). A
+    :class:`~ildottore.core.budgets.BudgetExhausted` from the debit propagates so
     the runner records ``budget_exhausted`` with whatever ran so far.
 
     ``into`` (optional) is the caller's list, and each result is appended to it as it
@@ -163,7 +164,6 @@ async def reproduce(
         attempt_id = attempt_id_for(spec_id, mutation, run_index)
         if completed is not None and attempt_id in completed:
             continue
-        ledger.debit_attempt()
         pinned = _pin_attempt_index(request, run_index)
         try:
             result = await execute_attempt(
@@ -180,6 +180,7 @@ async def reproduce(
                 sleep=sleep,
                 now=now,
                 pacer=pacer,
+                opens_attempt=True,
             )
         except ReplyOverBudget as halt:
             results.append(halt.result)

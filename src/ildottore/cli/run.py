@@ -109,6 +109,8 @@ from ildottore.shared.unreadable import (
 
 __all__ = [
     "CATEGORY_ALIASES",
+    "DEFAULT_EVIDENCE_ROOT",
+    "DEFAULT_RUN_DB",
     "PlanEstimate",
     "RunOptions",
     "RunOutcome",
@@ -121,6 +123,14 @@ __all__ = [
     "resolve_target_plans",
     "select_specs",
 ]
+
+#: How the loader says a spec path does not exist (``registry.loader``).
+_PATH_NOT_FOUND = "path not found: "
+
+#: Where a run keeps its evidence and its run store when ``--evidence-root`` / ``--run-db``
+#: are not given (``replay`` and ``fleet --run`` read the same defaults).
+DEFAULT_EVIDENCE_ROOT = Path(".dottore/evidence")
+DEFAULT_RUN_DB = Path(".dottore/runs.sqlite")
 
 #: ``-p`` friendly category tokens → the canonical :class:`Category` (``docs/09 §2``).
 CATEGORY_ALIASES: dict[str, Category] = {
@@ -247,6 +257,9 @@ class RunOptions:
     evidence_root: Path | None = None
     run_db: Path | None = None
     seed: int | None = None
+    #: Other files the run reads that no report may overwrite, as ``(label, path)``: the
+    #: fleet file of ``fleet --run`` (u12 A-80).
+    extra_inputs: list[tuple[str, Path]] = field(default_factory=list)
 
 
 @dataclass
@@ -533,6 +546,7 @@ BUDGET_DERIVATION_CAP = PlanBudgets(
     max_tokens=5_000_000,
     max_requests=20_000,
     max_wall_s=7_200,
+    # Not applied (u08 A-80): the attempts ceiling is the request ceiling, see `budgets_for`.
     max_attempts=20_000,
 )
 
@@ -568,6 +582,13 @@ def budgets_for(
     derived from this plan, and the absolute :data:`BUDGET_DERIVATION_CAP`. ``overrides`` is
     the operator's own word (``--budget-tokens`` and friends) and wins outright on the axes it
     names, cap included: a human raising a ceiling is the authorization the derivation is not.
+
+    The attempts ceiling is the request ceiling (unless ``overrides`` names one of its own, as a
+    library caller may): every attempt is at least one request, and it is counted only once its
+    first request is accepted, so it cannot stop a run before the request ceiling does, and
+    ``--budget-requests`` raises both. Derived from the estimate and clamped at 20,000 on its
+    own, no flag raised it, and a campaign of more than 20,000 attempts could never finish
+    (u08 A-80).
     """
 
     def _axis(floor: int | None, derived: int, cap: int | None, override: int | None) -> int:
@@ -585,25 +606,21 @@ def budgets_for(
         # bound is past the cap, which bounds the result below as it did.
         paced = estimate.total_requests / rate_rps * BUDGET_HEADROOM
         wall_s = max(wall_s, int(min(paced, MAX_FLAG_VALUE)) + 1)
+    max_requests = _axis(
+        DEFAULT_PLAN_BUDGETS.max_requests,
+        requests,
+        BUDGET_DERIVATION_CAP.max_requests,
+        o.max_requests,
+    )
     return PlanBudgets(
         max_tokens=_axis(
             DEFAULT_PLAN_BUDGETS.max_tokens, tokens, BUDGET_DERIVATION_CAP.max_tokens, o.max_tokens
         ),
-        max_requests=_axis(
-            DEFAULT_PLAN_BUDGETS.max_requests,
-            requests,
-            BUDGET_DERIVATION_CAP.max_requests,
-            o.max_requests,
-        ),
+        max_requests=max_requests,
         max_wall_s=_axis(
             DEFAULT_PLAN_BUDGETS.max_wall_s, wall_s, BUDGET_DERIVATION_CAP.max_wall_s, o.max_wall_s
         ),
-        max_attempts=_axis(
-            DEFAULT_PLAN_BUDGETS.max_attempts,
-            requests,
-            BUDGET_DERIVATION_CAP.max_attempts,
-            o.max_attempts,
-        ),
+        max_attempts=o.max_attempts if o.max_attempts is not None else max_requests,
     )
 
 
@@ -1047,12 +1064,25 @@ def _print_estimate(
     requests it will not make for the attempts the resumed run keeps.
     """
 
-    if quiet:
-        return
     requests = sum(p.estimate.requests for p in plans)
     tokens_in = sum(p.estimate.input_tokens for p in plans)
     tokens_out = sum(p.estimate.output_tokens for p in plans)
     specs = sum(p.estimate.specs for p in plans)
+    if quiet:
+        # One machine-friendly line, as `--dry-run -q` prints: a command whose only output is
+        # its exit code cannot answer the question it exists for (it printed nothing).
+        judge_requests = sum(p.estimate.judge_requests for p in plans)
+        judge_tokens = sum(p.estimate.judge_tokens for p in plans)
+        probes = fingerprint_probes * len(plans)
+        print(
+            f"estimate: {requests} requests over {specs} spec-runs across {len(plans)} "
+            f"target(s) at runs={runs}, ~{tokens_in + tokens_out + judge_tokens} tokens"
+            + (f", +{judge_requests} judge request(s)" if judge_requests else "")
+            + (f", +{probes} probe(s)" if probes else "")
+            + (f", {already_done} request(s) already done" if already_done else "")
+            + (f", {judge_already_done} judge request(s) kept" if judge_already_done else "")
+        )
+        return
     print(
         f"estimate: {requests} requests over {specs} spec-runs "
         f"across {len(plans)} target(s) at runs={runs} (no sends made)"
@@ -1090,6 +1120,8 @@ def _print_estimate(
             f"  + {total} fingerprint probe(s) before the battery (-sV: "
             f"{fingerprint_probes} per target across {len(plans)})"
         )
+    for line in _ceiling_lines(plans):
+        print(line)
     for plan in plans:
         skipped = len(plan.skipped_capability)
         blocked = len(plan.blocked_by_policy)
@@ -1107,6 +1139,27 @@ def _print_estimate(
     for cat, n in sorted(by_category.items(), key=lambda kv: (-kv[1], kv[0])):
         print(f"  {cat}: {n} requests")
     print("  no per-model pricing known; multiply by your provider's per-token rate.")
+
+
+def _ceiling_lines(plans: list[TargetPlan]) -> list[str]:
+    """The hard ceilings each target's campaign runs under, as ``--estimate`` prints them.
+
+    One line when every target has the same, else one per target: each target's ledger is its
+    own, sized from its own plan. The attempts ceiling is printed too, because it is one the run
+    can stop on (u08 A-80): it is the request ceiling, one attempt per accepted request.
+    """
+
+    def text(budgets: PlanBudgets) -> str:
+        return (
+            f"{budgets.max_requests} requests, {budgets.max_attempts} attempts (one per accepted "
+            f"request), {budgets.max_tokens} tokens, {budgets.max_wall_s}s wall"
+        )
+
+    shown = {text(p.budgets) for p in plans}
+    tail = " (derived from this plan; --budget-requests, --budget-tokens, --budget-wall override)"
+    if len(shown) <= 1:
+        return [f"  ceilings: {text(plans[0].budgets)}{tail}"] if plans else []
+    return [f"  ceilings on {p.target.id}: {text(p.budgets)}{tail}" for p in plans]
 
 
 def _print_dry_run_plan(
@@ -1245,11 +1298,26 @@ def _print_dry_run_plan(
             f"  pacing:  not applied ({explicit_rate} req/s requested) - this is an offline "
             "mock run, nothing leaves the process"
         )
-    budgets = plans[0].budgets if plans else DEFAULT_PLAN_BUDGETS
-    print(
-        f"  budgets: {budgets.max_tokens} tokens, {budgets.max_requests} requests, "
-        f"{budgets.max_wall_s}s wall (derived from this plan)"
-    )
+    # Per target when they differ: each target's ledger is sized from its own plan, and the
+    # first target's ceilings were printed for all of them.
+    shown = {
+        (p.budgets.max_tokens, p.budgets.max_requests, p.budgets.max_attempts, p.budgets.max_wall_s)
+        for p in plans
+    }
+    for plan in plans if len(shown) > 1 else plans[:1]:
+        budgets = plan.budgets
+        where = f" on {plan.target.id}" if len(shown) > 1 else ""
+        print(
+            f"  budgets{where}: {budgets.max_tokens} tokens, {budgets.max_requests} requests, "
+            f"{budgets.max_attempts} attempts, {budgets.max_wall_s}s wall "
+            "(derived from this plan, or --budget-requests, --budget-tokens, --budget-wall)"
+        )
+    if not plans:
+        budgets = DEFAULT_PLAN_BUDGETS
+        print(
+            f"  budgets: {budgets.max_tokens} tokens, {budgets.max_requests} requests, "
+            f"{budgets.max_attempts} attempts, {budgets.max_wall_s}s wall"
+        )
 
 
 def _declared(target: Target) -> list[str]:
@@ -1432,7 +1500,9 @@ def _validate_options(opts: RunOptions) -> None:
 
     ``--fail-on bogus`` and an unwritable ``-oA`` path were accepted, the whole campaign ran,
     and the run then failed with exit 3 on the way out; ``--timeout 0``, ``--concurrency -2``
-    and ``--top-tests -3`` were accepted outright (audit 2026-10-03, R9).
+    and ``--top-tests -3`` were accepted outright (audit 2026-10-03, R9). A report path that is
+    one of the run's inputs is refused too (:func:`_check_outputs_spare_inputs`; the spec files,
+    once they are loaded, :func:`_check_outputs_spare_spec_files`).
     """
 
     fail_on_band(opts.fail_on)
@@ -1467,6 +1537,147 @@ def _validate_options(opts: RunOptions) -> None:
     duplicates = sorted({path for path in resolved if resolved.count(path) > 1})
     if duplicates:
         raise ValueError(f"two report formats would write the same file: {', '.join(duplicates)}")
+    _check_outputs_spare_inputs(opts)
+
+
+#: How each report format is named in a refusal.
+_REPORT_NAMES = {"json": "JSON", "html": "HTML", "sarif": "SARIF", "junit": "JUnit"}
+#: The files SQLite keeps beside a database: a report written over one corrupts the store.
+_STORE_SIBLINGS = ("", "-wal", "-shm", "-journal")
+
+
+def _folded_path(path: Path) -> str:
+    """``path`` resolved, NFC-normalized and case-folded, as the duplicate-report check compares."""
+
+    return unicodedata.normalize("NFC", os.path.realpath(path)).casefold()
+
+
+def _same_file(a: Path, b: Path) -> bool:
+    """Whether two existing paths are one file (a symlink, a hard link, another spelling)."""
+
+    try:
+        return os.path.samefile(a, b)
+    except OSError:
+        return False
+
+
+def _check_outputs_spare_inputs(opts: RunOptions) -> None:
+    """Refuse a report path that is an input of the run (u12 A-80).
+
+    ``-oJ scope.yaml -oH target.yaml`` overwrote the authorization record and the target file
+    with the reports, once the run had sent its traffic. An existing output is compared with
+    each existing input as a file (its device and inode: a symlink, a hard link, or another
+    spelling on a case-insensitive volume is the same file; ``os.path.realpath`` keeps the case it
+    is given, so comparing resolved paths let ``-oJ SPECS/attacks/<spec>.yaml`` overwrite a spec,
+    pre-merge audit of ``e6a1ab9b``), and so are the spec files once loaded
+    (:func:`_check_outputs_spare_spec_files`); the run
+    store, which a fresh run creates, by its resolved path and SQLite's ``-wal``, ``-shm`` and
+    ``-journal`` beside it, for the path given and for the file a link names; a run directory of
+    the evidence store, by whether the output lies inside one. Another output is the duplicate
+    check above.
+    """
+
+    named: list[tuple[str, Path]] = []
+    if opts.scope is not None:
+        named.append((f"the --scope file {opts.scope}", opts.scope))
+    named += [(f"a target file {path}", path) for path in opts.targets]
+    if opts.judge is not None:
+        named.append((f"the --judge file {opts.judge}", opts.judge))
+    named += [(f"{label} {path}", path) for label, path in opts.extra_inputs]
+    store = Path(opts.run_db or DEFAULT_RUN_DB)
+    stores = {
+        _folded_path(Path(f"{base}{suffix}"))
+        for base in (store, Path(os.path.realpath(store)))
+        for suffix in _STORE_SIBLINGS
+    }
+    evidence_root = Path(opts.evidence_root or DEFAULT_EVIDENCE_ROOT)
+    for fmt, output in _report_outputs(opts).items():
+        report = f"the {_REPORT_NAMES.get(fmt, fmt)} report"
+        if _folded_path(Path(output)) in stores or (
+            store.exists() and Path(output).exists() and _same_file(Path(output), store)
+        ):
+            raise ValueError(
+                f"{report} would overwrite the run store (--run-db) {store}; "
+                "write the report elsewhere"
+            )
+        run_dir = _run_directory_holding(Path(output), evidence_root, opts.resume)
+        if run_dir is not None:
+            raise ValueError(
+                f"{report} would write inside the evidence store, in {run_dir}: a run's "
+                "directory holds only what the run writes (a report over an artifact makes the "
+                "next resume refuse the run as tampered); write it elsewhere"
+            )
+        if not Path(output).exists():
+            continue  # every other input exists: a new file cannot be one of them
+        for label, path in named:
+            if Path(path).exists() and _same_file(Path(output), Path(path)):
+                raise ValueError(
+                    f"{report} would overwrite {label}; a report never replaces an input of "
+                    "the run, write it elsewhere"
+                )
+
+
+def _check_outputs_spare_spec_files(opts: RunOptions, files_read: Sequence[Path]) -> None:
+    """Refuse a report path that is a file the spec loader read (u12 A-80).
+
+    By device and inode, as the other inputs: a spec, a suite, a ``pack.yaml`` or a media asset,
+    through a symlink, a hard link or another spelling on a case-insensitive volume. Only those:
+    protecting every file under the spec path refused a rerun of ``run --spec-path . -oJ
+    out.json``, whose first run had written ``out.json`` there (round-2 audit of ``f51a7d07``).
+    """
+
+    outputs = [(fmt, Path(path)) for fmt, path in _report_outputs(opts).items()]
+    outputs = [(fmt, path) for fmt, path in outputs if path.exists()]
+    if not outputs:
+        return
+    read: dict[tuple[int, int], Path] = {}
+    for path in files_read:
+        identity = _identity(path)
+        if identity is not None:
+            read.setdefault(identity, path)
+    for fmt, output in outputs:
+        hit = read.get(_identity(output) or (-1, -1))
+        if hit is not None:
+            raise ValueError(
+                f"the {_REPORT_NAMES.get(fmt, fmt)} report would overwrite a file of the spec "
+                f"path, {hit} ({output}); write it elsewhere"
+            )
+
+
+def _identity(path: Path) -> tuple[int, int] | None:
+    """The device and inode ``path`` names (through links), or ``None`` when it cannot be read."""
+
+    try:
+        info = os.stat(path)
+    except OSError:
+        return None
+    return info.st_dev, info.st_ino
+
+
+def _run_directory_holding(
+    output: Path, evidence_root: Path, resume: str | None = None
+) -> Path | None:
+    """The run directory of the evidence store ``output`` lies in, if any.
+
+    A run directory is a directory directly under the root that holds ``attempts/`` or
+    ``probes/``, or that is named after the run being resumed. Compared as files, as the inputs
+    are: through a link or another spelling of the root. A report beside the run directories,
+    in the root itself, is not inside one.
+    """
+
+    if not evidence_root.is_dir():
+        return None
+    absolute = Path(os.path.abspath(output))
+    ancestors = [*absolute.parents, *Path(os.path.realpath(absolute)).parents]
+    for ancestor in ancestors:
+        parent = ancestor.parent
+        if parent == ancestor or not ancestor.is_dir() or not _same_file(parent, evidence_root):
+            continue
+        if (ancestor / "attempts").is_dir() or (ancestor / "probes").is_dir():
+            return ancestor
+        if resume is not None and ancestor.name == resume:
+            return ancestor
+    return None
 
 
 def _interrupt_as_ctrl_c(signum: int, frame: FrameType | None) -> None:
@@ -1609,10 +1820,49 @@ def _termination_as_interrupt() -> Iterator[None]:
                 raise interrupted
 
 
+class _LockWaitNotice:
+    """The CLI's note for a run store another process holds: once per run and per store.
+
+    The store says nothing of a wait itself (round-2 audit of f51a7d07, LOW 4), and each store
+    operation of a run opens a connection of its own, so a note per connection repeated itself
+    (LOW 3). ``say`` writes the line; stderr by default, never silenced by ``-q``.
+    """
+
+    def __init__(self, say: Callable[[str], None] | None = None) -> None:
+        self._say = say if say is not None else _say_on_stderr
+        self._said: set[str] = set()
+
+    def __call__(self, store: str, wait_s: float) -> None:
+        if store in self._said:
+            return
+        self._said.add(store)
+        self._say(
+            f"note: waiting for the run store at {visible_controls(store)}: another process holds "
+            f"its lock (up to {wait_s:g} s; Ctrl-C stops the wait)"
+        )
+
+
+def _say_on_stderr(line: str) -> None:
+    from contextlib import suppress
+
+    with suppress(OSError, ValueError):  # stderr gone: the wait goes on unsaid
+        print(line, file=sys.stderr, flush=True)
+
+
+@contextmanager
+def lock_waits_noted() -> Iterator[None]:
+    """Say, once per store, that the command waits for a run store another process holds."""
+
+    from ildottore.store.migrations import lock_waits_reported
+
+    with lock_waits_reported(_LockWaitNotice()):
+        yield
+
+
 def execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
     """Run the campaign :func:`_execute_run` describes, SIGTERM and SIGHUP as Ctrl-C."""
 
-    with _termination_as_interrupt():
+    with _termination_as_interrupt(), lock_waits_noted():
         return _execute_run(opts, spec_paths)
 
 
@@ -1728,7 +1978,21 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
     # A spec file that fails to load is refused, not dropped. `build_registry` keeps only what
     # parsed, so a one-letter typo removed a spec from the battery and the run still printed
     # "Specs run: 1 of 1 planned" and `complete` (audit 2026-10-03, F-10).
-    registry, load_errors = wiring.load_registry(spec_paths)
+    registry, load_errors, files_read = wiring.load_registry_reading(spec_paths)
+    missing = [
+        e.message.removeprefix(_PATH_NOT_FOUND)
+        for e in load_errors
+        if e.message.startswith(_PATH_NOT_FOUND)
+    ]
+    if load_errors and len(missing) == len(load_errors):
+        # A spec path that does not exist is not a spec file that failed to load: it read
+        # "1 spec file(s) failed to load ...: ?: path not found: specs", run from anywhere but
+        # the repository root (u12 A-80).
+        raise SpecLoadError(
+            f"spec path not found: {', '.join(missing)}. Pass --spec-path <dir>; without it a "
+            "run reads specs/ in the working directory, else the battery beside the installed "
+            "package when that is a source checkout."
+        )
     if load_errors:
         # Counted by FILE: one bad file yields many findings (17 for one target example), and
         # the message said "17 spec file(s)" (review of PR #32).
@@ -1742,6 +2006,9 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
             f"battery: {shown}{more}. Run `dottore lint` on the spec path and fix them first.",
             spec_files=_spec_files_on_disk(spec_paths, [e.path for e in load_errors[:5] if e.path]),
         )
+    # Before anything is sent, and against what the loader read: a report over a spec, a suite,
+    # a pack.yaml or a media asset is refused, one beside them is not (u12 A-80).
+    _check_outputs_spare_spec_files(opts, files_read)
     all_specs = registry.list()
     specs_by_id = {s.id: s for s in all_specs}
 
@@ -1824,8 +2091,12 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
     # Both store paths are resolved here, before anything can send: the probe pass files its
     # evidence under the run id, and the resume block reads the prior run's evidence and asks
     # the run store which target it belonged to.
-    evidence_root = opts.evidence_root or Path(".dottore/evidence")
-    run_db = opts.run_db or Path(".dottore/runs.sqlite")
+    evidence_root = opts.evidence_root or DEFAULT_EVIDENCE_ROOT
+    run_db = opts.run_db or DEFAULT_RUN_DB
+    # Read-only, for every mode: a store path that is a directory, a file that is not SQLite, or
+    # a path under a regular file is refused here, before anything is sent or written. A run
+    # then opens both stores for real before its first send (`_open_stores`, u10 A-80).
+    _check_store_paths(run_db, evidence_root)
 
     routes = [(loaded.path, loaded.target, _route_for(opts, loaded)) for loaded in loaded_targets]
     any_live = any(real is not None for _, _, (_, real) in routes)
@@ -2153,6 +2424,15 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
             if note is not None:
                 print(f"note: {note}", file=sys.stderr)
 
+    # Both stores are opened, and the run directories proved writable, before the first send:
+    # the -sV probe pass when there is one, the campaign otherwise. A store that could not be
+    # used was found by the first write, inside the per-target loop, after the probes (and, for
+    # the evidence, after the first batch) had been paid for (u10 A-80).
+    stores_open = False
+    if opts.fingerprint_first and not sends_nothing:
+        _open_stores(run_db, evidence_root, list(run_ids.values()), probes=True)
+        stores_open = True
+
     if not sends_nothing and opts.resume is not None and opts.fingerprint_first:
         # A resumed run has its row: with -sV the scope is recorded before the probe pass, its
         # first traffic. Otherwise each run records it with its integrity record below, before
@@ -2403,6 +2683,9 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
         )
     if opts.dry_run:
         return RunOutcome(exit_code=ExitCode.CLEAN, findings=[], results=[], dry_run=True)
+
+    if not stores_open:
+        _open_stores(run_db, evidence_root, list(run_ids.values()), probes=False)
 
     # A resumed campaign opens its ledger where the halted one stopped. Read once, before the
     # loop: `--resume` names a single target, so there is one prior spend to carry.
@@ -2889,6 +3172,32 @@ def _run_one_target(
         built.close()
 
 
+def _check_store_paths(run_db: Path, evidence_root: Path) -> None:
+    """Refuse, writing nothing, a run store or evidence root that cannot be used (u10 A-80)."""
+
+    from ildottore.store.evidence_fs import check_root_path
+    from ildottore.store.run_sqlite import check_store_path
+
+    check_store_path(Path(run_db))
+    check_root_path(Path(evidence_root))
+
+
+def _open_stores(run_db: Path, evidence_root: Path, run_ids: list[str], *, probes: bool) -> None:
+    """Open (create, migrate) the run store and prove each run's evidence directory writable.
+
+    Called once, before the first request of the invocation. Raises the store's own errors
+    (``RunStoreError``, ``EvidenceStoreError``, both ``OSError``), which the CLI maps to exit 3.
+    """
+
+    from ildottore.store.evidence_fs import prepare_run
+    from ildottore.store.run_sqlite import SqliteRunStore
+
+    with SqliteRunStore(Path(run_db)):
+        pass
+    for run_id in run_ids:
+        prepare_run(Path(evidence_root), run_id, probes=probes)
+
+
 def _prior_spend(run_db: Path, run_id: str, budgets: PlanBudgets | None = None) -> Spend | None:
     """What a halted run already consumed, so its resume does not get a fresh ceiling.
 
@@ -2912,10 +3221,14 @@ def _prior_spend(run_db: Path, run_id: str, budgets: PlanBudgets | None = None) 
             file=sys.stderr,
         )
         return None
+    requests = int(stored.get("requests", 0))
     prior = Spend(
         tokens=int(stored.get("tokens", 0)),
-        requests=int(stored.get("requests", 0)),
-        attempts=int(stored.get("attempts", 0)),
+        requests=requests,
+        # No more attempts than requests: a run recorded before u08 A-80 counted an attempt its
+        # request ceiling refused (128 for 100 requests), and carried as recorded they would
+        # stop the resume on the attempts ceiling, now the request ceiling, with requests left.
+        attempts=min(int(stored.get("attempts", 0)), requests),
         wall_s=float(stored.get("wall_s", 0.0)),
     )
     ceiling = budgets.max_wall_s if budgets is not None else None

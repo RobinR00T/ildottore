@@ -67,7 +67,7 @@ dry-run: plan resolved, sent nothing.
   sampling: local-llama's sampling_defaults fills temperature 0.0 on 0 of 10, top_p 1.0 on 9 of 10 specs (a spec's own value wins)
   would send: 125 requests over 10 specs at runs=5
   pacing:  0.5 req/s ceiling (S8)
-  budgets: 500000 tokens, 2000 requests, 1800s wall (derived from this plan)
+  budgets: 500000 tokens, 2000 requests, 2000 attempts, 1800s wall (derived from this plan, or --budget-requests, --budget-tokens, --budget-wall)
 ```
 
 Three things in there are worth reading carefully, because the previous version of this
@@ -207,7 +207,18 @@ and scan them all:
 dottore fleet examples/fleet.yaml --run
 # or expand only (review the generated files first):
 dottore fleet examples/fleet.yaml --out .dottore/fleet
+# run's store and report options work here too, and are carried into the printed command:
+dottore fleet examples/fleet.yaml --out .dottore/fleet -oJ fleet.json --run-db .dottore/runs.sqlite
 ```
+
+The last line prints `Run it:` followed by `dottore run <the two target files> --scope
+".dottore/fleet/scope.yaml" --judge ".dottore/fleet/judge.yaml" --run-db ".dottore/runs.sqlite" -oJ
+"fleet.json"` (checked 2026-10-12 from a directory outside the repository, with the editable
+install of INSTALL.md: `fleet` and `run` read `specs/` there when it exists, else the battery
+beside the installed package, and say on stderr when they fall back, so neither needs the
+repository root any more; `fleet --run` used to fail with `path not found: specs` anywhere else.
+A wheel built from this repository ships neither the battery nor the schemas, so this holds for a
+source checkout or an editable install only).
 
 `examples/fleet.yaml` declares its judge in a `judge:` block, so the generated scope
 authorizes it and `fleet` writes it to `.dottore/fleet/judge.yaml`. Passing
@@ -268,7 +279,7 @@ dry-run: plan resolved, sent nothing.
   sampling: support-agent-staging's sampling_defaults fills temperature 0.0 on 0 of 2 specs (a spec's own value wins)
   would send: 20 requests over 2 specs at runs=5
   pacing:  5.0 req/s ceiling (S8)
-  budgets: 500000 tokens, 2000 requests, 1800s wall (derived from this plan)
+  budgets: 500000 tokens, 2000 requests, 2000 attempts, 1800s wall (derived from this plan, or --budget-requests, --budget-tokens, --budget-wall)
 ```
 
 `PI-INDIRECT-RAG-001` needs a poisoned document in the knowledge base and is not declared, so
@@ -330,7 +341,7 @@ dry-run: plan resolved, sent nothing.
   not seeded: 1 spec(s) on ws-assistant-staging, their scene is not in the deployment as seeded_setup declares it, or their tool trace cannot be read through this adapter (-vv says which)
   would send: 125 requests over 10 specs at runs=5
   pacing:  0.5 req/s ceiling (S8)
-  budgets: 500000 tokens, 2000 requests, 1800s wall (derived from this plan)
+  budgets: 500000 tokens, 2000 requests, 2000 attempts, 1800s wall (derived from this plan, or --budget-requests, --budget-tokens, --budget-wall)
 ```
 
 The target declares `rag: true` and no tools, so six specs are skipped for capability and the

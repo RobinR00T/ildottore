@@ -249,6 +249,129 @@ The carryover ledger. Every agent session updates this so context survives even 
 - Open: a secret a target splits over a list of its own JSON that is no stream, or encodes;
   evidence written before this change keeps its pieces on disk.
 
+## State, 2026-10-14 (morning): CI of #114 on Typer 0.27.3, fixed
+
+- PR #114's CI (typer 0.27.3, click 8.5.0; this machine has typer 0.26.8) failed collecting
+  `tests/cli/test_guard_subclass.py`: `typer._click.exceptions` has no `Abort` in 0.27 (`Abort` and
+  `Exit` moved to `typer.exceptions`). Worse, the guard's lookup swallowed the `AttributeError`, so
+  on 0.27.3 `Aborted!` was quietly exit 1 again. Reproduced with the 0.27.3 wheel pip had already
+  cached on this machine, put first on `PYTHONPATH` (nothing downloaded or installed): 4 tests
+  failed on `ca2a0e41`.
+- The guard's classes come from Typer's public names now (`typer.Exit`, `typer.Abort`, the ancestry
+  of `typer.BadParameter`), a class that cannot be found fails the import, and no private module
+  of Typer is imported (`PacifyFlushWrapper` replaced by a small wrapper of its own, the counted
+  `-v` type read off a `TyperOption`). New tests raise through real Typer commands and assert the
+  class Typer raised is the one mapped. The whole suite passes on 0.26.8 and on 0.27.3.
+- Seen, not changed here: the dependencies are floors only (`typer>=0.12`), so CI resolves the
+  newest of each, and nothing tests the floors.
+
+## State, 2026-10-13 (night): the round-2 audit of `f51a7d07`, its four LOWs fixed
+
+- The round-2 audit found `f51a7d07` merge-ready (the merge reverts nothing, no send path escapes
+  the debit, the differentials against `0be0be71` show only the intended changes, Ctrl-C during a
+  migration leaves no half-built store) and four LOWs, fixed in new commits; `main` is not merged
+  again until #113 lands.
+- LOW 1: protecting every file under the spec path refused the rerun of `run --spec-path . -oJ
+  out.json`. The loader records the files it reads (`LoadResult.files`: pack.yaml, specs, suites,
+  media assets) and only those are protected, by device and inode; the MEDIUM 1 spelling, a hard
+  link and a media asset stay refused.
+- LOW 2: a separately installed click's `ClickException`, `Abort` or `Exit(1)` (a plugin's) exited
+  1 with a traceback. They are mapped to exit 3 where they arrive, read from `sys.modules`; the CLI
+  no longer imports that click itself.
+- LOW 3 and LOW 4: a lock that outlasts the wait names its store once, the note is said once per
+  run, and the store layer is silent by default: its caller passes a callback
+  (`connect(on_lock_wait=...)` or `lock_waits_reported(...)`), which `run`, `fleet --run` and
+  `replay` do.
+- The heads-up's subclass-friendly `OperationalErrorGroup`: no source change was needed;
+  `tests/cli/test_guard_subclass.py` pins the closure through a subclass.
+- 2026-10-14: `main` merged in again once #113 landed (`030b79e0`, merge `304d1dc3`), conflicts in
+  documentation only. Gates on that tree: green, 6,541 tests (6,397 on `030b79e0`, +144),
+  coverage 97.68 %, lint 0/0 over 75 specs, 14 suites, 1 pack, contracts 4 kept, self-scan 0
+  high/critical, bandit and pip-audit clean. Re-run there: 0 of 320 concurrent first opens failed
+  (8 x 10, 16 x 10), 0 of 30 concurrent CLI runs; `--budget-requests 100` 85 attempts for 100
+  requests and none more on a resume; `--runs 200` exit 2 with 20,600 attempts; 15 commands into
+  a closed reader, each exit 3. `git diff origin/main HEAD` holds this branch's changes only: no
+  line #111, #112 or #113 added is removed (the threat model's S6 row is #113's with this branch's
+  sentence added), and #113's `redactor.py`, `adapters/base.py` and `reporting/masking.py` are
+  main's byte for byte.
+
+## State, 2026-10-13 (evening): the pre-merge audit of `e6a1ab9b`, fixed, and `main` merged in
+
+- The pre-merge audit of `fix/cli-store-budgets-paths` at `e6a1ab9b` found three MEDIUMs and
+  eight LOWs; the core held (0 failures in 416 concurrent opens, the pre-send checks, the attempts
+  ceiling, the guard's masking). Fixed in new commits on the branch, then `main` (`0be0be71`, #111
+  and #112) merged in with a merge commit; the conflicts were documentation only.
+- MEDIUM 1: the spec-file protection compared resolved paths, which keep the case they are given,
+  so `-oJ SPECS/attacks/AC-BFLA-001.yaml` beside `--spec-path specs` overwrote the spec on the
+  macOS default volume (exit 2). Every file of the spec path is compared by device and inode now.
+- MEDIUM 2: a real broken pipe still exited 1: the close callback reconfigured stdout and flushed
+  into the closed pipe after the guard's exit 3, and rich answers a broken pipe with
+  `SystemExit(1)` (a live scan with findings piped into a closed reader sent 25 requests here, then
+  exited 1 with nothing said). The close callback, the guard and `OperationalErrorGroup.main` (help,
+  found re-running the audit's pipe checks) make it exit 3, and stdout is pointed at the null
+  device. Every command into a closed reader: exit 3 (`registry ls`, `lint`, `describe`,
+  `coverage`, `run --dry-run`, `run --estimate`, a mock run, a live run with findings, `schema
+  export`, `diff`, `calibrate`, `replay`, `fingerprint --offline`, `fleet`, `--help`).
+- MEDIUM 3: the default spec path made `lint` pass the built-in battery in a pack's own
+  repository ("lint OK ... across 75 spec(s)", exit 0). By the rule decided for this branch and
+  `fix/cli-input-validation`: `lint` with no path and no `specs/` is refused, exit 3, `spec path
+  not found: specs. Pass the spec path to lint ...`; the commands that fall back say on stderr which
+  tree they read.
+- LOWs: a lock wait is Python's loop over 0.1 s tries (Ctrl-C at 2 s during a held lock: exit 130
+  after 2.19 s, where it took about 32 s), said once on stderr, and named when it runs out (`the run
+  store at <path> stayed locked by another process for 30 s`); the store's siblings are taken beside
+  the file a symlinked `--run-db` names; a report inside a run directory of the evidence store is
+  refused; `ClickException`, `FileError`, `Abort` and a stray `SystemExit` of 1, 2 or a text are
+  exit 3; `replay --run-db <directory>` is refused; `migrate` no longer commits a caller's
+  transaction; `-v` reads as a flag in the help; the figures the audit found wrong are corrected
+  (the `--runs 200` command needs `--budget-tokens` and `--budget-wall` raised; the concurrency
+  figures are 5 of 6 in the first audit, 1 and 2 of 18 in two re-measurements; a wheel ships
+  neither the battery nor the schemas).
+- Gates on the merged tree (`PYTHONPATH=<wt>/src:<wt>`, TMPDIR at the system default), at
+  `c7be4ed8`: green, 5,775 tests (5,663 on `main` `0be0be71`, +112), coverage 97.63 %, `dottore
+  lint` 0/0 over 75 specs, 14 suites, 1 pack, import contracts 4 kept, self-scan 0 high/critical,
+  bandit and pip-audit clean.
+
+## State, 2026-10-12 (morning): the CLI audit of `de122e26`, fixed (u12 A-80)
+
+- Branch `fix/cli-store-budgets-paths` from `de122e26`, not pushed. Six findings of the full CLI
+  audit (H1, M2, M3, L1, L3, L9), each with tests that fail on `de122e26` (the new CLI tests run
+  against a `git archive` of it: 7 of 8 store-level tests, 24 of 29 CLI store and evidence tests,
+  11 of 14 attempts and `--estimate -q` tests, 17 of 18 report-path and fleet tests fail there;
+  the ones that pass there are guards (a good run still works, Ctrl-C still exits 130, the no-send
+  modes still create nothing, a second migration is a no-op) and the six-run CLI reproduction,
+  which raced clean on that attempt: the store-level test, with a start barrier, is the one that
+  fails reliably there). Clause A-80 in u12, with u10's and u08's halves; A-9 amended. No new
+  open decision.
+- H1: a run store that cannot be used exits 3 before any send (`cannot open the run store at
+  <path>: <reason>`), in every mode (read-only in the ones that send nothing); concurrent opens
+  wait 30 s and retry the WAL switch, and a migration runs under the write lock (18 of 80
+  concurrent first opens failed on `de122e26`, 0 of 160 here; through the CLI 1 of 18 runs died
+  there, 0 of 30 here; the original audit saw 5 of 6, the pre-merge audit 2 of 18). The root
+  command group maps any exception no
+  command handles to exit 3 with one masked line, the traceback under the new root `dottore -v`.
+  Against a loopback stub, `-sV --run-db <garbage>`: 18 requests then exit 1 before, 0 and exit 3
+  now.
+- M2: the attempts ceiling is the request ceiling, and an attempt counts with its first accepted
+  request. `--runs 200` over the battery (`--budget-requests 60000 --budget-tokens 30000000
+  --budget-wall 7200`): exit 3 at `max_attempts`
+  20,000 with 2 specs unfinished before, exit 2 with 20,600 attempts now. Under
+  `--budget-requests 100`: 128 attempts for 100 requests and +43 per resume before, 85 and +0 now.
+  `--estimate` prints the ceilings. M3: an `--evidence-root` that is a regular file is refused
+  before any send (5 requests then `NotADirectoryError` against the stub before, 0 now). L1:
+  `--estimate -q` prints one line. L3: a report path that is an input is refused (the auditor's
+  `-oJ scope.yaml -oH target.yaml` overwrote both, exit 2). L9: one default spec path for every
+  command (`specs/` here, else the battery beside the package), and `fleet` takes `--spec-path`,
+  `--evidence-root`, `--run-db` and `-o*`.
+- Gates (`PYTHONPATH=<wt>/src:<wt>`, TMPDIR at the system default): green, 5,547 tests (5,476 on
+  `de122e26`, +71), coverage 97.63 %, `dottore lint` 0/0 over 75 specs, 14 suites, 1 pack, import
+  contracts 4 kept, self-scan 0 high/critical, bandit and pip-audit clean.
+- Seen and left open: a wheel built from this repository ships neither `specs/` nor `schemas/`
+  (`registry/schema.py` finds `<repo>/schemas` from the source tree), so the CI example's
+  `pip install git+https://...` cannot load a spec outside a checkout (not measured here); a report
+  path inside the evidence root is not refused; `replay --run-db <directory>` warns and goes on
+  without the manifest check, as before.
+
 ## State, 2026-10-13 (early morning): the second pre-merge audit of A-78 (`3a9a4dfa`), fixed
 
 - Round 2 found one HIGH and six LOW. R2-H1: the record of the A-78 masks the process had written

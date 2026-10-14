@@ -129,16 +129,19 @@ dottore calibrate report.json labels.yaml
 | `--rate` / `--concurrency` / `--timeout` | max req/s, greater than 0 and, on a live target, at least one request per wall-clock ceiling, as a `-T` template's pace must be (one shared ceiling for the whole campaign: retries, `-sV` probes, the identity sweep and the `--judge` model included; not applied to an offline mock run, and the plan says so) · max concurrent specs · per-attempt timeout |
 | `--resume RUN_ID` | finish a halted run (exit 3): answered attempts are not re-sent; those that ended in an environment error are sent again (not one a retry would repeat, marked `[not retryable]`), and so is a reply the halt stored before the judge could see it (unless a deterministic check had already failed it: that fail is kept); a run halted before it stored any reply (inside an identity sweep, say) starts again with its spend carried, unless the run store shows evidence the tree does not hold, or the run predates the artifact journal; a campaign that already spent its wall-clock ceiling is refused before sending (raise `--budget-wall`); it must keep the campaign's planning mode (adaptive with `-sV`, `-A` or `--deep`), checked before any ceiling (with `--deep` alone such a resume plans in declared order, says so on stderr when an earlier part planned with a fingerprint, and the run store's `mutator_orders` records what each invocation planned with), and with `-sV` a request ceiling too small for the probe pass is refused with advice that fits the campaign: raise `--budget-requests`, or drop `-sV` only if it did not plan adaptively and the ceiling holds the rest of it without the probes; a run an older version started, which sent none of its target files' `sampling_defaults`, resumes without them (stderr says so); a re-send is scored in place of the try it replaces, by the `send_number` every stored attempt carries, except that an environment error or a block on the re-send of a reply that could not be read, or that the provider's filter cut, leaves that reply the attempt, and `dottore replay` counts by the same rule |
 | `--dry-run` | resolve + validate, send nothing; a `sampling:` line says what the target file's `sampling_defaults` fills, or that it is not sent |
-| `--estimate` | print a pre-run cost estimate (requests + tokens); no sends. Output tokens are each send's `max_tokens` (the spec's own, else `sampling_defaults`) or 512 |
+| `--estimate` | print a pre-run cost estimate (requests + tokens) and the ceilings each target runs under (`ceilings: <n> requests, <n> attempts (one per accepted request), <n> tokens, <n>s wall`); no sends. Output tokens are each send's `max_tokens` (the spec's own, else `sampling_defaults`) or 512. Under `-q` it prints one line, as `--dry-run -q` does |
 | `--compare` | model-comparison matrix across targets (needs two or more `-t`) |
 | `--hardened` | replay hardened fixtures (clean-run smoke) on a mock target; refused on a live one |
-| `-oJ/-oH/-oS/-oX/-oA` | JSON / HTML / SARIF / JUnit / all four to `<prefix>.json`, `.html`, `.sarif`, `.xml` (`-oA report.v2` keeps its name: `report.v2.json`; `-oA report.json` is not doubled: `report.json`, `report.html`, ...). Two formats pointed at the same file are refused before anything is sent |
+| `-oJ/-oH/-oS/-oX/-oA` | JSON / HTML / SARIF / JUnit / all four to `<prefix>.json`, `.html`, `.sarif`, `.xml` (`-oA report.v2` keeps its name: `report.v2.json`; `-oA report.json` is not doubled: `report.json`, `report.html`, ...). Two formats pointed at the same file are refused before anything is sent, and so is a report path that is an input of the run (the scope, a target, the judge, the fleet file, the run store, a spec file; through a symlink or a hard link too) |
 | `--fail-on <band>` | CI gate on confirmed findings (`info\|low\|medium\|high\|critical`, default `high`; `info` gates on any confirmed finding) |
 | `--include-needs-review` | also gate unconfirmed exploits (an unconfirmed `fail`, a fail only the judge reported among them); an `inconclusive` result never gates. Without the flag such a fail is at most a `warning` in the SARIF, whatever its band; with it, it gates, and keeps its band's level (`error` for critical or high) |
-| `--spec-path` | spec search path (default `specs/`) |
+| `--spec-path` | spec search path (default `specs/` in the working directory, else the battery beside the installed package, said on stderr when a command falls back; `lint` never falls back) |
+| `--evidence-root` / `--run-db` | evidence store root (default `.dottore/evidence`) and run store (default `.dottore/runs.sqlite`). Checked before anything is sent, writing nothing in `--dry-run`/`--estimate`/`-sn`: a directory as the store, a file that is not SQLite, a root that is a regular file, or a path under one, is refused (exit 3), and a sending run opens both before its first request. Runs may share one store (a lock is waited for up to 30 s, said on stderr, and Ctrl-C stops the wait) |
+| `-v` | prints the resolved plan, then runs (`-vv`: the skipped and blocked ids too); like the root `dottore -v <command>`, it also prints an internal error's traceback |
 
 **Exit codes:** `0` clean · `1` findings below `--fail-on` · `2` findings at/above · `3` error
-(a usage error, such as an unknown option, is `3` too).
+(a usage error, such as an unknown option, is `3` too, and so is an internal error: one line,
+`error: unexpected <Class>: ...`, its traceback under `-v`; nothing but findings exits `1`).
 
 `3` also covers a run that **did not finish**, and it takes precedence over `2`. If a hard
 budget ceiling halts the campaign, the exit code is `3`, the reason is printed, and the report
@@ -217,7 +220,15 @@ such as `Prod` and `prod`, are refused on every file system):
 ```bash
 dottore fleet fleet.yaml --out .dottore/fleet      # generate scope + targets, review them
 dottore fleet fleet.yaml --run                     # or scan every target immediately
+dottore fleet fleet.yaml --run -oJ fleet.json --run-db fleet.sqlite   # run's store and report options
 ```
+
+`fleet` takes `--spec-path`, `--evidence-root`, `--run-db` and `-oJ/-oH/-oS/-oX/-oA` with `run`'s
+meaning (without `--run` they are carried into the `dottore run` line it prints), and reads the
+same default spec path as `run`: `specs/` in the working directory, else the battery beside the
+installed package. From a source checkout or an editable install it therefore runs from any
+directory (saying on stderr which battery it read); a wheel ships neither the battery nor the
+schemas, so pass `--spec-path` there and expect the schema to be missing too.
 
 The judge goes in the fleet file too, as a `judge:` block (`id`, `endpoint`, `model`,
 `api_key_env`), because the generated scope is built from that file alone: `fleet` writes it

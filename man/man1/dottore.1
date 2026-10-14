@@ -12,13 +12,19 @@ dottore \- spec-driven security scanner for LLMs and AI applications (nmap-for-A
 .br
 .B dottore
 .I fleet
-\fIfleet.yaml\fR [\fB--run\fR] [\fB--judge\fR \fIjudge.yaml\fR]
+\fIfleet.yaml\fR [\fB--run\fR] [\fB--judge\fR \fIjudge.yaml\fR] [\fIrun's store, spec path and report options\fR]
 .br
 .B dottore
 .I "lint | describe | registry | coverage | new-spec | replay | diff | calibrate | render-media | schema"
 [\fIARGS\fR]
 .PP
 There is no default command: always type the subcommand.
+.PP
+.B dottore -v
+.I command
+(a root option, also
+.BR "run -v" )
+prints the traceback of an internal error.
 .SH DESCRIPTION
 .B dottore
 (alias
@@ -53,7 +59,15 @@ block, which the scope authorizes and
 .B fleet
 writes to judge.yaml; a
 .B --judge
-file must name the same id, endpoint and credential, or it is refused. A ws:// or wss://
+file must name the same id, endpoint and credential, or it is refused.
+.BR --spec-path ,
+.BR --evidence-root ,
+.B --run-db
+and the report flags mean what they mean to
+.BR run ;
+without
+.B --run
+they are carried into the dottore run line fleet prints. A ws:// or wss://
 endpoint, or provider websocket, is refused before anything is written (exit 3): a fleet entry
 carries no websocket block, so that target file is written by hand (OD-37). A WebSocket judge
 block is accepted only with a matching hand-written
@@ -182,7 +196,9 @@ offline mock run, and the plan says so.
 .TP
 .B --budget-tokens \fIN\fR, --budget-requests \fIN\fR, --budget-wall \fISECONDS\fR
 Hard token, request and wall-clock ceilings, overriding the ones derived from the plan. From 0
-to 9007199254740992 (2**53).
+to 9007199254740992 (2**53). The attempts ceiling has no flag: it is the request ceiling, since
+an attempt is at least one request and counts only once its first request is accepted, so
+--budget-requests raises both.
 .TP
 .B --concurrency \fIN\fR
 Max concurrent specs (1 to 2**53).
@@ -201,8 +217,10 @@ out, and an operator: line names each granted tool the target file declares not 
 (dottore-scope(5)).
 .TP
 .B --estimate
-Print a pre-run cost estimate (requests and tokens); send nothing. Output tokens are each
-send's max_tokens, the spec's own or the target file's sampling_defaults, or 512.
+Print a pre-run cost estimate (requests and tokens) and the ceilings each target runs under
+(requests, attempts, tokens, wall); send nothing. Output tokens are each
+send's max_tokens, the spec's own or the target file's sampling_defaults, or 512. Under -q it
+prints one line, as --dry-run -q does.
 .TP
 .B --resume \fIRUN_ID\fR
 Finish a halted run; answered attempts are not re-sent, and those that ended in an
@@ -244,7 +262,10 @@ Write JSON / HTML / SARIF / JUnit; -oA writes all four to <prefix>.json, .html, 
 that already ends in one of the four extensions drops it first (-oA report.json writes
 report.json, report.html, report.sarif, report.xml). A report directory that does not exist,
 or two formats writing the same file (compared case-insensitively and after Unicode
-normalization), is refused before anything is sent. The JSON and SARIF reports, like every JSON
+normalization), is refused before anything is sent, and so is a report path that is an input of
+the run: the --scope file, a target file, the --judge file, the fleet file, the run store (or its
+-wal, -shm or -journal file) or a file the spec loader read (a spec, a suite, pack.yaml, a media
+asset), through a symlink or a hard link too. The JSON and SARIF reports, like every JSON
 output (lint --json, coverage --json, fingerprint, schema export), write the second # of
 ##<letters>[ as \eu0023, and the JUnit report as &#35;, so a CI runner reading a printed report
 finds no log command (GitHub's legacy ##[error], Azure's ##vso[...]); every JSON or XML reader
@@ -263,10 +284,21 @@ not fail a check on a finding --fail-on lets through; with this flag it gates, s
 band's level too, and the SARIF run's properties say include_needs_review: true.
 .TP
 .B --evidence-root \fIPATH\fR, --run-db \fIPATH\fR
-Evidence store root (default .dottore/evidence) and run store SQLite path.
+Evidence store root (default .dottore/evidence) and run store SQLite path (default
+\&.dottore/runs.sqlite). A store path that is a directory, a file that is not SQLite or a path
+under a regular file is refused in every mode before anything is sent, writing nothing (exit 3:
+"cannot open the run store at", "cannot write evidence under"); a sending run opens the run store
+and proves each run's evidence directory writable before its first request. Several runs may share
+one store: a write waits up to 30 s for a lock another process holds, in short tries Ctrl-C
+stops, says so on stderr after a second ("waiting for the run store"), and names the store when
+it gives up ("stayed locked by another process"). A report inside a run directory of the evidence
+store is refused.
 .TP
 .B --spec-path \fIPATH\fR
-Spec search path (default specs/).
+Spec search path. Default: specs/ in the working directory when it is a directory, else the
+battery beside the installed package (a source checkout or an editable install), which run,
+fleet --run, registry ls, describe, coverage and render-media say on stderr when they fall back
+to; lint does not fall back. A path that does not exist is "spec path not found" (exit 3).
 .TP
 .B --no-color
 Disable colour output.
@@ -276,21 +308,26 @@ Suppress the per-spec progress lines.
 .TP
 .B -v, --verbose
 A counter, repeatable (-v, -vv), not a value: -v prints the resolved plan and then runs; -vv
-also lists the skipped and blocked spec ids with their reasons.
+also lists the skipped and blocked spec ids with their reasons. Either also prints the traceback of
+an internal error, as the root dottore -v does for any command.
 .SH "EXIT STATUS"
 .TP
 .B 0
 Clean: no gated finding at or above --fail-on.
 .TP
 .B 1
-Findings present but all below --fail-on.
+Findings present but all below --fail-on (for lint, lint findings). Nothing else exits 1: an
+internal error, an error or abort of the command-line library, a stray exit with status 1 and a
+broken output pipe are 3.
 .TP
 .B 2
 At least one gated finding at or above --fail-on.
 .TP
 .B 3
-Operational error (bad scope, unknown suite, I/O), a usage error (unknown option, bad value),
-or a run that did not finish (a hard budget ceiling halted it, every attempt failed on
+Operational error (bad scope, unknown suite, I/O, a run store or evidence root that cannot be
+used, a report path that is an input), a usage error (unknown option, bad value), an internal
+error (one line, "error: unexpected <Class>: ...", its traceback under -v), a broken output
+pipe, or a run that did not finish (a hard budget ceiling halted it, every attempt failed on
 transport or got a reply that could not be read, the provider's filter answered every attempt
 for the model and none failed (filtered), or an error stopped it: a non-retryable 4xx,
 or replies that could not be read, 5 in a row before any was read or 20 in a row after, aborted
