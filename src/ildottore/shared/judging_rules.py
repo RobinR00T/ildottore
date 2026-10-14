@@ -71,7 +71,7 @@ JUDGING_RULES_VERSION: Final = 1
 
 #: The day :data:`JUDGING_RULES_VERSION` took its value, which a refusal quotes and the docs name
 #: (as ``JUDGING_RULES_SINCE``) instead of writing the date: set once, at the merge.
-JUDGING_RULES_SINCE: Final = "2026-10-12"
+JUDGING_RULES_SINCE: Final = "2026-10-14"
 
 #: The modules :func:`judging_digest` leaves out, each with its reason. Only a module no part of a
 #: run can execute may be here: outside the import closure of the console entry point

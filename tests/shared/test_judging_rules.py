@@ -73,11 +73,18 @@ PIN_HISTORY: tuple[tuple[int, str, str], ...] = (
         "re-pin 2026-10-13: the renderers, commands, cli.app and cli.main covered, data files by "
         "suffix only (third audit of 1d3d65c7); version 1 is not released",
     ),
+    (
+        1,
+        "b644c56b4ca2d5fdcb59a04e1d3f5d6a9989913ba91da581bfd57df571eff8e4",
+        "re-pin 2026-10-14: provisional, the tree merged with main at d526747e (#111 to #115) and "
+        "JUDGING_RULES_SINCE set to the merge day; the landing pin replaces this line once "
+        "fix/cli-input-validation has landed; version 1 is not released",
+    ),
 )
 
 #: The digest each version is pinned to now: the last line of :data:`PIN_HISTORY` for it.
 PINNED: dict[int, str] = {
-    1: "094105ecb30f4edb5fc32504951510538dd590f151679b42ec64201f9e0c56a5",
+    1: "b644c56b4ca2d5fdcb59a04e1d3f5d6a9989913ba91da581bfd57df571eff8e4",
 }
 
 #: One ``<version> <digest>`` line per pin, appended to and never edited: the history must start
