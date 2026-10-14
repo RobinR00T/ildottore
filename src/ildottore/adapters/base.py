@@ -30,18 +30,29 @@ from __future__ import annotations
 
 import asyncio
 import functools
+import json
 import re
 import zlib
 from abc import ABC, abstractmethod
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any, ClassVar, cast
+from typing import Any, ClassVar, Final, cast
+from urllib.parse import unquote, urlsplit
 
 import httpx
 
 from ildottore.policy import EndpointAllowlist
-from ildottore.redactor import Redactor, registered_secrets
+from ildottore.redactor import (
+    KNOWN_SECRET_MIN_LEN,
+    TRANSCRIPT_FRAMES,
+    TRANSCRIPT_PROTOCOL_PATHS,
+    Redactor,
+    mask_split,
+    redact_split,
+    registered_secrets,
+)
 from ildottore.shared.error_text import error_text
+from ildottore.shared.filter_stops import NO_FILTER_STOPS, OPENAI_FILTER_STOPS
 from ildottore.shared.logprobs import readable_logprob
 from ildottore.shared.models import (
     Capabilities,
@@ -50,19 +61,21 @@ from ildottore.shared.models import (
     TokenLogprob,
 )
 from ildottore.shared.nesting import NestedTooDeeply, bounded_loads
-from ildottore.shared.provider_filter import INPUT_FILTER_REFUSED
+from ildottore.shared.provider_filter import INPUT_FILTER_REFUSED, stop_provenance
 from ildottore.shared.toolcalls import check_argument_nesting
 from ildottore.shared.wellformed import well_formed_json
 
 __all__ = [
     "ACCEPT_ENCODING",
     "FILTER_REFUSED",
+    "MIN_CREDENTIAL_LEN",
     "UNREADABLE_EXCERPT_BYTES",
     "AdapterEnvError",
     "AdapterError",
     "AdapterProductError",
     "AdapterStatusError",
     "BaseAdapter",
+    "CredentialTooShort",
     "EndpointNotAllowed",
     "ProviderFilterBlock",
     "ResponseMalformed",
@@ -75,6 +88,7 @@ __all__ = [
     "map_logprobs",
     "read_capped",
     "redact_ids",
+    "refuse_short_credential",
     "reply_excerpt",
     "sampling_params_named",
 ]
@@ -85,6 +99,13 @@ _RETRYABLE_STATUS: frozenset[int] = frozenset({429, 500, 502, 503, 504})
 #: Largest response body read from a target, in bytes (4 MiB). A model reply is orders of
 #: magnitude smaller; anything above this is refused unread past the cap (SEC-07).
 MAX_RESPONSE_BYTES = 4 * 1024 * 1024
+
+#: Shortest credential an adapter sends (u04 A-78). The redactor masks a credential by value only
+#: from this length (``redactor.KNOWN_SECRET_MIN_LEN``): a shorter one is not registered, so a
+#: target that echoes it puts it in the evidence and every report. The WebSocket adapter refused
+#: one since its pre-commit audit (F5); the HTTP adapters registered nothing and sent it
+#: (pre-merge security audit of 2026-10-11, LOW 6).
+MIN_CREDENTIAL_LEN: Final = KNOWN_SECRET_MIN_LEN
 
 
 class AdapterError(Exception):
@@ -253,16 +274,439 @@ def _clean_cut(text: str, cut: int) -> int:
     return start
 
 
+#: The fields of a streamed event that are its protocol's, not the reply's: an event's type and
+#: kind, and what OpenAI's and Anthropic's chunks and Ollama's lines repeat in every event.
+_STREAM_PROTOCOL_PATHS: Final = (
+    *("type", "event", "object", "id", "model", "created", "created_at"),
+    *("system_fingerprint", "done", "done_reason"),
+)
+#: What ends a line of an event stream: CRLF, LF or CR, and nothing else (WHATWG HTML, "Server-sent
+#: events", 9.2.6). ``str.splitlines`` also ends one at U+2028 or U+0085, which JSON may hold raw.
+_SSE_LINE_BREAK: Final = re.compile(r"\r\n|\r|\n")
+_NDJSON_LINE_BREAK: Final = re.compile(r"\r?\n")
+_SSE_DATA: Final = "data"
+_BOM: Final = "\ufeff"
+
+
+def _lines(text: str, breaks: re.Pattern[str]) -> list[list[str]]:
+    """``text`` as ``[line, ending]`` pairs, the last ending empty when the text has none."""
+
+    out: list[list[str]] = []
+    cursor = 0
+    for match in breaks.finditer(text):
+        out.append([text[cursor : match.start()], match.group(0)])
+        cursor = match.end()
+    if cursor < len(text):
+        out.append([text[cursor:], ""])
+    return out
+
+
+def _event(data: str) -> tuple[str, Any]:
+    """An event's data as a frame: JSON that is an object or an array as it parses, a JSON string
+    as the text it holds, anything else (a bare delta, a number, ``[DONE]``) as the text it is."""
+
+    try:
+        value = well_formed_json(bounded_loads(data))
+    except ValueError:
+        return "text", data
+    if isinstance(value, (dict, list)):
+        return "json", value
+    return ("string", value) if isinstance(value, str) else ("text", data)
+
+
+def _stream_window() -> tuple[int, int]:
+    """``(window, settled)``: how much of a streamed body the excerpt's masking reads, and where
+    the lines a body cut there shows end (third pre-merge audit, LOW 4).
+
+    The excerpt reads at most ``extent`` characters of the body it is given (twice what it keeps,
+    then a margin for a registered credential or a short key-shaped token crossing that cut,
+    :func:`reply_excerpt`). A window of four times that leaves the excerpt reading well inside
+    what it shows, and nothing past the window is read: a 4 MiB stream of tiny events cost up to
+    12.8 s and costs what 36 KiB does. A body the window cuts has its streamed text withheld
+    (:func:`_withheld_units`): a secret whose pieces cross the cut is never read whole, so no
+    rule can mask it, and no part of it may be shown.
+    """
+
+    extent = _read_extent()
+    return 4 * extent, 2 * extent
+
+
+def _read_extent() -> int:
+    """How much of a body :func:`reply_excerpt` reads: twice what it keeps, then a margin for a
+    registered credential or a short key-shaped token crossing that cut."""
+
+    longest = max((len(secret) for secret in registered_secrets()), default=0)
+    return 2 * UNREADABLE_EXCERPT_BYTES + 4 * max(longest, _SHORT_TOKEN_HEAD)
+
+
+def _head(text: str, window: int) -> tuple[str, bool]:
+    """``text``, or its head up to the last line end at or before ``window``, and whether cut."""
+
+    if len(text) <= window:
+        return text, False
+    cut = max(text.rfind("\n", 0, window), text.rfind("\r", 0, window)) + 1
+    return text[:cut], True
+
+
+#: A unit of a stream as read: the lines it comes from, its kind and its frame.
+_Unit = tuple[list[int], str, Any]
+
+
+def _written(kind: str, value: Any, original: str) -> str:
+    """A unit's data as written again: JSON as the target wrote it, compact when it was so and
+    not ``\\u``-escaped (second pre-merge audit, MEDIUM 1)."""
+
+    if kind == "text":
+        return cast("str", value)
+    compact = False
+    try:
+        before = json.loads(original)
+        compact = original.strip() in (
+            json.dumps(before, separators=(",", ":"), ensure_ascii=False),
+            json.dumps(before, separators=(",", ":")),
+        )
+    except ValueError:
+        compact = False
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":") if compact else None)
+
+
+def _masked_units(redactor: Redactor, units: list[_Unit]) -> list[Any] | None:
+    """Each unit's frame with the stream's content masked across the units as a transcript's is
+    (A-77), or None when no frame changes."""
+
+    transcript = {
+        TRANSCRIPT_FRAMES: [{"direction": "received", "frame": frame} for _, _, frame in units],
+        TRANSCRIPT_PROTOCOL_PATHS: list(_STREAM_PROTOCOL_PATHS),
+    }
+    masked = mask_split(redactor, transcript)
+    if masked is transcript:
+        return None
+    frames = cast("dict[str, list[dict[str, Any]]]", masked)[TRANSCRIPT_FRAMES]
+    return [frame["frame"] for frame in frames]
+
+
+#: The fields a body cut by the window keeps when its streamed text is withheld: its protocol's,
+#: and an event's role, finish or stop reason and service tier, at any depth (an event's
+#: ``delta.type``, a tool call's ``id``). Every other string is streamed text.
+_KEPT_WHEN_WITHHELD: Final = frozenset(
+    {*_STREAM_PROTOCOL_PATHS, "role", "finish_reason", "stop_reason", "service_tier"}
+)
+#: Lists of numbers that spell the text: OpenAI's ``bytes`` of a token, Ollama's ``context``.
+_SPELLING_NUMBERS: Final = frozenset({"bytes", "context"})
+
+
+def _without_text(node: Any, key: object = None) -> Any:
+    """``node`` (a frame's JSON) with every string emptied but those of :data:`_KEPT_WHEN_WITHHELD`
+    and every list of :data:`_SPELLING_NUMBERS` nulled; keys, structure and other values kept."""
+
+    if isinstance(node, str):
+        return node if key in _KEPT_WHEN_WITHHELD else ""
+    if isinstance(node, dict):
+        return {
+            name: None
+            if name in _SPELLING_NUMBERS and isinstance(value, list)
+            else _without_text(value, name)
+            for name, value in node.items()
+        }
+    if isinstance(node, list):
+        return [_without_text(item, key) for item in node]
+    return node
+
+
+def _withheld_units(units: list[_Unit], offsets: list[int], settled: int) -> list[Any] | None:
+    """Each unit's frame, those that start before ``settled`` with their streamed text withheld
+    (:func:`_without_text`; a unit that is text is emptied whole), or None when none of those
+    holds any.
+
+    The owner's decision of 2026-10-13, under the delegation (best practice), fail closed: a
+    secret whose pieces cross the window's cut is never read whole, so no rule masks it, and
+    showing part of it is showing more than `main`. Masked across the window, a URL password with
+    symbols showed its beginning at 7 of 31 cuts, a 300-character registered credential at 70 of
+    111 (fourth pre-merge audit, MEDIUM), and with an open tail left out, a 600-character URL
+    password of words still showed 20 to 61 of its characters, and a stream that paused past the
+    window its secret's head. Withheld, none of the streamed text shows; and the lines quoted are
+    only those `main`'s excerpt shows whole (:func:`_written_head`), so what is kept outside the
+    streamed text shows no more than `main` either: an excerpt may show less than `main`, never
+    more. Units past those lines are emptied too, unread.
+    """
+
+    out: list[Any] = []
+    withheld = False
+    for lines, kind, frame in units:
+        if offsets[lines[0]] < settled:
+            after = _without_text(frame) if kind == "json" else ""
+            withheld = withheld or after != frame
+            out.append(after)
+        else:
+            out.append(frame)
+    return out if withheld else None
+
+
+def _withheld_notice(window: int) -> str:
+    """What the excerpt of a body cut by the window says once, first, in plain words."""
+
+    return (
+        f"[il dottore: this reply is longer than the {window:,} characters the excerpt reads, "
+        "so the text it streams is withheld below: a secret streamed across that cut could not "
+        "be masked whole. Keys, structure, types, roles, ids and finish reasons are kept.]\n"
+    )
+
+
+def _offsets(lines: list[list[str]]) -> list[int]:
+    """Where each line starts in the text it was cut from."""
+
+    out, at = [], 0
+    for line, ending in lines:
+        out.append(at)
+        at += len(line) + len(ending)
+    return out
+
+
+def _written_head(
+    head: str,
+    lines: list[list[str]],
+    offsets: list[int],
+    *,
+    cut: bool,
+    window: int,
+    redactor: Redactor,
+) -> str:
+    """The lines as written again: all of them, or, when the window cut the body, the notice
+    (:func:`_withheld_notice`) and the lines of ``head`` that `main`'s excerpt of it shows whole
+    (:func:`_main_reach`) and that are fields of the format (:func:`_a_field`).
+
+    Emptied, the lines are short, so the excerpt's 4 KiB reached lines `main`'s never reached,
+    and what it keeps outside the streamed text (a comment, an ``event:`` or ``id:`` line, an
+    event's ``id`` or ``model``) showed more of a secret placed there than `main` did (fifth
+    pre-merge audit: 11 of 11 pieces, `main` 8).
+    """
+
+    if not cut:
+        return "".join(line + ending for line, ending in lines)
+    kept = [pair for pair in lines[: _main_reach(head, offsets, redactor)] if _a_field(pair[0])]
+    return _withheld_notice(window) + "".join(line + ending for line, ending in kept)
+
+
+#: The fields of an event stream a cut excerpt keeps (WHATWG HTML, 9.2.6): every other line is
+#: none the reader reads.
+_SSE_FIELDS: Final = frozenset({_SSE_DATA, "event", "id", "retry"})
+
+
+def _a_field(line: str) -> bool:
+    """Whether a cut excerpt keeps ``line``: a blank line, a JSON line, or a field of
+    :data:`_SSE_FIELDS`.
+
+    Any other line (a comment, a line starting with a space or ``=``) can take its mask in
+    `main`'s excerpt from the text before it, which the cut excerpt withholds: plain-text data
+    ending in ``password:`` or ``token=``, then the value as a comment, showed the value where
+    `main` masked it through the label (sixth pre-merge audit, 5 of 17 forms). A field begins
+    with its name, which no rule reads as a label's separator.
+    """
+
+    text = line.removeprefix(_BOM)
+    return not text or text[:1] in "{[" or text.partition(":")[0] in _SSE_FIELDS
+
+
+def _main_reach(head: str, offsets: list[int], redactor: Redactor) -> int:
+    """How many of the lines of ``head`` (starting at ``offsets``) `main`'s excerpt of ``head``
+    shows whole: the most whose text, redacted, begins that excerpt.
+
+    Not a count of bytes: `main`'s own masks lengthen or shorten what it shows, so a fixed 4 KiB
+    of the body showed more than `main` where they lengthened it (short emails masked in every
+    event: `main` showed none of 11 pieces placed in comment lines, a bound of 4 KiB 8 of them).
+    Searched by halves over the lines `main` reads; the count returned always meets the test.
+    """
+
+    quoted = _quoted(head.encode("utf-8", "replace"), redactor)
+    ends = [*offsets[1:], len(head)]
+    extent = _read_extent()  # what `main` reads: no line ending past it is shown whole
+    low, high = 0, sum(1 for end in ends if end <= extent)
+    while low < high:
+        middle = (low + high + 1) // 2
+        if quoted.startswith(redactor.redact_text(head[: ends[middle - 1]])):
+            low = middle
+        else:
+            high = middle - 1
+    return low
+
+
+def _sse_masked(text: str, redactor: Redactor) -> str | None:
+    """``text``, a server-sent event stream, with its events' content masked across the events
+    as a WebSocket transcript's is (A-77), or None when it is no such stream or holds nothing to
+    mask.
+
+    A reply streamed as events when no stream was asked for is not JSON, so it was quoted as it
+    came, each delta redacted alone, and a key or a registered credential in 3-character deltas
+    was rebuilt from the excerpt (pre-merge audit of c4bd2012, MEDIUM 3). Read as the format says
+    (second pre-merge audit, MEDIUM 2): a line ends at CRLF, LF or CR only, a blank line ends an
+    event, a line starting with a colon is a comment, the field is what comes before the first
+    colon and one space after it is dropped, and an event's ``data`` lines are joined by LF. An
+    event's data is an object or an array when it parses as one, and is then masked field by
+    field across the events; an event of several ``data`` lines that make no object or array
+    joined is read line by line (a page of ``data:`` lines with no blank line between them, which
+    the format reads as one event), each line as its own unit; any other data is the text it
+    holds, of one stream (a JSON string decoded). One reading: the line-by-line one used to run
+    only when the format's masked nothing, so one masked event kept a block's key in clear (third
+    pre-merge audit, LOW 3). Only the head the excerpt can read is read (:func:`_stream_window`).
+    A masked unit is written again on one ``data`` line (a text holding LF, on as many), every
+    other line as it came; the text returned is that head. Of a body the window cut, the
+    streamed text is withheld instead of masked (:func:`_withheld_units`), and the text returned
+    is the notice and the lines `main`'s excerpt shows whole (:func:`_written_head`).
+    """
+
+    window, settled = _stream_window()
+    head, cut = _head(text, window)
+    lines = _lines(head, _SSE_LINE_BREAK)
+    events: list[list[int]] = []
+    current: list[int] = []
+    for index, (line, _) in enumerate(lines):
+        line = line.removeprefix(_BOM) if index == 0 else line
+        if not line:
+            if current:
+                events.append(current)
+                current = []
+        elif not line.startswith(":") and line.partition(":")[0] == _SSE_DATA:
+            current.append(index)
+    if current:
+        events.append(current)
+
+    def value(index: int) -> str:
+        field = lines[index][0].removeprefix(_BOM) if index == 0 else lines[index][0]
+        data = field.partition(":")[2]
+        return data[1:] if data.startswith(" ") else data
+
+    units: list[_Unit] = []
+    for event in events:
+        values = [value(index) for index in event]
+        kind, frame = _event("\n".join(values))
+        if kind != "json" and len(event) > 1:
+            units.extend(
+                ([index], *_event(data)) for index, data in zip(event, values, strict=True)
+            )
+        else:
+            units.append((event, kind, frame))
+    if len(units) < 2:
+        return None
+    offsets = _offsets(lines)
+    masked = _withheld_units(units, offsets, settled) if cut else _masked_units(redactor, units)
+    if masked is None:
+        return None
+    for (event, kind, before), after in zip(units, masked, strict=True):
+        if after == before:
+            continue
+        first, ending = event[0], lines[event[0]][1] or "\n"
+        prefix = _BOM if first == 0 and lines[0][0].startswith(_BOM) else ""
+        original = "\n".join(value(index) for index in event)
+        written = _written(kind, after, original).split("\n")
+        lines[first] = [
+            prefix + ending.join(f"{_SSE_DATA}: {piece}" for piece in written),
+            lines[first][1],
+        ]
+        for index in event[1:]:
+            lines[index] = ["", ""]
+    return _written_head(head, lines, offsets, cut=cut, window=window, redactor=redactor)
+
+
+def _stream_line(value: Any) -> bool:
+    """Whether a JSON line is a piece of a streamed reply in a shape known to stream: Ollama's
+    (``done`` beside a ``message`` or a ``response``) or an OpenAI chunk (``object``
+    ``chat.completion.chunk``, or ``choices`` holding a ``delta``)."""
+
+    if not isinstance(value, dict):
+        return False
+    if "done" in value and ("message" in value or "response" in value):
+        return True
+    if value.get("object") == "chat.completion.chunk":
+        return True
+    choices = value.get("choices")
+    return isinstance(choices, list) and any(
+        isinstance(choice, dict) and "delta" in choice for choice in choices
+    )
+
+
+def _ndjson_masked(text: str, redactor: Redactor) -> str | None:
+    """``text``, a reply streamed as JSON lines in a shape known to stream (:func:`_stream_line`:
+    Ollama's, OpenAI's chunks), with its lines' content masked across them as an event stream's
+    is, or None when it is not that or holds nothing to mask.
+
+    Any other body of JSON lines is a list of records (a log), masked string by string as every
+    list of records is: read as a stream, the fields of 181 of 217 clean logs were joined across
+    the records and masked, and the excerpt was not `main`'s (third pre-merge audit, LOW 2). Only
+    the head the excerpt can read is read (:func:`_stream_window`), and of a body cut there the
+    streamed text is withheld (:func:`_withheld_units`); lines not masked are kept as they came.
+    """
+
+    window, settled = _stream_window()
+    head, cut = _head(text, window)
+    lines = _lines(head, _NDJSON_LINE_BREAK)
+    units: list[_Unit] = []
+    for index, (line, _) in enumerate(lines):
+        if not line.strip():
+            continue
+        kind, value = _event(line.strip())
+        if kind != "json" or not _stream_line(value):
+            return None
+        units.append(([index], kind, value))
+    if len(units) < 2:
+        return None
+    offsets = _offsets(lines)
+    masked = _withheld_units(units, offsets, settled) if cut else _masked_units(redactor, units)
+    if masked is None:
+        return None
+    for (event, kind, before), after in zip(units, masked, strict=True):
+        if after != before:
+            lines[event[0]][0] = _written(kind, after, lines[event[0]][0])
+    return _written_head(head, lines, offsets, cut=cut, window=window, redactor=redactor)
+
+
+def _split_masked(body: bytes | str, redactor: Redactor) -> bytes | str:
+    """``body``, or, when it holds a reply kept in pieces, the same written again with them
+    masked as the text they make (:func:`ildottore.redactor.mask_split`, A-77).
+
+    A WebSocket turn with no text is quoted as its frames, a reply in the wrong shape as its
+    body, and a reply streamed as server-sent events as its events: a secret streamed in deltas,
+    or kept as tokens, was redacted piece by piece and rebuilt from the excerpt (audit of main
+    de122e26, HIGH 1; pre-merge audit of c4bd2012, MEDIUM 3). A JSON body's logprob lists are
+    masked, and so is an event stream's content across its events (:func:`_sse_masked`); a body
+    that is neither, or holds no such piece, is returned as it is, so its excerpt is byte for
+    byte what it was.
+    """
+
+    try:
+        parsed = well_formed_json(bounded_loads(body))
+    except ValueError:
+        text = body if isinstance(body, str) else bytes(body).decode("utf-8", "replace")
+        streamed = _sse_masked(text, redactor) if _SSE_DATA in text else None
+        if streamed is None:
+            streamed = _ndjson_masked(text, redactor)
+        return body if streamed is None else streamed
+    masked = mask_split(redactor, parsed)
+    # Written as the target wrote it, not ``\u``-escaped: the excerpt's own redaction reads the
+    # text outside any stream next, and a number grouped by a no-break space escaped is no phone
+    # and no card to the rules (second pre-merge audit of the branch, MEDIUM 1).
+    return body if masked is parsed else json.dumps(masked, ensure_ascii=False)
+
+
 def reply_excerpt(body: bytes | str, redactor: Redactor) -> tuple[str, int]:
     """``(excerpt, size)``: the start of ``body`` for review, redacted, and its size in bytes.
 
     Read over twice what is kept, cut where no credential and no short key-shaped token crosses
     (:func:`_clean_cut`), redacted, then cut to :data:`UNREADABLE_EXCERPT_BYTES`, so a credential
     is masked whole before the last cut takes part of its mask; bytes that are not UTF-8 read as
-    U+FFFD, and no cut splits a character.
+    U+FFFD, and no cut splits a character. A JSON body holding a value split over the items of
+    a list is read with it masked (:func:`_split_masked`); the size is the body's as it came.
     """
 
+    size = len(body.encode("utf-8", "replace") if isinstance(body, str) else bytes(body))
+    body = _split_masked(body, redactor)
     data = body.encode("utf-8", "replace") if isinstance(body, str) else bytes(body)
+    return _quoted(data, redactor), size
+
+
+def _quoted(data: bytes, redactor: Redactor) -> str:
+    """The start of ``data`` as :func:`reply_excerpt` quotes it (`main`'s excerpt of a body it
+    does not rewrite)."""
+
     cut = min(len(data), 2 * UNREADABLE_EXCERPT_BYTES)
     while 0 < cut < len(data) and data[cut] & 0xC0 == 0x80:  # not inside a character
         cut -= 1
@@ -271,7 +715,7 @@ def reply_excerpt(body: bytes | str, redactor: Redactor) -> tuple[str, int]:
     window = head + data[cut : cut + 4 * max(longest, _SHORT_TOKEN_HEAD)].decode("utf-8", "replace")
     kept = window[: _clean_cut(window, len(head))]
     shown = redactor.redact_text(kept).encode("utf-8")[:UNREADABLE_EXCERPT_BYTES]
-    return shown.decode("utf-8", "ignore"), len(data)
+    return shown.decode("utf-8", "ignore")
 
 
 class AdapterProductError(AdapterError):
@@ -282,6 +726,39 @@ class AdapterProductError(AdapterError):
 
     Per ``AGENTS.md §2`` this is a hard **FAIL** - never masked as a flake.
     """
+
+
+class CredentialTooShort(AdapterProductError):
+    """A credential the redactor could not mask by value, refused before any request (u04 A-78).
+
+    Its own class so the judge does not read it as an outage: it refuses every request alike, and
+    read as one it made every judged spec inconclusive and the run exited 0 without a word, as a
+    sampling refusal did before u12 A-68. The judge raises it, and the run stops naming it.
+    """
+
+
+def refuse_short_credential(adapter_id: str, api_key: str | None, url: str | None = None) -> None:
+    """Refuse, before any request, a credential the redactor could not mask by value.
+
+    ``api_key`` is the resolved ``auth_ref``; ``url`` the endpoint the adapter requests, whose
+    password (as written, and as it reads once percent-decoded) is sent too. An empty password is
+    no credential (``https://<token>:@host`` sends a user only) and passes. The message names
+    the adapter and never the value, as the WebSocket adapter's always did.
+    """
+
+    credentials: list[str] = [] if api_key is None else [api_key]
+    if url:
+        try:
+            password = urlsplit(url).password
+        except ValueError:
+            password = None  # the allowlist gate, run first, refused a URL that cannot be read
+        if password:
+            credentials += (password, unquote(password))
+    if any(len(credential) < MIN_CREDENTIAL_LEN for credential in credentials):
+        raise CredentialTooShort(
+            f"{adapter_id}: the credential is shorter than {MIN_CREDENTIAL_LEN} characters, "
+            "which the redactor cannot mask by value; nothing was sent"
+        )
 
 
 class AdapterStatusError(AdapterProductError):
@@ -691,16 +1168,18 @@ def redact_ids(redactor: Redactor, ids: Mapping[str, Any]) -> dict[str, Any]:
     The ``model`` echo, when it is a string, is a model name, not an opaque id: it skips the
     entropy rule (patterns and known credentials still apply). Mixed-case names such as
     ``meta-llama/Meta-Llama-3-8B-Instruct`` were masked as high-entropy before the
-    fingerprint's metadata layer could read them (audit of the fingerprint). This is in
-    memory only: the evidence store, the run store and the reports apply their own full
-    redactor to everything they keep. Shared by the HTTP adapters and the WebSocket one.
+    fingerprint's metadata layer could read them (audit of the fingerprint). A value split over
+    the items of a list (a WebSocket transcript's deltas) is masked as the text it makes
+    (:func:`ildottore.redactor.redact_split`, A-77). This is in memory only: the evidence store,
+    the run store and the reports apply their own full redactor to everything they keep. Shared
+    by the HTTP adapters and the WebSocket one.
     """
 
     model = ids.get(_MODEL_ID)
     if not isinstance(model, str):  # a nested value gets the full redactor
-        return cast("dict[str, Any]", redactor.redact(dict(ids)))
+        return cast("dict[str, Any]", redact_split(redactor, dict(ids)))
     rest = {key: value for key, value in ids.items() if key != _MODEL_ID}
-    redacted = cast("dict[str, Any]", redactor.redact(rest))
+    redacted = cast("dict[str, Any]", redact_split(redactor, rest))
     redacted[_MODEL_ID] = redactor.without_entropy().redact_text(model)
     return {key: redacted[key] for key in ids}
 
@@ -760,6 +1239,33 @@ class BaseAdapter(ABC):
 
         return "check the target's endpoint and provider"
 
+    @property
+    def filter_stops(self) -> frozenset[str]:
+        """The stop reasons this adapter reads as its provider's filter (u04 A-79).
+
+        None here: a provider documents its own, and the adapter that speaks it says which
+        (OpenAI's ``content_filter``, Anthropic's ``refusal``, a REST template's). Any other
+        filter word in a reply is some other provider's: it is marked ``foreign_stop`` and read
+        as an ordinary stop, so a target cannot hide its reply behind a word it chose. Azure's
+        HTTP 400 ``content_filter`` (OD-41) is read only by an adapter that reads that stop.
+        """
+
+        return NO_FILTER_STOPS
+
+    @property
+    def own_filter_stops(self) -> frozenset[str]:
+        """The stop reasons this adapter's provider documents for its filter, whatever is declared.
+
+        :attr:`filter_stops` without a declaration; a declaration may only narrow it (u04 A-79).
+        A reply with no text and no tool call that ends on one of these is the filter's withheld
+        reply even when the target file's declaration leaves the word out: a gateway in front of
+        Azure OpenAI relays Azure's empty ``content_filter``, and there is nothing of the model's
+        in it to score (``shared.provider_filter.stop_provenance``; pre-merge audit of
+        ``10cb526b``, MEDIUM). None here.
+        """
+
+        return NO_FILTER_STOPS
+
     #: True for an adapter whose replies may be a JSON array (a REST template rooted at an index).
     @property
     def reads_array_body(self) -> bool:
@@ -786,7 +1292,9 @@ class BaseAdapter(ABC):
                 raise ResponseTooDeep(
                     f"{label} has a tool call whose arguments are {exc}; not evaluated"
                 ) from exc
-        return parsed
+        # Every success reply leaves through here: its stop is read as a filter's only when this
+        # adapter's provider documents it (u04 A-79), and its own word on an empty reply always.
+        return stop_provenance(parsed, self.filter_stops, self.own_filter_stops)
 
     def _unreadable(self, message: str, body: bytes | str) -> ResponseMalformed:
         """A :class:`ResponseMalformed` with an excerpt of ``body`` and this adapter's advice."""
@@ -837,6 +1345,7 @@ class BaseAdapter(ABC):
 
         url = self._full_url()
         self._check_allowlist(url)  # BEFORE httpx - unbypassable.
+        refuse_short_credential(self.id, self.api_key, url)
 
         body, headers = self._build_request(request)
         owns_client = self.client is None
@@ -960,8 +1469,14 @@ class BaseAdapter(ABC):
             return self._checked(parsed, label)
 
         # The provider's input filter refused the prompt (OD-41): the attempt is blocked, not a
-        # defect. Read first: its 400 names the prompt, never a sampling parameter.
-        filtered = azure_prompt_filter(response.status_code, raw)
+        # defect. Read first: its 400 names the prompt, never a sampling parameter. Only by an
+        # adapter that reads Azure's filter vocabulary (u04 A-79): from another provider that
+        # body is not its filter's, and any 4xx it does not document stops the campaign.
+        filtered = (
+            azure_prompt_filter(response.status_code, raw)
+            if self.filter_stops & OPENAI_FILTER_STOPS
+            else None
+        )
         if filtered is not None:
             raise ProviderFilterBlock(
                 f"{self.id}: non-retryable HTTP {response.status_code} from "

@@ -528,7 +528,9 @@ def test_an_empty_cut_reply_is_no_exploit_for_a_spec_whose_marker_must_be_presen
     argv = [*_argv(tmp_path, port, "DOS-TOKEN-AMP-001"), "-oJ", str(tmp_path / "r.json")]
     result = CliRunner().invoke(app, argv)
 
-    assert result.exit_code == 0, result.output
+    # Every attempt was cut, so the run measured the filter, not the model: exit 3 since the
+    # amendment to OD-42 (u12 A-79), never the 2 a fail on an absent marker gave.
+    assert result.exit_code == 3, result.output
     assert (state["attack"], state["filtered"], state["judge"]) == (4, 4, 0)
     finding = _report(tmp_path / "r.json")["findings"][0]
     assert finding["status"] == "inconclusive"
@@ -552,8 +554,10 @@ def test_a_refusal_with_no_usage_is_on_an_unreported_side_without_bedrocks_hint(
     ]
     result = CliRunner().invoke(app, argv)
 
-    assert result.exit_code == 0, result.output
+    # Every attempt was stopped by the filter: exit 3 since the amendment to OD-42 (u12 A-79).
+    assert result.exit_code == 3, result.output
     report = _report(tmp_path / "r.json")
+    assert report["summary"]["status"]["state"] == "filtered"
     assert report["findings"][0]["status"] == "inconclusive"
     assert report["summary"]["provider_filter_side_unknown"] == {
         "attempts": 4,
@@ -592,7 +596,9 @@ def test_a_ceiling_that_refuses_the_recording_judge_keeps_the_cut_verdict(
     run_id = _run_id(tmp_path)
 
     done = cli.invoke(app, [*base, "--resume", run_id, "-oJ", str(tmp_path / "r.json")])
-    assert done.exit_code == (2 if fails else 0), done.output
+    # Without a fail, every attempt of the run was cut: exit 3, as a run that measured the filter
+    # and not the model (u12 A-79); a fail on what came back decides.
+    assert done.exit_code == (2 if fails else 3), done.output
     assert (
         f"resume: {run_id} keeps 1 attempt(s) across 1 spec(s) (answered, or failed in a way a "
         "retry would repeat); they will not be re-sent"

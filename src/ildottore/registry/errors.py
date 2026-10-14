@@ -52,6 +52,8 @@ class LintCode(StrEnum):
 #: The codes that say a search path gave nothing to read: what ``lint`` exits 3 on and the other
 #: commands refuse, rather than a finding about a spec.
 PATH_CODES: frozenset[LintCode] = frozenset({LintCode.PATH_NOT_FOUND, LintCode.NO_SPECS})
+#: How a ``PATH_NOT_FOUND`` message starts; the path (as shown) follows it.
+PATH_NOT_FOUND_TEXT = "path not found: "
 
 
 class Severity(StrEnum):

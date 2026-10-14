@@ -83,7 +83,9 @@ sent in-band to a type: model target); the estimate counts those sends.
 Two identities of one target with the same name, or the same canary, are refused. After
 env://, an auth_ref names an environment variable: letters, digits and _, not starting with a
 digit, or the scope is refused without the value being quoted. An identity that carries no
-credential writes env://NONE, whose variable is never read.
+credential writes env://NONE, whose variable is never read. When the run would sweep, each
+identity's credential is held to the floor auth_ref gives below, by --dry-run, -sn and
+--estimate too.
 .TP
 .B commands
 Authorized stdio MCP command lines (exact match). Default-deny: a stdio MCP server is launched
@@ -166,7 +168,16 @@ an environment variable's name (letters, digits and _, not starting with a digit
 is refused when the file loads, never quoted. The secret is read at send time and never stored;
 a live run or fingerprint refuses a variable that is not set (or holds only spaces) before it
 sends anything, naming it, and --dry-run, --estimate and -sn warn about it. A target that takes
-no credential leaves auth_ref out; env://NONE says the same and is never read.
+no credential leaves auth_ref out; env://NONE says the same and is never read. A credential
+shorter than 8 characters (the auth_ref's value, or a password written in the endpoint URL, as
+written and percent-decoded) is refused before anything is sent, with "<id>: the credential is
+shorter than 8 characters, which the redactor cannot mask by value; nothing was sent" (exit 3),
+by every adapter and by --dry-run, -sn and --estimate too: the redactor masks a credential by its
+value only from 8 characters. A variable that is not set or holds only spaces is no credential,
+and is named as above rather than as a short one. A judge's key is named by the judge's id, a
+scope identity's of the identity sweep by "<target id>, identity '<name>'". An empty password is
+no credential; an offline mock and a stdio MCP target (provider mcp, transport stdio), which are
+sent no key, are not checked.
 .B provider
 is openai (and openai-compatible), anthropic, mcp, websocket or rest, case and surrounding
 spaces ignored; left out, a live endpoint routes to the generic REST adapter. Any other value is

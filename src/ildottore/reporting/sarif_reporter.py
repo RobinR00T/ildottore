@@ -4,8 +4,11 @@ Emits a SARIF 2.1.0 log - the CI / security-tool interchange format. One ``run``
 one ``reportingDescriptor`` (rule) per distinct spec, tagged with its OWASP LLM / MITRE ATLAS
 / NIST framework ids; one ``result`` per finding. ``ruleId`` is the spec id; ``level`` is
 mapped from the risk **band** (critical/high → ``error``, medium → ``warning``,
-low/info → ``note``). Result ``properties`` carry ``{band, risk_score, reproducibility,
-confidence, state}`` so downstream tools keep the two-axis model (``docs/05``).
+low/info → ``note``), and a fail that needs review is at most a ``warning``, since it does not
+gate ``--fail-on`` on its own; under ``--include-needs-review``, which makes it gate, it keeps
+its band's level and the run's ``properties`` say ``include_needs_review: true``. Result
+``properties`` carry ``{band, risk_score,
+reproducibility, confidence, state}`` so downstream tools keep the two-axis model (``docs/05``).
 
 Every generated document validates against the vendored SARIF 2.1.0 JSON Schema
 (``schemas/sarif-2.1.0.schema.json``) - the contract's SARIF-validity gate (§7). Output is
@@ -35,6 +38,7 @@ from ildottore.shared.provider_filter import (
     side_unknown_attempt_ids,
 )
 from ildottore.shared.unreadable import unreadable_attempt_ids
+from ildottore.shared.withheld import withheld_attempt_ids
 
 __all__ = ["SARIF_SCHEMA_VERSION", "SarifReporter", "band_to_level", "load_sarif_schema"]
 
@@ -50,6 +54,10 @@ _BAND_LEVEL: dict[ScanBand, str] = {
     ScanBand.LOW: "note",
     ScanBand.INFO: "note",
 }
+
+
+#: The highest ``level`` of a fail whose state is ``needs_review`` (``docs/05 §3``).
+_NEEDS_REVIEW_LEVEL = "warning"
 
 
 def band_to_level(band: ScanBand) -> str:
@@ -108,8 +116,12 @@ def _kind(finding: Finding) -> str:
     return "open" if finding.attempts else "notApplicable"
 
 
-def _result(finding: Finding, rule_index: int) -> dict[str, Any]:
-    """Build a SARIF ``result`` for one finding."""
+def _result(finding: Finding, rule_index: int, *, include_needs_review: bool) -> dict[str, Any]:
+    """Build a SARIF ``result`` for one finding.
+
+    ``include_needs_review`` is the run's flag: with it a fail that needs review trips
+    ``--fail-on``, so it keeps its band's level.
+    """
 
     risk = finding.risk
     kind = _kind(finding)
@@ -118,6 +130,17 @@ def _result(finding: Finding, rule_index: int) -> dict[str, Any]:
     # read as passes, with a level the standard forbids for them (audit 2026-10-03, R7).
     level = band_to_level(risk.band) if kind == "fail" else "none"
     state = finding_state(finding)
+    if state == "needs_review" and level == "error" and not include_needs_review:
+        # A fail that is not confirmed (only the judge reported it, or it was not reproduced on
+        # every attempt of a variant) does not trip `--fail-on` without `--include-needs-review`,
+        # so it is no `error`: at most a `warning` (audit of the scoring, 2026-10-11, LOW 4).
+        # With the flag it trips it, and a `warning` let code scanning pass the check `dottore`
+        # exited 2 on (pre-merge audit of `d07a1088`, LOW 3).
+        # GitHub, "Triaging code scanning alerts in pull requests" (docs.github.com/en/
+        # code-security/code-scanning/managing-code-scanning-alerts/triaging-code-scanning-alerts-
+        # in-pull-requests, read 2026-10-12): a check that finds a result "with a severity of
+        # `error`, `critical`, or `high`" fails; lower ones are warnings or notes and it passes.
+        level = _NEEDS_REVIEW_LEVEL
     message = (
         f"{finding.spec_id} against {finding.target_id}: {finding.status.value} "
         f"(band={risk.band.value}, risk={risk.risk:g}, state={state})"
@@ -151,6 +174,13 @@ def _result(finding: Finding, rule_index: int) -> dict[str, Any]:
         message += (
             f"; {unreadable} of {sent} attempt(s) whose reply could not be read as the "
             "provider's, which may be the one an attack changed: review them"
+        )
+    # Attempts stored with the pieces of their reply withheld (A-77): said and counted too.
+    withheld = len(withheld_attempt_ids(finding.attempts))
+    if withheld:
+        message += (
+            f"; {withheld} of {sent} attempt(s) stored with the pieces of the reply withheld, "
+            "since the redactor could not prove them masked as one text (A-77)"
         )
     # Attempts whose verdict the operator's target file changed (OD-43): said in the message,
     # and counted in the properties, only when there are any.
@@ -188,6 +218,7 @@ def _result(finding: Finding, rule_index: int) -> dict[str, Any]:
             **({"provider_filter_side_unknown": unsaid} if unsaid else {}),
             **({"unreadable_reply": unreadable} if unreadable else {}),
             **({"operator_declaration_attempts": declared} if declared else {}),
+            **({"evidence_withheld": withheld} if withheld else {}),
         },
     }
     return result
@@ -230,6 +261,8 @@ def _blocked_property(findings: list[Finding]) -> dict[str, int]:
         ),
         # The replies the adapter could not read (OD-21, u08 A-74).
         "unreadable_reply": sum(len(unreadable_attempt_ids(f.attempts)) for f in findings),
+        # Attempts stored with the pieces of their reply withheld (A-77).
+        "evidence_withheld": sum(len(withheld_attempt_ids(f.attempts)) for f in findings),
     }
     return {key: count for key, count in counts.items() if count}
 
@@ -257,7 +290,10 @@ class SarifReporter(BaseReporter):
                 rule_ids.append(finding.spec_id)
                 rules.append(_rule(finding.spec_id, self._specs.get(finding.spec_id)))
 
-        results = [_result(f, rule_index[f.spec_id]) for f in ctx.findings]
+        results = [
+            _result(f, rule_index[f.spec_id], include_needs_review=self._include_needs_review)
+            for f in ctx.findings
+        ]
 
         document: dict[str, Any] = {
             "$schema": "https://ildottore.dev/schemas/sarif-2.1.0.schema.json",
@@ -278,6 +314,8 @@ class SarifReporter(BaseReporter):
                     "properties": {
                         "run_id": ctx.run.run_id,
                         "run_status": self._run_status.state,
+                        # Why a fail that needs review keeps its band's level (LOW 3).
+                        **({"include_needs_review": True} if self._include_needs_review else {}),
                         # Attempts the provider's input filter refused (OD-41), when any were.
                         **_blocked_property(ctx.findings),
                         # What the operator's target file declares not destructive (OD-43).

@@ -258,7 +258,7 @@
             "state",
             "complete"
           ],
-          "description": "Whether the run finished. Optional in report-1.0 so a document written by an earlier build still validates; always emitted by this one. state is complete, budget_exhausted (a hard ceiling halted the campaign), aborted (an error stopped it: a non-retryable 4xx, or a run whose first replies could all not be read) or unreachable (every attempt failed on transport or got a reply that could not be read, so nothing was evaluated).",
+          "description": "Whether the run finished. Optional in report-1.0 so a document written by an earlier build still validates; always emitted by this one. state is complete, budget_exhausted (a hard ceiling halted the campaign), aborted (an error stopped it: a non-retryable 4xx, or a run whose first replies could all not be read), unreachable (every attempt failed on transport or got a reply that could not be read, so nothing was evaluated) or filtered (every attempt was refused, cut or stopped by the provider's filter, or got no reply that could be read, at least one by the filter and none a fail, so no reply the model wrote whole was evaluated).",
           "properties": {
             "state": {
               "type": "string",

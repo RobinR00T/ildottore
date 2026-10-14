@@ -136,6 +136,13 @@ class AttemptResult:
     #: :data:`~ildottore.shared.unreadable.UNREADABLE_MARK`, and the runner records it
     #: ``inconclusive: unreadable_reply``, which keeps its spec from passing.
     unreadable: bool = False
+    #: A conversation a later send's environment error or unreadable reply ended after the model
+    #: had called a tool: its last reply with the whole trace so far (``core.conversation``),
+    #: which the runner's trace evaluators read, since a call already made can fail the attempt
+    #: (audit of the scoring, 2026-10-11, HIGH 2). Kept off ``attempt``, which still has no
+    #: reply, so an attempt the trace does not fail is stored as before and a resume sends it
+    #: again.
+    trace_so_far: ModelResponse | None = None
 
 
 class ReplyOverBudget(BudgetExhausted):
@@ -322,8 +329,12 @@ async def execute_attempt(
     sleep: Callable[[float], Awaitable[None]] | None = None,
     now: Callable[[], float] | None = None,
     pacer: RateLimiter | None = None,
+    opens_attempt: bool = False,
 ) -> AttemptResult:
     """Send one request with retry/backoff/timeout, debiting the budget per send.
+
+    ``opens_attempt``: this is the first request of an attack attempt, which its first send
+    counts against the attempts axis in the same debit (a retry never counts again, u08 A-80).
 
     Returns an :class:`AttemptResult`. Raises :class:`BudgetExhausted` (from the
     ledger) straight through - the runner converts that into a ``budget_exhausted``
@@ -364,7 +375,8 @@ async def execute_attempt(
             remaining = ledger.remaining_tokens()
             if ceiling is not None and estimate > ceiling and remaining:
                 reserved = remaining
-        ledger.debit_request(tokens=reserved)
+        ledger.debit_request(tokens=reserved, opens_attempt=opens_attempt)
+        opens_attempt = False  # counted with the first send; a retry is the same attempt
         started = clock()
         try:
             response = await _send_with_timeout(adapter, request, timeout_s, do_sleep)

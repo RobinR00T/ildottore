@@ -35,7 +35,14 @@ runner = CliRunner()
 
 KEY = "sk-ant-api03-Q7xZ2mV9pL4kR8tN1wB6yH3jF5dS0aC-QwErTyUiOpAsDfGh"
 PASSWORD = "Hunter2Secret9f8e7d"
-_FRAGMENTS = [KEY[i : i + 10] for i in range(0, len(KEY) - 10, 5)] + [PASSWORD[:10]]
+#: A key of no documented format: what only the entropy rule reads as one. `KEY` is Anthropic's
+#: format, which the redactor masks whatever its entropy since main's u01 A-78.
+TOKEN = "Q7xZ2mV9pL4kR8tN1wB6yH3jF5dS0aCQwErTyUiOpAsDfGh"
+_FRAGMENTS = (
+    [KEY[i : i + 10] for i in range(0, len(KEY) - 10, 5)]
+    + [TOKEN[i : i + 10] for i in range(0, len(TOKEN) - 10, 5)]
+    + [PASSWORD[:10]]
+)
 _REPLY = {
     "id": "stub",
     "object": "chat.completion",
@@ -230,7 +237,9 @@ def test_the_judge_variable_is_checked_too(
     tmp_path: Path, stub: tuple[int, list[dict[str, str]]], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     port, seen = stub
-    monkeypatch.setenv("DOTTORE_TEST_KEY", "k")
+    # Eight characters at least: a shorter one is refused as one the redactor cannot mask by
+    # value (main's u04 A-78), before this check is reached.
+    monkeypatch.setenv("DOTTORE_TEST_KEY", "k-live-value")
     monkeypatch.delenv("DOTTORE_TEST_JUDGE_KEY", raising=False)
     _files(tmp_path, port, judge_ref="env://DOTTORE_TEST_JUDGE_KEY")
     result = _run(tmp_path, "--judge", str(tmp_path / "judge.yaml"))
@@ -410,10 +419,18 @@ def test_fleet_still_writes_a_variable_name_and_the_no_credential_reference(
         (f"https://api.example.com/v1?access_token={PASSWORD}", "the parameter 'access_token'"),
         (
             f"https://api.example.com/v1?q={KEY}",
-            "query string (the parameter 'q', whose value is a high-entropy token)",
+            "query string (the parameter 'q', whose value is a credential format)",
         ),
         (
             f"https://api.example.com/v1?{KEY}",
+            "query string (a component shaped like a key (a credential format))",
+        ),
+        (
+            f"https://api.example.com/v1?q={TOKEN}",
+            "query string (the parameter 'q', whose value is a high-entropy token)",
+        ),
+        (
+            f"https://api.example.com/v1?{TOKEN}",
             "query string (a component shaped like a key (a high-entropy token))",
         ),
         (f"https://api.example.com/v1#token={PASSWORD}", "fragment (the parameter 'token')"),
@@ -426,6 +443,8 @@ def test_fleet_still_writes_a_variable_name_and_the_no_credential_reference(
         "access_token",
         "key-value",
         "bare-key",
+        "key-value-entropy",
+        "bare-entropy",
         "fragment",
         "slash",
         "backslash",
@@ -571,7 +590,8 @@ def test_a_parameter_name_is_printed_as_written(tmp_path: Path, query: str, name
 def test_key_shape_reads_key_formats_and_entropy_and_no_pii() -> None:
     from ildottore.cli.key_shape import key_shape, normalised_name
 
-    assert key_shape(KEY) == "a high-entropy token"
+    assert key_shape(KEY) == "a credential format"
+    assert key_shape(TOKEN) == "a high-entropy token"
     assert key_shape("AKIAIOSFODNN7EXAMPLE") == "a credential format"
     assert key_shape(_JWT) == "a credential format"
     for not_a_key in (

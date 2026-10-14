@@ -28,7 +28,8 @@ def main(argv: Sequence[str] | None = None, *, prog_name: str | None = None) -> 
     """Run the ``dottore`` command tree and exit with its code.
 
     The root command's own ``main`` (``app._MaskedGroup``) prints a usage error masked, exit 3,
-    any other click error masked with its own code, an abort with 1 and Ctrl-C with 130.
+    any other click error masked, exit 3, and an abort as ``error: aborted``, exit 3 (A-9's
+    closure, u12 A-80); Ctrl-C keeps 130.
     """
 
     typer.main.get_command(app).main(

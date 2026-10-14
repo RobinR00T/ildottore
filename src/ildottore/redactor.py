@@ -47,9 +47,9 @@ import re
 import secrets
 import threading
 from array import array
-from collections.abc import Callable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Final, Protocol
+from typing import Any, ClassVar, Final, Protocol, cast
 
 _MASK_TEMPLATE: Final = "«REDACTED:{type}»"
 _MASK_TEMPLATE_HASHED: Final = "«REDACTED:{type}:{digest}»"
@@ -66,6 +66,8 @@ _OWN_MASK_TYPES: Final = frozenset(
     {
         *("credential", "url_password", "labeled_secret", "high_entropy"),
         *("canary", "shared_line", "tool_arg_injection", "ip", "private_key"),
+        # A piece of a list's joined text masked where its mask could not be placed (A-77).
+        "fragment",
     }
 )
 
@@ -123,15 +125,24 @@ _CONTROL_RANGES: Final = ((0x00, 0x1F), (0x7F, 0x9F), (0x2028, 0x2029), (0xD800,
 #: Python's Unicode version (3.11 has 14.0); a test checks it holds every Cf of the Python it runs.
 #: A terminal shows none of them: a bidi control reorders what is read (Trojan Source,
 #: CVE-2021-42574), and a zero-width or a tag character hides text (decided by the owner on
-#: 2026-10-07: written out like the controls).
-_FORMAT_RANGES: Final = (
-    *((0x00AD, 0x00AD), (0x0600, 0x0605), (0x061C, 0x061C), (0x06DD, 0x06DD)),
-    *((0x070F, 0x070F), (0x0890, 0x0891), (0x08E2, 0x08E2), (0x180E, 0x180E)),
-    *((0x200B, 0x200F), (0x202A, 0x202E), (0x2060, 0x2064), (0x2066, 0x206F)),
-    *((0xFEFF, 0xFEFF), (0xFFF9, 0xFFFB), (0x110BD, 0x110BD), (0x110CD, 0x110CD)),
-    *((0x13430, 0x1343F), (0x1BCA0, 0x1BCA3), (0x1D173, 0x1D17A), (0xE0001, 0xE0001)),
-    (0xE0020, 0xE007F),
+#: 2026-10-07: written out like the controls). In three kinds, the one list for every reader that
+#: tells them apart (``shared.provider_filter.blank_text``, pre-merge audit of ``3f7b1254``):
+#: :data:`EMPTY_FORMAT_RANGES` show nothing and carry nothing; :data:`FORMAT_SIGN_RANGES` are the
+#: 13 prepended concatenation marks, signs a font draws as a glyph (the Arabic number signs, the
+#: end of ayah, the Syriac abbreviation mark, the Arabic pound and piastre marks, the Kaithi
+#: number signs);
+#: :data:`TAG_RANGES` spell ASCII that no one sees (ASCII smuggling).
+EMPTY_FORMAT_RANGES: Final = (
+    *((0x00AD, 0x00AD), (0x061C, 0x061C), (0x180E, 0x180E), (0x200B, 0x200F)),
+    *((0x202A, 0x202E), (0x2060, 0x2064), (0x2066, 0x206F), (0xFEFF, 0xFEFF)),
+    *((0xFFF9, 0xFFFB), (0x13430, 0x1343F), (0x1BCA0, 0x1BCA3), (0x1D173, 0x1D17A)),
 )
+FORMAT_SIGN_RANGES: Final = (
+    *((0x0600, 0x0605), (0x06DD, 0x06DD), (0x070F, 0x070F), (0x0890, 0x0891)),
+    *((0x08E2, 0x08E2), (0x110BD, 0x110BD), (0x110CD, 0x110CD)),
+)
+TAG_RANGES: Final = ((0xE0001, 0xE0001), (0xE0020, 0xE007F))
+_FORMAT_RANGES: Final = (*EMPTY_FORMAT_RANGES, *FORMAT_SIGN_RANGES, *TAG_RANGES)
 #: U+FFFD, the replacement character: half a character in a target's reply (a lone surrogate) is
 #: read as one where the reply is parsed (u04 A-47), before the redactor sees it, so a credential
 #: split by half a character arrives split by U+FFFD, or by a run of them (an MCP SSE stream reads
@@ -410,7 +421,10 @@ LABELLED_CARD: Final = re.compile(
 # four-letter string everywhere would rewrite ordinary words in every report.
 _KNOWN_SECRETS: set[str] = set()
 _KNOWN_LOCK: Final = threading.Lock()
+
 _KNOWN_MIN_LEN: Final = 8
+#: The same floor, for an adapter that refuses a shorter credential before sending it (u04 A-78).
+KNOWN_SECRET_MIN_LEN: Final = _KNOWN_MIN_LEN
 
 
 def _escaped_forms(value: str) -> set[str]:
@@ -578,6 +592,11 @@ class _AsWritten:
         if index and self.ends[index - 1] > first:
             return None
         return first - self._before(index)
+
+    def in_view(self, at: int) -> int:
+        """Where text position ``at``, outside every mask, is in the view."""
+
+        return at + self._before(bisect.bisect_right(self.text_starts, at))
 
     def readable(self, first: int, after: int) -> tuple[int, int] | None:
         """Where, in the text, the password at ``view[first:after]`` is masked.
@@ -764,6 +783,205 @@ _SEGMENT_SPLIT: Final = re.compile(r"[-_/]")
 # digits, i.e. the hash and UUID shapes.
 _HEX_SEGMENT: Final = re.compile(r"[0-9a-fA-F]+")
 _HEX_EXEMPTION_MIN_LEN: Final = 16
+# --- hex runs and UUIDs, masked whatever their bits/char (u01 A-78) ---------------------
+# Hexadecimal caps at 4 bits/char and a short sample seldom shows all 16 digits, so the 3.7
+# threshold left most random hex keys readable: 74.7% of 32-digit ones (the shape of an Azure
+# key), 47.5% of 40-digit ones, 5.5% of 64-digit ones and 47.7% of v4 UUIDs (pre-merge security
+# audit of 2026-10-11, MEDIUM 4, 2,000 draws each). A run of 32 or more hex digits (a `0x` in
+# front included) is masked by the entropy fallback whatever its entropy, inside any token the
+# rule does not mask whole, a separator-structured one too, so it only adds to what the rule
+# masked before; and whatever keeps a value out of that rule keeps it out of this one (the CLI
+# keeps the digests it computed, the evidence names and an existing path out of it; a model
+# name keeps its form). Nothing cuts such a run before the rule reads it: every earlier pattern
+# starts and ends where a run of letters and digits does. The UUID shape (8-4-4-4-12 hex digits,
+# any version) is one of the late patterns (``_late_patterns``), and what the phone and card
+# rules read of one is held in stand-ins it is read back from (``_Cuts``): they read its
+# digit-only groups (`-6819-4748-`) as a number and the rest of it stayed readable. The tool
+# writes no UUID of its own; what it computes in hex (an evidence or media sha256, the scope
+# digest) is put back, or kept out of the rule, where the tool writes it (A-78 lists each place).
+_HEX_RUN: Final = re.compile(r"(?<![A-Za-z0-9])(?:0[xX])?[0-9A-Fa-f]{32,}+(?![A-Za-z0-9])")
+#: Either shape is 32 characters or more: a shorter token holds neither.
+_SHAPE_MIN_LEN: Final = 32
+_UUID: Final = re.compile(
+    r"(?<![A-Za-z0-9])[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}"
+    r"(?![A-Za-z0-9])"
+)
+#: A UUID's length: one holding a match starts at most this much before it.
+_UUID_LEN: Final = 36
+
+# --- the number a number rule read inside a UUID (u01 A-78) ------------------------------
+# The card and the phone rules read a UUID's digit-only groups as a number (`-6819-4748-`).
+# Main masked that number where it read it, and every rule after them read the text with the
+# mask in it: a later number rule stopped at it, a labelled value ran through it, and the
+# entropy rule read the token in the pieces between such masks. The UUID itself was cut, and
+# what of it lay between the masks was readable. Here the number inside a UUID is written in
+# stand-ins of the same length instead (one character for each of its characters, taken from a
+# block of the Private Use Area the text does not use), which every rule reads as main read its
+# mask: neither a letter nor a digit nor a space, a character a labelled value takes, one the
+# entropy rule does not. Read back (``_Cuts.decode``), the text is the text the number rules
+# had, every UUID whole and at the same place, so the late pattern masks it whole; and the
+# entropy rule judges exactly the pieces main judged, once each (``Redactor._cut_spans``). A
+# stand-in no mask has taken at the end of the pass becomes the number's mask, as main wrote
+# it. With no free block (a text holding a character of each), the number is masked as main
+# masked it.
+_STAND_IN_CHARS: Final = "0123456789-"
+_STAND_IN_KINDS: Final = ("card", "phone")
+#: One stand-in for each character, number type, hashed or not, and first character of a number
+#: or not: 88 of a block's 128.
+_STAND_IN_BLOCK: Final = 128
+_PRIVATE_USE: Final = ((0xE000, 0xF8FF), (0xF0000, 0xFFFFD), (0x100000, 0x10FFFD))
+_PRIVATE_USE_CHAR: Final = re.compile(
+    "|".join(f"[{chr(first)}-{chr(last)}]" for first, last in _PRIVATE_USE)
+)
+
+
+class _Cuts:
+    """The stand-ins of one pass, in one free block of the Private Use Area (u01 A-78)."""
+
+    _BY_BASE: ClassVar[dict[int, _Cuts]] = {}
+
+    def __init__(self, base: int) -> None:
+        first, last = chr(base), chr(base + _STAND_IN_BLOCK - 1)
+        self._base = base
+        self._decode = {
+            base + self._code(kind, hashed, start, char): _STAND_IN_CHARS[char]
+            for kind in range(len(_STAND_IN_KINDS))
+            for hashed in (False, True)
+            for start in (False, True)
+            for char in range(len(_STAND_IN_CHARS))
+        }
+        # The stand-ins of each number type, hashed or not: one table for a number's first
+        # character, one for the rest (`str.translate`, so a number costs one pass in C).
+        self._encode = {
+            (kind, hashed): tuple(
+                {
+                    ord(c): chr(base + self._code(kind, hashed, start, char))
+                    for char, c in enumerate(_STAND_IN_CHARS)
+                }
+                for start in (True, False)
+            )
+            for kind in range(len(_STAND_IN_KINDS))
+            for hashed in (False, True)
+        }
+        #: A run of stand-ins: one number or more, glued.
+        self.run = re.compile(f"[{first}-{last}]++")
+        #: The entropy rule's token, read on through stand-ins (each piece is judged on its own).
+        self.token = re.compile(f"[A-Za-z0-9+/_={first}-{last}-]{{16,}}")
+
+    @staticmethod
+    def _code(kind: int, hashed: bool, start: bool, char: int) -> int:
+        return ((kind * 2 + hashed) * 2 + start) * len(_STAND_IN_CHARS) + char
+
+    @classmethod
+    def for_text(cls, text: str) -> _Cuts | None:
+        """The stand-ins for a pass over ``text``: a block it holds no character of, or None."""
+
+        # The blocks the text uses, in one pass: testing every block against every character the
+        # text holds took 2.2 s on the 137,468 characters of the Private Use Area (round 2, R2-L2).
+        # A text holding one character of each of the 1,072 blocks gets no stand-ins: its numbers
+        # are masked as main masked them, a UUID's included (`Redactor._number_mask`).
+        used = {
+            (first, (code - first) // _STAND_IN_BLOCK)
+            for code in map(ord, _PRIVATE_USE_CHAR.findall(text))
+            for first, last in _PRIVATE_USE
+            if first <= code <= last
+        }
+        for first, last in _PRIVATE_USE:
+            for block in range((last + 1 - first) // _STAND_IN_BLOCK):
+                if (first, block) in used:
+                    continue
+                base = first + block * _STAND_IN_BLOCK
+                cuts = cls._BY_BASE.get(base)
+                if cuts is None:
+                    cuts = cls._BY_BASE[base] = cls(base)
+                return cuts
+        return None
+
+    def encode(self, number: str, pattern: Pattern) -> str:
+        """``number``, read inside a UUID by ``pattern``, the card or the phone rule, in stand-ins.
+
+        The part of a number inside a UUID holds only digits and `-` (a number rule takes digits,
+        spaces and `().-`, a UUID hex digits and `-`), each of which has a stand-in.
+        """
+
+        first, rest = self._encode[_STAND_IN_KINDS.index(pattern.type), pattern.hashed]
+        return number[0].translate(first) + number[1:].translate(rest)
+
+    def decode(self, text: str) -> str:
+        """``text`` with every stand-in read back: the same length, every UUID whole."""
+
+        return text.translate(self._decode) if self.run.search(text) else text
+
+    def numbers(self, run: str) -> list[tuple[str, bool, str]]:
+        """The numbers a run of stand-ins holds: (type, hashed, the number as written)."""
+
+        out: list[tuple[str, bool, str]] = []
+        for c in run:
+            code = ord(c) - self._base
+            char, rest = code % len(_STAND_IN_CHARS), code // len(_STAND_IN_CHARS)
+            start, rest = rest % 2, rest // 2
+            hashed, kind = rest % 2, rest // 2
+            if start or not out:
+                out.append((_STAND_IN_KINDS[kind], bool(hashed), ""))
+            kind_name, was_hashed, number = out[-1]
+            out[-1] = (kind_name, was_hashed, number + _STAND_IN_CHARS[char])
+        return out
+
+
+def _matches(pattern: Pattern, text: str) -> bool:
+    """True if ``pattern`` finds a match in ``text`` (a ``skip`` match is none)."""
+
+    return pattern.may_match(text) and any(not skipped(m) for m in pattern.regex.finditer(text))
+
+
+def _uuids_overlapping(
+    text: str, start: int, end: int, cuts: _Cuts | None = None
+) -> list[tuple[int, int]]:
+    """Each UUID-shaped run of ``text`` that ``text[start:end]`` overlaps, in order (A-78).
+
+    Read with its stand-ins read back (``cuts``), so a UUID a number rule already cut is still
+    one. Searched only within 36 characters of the stretch, so a text of numbers costs a bounded
+    search each: the window starts one character before the first a UUID can start at, so its
+    lookbehind reads the text's own character, and ends one past the last a UUID can end at.
+    """
+
+    low = max(0, start - _UUID_LEN - 1)
+    window = text[low : min(len(text), end + _UUID_LEN + 1)]
+    if cuts is not None:
+        window = cuts.decode(window)
+    return [
+        (low + m.start(), low + m.end())
+        for m in _UUID.finditer(window, max(0, start - _UUID_LEN - low))
+        if low + m.start() < end and start < low + m.end()
+    ]
+
+
+def _gaps(text: str, run: re.Pattern[str]) -> Iterator[tuple[int, int]]:
+    """Each stretch of ``text`` between two matches of ``run`` (empty ones included)."""
+
+    cursor = 0
+    for m in run.finditer(text):
+        yield cursor, m.start()
+        cursor = m.end()
+    yield cursor, len(text)
+
+
+def _merged(spans: Iterable[tuple[int, int, bool]]) -> list[tuple[int, int, bool]]:
+    """``spans`` merged where they overlap, each flag the OR of the flags merged into it."""
+
+    out: list[tuple[int, int, bool]] = []
+    for start, end, flag in sorted(spans):
+        if out and start < out[-1][1]:
+            first, last, held = out[-1]
+            out[-1] = (first, max(last, end), held or flag)
+        else:
+            out.append((start, end, flag))
+    return out
+
+
+#: The shortest token the entropy rule reads (``Redactor._HIGH_ENTROPY_TOKEN``).
+_ENTROPY_TOKEN_MIN: Final = 16
+
 
 # --- date-shape exemption for the ``phone`` and ``card`` detectors ---------------------
 # The phone pattern accepts ``-``/``.``/space as group separators, which is exactly how a
@@ -842,6 +1060,15 @@ class Pattern:
     type: str
     regex: re.Pattern[str]
     hashed: bool = False
+    #: Literals a match always holds one of: a text holding none is not searched (empty: every
+    #: text is). The late patterns run over whole texts and inside tokens (A-78), so each is
+    #: tried only where it can match.
+    hints: tuple[str, ...] = ()
+
+    def may_match(self, text: str) -> bool:
+        """False only when ``text`` holds none of :attr:`hints`."""
+
+        return not self.hints or any(hint in text for hint in self.hints)
 
 
 def _luhn_ok(digits: str) -> bool:
@@ -856,6 +1083,137 @@ def _luhn_ok(digits: str) -> bool:
                 d -= 9
         total += d
     return total % 10 == 0
+
+
+#: Where a key's documented prefix may start: not right after a letter or a digit (u01 A-78).
+#: ``\b`` refused a key after ``_`` too, a word character: `_` written 30 times before a
+#: ``ghp_`` token left it to the entropy rule, which the run of `_` diluted below its threshold
+#: (155 of 200 random tokens printed), and the same for ``AKIA``, ``glpat-`` and ``hf_`` (200 of
+#: 200), for ``AIza``, ``glpat-`` and ``hf_`` between runs of 20 `=`, and for ``glpat-`` after 20
+#: `-` (pre-merge security audit of 2026-10-11, MEDIUM 4). A key glued to a letter or a digit is
+#: still left to the entropy rule: there the prefix is the middle of a longer word.
+_KEY_START: Final = r"(?<![A-Za-z0-9])"
+#: What the entropy fallback writes for a hex run (A-78), hashed as a key pattern's mask is.
+_HEX_TOKEN: Final = Pattern("hex_token", _HEX_RUN, hashed=True)
+#: The UUID shape, a late pattern, whose mask the fallback writes too (``Redactor._cut_spans``).
+_UUID_PATTERN: Final = Pattern("uuid", _UUID, hashed=True, hints=("-",))
+
+
+def _key(body: str) -> re.Pattern[str]:
+    """A key format: its prefix and body ``body``, starting where :data:`_KEY_START` lets it."""
+
+    return re.compile(_KEY_START + body)
+
+
+def _late_patterns() -> list[Pattern]:
+    """The documented key formats, the JWT and the UUID, masked whatever their entropy (A-78).
+
+    They run last in a pass, after the labelled rule, the entropy rule and the URL rule as
+    written (``Redactor.redact_late``), on what those left readable, so each only adds a mask: run
+    before them, a key glued to a word, a label or padding took less than the entropy rule took of
+    its token (`x_<key>` showed `x_`, `-x-api key : <secret>` lost the label to a greedy body and
+    showed the secret), a UUID in an address cut it, and a mask's `:` made the URL rule as written
+    take a URL for one its rule had read (pre-commit differential fuzz of this clause, against
+    main's redactor). A token the
+    entropy rule masks whole is typed by the format inside it (``_entropy_spans``). The four rules
+    the redactor had (``sk-``, ``ghp_``, ``AKIA``, ``xox``) still run where they ran, as they
+    were; here they are started with ``_KEY_START`` and cover every documented form.
+
+    Every body is a run the pattern takes greedily, so a key followed by more characters of its
+    own alphabet is masked with them rather than cut, and each start fails or matches in one
+    scan of its run. The sources, read on 2026-10-11: OpenAI (``sk-``, ``sk-proj-``,
+    ``sk-svcacct-``, ``sk-admin-``, ``sk-None-``; its developer forum and GitHub's
+    secret-scanning partner list, ``openai_api_key``: OpenAI's own reference pages refused the
+    read), Anthropic (``sk-ant-``, the Admin API's ``partial_key_hint`` reads
+    ``sk-ant-api03-R2D...igAA``), GitHub ("GitHub's token formats": ``ghp_``, ``github_pat_``,
+    ``gho_``, ``ghu_``, ``ghs_``, ``ghr_``), GitLab ("Token prefixes": ``glpat-``, ``gloas-``,
+    ``gldt-``, ``glrt-``, ``glrtr-``, ``glcbt-``, ``glptt-``, ``glft-``, ``glimt-``,
+    ``glagent-``, ``glwt-``, ``glsoat-``, ``glffct-``), AWS ("Understanding unique ID
+    prefixes": ``AKIA`` access keys, ``ASIA`` temporary ones, ``ABIA`` STS bearer tokens,
+    ``ACCA`` context-specific credentials, each 20 characters), Google Cloud ("API keys", its
+    example ``AIza`` key of 39 characters), Hugging Face (User Access Tokens, ``hf_``), Slack
+    ("Tokens": ``xoxb-``, ``xoxp-``, ``xapp-``, ``xoxe.xapp-``, ``xwfp-``; "Using token
+    rotation": ``xoxe.xoxb-``, ``xoxe.xoxp-``, ``xoxe-``; and the legacy ``xoxa-``, ``xoxr-``,
+    ``xoxs-`` the rule already took), Stripe ("API keys": ``sk_live_``, ``sk_test_``,
+    ``rk_live_``, ``rk_test_``, ``sk_org_``; "Webhooks": ``whsec_``; the publishable ``pk_``
+    key is safe to expose and not taken), npm (the token format of 2021, ``npm_`` and 36
+    characters ending in a CRC32 checksum) and PyPI (``pypi-``, Help).
+    """
+
+    return [
+        Pattern(
+            "anthropic_key", _key(r"sk-ant-[A-Za-z0-9_-]{20,}"), hashed=True, hints=("sk-ant-",)
+        ),
+        # The legacy body is letters and digits only; a typed key's (`sk-proj-`) holds `-` and
+        # `_`, which cut the first rule (`\bsk-[A-Za-z0-9]{20,}\b`) at its `proj`.
+        Pattern(
+            "openai_key",
+            _key(r"sk-(?:(?:proj|svcacct|admin|None)-[A-Za-z0-9_-]{20,}|[A-Za-z0-9]{20,})"),
+            hashed=True,
+            hints=("sk-",),
+        ),
+        Pattern(
+            "github_token",
+            _key(r"(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})"),
+            hashed=True,
+            hints=("ghp_", "gho_", "ghu_", "ghs_", "ghr_", "github_pat_"),
+        ),
+        Pattern(
+            "gitlab_token",
+            _key(r"gl(?:pat|oas|dt|rtr|rt|cbt|ptt|ft|imt|agent|wt|soat|ffct)-[A-Za-z0-9_-]{20,}"),
+            hashed=True,
+            hints=tuple(
+                f"gl{kind}-"
+                for kind in (
+                    *("pat", "oas", "dt", "rtr", "rt", "cbt", "ptt"),
+                    *("ft", "imt", "agent", "wt", "soat", "ffct"),
+                )
+            ),
+        ),
+        Pattern(
+            "aws_access_key",
+            _key(r"(?:AKIA|ASIA|ABIA|ACCA)[A-Z0-9]{16}(?![A-Za-z0-9])"),
+            hashed=True,
+            hints=("AKIA", "ASIA", "ABIA", "ACCA"),
+        ),
+        Pattern("google_api_key", _key(r"AIza[A-Za-z0-9_-]{35,}"), hashed=True, hints=("AIza",)),
+        Pattern("huggingface_token", _key(r"hf_[A-Za-z0-9]{30,}"), hashed=True, hints=("hf_",)),
+        # Slack bot + user + app tokens (the user/app forms were previously uncovered), and
+        # the rotating forms.
+        Pattern(
+            "slack_token",
+            _key(r"(?:xoxe\.(?:xox[bp]|xapp)|xox[abeprs]|xapp|xwfp)-[A-Za-z0-9-]{10,}"),
+            hashed=True,
+            hints=("xox", "xapp-", "xwfp-"),
+        ),
+        Pattern(
+            "stripe_key",
+            _key(r"(?:(?:sk|rk)_(?:live|test|org)_[A-Za-z0-9_]{20,}|whsec_[A-Za-z0-9_+/=-]{20,})"),
+            hashed=True,
+            hints=("_live_", "_test_", "_org_", "whsec_"),
+        ),
+        Pattern("npm_token", _key(r"npm_[A-Za-z0-9]{36,}"), hashed=True, hints=("npm_",)),
+        Pattern("pypi_token", _key(r"pypi-[A-Za-z0-9_-]{50,}"), hashed=True, hints=("pypi-",)),
+        Pattern(
+            "jwt",
+            # Started as the key formats are: after `_` a JWT is still one, as in GitHub's
+            # `ghs_<app id>_<JWT>` installation tokens (the rule above starts at `\b`).
+            _key(
+                r"(?:eyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\b"
+                r"|(?P<skip>eyJ[A-Za-z0-9_-]*))"
+            ),
+            hashed=True,
+            hints=("eyJ",),
+        ),
+        _UUID_PATTERN,
+    ]
+
+
+_CARD: Final = Pattern("card", re.compile(r"\b(?:\d[ -]?){13,19}\b"))
+_PHONE: Final = Pattern(
+    "phone",
+    re.compile(r"(?<![\w.])(?:\+?\d[\d\s().-]{7,}\d(?![\w.])|(?P<skip>\+?\d[\d\s().-]{63,}))"),
+)
 
 
 def _default_patterns() -> list[Pattern]:
@@ -887,6 +1245,7 @@ def _default_patterns() -> list[Pattern]:
             ),
             hashed=True,
         ),
+        # The four key rules as they were; every documented format is a late pattern (A-78).
         Pattern("openai_key", re.compile(r"\bsk-[A-Za-z0-9]{20,}\b"), hashed=True),
         Pattern("github_token", re.compile(r"\bghp_[A-Za-z0-9]{20,}\b"), hashed=True),
         Pattern("aws_access_key", re.compile(r"\bAKIA[0-9A-Z]{16}\b"), hashed=True),
@@ -897,19 +1256,25 @@ def _default_patterns() -> list[Pattern]:
         # scanned to its end (100 KB of `1-` took about 7 s, in text the target controls).
         Pattern("email", EMAIL),
         Pattern("iban", re.compile(r"\b[A-Z]{2}[0-9]{2}[A-Z0-9]{11,30}\b")),
-        Pattern("card", re.compile(r"\b(?:\d[ -]?){13,19}\b")),
+        _CARD,
         Pattern("national_id", re.compile(r"\b\d{3}-\d{2}-\d{4}\b")),
         Pattern(
             "ipv4",
             re.compile(r"\b(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)\b"),
         ),
-        Pattern(
-            "phone",
-            re.compile(
-                r"(?<![\w.])(?:\+?\d[\d\s().-]{7,}\d(?![\w.])|(?P<skip>\+?\d[\d\s().-]{63,}))"
-            ),
-        ),
+        _PHONE,
     ]
+
+
+#: The mask types A-78 added. A mask of one is kept as written, as a mask of the tool's older
+#: types is; the labelled rule alone reads one as text, as the redactor before A-78 read it
+#: (``Redactor._redact_once``, pre-merge audit of A-78, L3 and round 2, R2-H1).
+_LATE_MASK_TYPES: Final = tuple(
+    sorted(
+        {_HEX_TOKEN.type, *(pattern.type for pattern in _late_patterns())}
+        - {pattern.type for pattern in _default_patterns()}
+    )
+)
 
 
 def _shannon_entropy(s: str) -> float:
@@ -929,7 +1294,10 @@ class Redactor:
 
     ``salt`` keys the corroboration hash (an env-sourced value in production so
     hashes are not correlatable across engagements). ``entropy_threshold`` /
-    ``entropy_min_len`` govern the interim global high-entropy fallback (OD-15).
+    ``entropy_min_len`` govern the interim global high-entropy fallback (OD-15). ``late``
+    runs the documented key formats, the JWT and the UUID after the labelled and the entropy
+    rules (``_late_patterns``, u01 A-78); the CLI turns it off on the redactor it runs before
+    its own entropy pass, and runs it after that pass.
     """
 
     _HIGH_ENTROPY_TOKEN: Final = re.compile(r"[A-Za-z0-9+/_=-]{16,}")
@@ -941,15 +1309,38 @@ class Redactor:
         patterns: Sequence[Pattern] | None = None,
         entropy_threshold: float = 3.7,
         entropy_min_len: int = 16,
+        late: bool = True,
     ) -> None:
         self._salt = (_PROCESS_SALT if salt is None else salt).encode("utf-8")
         self._patterns: list[Pattern] = (
             list(patterns) if patterns is not None else _default_patterns()
         )
-        # The mask types kept as written (`_redact_once`), kept in step with `register`.
-        self._mask_types = _OWN_MASK_TYPES | {pattern.type for pattern in self._patterns}
+        self._set_late(_late_patterns() if late else [])
+        # The mask types kept as written (`_redact_once`), kept in step with `register`: the
+        # tool's own rules', its patterns', and the A-78 types whichever redactor wrote them.
+        self._mask_types = (
+            _OWN_MASK_TYPES | {pattern.type for pattern in self._patterns} | set(_LATE_MASK_TYPES)
+        )
         self._entropy_threshold = entropy_threshold
         self._entropy_min_len = entropy_min_len
+        # The hex run is part of the entropy fallback (A-78): a redactor built without it
+        # (`without_entropy`, an infinite threshold) does not mask one, so whatever keeps a
+        # value out of that rule (the CLI's carried digests, an existing path, a model name)
+        # keeps it out of this one too.
+        self._hex_runs = math.isfinite(entropy_threshold)
+
+    def _set_late(self, patterns: list[Pattern]) -> None:
+        self._late = patterns
+        # Whether the UUID pattern is one of them, by identity: `in` on the list compared each
+        # pattern by value, a dataclass `__eq__` call each, on every pass (CI of #113).
+        self._uuid_late = any(pattern is _UUID_PATTERN for pattern in patterns)
+        # Every hint of the late patterns, searched once in a token before any of them is tried.
+        hints = [hint for pattern in self._late for hint in pattern.hints]
+        self._late_hint = (
+            re.compile("|".join(map(re.escape, hints)))
+            if self._late and all(pattern.hints for pattern in self._late)
+            else None
+        )
 
     def register(self, pattern: Pattern) -> None:
         """Add a detector. Registered patterns run **before** the built-ins."""
@@ -962,14 +1353,19 @@ class Redactor:
 
         For values that are identifiers by construction and that the entropy rule mangles, such
         as a provider's model name (`meta-llama/Meta-Llama-3-8B-Instruct` has mixed case, so it
-        is not exempt as a path).
+        is not exempt as a path). The UUID pattern, which masks a shape whatever its entropy
+        rather than a documented format, goes with it (u01 A-78): a deployment's model name
+        holding one (`my-deploy-<uuid>`) reads as it did before A-78, for the fingerprint's
+        metadata layer (pre-merge audit of A-78, L5). The key formats and the JWT stay.
         """
 
         twin = Redactor(
             patterns=self._patterns,
             entropy_threshold=math.inf,
             entropy_min_len=self._entropy_min_len,
+            late=bool(self._late),
         )
+        twin._set_late([pattern for pattern in self._late if pattern is not _UUID_PATTERN])
         twin._salt = self._salt
         return twin
 
@@ -986,8 +1382,13 @@ class Redactor:
 
     def _mask_token(self, pattern: Pattern, value: str) -> str:
         if pattern.hashed:
-            return _MASK_TEMPLATE_HASHED.format(type=pattern.type, digest=self._digest(value))
+            return self._hashed_mask(pattern.type, value)
         return _MASK_TEMPLATE.format(type=pattern.type)
+
+    def _hashed_mask(self, kind: str, value: str) -> str:
+        """The hashed mask of ``value``, typed ``kind``."""
+
+        return _MASK_TEMPLATE_HASHED.format(type=kind, digest=self._digest(value))
 
     def redact_text(self, text: str) -> str:
         """Mask every secret/PII occurrence in ``text`` (idempotent).
@@ -1051,7 +1452,14 @@ class Redactor:
             written.append(mask if original is None else original)
             return f"{_STASH_OPEN}{len(preserved) - 1}{_STASH_CLOSE}"
 
+        # The stand-ins of this pass (A-78, `_Cuts`): only a redactor whose entropy rule masks a
+        # UUID cut by a number rule whole, and whose late pattern masks any other, uses them.
+        # A UUID holds a `-`: a text with none needs no stand-ins, nor the scan for a free block.
+        cuts = _Cuts.for_text(text) if self._hex_runs and self._uuid_late and "-" in text else None
+
         def _as_written(stretch: str) -> str:
+            if cuts is not None:
+                stretch = cuts.decode(stretch)
             if _STASH_OPEN not in stretch:
                 return stretch
             return _STASH_TOKEN.sub(lambda m: written[int(m.group(1))], stretch)
@@ -1067,6 +1475,10 @@ class Redactor:
         # several digests still goes through, as one split by spaces does.
         known: set[str] | None = None
 
+        # The stash tokens of the masks of an A-78 type kept here: the labelled rule reads them as
+        # text (below).
+        late_kept: set[int] = set()
+
         def _keep_mask(m: re.Match[str]) -> str:
             nonlocal known
             kind, digest = m.group(1), m.group(2)
@@ -1076,7 +1488,10 @@ class Redactor:
                 known = set(_known_secrets()) if known is None else known
                 if digest in known:
                     return m.group(0)
-            return _keep(m.group(0))
+            token = _keep(m.group(0))
+            if kind in _LATE_MASK_TYPES:
+                late_kept.add(len(preserved) - 1)
+            return token
 
         working = _ALREADY_MASKED.sub(_keep_mask, text)
 
@@ -1135,21 +1550,48 @@ class Redactor:
             # A labelled number first, whole: the plain pattern would take its unglued tail and
             # leave the head (`fax.0034-` before a masked `600-123456`).
             if pattern.type == "card":
-                working = self._redact_labelled_number(pattern, LABELLED_CARD, working)
-                working = self._redact_cards(pattern, working)
+                working = self._redact_labelled_number(pattern, LABELLED_CARD, working, cuts)
+                working = self._redact_cards(pattern, working, cuts)
             elif pattern.type == "pem_private_key":
                 working = self._redact_pem(pattern, working, _as_written)
             elif pattern.type == "phone":
-                working = self._redact_labelled_number(pattern, LABELLED_PHONE, working)
-                working = self._redact_phones(pattern, working)
+                working = self._redact_labelled_number(pattern, LABELLED_PHONE, working, cuts)
+                working = self._redact_phones(pattern, working, cuts)
             else:
                 working = pattern.regex.sub(self._make_sub(pattern, _as_written), working)
 
+        # A mask of an A-78 type the text holds is kept as written, as a mask of an older type is,
+        # so a second pass, the evidence store's check, a report and a resume in another process
+        # leave it as it is; but the labelled rule reads it as text, as the redactor before A-78
+        # read it: kept, `password: «REDACTED:uuid»<secret>` in a reply ended the labelled value and
+        # showed the secret, which main masked (pre-merge audit of A-78, L3). The redactor writes
+        # none where the labelled rule would take it (it takes a value of hex letters too,
+        # `_redact_labeled`), so its own masks are read the same in every pass and every process:
+        # first kept only when the process had written them, they were forgotten under a long
+        # campaign and changed when read again, and the store refused the write (round 2, R2-H1).
+        def _late_as_text(stretch: str) -> str:
+            return _STASH_TOKEN.sub(
+                lambda m: preserved[i] if (i := int(m.group(1))) in late_kept else m.group(0),
+                stretch,
+            )
+
+        def _late_kept_again(stretch: str) -> str:
+            return _ALREADY_MASKED.sub(
+                lambda m: _keep_mask(m) if m.group(1) in _LATE_MASK_TYPES else m.group(0),
+                stretch,
+            )
+
+        if late_kept:
+            working = _late_as_text(working)
         if heads:
-            working = self._redact_labelled_after_urls(working, heads)
+            working = self._redact_labelled_after_urls(working, heads, cuts)
+            if late_kept:
+                working = _late_kept_again(working)
         else:
-            working = self._redact_labeled(working)
-            working = self._redact_high_entropy(working)
+            working = self._redact_labeled(working, cuts)
+            if late_kept:
+                working = _late_kept_again(working)
+            working = self._redact_high_entropy(working, cuts)
         held = set("".join(written[index] for index in credentials))
         if _EMAIL_MASK in working:  # an address the email rule took holds an `@`
             held.add("@")
@@ -1157,9 +1599,24 @@ class Redactor:
             working = self._url_passwords_as_written(
                 working, _keep, _as_written, written, credentials
             )
+        # Last, after the URL rule as written too, which reads a mask's `:` as a userinfo's and
+        # takes the URL for one its rule read (u01 A-78; pre-commit differential fuzz).
+        working = self.redact_late(working, _as_written)
+        if cuts is not None:  # a number no mask took is masked as main masked it
+            working = cuts.run.sub(lambda m: self._number_masks(cuts, m.group(0)), working)
 
         # One pass: a `str.replace` per kept mask was quadratic with thousands of them.
         return _STASH_TOKEN.sub(lambda m: preserved[int(m.group(1))], working)
+
+    def _number_masks(self, cuts: _Cuts, run: str) -> str:
+        """The masks of the numbers a run of stand-ins holds, as main wrote them (A-78)."""
+
+        return "".join(
+            _MASK_TEMPLATE_HASHED.format(type=kind, digest=self._digest(number))
+            if hashed
+            else _MASK_TEMPLATE.format(type=kind)
+            for kind, hashed, number in cuts.numbers(run)
+        )
 
     def _redact_split_credentials(
         self, text: str, keep: Callable[[str, str], str], registered: Sequence[str], *, split: bool
@@ -1319,6 +1776,29 @@ class Redactor:
 
         return _sub
 
+    def redact_late(self, text: str, as_written: Callable[[str], str] | None = None) -> str:
+        """Mask the late patterns (:func:`_late_patterns`, A-78) in what ``text`` shows.
+
+        The last rule of a pass, after the labelled, the entropy and the URL-as-written rules. No
+        late pattern matches inside a mask (none starts with a letter of one, or holds a ``«``, a
+        ``:`` or a ``»``). ``as_written`` writes out a stash token a match holds (the pass's own);
+        the CLI calls it on its own on each stretch of the message it prints that it does not
+        keep, after its entropy pass (``cli.app._masked``). In a pass, the entropy rule has
+        masked every UUID a number rule read a number in (``_cut_spans``), so no stand-in is left
+        for them.
+        """
+
+        # One search for a literal some late pattern needs, before any is tried: a short text
+        # holding none (an address, a word) cost each pattern's own check, 1.7 times main's time
+        # on 24,000 evidence keys (CI of #113).
+        if self._late_hint is not None and self._late_hint.search(text) is None:
+            return text
+        written = as_written or (lambda stretch: stretch)
+        for pattern in self._late:
+            if pattern.may_match(text):
+                text = pattern.regex.sub(self._make_sub(pattern, written), text)
+        return text
+
     def _redact_pem(self, pattern: Pattern, text: str, as_written: Callable[[str], str]) -> str:
         """Mask PEM private keys, skipping the scan entirely when no END marker exists.
 
@@ -1331,14 +1811,32 @@ class Redactor:
             return text
         return pattern.regex.sub(self._make_sub(pattern, as_written), text)
 
-    def _redact_labeled(self, text: str) -> str:
-        """Mask a value explicitly labelled as a secret (the value only, not the label)."""
+    def _plain_word(self, value: str) -> bool:
+        """True if the labelled rule leaves ``value`` as a plain lowercase word.
+
+        Not 32 hex letters or more, which the hex rule masks (A-78): left to that rule, the value
+        became `«REDACTED:hex_token:...»` after its label, which the labelled rule reads as text in
+        the next pass and masks, so a pass of the redactor's own output changed it.
+        """
+
+        return _PLAIN_WORD.match(value) is not None and not (
+            self._hex_runs and _HEX_RUN.fullmatch(value) is not None
+        )
+
+    def _redact_labeled(self, text: str, cuts: _Cuts | None = None) -> str:
+        """Mask a value explicitly labelled as a secret (the value only, not the label).
+
+        The digest is the value's as written: stand-ins (``cuts``, A-78) read back.
+        """
 
         def _sub(m: re.Match[str]) -> str:
             value = m.group(1)
-            if _PLAIN_WORD.match(value):  # a plain lowercase word is not a secret
+            if self._plain_word(value):  # a plain lowercase word is not a secret
                 return m.group(0)
-            masked = _MASK_TEMPLATE_HASHED.format(type="labeled_secret", digest=self._digest(value))
+            written = value if cuts is None else cuts.decode(value)
+            masked = _MASK_TEMPLATE_HASHED.format(
+                type="labeled_secret", digest=self._digest(written)
+            )
             # Replace the VALUE's span only. ``str.replace`` over the whole match also
             # rewrote the label whenever the label text equalled the value.
             start, end = m.start(1) - m.start(0), m.end(1) - m.start(0)
@@ -1347,7 +1845,9 @@ class Redactor:
 
         return _LABELED_SECRET.sub(_sub, text)
 
-    def _redact_labelled_after_urls(self, text: str, heads: Mapping[int, str]) -> str:
+    def _redact_labelled_after_urls(
+        self, text: str, heads: Mapping[int, str], cuts: _Cuts | None = None
+    ) -> str:
         """The labelled and the entropy rules, and the rest of the labelled values whose head a URL
         mask took (``heads``, #96).
 
@@ -1378,7 +1878,7 @@ class Redactor:
         def _labelled(value: str) -> str:
             mask = labelled.get(value)
             if mask is None:
-                digest = self._digest(value)
+                digest = self._digest(value if cuts is None else cuts.decode(value))
                 mask = labelled[value] = _MASK_TEMPLATE_HASHED.format(
                     type="labeled_secret", digest=digest
                 )
@@ -1388,7 +1888,7 @@ class Redactor:
         # wrote, placed back in this text: where each mask starts and ends, and the mask.
         starts, ends, masks = array("q"), array("q"), []
         for m in _LABELED_SECRET.finditer(text):
-            if not _PLAIN_WORD.match(m.group(1)):
+            if not self._plain_word(m.group(1)):
                 starts.append(m.start(1))
                 ends.append(m.end(1))
                 masks.append(_labelled(m.group(1)))
@@ -1405,17 +1905,16 @@ class Redactor:
         written = "".join(parts)
         del parts
         entropy: list[tuple[int, int, str]] = []
-        for m in self._HIGH_ENTROPY_TOKEN.finditer(written):
-            token = m.group(0)
-            if self._is_structured(token) or not (
-                len(token) >= self._entropy_min_len
-                and _shannon_entropy(token) >= self._entropy_threshold
-            ):
+        tokens = self._HIGH_ENTROPY_TOKEN if cuts is None else cuts.token
+        for m in tokens.finditer(written):
+            spans = self._entropy_spans(m.group(0), cuts)
+            if not spans:
                 continue
+            # A token lies between two labelled masks (none holds a token character), so one
+            # shift places all of its spans.
             index = bisect.bisect_right(written_ends, m.start())
-            back = shifts[index - 1] if index else 0
-            mask = _MASK_TEMPLATE_HASHED.format(type="high_entropy", digest=self._digest(token))
-            entropy.append((m.start() - back, m.end() - back, mask))
+            at = m.start() - (shifts[index - 1] if index else 0)
+            entropy += [(at + start, at + end, mask) for start, end, mask in spans]
         del written, written_ends, shifts
         ruled = sorted([*zip(starts, ends, masks, strict=True), *entropy])
         ruled_starts = array("q", (start for start, _end, _mask in ruled))
@@ -1446,7 +1945,7 @@ class Redactor:
             found = _LABELLED_VALUE_END.search(text, start)
             rest = len(text) if found is None else found.start()
             for m in _LABELED_SECRET.finditer(text, rest, min(len(text), stop + 1)):
-                if not _PLAIN_WORD.match(m.group(1)):
+                if not self._plain_word(m.group(1)):
                     _add(m.start(1), m.end(1), _labelled(m.group(1)))
 
         pending: tuple[int, str] | None = None  # the URL mask before this one: its `@`, its value
@@ -1542,12 +2041,17 @@ class Redactor:
             for url in _URL_AS_WRITTEN.finditer(later.view)
             if (at := later.in_text(url.start(1) - 1, url.start(1))) is not None
         ]
-        del later
         out: list[str] = []
         done = 0
         for url in _URL_AS_WRITTEN.finditer(read.view):
+            # The URL rule read this one: its password is a mask of this pass, and the URL reads
+            # with every mask one neutral character. Read on the text, a mask laid after that
+            # rule gave it the `:` it lacked, and the password stayed readable: a phone mask's
+            # before A-78, a hex run's or a UUID's since (pre-merge audit of A-78, L2).
+            # Both views hold the same masks (`_shown` and `_as_token` read the same as masks), so a
+            # `://` outside one in the first is outside one in the second.
             at = read.in_text(url.start(), url.start() + 3)
-            if at is not None and _URL_USERINFO.match(text, at):  # the URL rule read this one
+            if at is not None and _URL_USERINFO.match(later.view, later.in_view(at)):
                 continue
             stretch = read.readable(*url.span(1))
             if stretch is None:
@@ -1571,7 +2075,7 @@ class Redactor:
         return "".join(out)
 
     def _redact_labelled_number(
-        self, pattern: Pattern, labelled: re.Pattern[str], text: str
+        self, pattern: Pattern, labelled: re.Pattern[str], text: str, cuts: _Cuts | None = None
     ) -> str:
         """Mask the number glued to a phone or card label (the number only, not the label).
 
@@ -1589,27 +2093,66 @@ class Redactor:
                 return m.group(0)
             start, end = m.start(1) - m.start(0), m.end(1) - m.start(0)
             whole = m.group(0)
-            return whole[:start] + self._mask_token(pattern, number) + whole[end:]
+            mask = self._number_mask(pattern, text, m.start(1), m.end(1), cuts)
+            return whole[:start] + mask + whole[end:]
 
         return labelled.sub(_sub, text)
 
-    def _redact_cards(self, pattern: Pattern, text: str) -> str:
+    def _number_mask(
+        self, pattern: Pattern, text: str, start: int, end: int, cuts: _Cuts | None = None
+    ) -> str:
+        """The mask of the number at ``text[start:end]``, what of it a UUID holds in stand-ins
+        (A-78, :class:`_Cuts`).
+
+        The card and phone rules read a UUID's digit-only groups as a number, and a number
+        written before or after a UUID could run into it (`tel +34 600 123 456` and a line break
+        before a UUID starting with a digit): masked, the rest of the UUID was readable. What of
+        the number lies inside a UUID is written in stand-ins, which the rules after this one
+        read as they read main's mask and the late pattern reads back, so the UUID is masked
+        whole; what lies outside it is masked as before. Without ``cuts`` (a redactor without
+        the late patterns, or a text with no free block) the number is masked as main masked it.
+        """
+
+        if cuts is None:
+            return self._mask_token(pattern, text[start:end])
+        uuids = _uuids_overlapping(text, start, end, cuts)
+        if not uuids:
+            return self._mask_token(pattern, text[start:end])
+        out: list[str] = []
+        cursor = start
+        for begin, finish in uuids:
+            first, last = max(begin, start), min(finish, end)
+            if cursor < first:
+                out.append(self._mask_token(pattern, text[cursor:first]))
+            out.append(cuts.encode(text[first:last], pattern))
+            cursor = last
+        if cursor < end:
+            out.append(self._mask_token(pattern, text[cursor:end]))
+        return "".join(out)
+
+    def _redact_cards(self, pattern: Pattern, text: str, cuts: _Cuts | None = None) -> str:
         """Card matcher with a Luhn guard to cut valid-shape false positives."""
 
         def _sub(m: re.Match[str]) -> str:
-            digits = re.sub(r"\D", "", m.group(0))
-            # A date-time stamp (`2026-07-09-13-20-01`, 14 digits) passes Luhn for 6 seconds in
-            # 60; the date shape exempts it here as it does from the phone rule.
-            # The match can take a trailing - or space; a version prefix only behind an id.
-            if is_date_stamp(m.group(0), after_identifier=glued_to_identifier(text, m.start())):
+            if not self._is_card(m, text):
                 return m.group(0)
-            if 13 <= len(digits) <= 19 and _luhn_ok(digits):
-                return self._mask_token(pattern, m.group(0))
-            return m.group(0)
+            return self._number_mask(pattern, text, m.start(), m.end(), cuts)
 
         return pattern.regex.sub(_sub, text)
 
-    def _redact_phones(self, pattern: Pattern, text: str) -> str:
+    @staticmethod
+    def _is_card(m: re.Match[str], text: str) -> bool:
+        """True if the card rule masks its match ``m`` of ``text``."""
+
+        digits = re.sub(r"\D", "", m.group(0))
+        # A date-time stamp (`2026-07-09-13-20-01`, 14 digits) passes Luhn for 6 seconds in
+        # 60; the date shape exempts it here as it does from the phone rule.
+        # The match can take a trailing - or space; a version prefix only behind an id.
+        if is_date_stamp(m.group(0), after_identifier=glued_to_identifier(text, m.start())):
+            return False
+        return 13 <= len(digits) <= 19 and _luhn_ok(digits)
+
+    def _redact_phones(self, pattern: Pattern, text: str, cuts: _Cuts | None = None) -> str:
         """Phone matcher with a date-shape guard to cut dated-identifier false positives.
 
         A match that is entirely a date / dated version suffix / run id (:func:`is_date_stamp`)
@@ -1617,13 +2160,58 @@ class Redactor:
         """
 
         def _sub(m: re.Match[str]) -> str:
-            if skipped(m):
+            if not self._is_phone(m, text):
                 return m.group(0)
-            if is_date_stamp(m.group(0), after_identifier=glued_to_identifier(text, m.start())):
-                return m.group(0)
-            return self._mask_token(pattern, m.group(0))
+            return self._number_mask(pattern, text, m.start(), m.end(), cuts)
 
         return pattern.regex.sub(_sub, text)
+
+    @staticmethod
+    def _is_phone(m: re.Match[str], text: str) -> bool:
+        """True if the phone rule masks its match ``m`` of ``text``."""
+
+        if skipped(m):
+            return False
+        return not is_date_stamp(m.group(0), after_identifier=glued_to_identifier(text, m.start()))
+
+    def _cut_spans(self, token: str, cuts: _Cuts) -> list[tuple[int, int, str]]:
+        """What the entropy fallback masks of a ``token`` holding stand-ins (A-78, :class:`_Cuts`).
+
+        Main read such a token in the pieces between its number masks, and masked each piece the
+        rule masks whole; each is judged here once, as main judged it (linear: the pieces do not
+        overlap). Each UUID a stand-in is in is masked whole, with every such piece that overlaps
+        it, as one ``uuid`` mask; a piece that overlaps none keeps the mask main gave it, typed by
+        the first late pattern it holds. Then, as in any token, each hex run outside those and
+        outside a late pattern's match. The whole token, stand-ins read back, is judged first, as
+        any token is (:meth:`_entropy_spans`).
+        """
+
+        whole = cuts.decode(token)
+        if _UUID.fullmatch(whole):  # stand-ins exist only beside the UUID pattern
+            return [(0, len(token), self._mask_token(_UUID_PATTERN, whole))]
+        if self._masks_whole(whole):
+            return [(0, len(token), self._typed_mask(whole))]
+        pieces = [
+            (start, end)
+            for start, end in _gaps(token, cuts.run)
+            if end - start >= _ENTROPY_TOKEN_MIN and self._masks_whole(token[start:end])
+        ]
+        uuids = [m.span() for m in _UUID.finditer(whole) if cuts.run.search(token, *m.span())]
+        spans: list[tuple[int, int, str]] = []
+        taken: list[tuple[int, int]] = []
+        for start, end, holds_uuid in _merged(
+            [*((a, b, True) for a, b in uuids), *((a, b, False) for a, b in pieces)]
+        ):
+            stretch = whole[start:end]
+            mask = (
+                self._mask_token(_UUID_PATTERN, stretch)
+                if holds_uuid
+                else self._typed_mask(stretch)
+            )
+            spans.append((start, end, mask))
+            taken.append((start, end))
+        spans += self._hex_run_spans(whole, taken)
+        return sorted(spans)
 
     def _is_structured(self, token: str) -> bool:
         """True when ``token`` is a structured identifier/path rather than an opaque blob.
@@ -1647,25 +2235,103 @@ class Redactor:
             and all(_HEX_SEGMENT.fullmatch(segment) for segment in segments)
         )
 
-    def _redact_high_entropy(self, text: str) -> str:
+    def _masks_whole(self, token: str) -> bool:
+        """True if the entropy rule masks ``token`` whole (not structured, long, high entropy)."""
+
+        return (
+            not self._is_structured(token)
+            and len(token) >= self._entropy_min_len
+            and _shannon_entropy(token) >= self._entropy_threshold
+        )
+
+    def _entropy_spans(self, token: str, cuts: _Cuts | None = None) -> list[tuple[int, int, str]]:
+        """What the entropy fallback masks of ``token``, as ``(start, end, mask)`` in it.
+
+        The whole token when the rule masks it whole (:meth:`_masks_whole`), typed by the first
+        late pattern it holds (A-78: the same mask, named better). Otherwise, when the fallback
+        is on, each run of :data:`_HEX_RUN` outside a late pattern's match, which the late pass
+        masks with its type (masked here, `sk-proj-` and `a` written 156 times read
+        `sk-proj-«REDACTED:hex_token»`). A token holding stand-ins (``cuts``) is read in the
+        pieces main read (:meth:`_cut_spans`).
+        """
+
+        if cuts is not None and cuts.run.search(token):
+            return self._cut_spans(token, cuts)
+        if self._hex_runs and self._uuid_late and _UUID.fullmatch(token):
+            # A UUID alone: masked whole either way, as the late pattern masks it.
+            return [(0, len(token), self._mask_token(_UUID_PATTERN, token))]
+        if self._masks_whole(token):
+            return [(0, len(token), self._typed_mask(token))]
+        return self._hex_run_spans(token, []) if self._hex_runs else []
+
+    def _typed_mask(self, token: str) -> str:
+        """The entropy rule's mask of ``token``, typed by the first late pattern it holds."""
+
+        hinted = self._late_hint is None or self._late_hint.search(token) is not None
+        kind = next(
+            (late.type for late in self._late if hinted and _matches(late, token)),
+            "high_entropy",
+        )
+        return self._hashed_mask(kind, token)
+
+    def _hex_run_spans(
+        self, token: str, taken: Sequence[tuple[int, int]]
+    ) -> list[tuple[int, int, str]]:
+        """Each hex run of ``token`` outside ``taken`` and outside a late pattern's match."""
+
+        if len(token) < _SHAPE_MIN_LEN:
+            return []
+        runs = list(_HEX_RUN.finditer(token))
+        if not runs:
+            return []
+        hinted = self._late_hint is None or self._late_hint.search(token) is not None
+        keys = (
+            [
+                m.span()
+                for late in self._late
+                if late.may_match(token)
+                for m in late.regex.finditer(token)
+                if not skipped(m)
+            ]
+            if hinted
+            else []
+        )
+        # One sweep: the runs and the stretches taken are both in order, so each is read once.
+        covered = [
+            (start, end) for start, end, _ in _merged((a, b, False) for a, b in (*taken, *keys))
+        ]
+        out: list[tuple[int, int, str]] = []
+        index = 0
+        for m in runs:
+            while index < len(covered) and covered[index][1] <= m.start():
+                index += 1
+            if index < len(covered) and covered[index][0] < m.end():
+                continue
+            out.append((m.start(), m.end(), self._mask_token(_HEX_TOKEN, m[0])))
+        return out
+
+    def _redact_high_entropy(self, text: str, cuts: _Cuts | None = None) -> str:
         """Interim global entropy fallback for unknown-shape secrets (OD-15).
 
         Structured identifiers/paths are skipped (:meth:`_is_structured`); everything else
-        is masked once it clears both the length and the bits/char threshold.
+        is masked once it clears both the length and the bits/char threshold. A run of 32 hex
+        digits or more is masked whatever its entropy (A-78).
         """
 
         def _sub(m: re.Match[str]) -> str:
             token = m.group(0)
-            if self._is_structured(token):
+            spans = self._entropy_spans(token, cuts)
+            if not spans:
                 return token
-            if (
-                len(token) >= self._entropy_min_len
-                and _shannon_entropy(token) >= self._entropy_threshold
-            ):
-                return _MASK_TEMPLATE_HASHED.format(type="high_entropy", digest=self._digest(token))
-            return token
+            out: list[str] = []
+            cursor = 0
+            for start, end, mask in spans:
+                out += (token[cursor:start], mask)
+                cursor = end
+            out.append(token[cursor:])
+            return "".join(out)
 
-        return self._HIGH_ENTROPY_TOKEN.sub(_sub, text)
+        return (self._HIGH_ENTROPY_TOKEN if cuts is None else cuts.token).sub(_sub, text)
 
     def redact(self, obj: object) -> object:
         """Redact any value, preserving container shape.
@@ -1679,8 +2345,8 @@ class Redactor:
         if isinstance(obj, Mapping):
             # Values only: masking keys here would rename fields and break callers that
             # re-validate the masked dump against a frozen model (reporting.mask_run). The
-            # evidence store, which serializes to JSON without re-validation, masks keys too
-            # via its own deep pass (evidence_fs) to close the secret-in-a-key vector (DL2).
+            # evidence store masks every key of what it writes, and the reports the keys of an
+            # attempt's free-form fields, through :func:`mask_keys` (DL2).
             return {key: self.redact(value) for key, value in obj.items()}
         if isinstance(obj, (list, tuple, set)):
             redacted = [self.redact(item) for item in obj]
@@ -1709,6 +2375,12 @@ def redact(obj: object) -> object:
 #: process-random salt above the two digests would never match, and with no digest at all two
 #: different tenants would mask to the same string and the check would pass for both.
 _IDENTITY = Redactor(salt="ildottore:identity:v1")
+
+
+#: The identity masks as the redactor before u01 A-78 wrote them (:func:`identity_masks`): the
+#: same patterns, no late pass, no hex rule, numbers inside a UUID read as numbers.
+_IDENTITY_BEFORE_A78 = Redactor(salt="ildottore:identity:v1", late=False)
+_IDENTITY_BEFORE_A78._hex_runs = False
 
 
 _SHA256_HEX_RE: Final = re.compile(r"[0-9a-f]{64}")
@@ -1752,7 +2424,677 @@ def credential_patterns() -> list[Pattern]:
 
     For a caller that asks whether a value is shaped like a key, not whether it is personal data:
     a fleet file's endpoint and a scaffold's family (u12 A-82), where the phone rule read
-    `CVE-2021-44228` and the email rule `alice@example.com` as secrets.
+    `CVE-2021-44228` and the email rule `alice@example.com` as secrets. A UUID is left out: the
+    redactor masks one (u01 A-78), but it names a tenant or a record, and no key format is one.
     """
 
-    return [pattern for pattern in _default_patterns() if pattern.hashed]
+    return [
+        pattern
+        for pattern in _default_patterns()
+        if pattern.hashed and pattern is not _UUID_PATTERN
+    ]
+
+
+def report_identity(value: str) -> str:
+    """How a report names a target: by the rules before u01 A-78, with the fixed identity salt.
+
+    A report masks what the operator wrote, the target id included (a tenant-shaped id can read
+    as a key), and masked it with the process-random salt, so a high-entropy id had another mask
+    in every run and ``dottore diff`` refused two reports of one target as two targets. A-78
+    extended that to every id holding a UUID, a hex run or a key shape (`tenant-<uuid>`), which
+    the reports before it showed as written (pre-merge audit of A-78, H1). The id is now masked
+    by the rules before A-78 (:data:`_IDENTITY_BEFORE_A78`): the text a report written before
+    A-78 holds, where that one held no digest, and the same text in every run where it held one.
+    """
+
+    return _IDENTITY_BEFORE_A78.redact_text(value)
+
+
+def identity_masks(value: str) -> tuple[str, ...]:
+    """Every mask a run store may hold for ``value``: :func:`redact_identity`'s, then the one it
+    wrote before u01 A-78, when they differ.
+
+    The key formats, the hex run and the UUID changed the identity mask of an id that holds one
+    (a UUID was stored with a phone mask in its digit-only groups, or as written, and is
+    ``«REDACTED:uuid:...»`` now), so a run halted before them was refused on resume as made
+    against another target, and a resume keyed its findings anew beside the old rows. The resume
+    checks and the run store accept both, and the store keeps the current one.
+    """
+
+    current = _IDENTITY.redact_text(value)
+    before = _IDENTITY_BEFORE_A78.redact_text(value)
+    return (current,) if before == current else (current, before)
+
+
+# --- a reply kept in pieces (A-77) -----------------------------------------------------------
+# A reply reaches the evidence in pieces as well as whole: OpenAI's logprobs hold its text as
+# tokens of 1 to 4 characters, each with its alternatives, and a WebSocket transcript holds it as
+# the deltas it was streamed in. Each piece was masked on its own, too short for any rule, so a
+# key, a registered credential or the run's canary was rebuilt by joining the `token` fields of
+# the evidence or of the JSON report while `response.text` read masked (audit of main de122e26,
+# HIGH 1). The pieces are kept, since they are the reply as the target sent it (the figures the
+# membership evaluator reads, the transcript a reviewer reads), and are masked as the text they
+# make: the pieces of one stream are joined in order, the joined text is redacted once, the first
+# piece a mask covers shows it and every piece it covers loses the text under it. Joined, the
+# pieces never show more than the redacted text, and show less only where a literal between two
+# masks could stand in more than one place: the masks then merge and that literal goes (8 of
+# 1,500 realistic replies and 309 of 1,500 hostile ones, second pre-merge audit of the branch;
+# always towards masking more). A mask repeated in every piece it covered read, joined,
+# `user:«REDACTED:url_password»«REDACTED:url_password»@host`, which the URL rule masks again as
+# one, and the store's guard refused a reply it had masked correctly (pre-merge audit of
+# c4bd2012, HIGH 1). Two streams are read as such, where the data says what they are: a
+# logprob list's tokens (an alternative shows the masks of the token it stands beside; its rank
+# is no stream: alternatives side by side are text no one wrote, and joining a rank masked 6.9%
+# of all the alternatives of clean replies, 5,794 of 83,950, each beside a token that was kept,
+# LOW 5) and a WebSocket transcript (the fields of the frames
+# received that are not the protocol's, which the transcript names). Any other list is a list of
+# records, each string masked on its own: joining every list read the `type` of a transcript's
+# frames as `auth_oksessiondeltaping...`, one high-entropy token, and masked every frame's type.
+
+#: The mask a piece shows when the redactor masked its stream's joined text and where it masked
+#: could not be placed: every piece of that stream shows it.
+_FRAGMENT_MASK: Final = _MASK_TEMPLATE.format(type="fragment")
+#: How many passes a value gets at most, as ``redact_text`` reads a text to a fixed point.
+_SPLIT_ROUNDS: Final = 4
+_STASH_DELIMITERS: Final = frozenset((_STASH_OPEN, _STASH_CLOSE))
+#: A logprob item's token and its figure (ADR-0005 ``TokenLogprob``, and OpenAI's wire shape).
+_TOKEN: Final = "token"  # noqa: S105 - a field name, not a credential
+_LOGPROB: Final = "logprob"
+_BYTES: Final = "bytes"
+#: Where a logprob item keeps its alternatives: a list there is the candidates for one piece, not
+#: a stream, though OpenAI writes each as a logprob item (``top_logprobs``).
+_ALTERNATIVES: Final = frozenset({"top", "top_logprobs"})
+#: A WebSocket transcript (``raw_ids["websocket"]``, OD-34): its frames, each ``{"direction",
+#: "frame"}``, and the dotted paths of the frame fields the target file declares as the
+#: protocol's (the frame type, the final marker, an error, ids, usage, tool calls).
+TRANSCRIPT_FRAMES: Final = "frames"
+TRANSCRIPT_PROTOCOL_PATHS: Final = "protocol_paths"
+_RECEIVED: Final = "received"
+_DIRECTION: Final = "direction"
+_FRAME: Final = "frame"
+#: The frame type's path when a transcript names no protocol paths (``type_path``'s default).
+_DEFAULT_PROTOCOL: Final = ("type",)
+
+#: Where a string sits inside one item of a list: the keys and indices that lead to it.
+_LeafPath = tuple[object, ...]
+#: One stream: the strings to read joined, each with the item it sits in and where.
+_Stream = list[tuple[int, _LeafPath, str]]
+
+
+class _RedactsText(Protocol):
+    def redact_text(self, text: str) -> str: ...
+
+
+class _RedactsBoth(_Redacts, _RedactsText, Protocol): ...
+
+
+def _string_leaves(node: object, path: _LeafPath = ()) -> Iterator[tuple[_LeafPath, str]]:
+    """Every string value under ``node`` (a key is not one), with where it sits."""
+
+    if isinstance(node, str):
+        yield path, node
+    elif isinstance(node, Mapping):
+        for key, value in node.items():
+            yield from _string_leaves(value, (*path, key))
+    elif isinstance(node, list):
+        for index, value in enumerate(node):
+            yield from _string_leaves(value, (*path, index))
+
+
+def _is_logprob_list(items: Sequence[object], *, minimum: int = 2) -> bool:
+    """True for a list of logprob items: each an object with a string token and a figure (at
+    least ``minimum`` of them: one is no stream, but its ``bytes`` still spell its token)."""
+
+    return len(items) >= minimum and all(
+        isinstance(item, Mapping) and isinstance(item.get(_TOKEN), str) and _LOGPROB in item
+        for item in items
+    )
+
+
+def _logprob_streams(items: Sequence[object]) -> list[_Stream]:
+    """The tokens of a logprob list, as one stream (its alternatives are not one, LOW 5)."""
+
+    tokens: _Stream = [
+        (index, (_TOKEN,), cast("str", cast("Mapping[str, object]", item)[_TOKEN]))
+        for index, item in enumerate(items)
+    ]
+    return [tokens] if len(tokens) > 1 else []
+
+
+def _protocol_paths(node: Mapping[object, object]) -> list[list[str]] | None:
+    """The protocol paths of a transcript, split into segments, or None if ``node`` is not one.
+
+    A transcript is an object whose ``frames`` are all ``{"direction", "frame"}`` records. One
+    that names no protocol paths (stored before they were recorded, or built by hand) is read with
+    the frame type at ``type``, the default of the target file's ``type_path``: its content is
+    joined rather than left in pieces.
+    """
+
+    frames, declared = node.get(TRANSCRIPT_FRAMES), node.get(TRANSCRIPT_PROTOCOL_PATHS)
+    if not isinstance(frames, list) or not frames:
+        return None
+    if not all(
+        isinstance(entry, Mapping) and _DIRECTION in entry and _FRAME in entry for entry in frames
+    ):
+        return None
+    if isinstance(declared, list) and all(isinstance(path, str) for path in declared):
+        return [path.split(".") for path in declared if isinstance(path, str)]
+    return [list(_DEFAULT_PROTOCOL)]
+
+
+def _transcript_streams(
+    frames: Sequence[object], protocol: list[list[str]], *, minimum: int = 2
+) -> list[_Stream]:
+    """The content of the frames received, one stream per field, the protocol's fields aside
+    (a field in fewer than ``minimum`` frames is no stream to join), and a logprob item's
+    alternatives aside: they are no stream there either (found with the fourth pre-merge audit's
+    fix: an event stream of OpenAI chunks with logprobs joined each rank of them across the
+    chunks, and masked clean replies)."""
+
+    streams: dict[_LeafPath, _Stream] = {}
+    for index, entry in enumerate(frames):
+        if not isinstance(entry, Mapping) or entry.get(_DIRECTION) != _RECEIVED:
+            continue
+        for path, text in _string_leaves(entry.get(_FRAME), (_FRAME,)):
+            segments = [str(step) for step in path[1:]]
+            if any(segments[: len(declared)] == declared for declared in protocol):
+                continue
+            if any(step in _ALTERNATIVES for step in path):  # no stream, as in a logprob list
+                continue
+            streams.setdefault(path, []).append((index, path, text))
+    return [stream for stream in streams.values() if len(stream) >= minimum]
+
+
+def split_texts(obj: object, *, alternatives: bool = False) -> Iterator[str]:
+    """Every text a stream of ``obj`` makes joined: a logprob list's, a transcript's (A-77).
+
+    For the evidence store's fail-closed guard, which redacts each and refuses a write when one
+    changes (a secret in pieces survived), as it redacts each string on its own.
+    """
+
+    if isinstance(obj, Mapping):
+        for key, value in obj.items():
+            yield from split_texts(value, alternatives=key in _ALTERNATIVES)
+        protocol = _protocol_paths(obj)
+        if protocol is not None:
+            for stream in _transcript_streams(obj[TRANSCRIPT_FRAMES], protocol):
+                yield "".join(text for _, _, text in stream)
+    elif isinstance(obj, list):
+        for item in obj:
+            yield from split_texts(item)
+        if not alternatives and _is_logprob_list(obj):
+            for stream in _logprob_streams(obj):
+                yield "".join(text for _, _, text in stream)
+
+
+def _placed_masks(text: str, redacted: str) -> list[tuple[int, int, str]] | None:
+    """Where in ``text`` each mask of ``redacted`` may stand, or None when that cannot be said.
+
+    ``redacted`` is ``text`` with stretches replaced by masks, so it reads ``L0 M1 L1 ... Mn Ln``
+    where each ``L`` is text as written and each mask stands for a stretch of one character or
+    more. The literals are placed as early as they can be, left to right, and as late as they
+    can be, right to left; every placement the text allows lies between the two, so mask ``i``
+    stands somewhere from where literal ``i - 1`` ends at the earliest to where literal ``i``
+    starts at the latest, and that span holds it in any placement. A character outside every
+    span is in a literal in every placement: it is text the redacted copy shows. A literal not
+    found means ``redacted`` is not of that form, and None sends the caller to mask everything.
+    """
+
+    literals: list[str] = []
+    masks: list[str] = []
+    cursor = 0
+    for match in _ALREADY_MASKED.finditer(redacted):
+        literals.append(redacted[cursor : match.start()])
+        masks.append(match.group(0))
+        cursor = match.end()
+    literals.append(redacted[cursor:])
+    count = len(masks)
+    if not count or not text.startswith(literals[0]) or not text.endswith(literals[-1]):
+        return None
+    earliest = [0] * (count + 1)
+    cursor = len(literals[0])
+    for index in range(1, count):
+        found = text.find(literals[index], cursor + 1)
+        if found == -1:
+            return None
+        earliest[index] = found
+        cursor = found + len(literals[index])
+    tail = len(text) - len(literals[-1])
+    if tail < cursor + 1:
+        return None
+    earliest[count] = tail
+    latest = [0] * (count + 1)
+    latest[count] = bound = tail
+    for index in range(count - 1, 0, -1):
+        # The earliest placement fits, so a latest one is found at or after it.
+        bound = latest[index] = text.rfind(literals[index], earliest[index], bound - 1)
+    return [
+        (earliest[index - 1] + len(literals[index - 1]), latest[index], masks[index - 1])
+        for index in range(1, count + 1)
+    ]
+
+
+def _mask_spans(redactor: _RedactsText, joined: str) -> list[tuple[int, int, tuple[str, ...]]]:
+    """The stretches of ``joined`` the redactor masks, merged, with the masks each shows.
+
+    ``redact_text`` drops its two stash delimiters before it reads a text, or writes them out
+    when that masks nothing, so a text holding one is read both ways, the first through the
+    positions of the characters it keeps, and what either masks is masked.
+    """
+
+    if _STASH_DELIMITERS.isdisjoint(joined):
+        forms: list[tuple[str, list[int] | None]] = [(joined, None)]
+    else:
+        kept = [index for index, char in enumerate(joined) if char not in _STASH_DELIMITERS]
+        forms = [
+            ("".join(joined[index] for index in kept), kept),
+            (visible_stash_delimiters(joined), None),
+        ]
+    spans: list[tuple[int, int, str]] = []
+    for text, positions in forms:
+        redacted = redactor.redact_text(text)
+        if redacted == text:
+            continue
+        for start, end, mask in _placed_masks(text, redacted) or [(0, len(text), _FRAGMENT_MASK)]:
+            if positions is not None:
+                start, end = positions[start], positions[end - 1] + 1
+            spans.append((start, end, mask))
+    spans.sort(key=lambda span: (span[0], span[1]))
+    merged: list[tuple[int, int, tuple[str, ...]]] = []
+    for start, end, mask in spans:
+        if merged and start < merged[-1][1]:
+            first, last, shown = merged[-1]
+            merged[-1] = (first, max(last, end), shown if mask in shown else (*shown, mask))
+        else:
+            merged.append((start, end, (mask,)))
+    return merged
+
+
+def _masked_pieces(
+    redactor: _RedactsText, pieces: Sequence[str]
+) -> list[tuple[str, tuple[str, ...]]]:
+    """``pieces`` with the stretches the redactor masks in their joined text masked, each with
+    the masks of the stretches it lies in.
+
+    The first piece a masked stretch covers shows its masks in place of the part it covers; every
+    later piece it covers loses the part it covers (a piece it covers whole is empty). Joined
+    again, the pieces show each mask once and never more than the redacted text; they show less
+    where a literal between two masks could stand in more than one place, since the stretches
+    then merge and that literal goes (``_placed_masks``). Shown in every piece, a mask the URL
+    rule had set read joined as a run of masks behind `user:`, which the rule masked again as
+    one, and the store's guard refused the reply (pre-merge audit of c4bd2012, HIGH 1).
+    """
+
+    joined = "".join(pieces)
+    spans = _mask_spans(redactor, joined)
+    if not spans:
+        return [(piece, ()) for piece in pieces]
+    out: list[tuple[str, tuple[str, ...]]] = []
+    start = first = 0
+    for piece in pieces:
+        end = start + len(piece)
+        while first < len(spans) and spans[first][1] <= start:
+            first += 1
+        parts: list[str] = []
+        masks: list[str] = []
+        cursor, index = start, first
+        while start < end and index < len(spans) and spans[index][0] < end:
+            span_start, span_end, shown = spans[index]
+            if span_start > cursor:
+                parts.append(joined[cursor:span_start])
+            if span_start >= start:  # this piece is the first the stretch covers
+                parts.append("".join(shown))
+            masks.extend(mask for mask in shown if mask not in masks)
+            cursor = min(max(cursor, span_end), end)
+            if span_end > end:  # it goes on into the next piece
+                break
+            index += 1
+        if masks and cursor < end:
+            parts.append(joined[cursor:end])
+        out.append(("".join(parts), tuple(masks)) if masks else (piece, ()))
+        start = end
+    return out
+
+
+def _thawed(node: object) -> object:
+    """A copy of ``node``'s dicts and lists (its strings and scalars shared), to edit in place."""
+
+    if isinstance(node, Mapping):
+        return {key: _thawed(value) for key, value in node.items()}
+    if isinstance(node, list):
+        return [_thawed(value) for value in node]
+    return node
+
+
+def _with_leaf(node: object, path: _LeafPath, value: str) -> object:
+    """``node`` (a thawed copy) with the string at ``path`` replaced by ``value``."""
+
+    if not path:
+        return value
+    holder: Any = node
+    for step in path[:-1]:
+        holder = holder[step]
+    holder[path[-1]] = value
+    return node
+
+
+def _mask_alternatives(item: object, token: str, shown: str, masks: tuple[str, ...]) -> None:
+    """Mask the alternatives of a logprob item whose token, ``token``, a mask covers (in place).
+
+    A token a mask covers is a piece of a secret, and its alternatives are what the model weighed
+    for that same piece: other pieces of the secret, often, which no join of them reads whole. An
+    alternative written as the token was shows what the token shows now (``shown``); any other
+    shows the token's masks. Called once an item's every edit is made, so nothing written after
+    undoes it (pre-merge audit of c4bd2012, MEDIUM 2).
+    """
+
+    if not isinstance(item, dict):  # pragma: no cover - a thawed logprob item is a dict
+        return
+    stands_for = "".join(masks)
+    pairs = item.get("top")
+    if isinstance(pairs, list):
+        for pair in pairs:
+            if isinstance(pair, list) and pair and isinstance(pair[0], str):
+                pair[0] = shown if pair[0] == token else stands_for
+    alternatives = item.get("top_logprobs")
+    if isinstance(alternatives, list):
+        for alternative in alternatives:
+            if isinstance(alternative, dict) and isinstance(alternative.get(_TOKEN), str):
+                written = alternative[_TOKEN]
+                alternative[_TOKEN] = shown if written == token else stands_for
+                if alternative.get(_BYTES) is not None:  # they spell what was written (LOW 4)
+                    alternative[_BYTES] = None
+
+
+def _spelled(redactor: _RedactsText, entry: Mapping[object, object]) -> bool:
+    """Whether a logprob entry's ``bytes`` spell what is masked: its token is or will be."""
+
+    token = entry.get(_TOKEN)
+    if not isinstance(token, str) or entry.get(_BYTES) is None:
+        return False
+    return _ALREADY_MASKED.search(token) is not None or redactor.redact_text(token) != token
+
+
+def _drop_spelled_bytes(redactor: _RedactsText, items: list[object]) -> list[object] | None:
+    """``items`` with the ``bytes`` of every masked token and alternative dropped, or None.
+
+    OpenAI writes each token's UTF-8 as a list of numbers beside it, which an unreadable reply's
+    excerpt quotes: the numbers spell a token whatever its text shows, so wherever a token, or an
+    alternative's, is masked, by its stream or on its own, they go (pre-merge audit of c4bd2012,
+    LOW 4). A list with no ``bytes`` (the stored ``TokenLogprob``) costs one look per item.
+    """
+
+    out: list[object] | None = None
+    for index, item in enumerate(items):
+        if not isinstance(item, Mapping):  # pragma: no cover - a logprob list holds objects
+            continue
+        alternatives = item.get("top_logprobs")
+        listed = alternatives if isinstance(alternatives, list) else []
+        spelled = [isinstance(alt, Mapping) and _spelled(redactor, alt) for alt in listed]
+        if not _spelled(redactor, item) and not any(spelled):
+            continue
+        thawed = cast("dict[object, object]", _thawed(item))
+        if _spelled(redactor, item):
+            thawed[_BYTES] = None
+        for alternative, drop in zip(
+            cast("list[object]", thawed.get("top_logprobs") or []), spelled, strict=False
+        ):
+            if drop and isinstance(alternative, dict):
+                alternative[_BYTES] = None
+        out = list(items) if out is None else out
+        out[index] = thawed
+    return out
+
+
+def _mask_streams_of(
+    redactor: _RedactsText, items: list[object], streams: list[_Stream], *, logprobs: bool
+) -> list[object] | None:
+    """``items`` with each stream masked as one text (a copy), or None when nothing is masked."""
+
+    edits: dict[int, list[tuple[_LeafPath, str, str, tuple[str, ...]]]] = {}
+    for stream in streams:
+        masked = _masked_pieces(redactor, [text for _, _, text in stream])
+        for (index, path, text), (piece, masks) in zip(stream, masked, strict=True):
+            if masks:
+                edits.setdefault(index, []).append((path, text, piece, masks))
+    if not edits:
+        return None
+    out = list(items)
+    for index, leaves in edits.items():
+        item = _thawed(out[index])
+        for path, _text, piece, _masks in leaves:
+            item = _with_leaf(item, path, piece)
+        for path, text, piece, masks in leaves:
+            holder = _logprob_holder(item, path, logprobs=logprobs)
+            if holder is not None:
+                _mask_alternatives(holder, text, piece, masks)
+                if holder.get(_BYTES) is not None:
+                    holder[_BYTES] = None
+        out[index] = item
+    return out
+
+
+def _logprob_holder(
+    item: object, path: _LeafPath, *, logprobs: bool
+) -> dict[object, object] | None:
+    """The logprob item whose token sits at ``path`` in ``item``, or None.
+
+    In a logprob list the item is ``item`` itself; in a transcript, a frame may hold one (an
+    OpenAI chunk streamed with logprobs, one token in each), whose ``bytes`` spell the token and
+    whose alternatives are weighed for it, so they are masked with it as a list's are (found
+    with the fourth pre-merge audit's fix: the chunks' ``bytes`` spelled a key their tokens no
+    longer showed, in the excerpt of an event stream).
+    """
+
+    if not path or path[-1] != _TOKEN or (logprobs and path != (_TOKEN,)):
+        return None
+    holder = _leaf(item, path[:-1])
+    if isinstance(holder, dict) and _LOGPROB in holder:
+        return holder
+    return None
+
+
+def _mask_streams(
+    redactor: _RedactsText, node: object, *, alternatives: bool = False
+) -> tuple[object, bool]:
+    """One pass over ``node``: each stream in it masked as one text, inner ones first.
+
+    Returns ``node`` itself when nothing is masked, and whether anything was.
+    """
+
+    if isinstance(node, Mapping):
+        changed = False
+        out: dict[object, object] = {}
+        for key, value in node.items():
+            out[key], hit = _mask_streams(redactor, value, alternatives=key in _ALTERNATIVES)
+            changed = changed or hit
+        result: Mapping[object, object] = out if changed else node
+        protocol = _protocol_paths(result)
+        if protocol is not None:
+            frames = cast("list[object]", result[TRANSCRIPT_FRAMES])
+            masked = _mask_streams_of(
+                redactor, frames, _transcript_streams(frames, protocol), logprobs=False
+            )
+            if masked is not None:
+                result, changed = {**result, TRANSCRIPT_FRAMES: masked}, True
+        return result, changed
+    if not isinstance(node, list):
+        return node, False
+    items: list[object] = []
+    changed = False
+    for value in node:
+        item, hit = _mask_streams(redactor, value)
+        items.append(item)
+        changed = changed or hit
+    if not alternatives and _is_logprob_list(items, minimum=1):
+        if _is_logprob_list(items):
+            masked = _mask_streams_of(redactor, items, _logprob_streams(items), logprobs=True)
+            if masked is not None:
+                items, changed = masked, True
+        unspelled = _drop_spelled_bytes(redactor, items)
+        if unspelled is not None:
+            items, changed = unspelled, True
+    return (items if changed else node), changed
+
+
+def _blank_leaves(items: list[object], streams: list[_Stream], *, logprobs: bool) -> list[object]:
+    """``items`` (a copy) with every piece of ``streams`` empty, and a token's alternatives and
+    ``bytes`` too, in a logprob list or in a transcript's frame (:func:`_logprob_holder`)."""
+
+    out = list(items)
+    for index in sorted({index for stream in streams for index, _, _ in stream}):
+        item = _thawed(out[index])
+        paths = [path for stream in streams for at, path, _ in stream if at == index]
+        for path in paths:
+            item = _with_leaf(item, path, "")
+        for path in paths:
+            holder = _logprob_holder(item, path, logprobs=logprobs)
+            if holder is not None:
+                _blank_beside(holder)
+        out[index] = item
+    return out
+
+
+def _blank_beside(holder: dict[object, object]) -> None:
+    """Empty what spells a logprob item's token beside it, its alternatives and its ``bytes``
+    (in place), once the token is emptied."""
+
+    _mask_alternatives(holder, "", "", ())
+    if holder.get(_BYTES) is not None:
+        holder[_BYTES] = None
+
+
+def _withheld(node: object, *, alternatives: bool = False) -> tuple[object, bool]:
+    """``node`` with every piece of every stream in it empty, and whether there was one."""
+
+    if isinstance(node, Mapping):
+        changed = False
+        out: dict[object, object] = {}
+        for key, value in node.items():
+            out[key], hit = _withheld(value, alternatives=key in _ALTERNATIVES)
+            changed = changed or hit
+        result: Mapping[object, object] = out if changed else node
+        protocol = _protocol_paths(result)
+        if protocol is not None:
+            frames = cast("list[object]", result[TRANSCRIPT_FRAMES])
+            streams = _transcript_streams(frames, protocol)
+            if streams:
+                blank = _blank_leaves(frames, streams, logprobs=False)
+                result, changed = {**result, TRANSCRIPT_FRAMES: blank}, True
+        return result, changed
+    if not isinstance(node, list):
+        return node, False
+    items: list[object] = []
+    changed = False
+    for value in node:
+        item, hit = _withheld(value)
+        items.append(item)
+        changed = changed or hit
+    if not alternatives and _is_logprob_list(items):
+        items, changed = _blank_leaves(items, _logprob_streams(items), logprobs=True), True
+    return (items if changed else node), changed
+
+
+def withhold_split(obj: object) -> object:
+    """``obj`` with every piece of its streams withheld: each token, alternative and content
+    field of a transcript empty, the figures, the shape and the protocol's fields kept (A-77).
+
+    For an attempt the evidence store refused to write because a joined text of its streams was
+    still not a fixed point of the redactor: the pieces are what it could not prove masked, so
+    they are left out and the rest, the reply's text included, is stored (pre-merge audit of
+    c4bd2012, HIGH 1: one such refusal ended the campaign). ``obj`` itself comes back when it
+    holds no stream.
+    """
+
+    return _withheld(obj)[0]
+
+
+def _leaf(node: object, path: _LeafPath) -> object:
+    """What sits at ``path`` in ``node`` (the same structure the path was read from)."""
+
+    holder: Any = node
+    for step in path:
+        holder = holder[step]
+    return holder
+
+
+def mask_split(redactor: _RedactsText, obj: object) -> object:
+    """``obj`` with every stream in it masked as the text its pieces make (A-77).
+
+    ``obj`` is JSON-shaped (dicts, lists, strings and scalars) and is not changed: what is
+    masked is copied, and ``obj`` itself comes back when nothing is. A stream is a logprob
+    list's tokens or a WebSocket transcript's received content field by field (see the block
+    comment above; alternatives are no stream); its pieces are joined in order and redacted once,
+    the first piece a mask covers shows that mask and the others lose the text under it, and a
+    token a mask covers has its alternatives masked and its ``bytes`` dropped. Inner streams are
+    read first, and the whole is read again until
+    nothing more is masked, as ``redact_text`` reads a text to a fixed point. Only the joined
+    texts are masked here: each string on its own is left to :meth:`Redactor.redact`
+    (:func:`redact_split` does both).
+    """
+
+    current = obj
+    for _ in range(_SPLIT_ROUNDS):
+        current, changed = _mask_streams(redactor, current)
+        if not changed:
+            break
+    return current
+
+
+def redact_split(redactor: _RedactsBoth, obj: object) -> object:
+    """``redactor.redact(obj)``, with every stream masked as the text it makes too (A-77).
+
+    The joined texts are read first, as the target wrote them (:func:`mask_split`), then every
+    string on its own, and the two again while either masks something more, so the result is
+    a fixed point of both: the evidence store's guard redacts each string and each joined text
+    of what it stores (:func:`split_texts`) and refuses the write when one changes.
+    """
+
+    masked, changed = _mask_streams(redactor, obj)
+    current = redactor.redact(masked)
+    for _ in range(_SPLIT_ROUNDS - 1):
+        if not changed:
+            break
+        masked, changed = _mask_streams(redactor, current)
+        if changed:
+            current = redactor.redact(masked)
+    return current
+
+
+class KeysNotDistinct(ValueError):
+    """Two keys of one mapping still read alike once masked, whatever number the second got."""
+
+
+def mask_keys(redactor: _RedactsText, obj: object) -> object:
+    """``obj`` with the keys of its mappings redacted, values as they are (DL2, MEDIUM 2).
+
+    :meth:`Redactor.redact` masks values only, so a secret written as a key (a model-controlled
+    tool-call argument name, a usage field, a WebSocket frame's) is masked here. Two keys can
+    mask to one (`a@x.io` and `b@y.io` both read `«REDACTED:email»`): the second used to replace
+    the first, and one value was gone (pre-merge audit of the hostile-text block). A later one
+    is numbered instead, and the numbered name is redacted itself: a suffix changes what the
+    rules see (` (2)` after a date made a phone, ` #10000` after a label word a labelled secret,
+    and `, #2` after `password: Secret` let the label rule take a value it refuses at the end),
+    so a name that was not a fixed point made the evidence guard refuse the reply. Each base
+    counts on from its last number, so many colliding keys stay linear. More tries than names
+    taken means the redaction swallows the number (from 10^8 it reads as a phone):
+    :class:`KeysNotDistinct` rather than a loop (no reply holds that many).
+    """
+
+    if isinstance(obj, Mapping):
+        masked: dict[str, object] = {}
+        last: dict[str, int] = {}
+        for key, value in obj.items():
+            name = base = redactor.redact_text(str(key))
+            for _ in range(len(masked) + 1):
+                if name not in masked:
+                    break
+                last[base] = last.get(base, 1) + 1
+                name = redactor.redact_text(f"{base}, #{last[base]}")
+            else:
+                raise KeysNotDistinct("keys could not be told apart once masked")
+            masked[name] = mask_keys(redactor, value)
+        return masked
+    if isinstance(obj, list):
+        return [mask_keys(redactor, item) for item in obj]
+    return obj

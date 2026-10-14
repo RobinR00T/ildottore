@@ -12,12 +12,15 @@ widens the battery, never the authorization gate (``docs/09 §5``).
 
 from __future__ import annotations
 
+import contextlib
 import errno
 import json
 import math
 import os
 import re
+import sqlite3
 import sys
+import traceback
 from collections.abc import Callable, Sequence
 from functools import partial
 from itertools import chain
@@ -25,7 +28,7 @@ from pathlib import Path
 from typing import Annotated, Any, NoReturn
 
 import typer
-from typer.core import TyperGroup
+from typer.core import TyperGroup, TyperOption
 
 from ildottore import __version__
 from ildottore.adapters.base import AdapterError
@@ -58,28 +61,228 @@ from ildottore.reporting import report_schema
 from ildottore.shared.schema_export import export_schemas
 from ildottore.store.replay import TamperError
 
-DEFAULT_SPEC_PATHS = [Path("specs")]
+#: Where a command records how verbose it was asked to be, for the guard below (``ctx.meta`` is
+#: shared by a command's context and its parents').
+_VERBOSE_KEY = "ildottore.verbose"
 
 
-def _click_classes(name: str) -> tuple[type[BaseException], ...]:
-    """``name`` from click and from Typer's vendored copy of it, whichever are installed.
+def _typer_error(name: str) -> type[Exception]:
+    """The error class ``name`` (``ClickException``, ``UsageError``) Typer raises and catches.
 
-    Typer 0.26 raises from its own copy (``typer._click``), as ``_usage_errors_exit_3`` notes;
-    catching only one of the two would let the other reach the terminal unmasked.
+    Found from public Typer names, whatever module the copy of click Typer raises from lives in:
+    the ancestry of ``typer.BadParameter``. Looked up in ``typer._click.exceptions`` by name, an
+    ``Abort`` that moved to ``typer.exceptions`` in Typer 0.27 resolved to nothing and the guard
+    quietly stopped mapping it (CI of #114). A class that cannot be found fails the import, so a
+    future change of layout stops the CLI rather than changing its exit codes.
     """
 
-    import importlib
+    for cls in typer.BadParameter.__mro__:
+        if cls.__name__ == name and issubclass(cls, Exception):
+            return cls
+    raise ImportError(f"typer.BadParameter derives from no {name}: an unknown Typer layout")
 
-    found: list[type[BaseException]] = []
-    for module_name in ("click.exceptions", "typer._click.exceptions"):
-        try:
-            module = importlib.import_module(module_name)
-        except ImportError:
-            continue
+
+#: An exit asked for: let through with its code. `typer.Exit` is the class Typer catches.
+_EXITS: tuple[type[BaseException], ...] = (typer.Exit,)
+#: The library's errors (a usage error, a file it could not open): let through, as exit 3
+#: (`_click_errors_exit_3` sets the class's code; `ClickException`'s default was 1).
+_CLICK_ERRORS: tuple[type[BaseException], ...] = (_typer_error("ClickException"),)
+#: The library's "Aborted!", exit 1 by default. `typer.Abort` is the class Typer catches.
+_ABORTS: tuple[type[BaseException], ...] = (typer.Abort,)
+_PASS_THROUGH: tuple[type[BaseException], ...] = (*_EXITS, *_CLICK_ERRORS)
+
+
+def _installed_click_kind(exc: BaseException) -> str | None:
+    """``"exit"``, ``"abort"`` or ``"error"`` for an exception of the separately installed click.
+
+    Typer does not catch that copy's classes, so a plugin's ``click.ClickException`` exited 1
+    with a traceback (round-2 audit of f51a7d07, LOW 2). Read from ``sys.modules``, so click is
+    never imported for it, and ``None`` when it is not loaded or is the copy Typer raises from.
+    """
+
+    module = sys.modules.get("click.exceptions")
+    if module is None or getattr(module, "ClickException", None) in _CLICK_ERRORS:
+        return None  # not loaded, or it is the copy Typer raises from (a Typer that vendors none)
+    for kind, name in (("exit", "Exit"), ("abort", "Abort"), ("error", "ClickException")):
         cls = getattr(module, name, None)
-        if isinstance(cls, type) and issubclass(cls, BaseException) and cls not in found:
-            found.append(cls)
-    return tuple(found)
+        if isinstance(cls, type) and isinstance(exc, cls):
+            return kind
+    return None
+
+
+class OperationalErrorGroup(TyperGroup):
+    """The root command group: an exception no command handled exits 3, never 1 (u12 A-9).
+
+    Exit 1 means "findings below --fail-on", so a CI step that lets 1 through read a crash as an
+    almost clean scan; that is how a locked run store, a bare sqlite3 error and every class a
+    handler tuple forgot used to end. Here it is one line on stderr through the same masking as
+    every other error, and its traceback (masked line by line) only under ``-v``. Ctrl-C is not
+    an exception in this sense and keeps its 130.
+
+    Built to be subclassed: it keeps no state, and a root group that does more (masking a usage
+    error where it is raised) overrides ``main`` or ``invoke`` and calls ``super()``, which keeps
+    this closure (``tests/cli/test_guard_subclass.py``).
+    """
+
+    def main(self, *args: Any, **kwargs: Any) -> Any:
+        """The library's own handling around the root context, with its two exits 1 made 3.
+
+        Help (``--help``, or no command at all) is printed while the root context is being made,
+        before :meth:`invoke` and its guard: a broken pipe there, and an ``Aborted!`` raised
+        there, were turned into exit 1 by the library itself.
+        """
+
+        try:
+            return super().main(*args, **kwargs)
+        except SystemExit as exc:
+            context = exc.__context__
+            if exc.code != 1 or context is None:
+                raise
+            if isinstance(context, OSError) and context.errno == errno.EPIPE:
+                _say_broken_pipe()
+            elif not isinstance(context, _ABORTS):
+                raise
+            raise SystemExit(int(ExitCode.ERROR)) from exc
+
+    def invoke(self, ctx: Any) -> Any:
+        try:
+            return super().invoke(ctx)
+        except _PASS_THROUGH:
+            raise
+        except _ABORTS as exc:
+            _echo_err("error: aborted")
+            raise typer.Exit(int(ExitCode.ERROR)) from exc
+        except SystemExit as exc:
+            # A stray exit: rich's answer to a broken pipe is SystemExit(1) (pre-merge audit of
+            # e6a1ab9b, MEDIUM 2 and LOW 5). 1 and 2 are the findings' codes here, and a text
+            # code exits 1, so those are exit 3; 0 and a code from 3 up keep their meaning.
+            if exc.code is None or (isinstance(exc.code, int) and exc.code not in (1, 2)):
+                raise
+            context = exc.__context__
+            if isinstance(context, OSError) and context.errno == errno.EPIPE:
+                _say_broken_pipe()
+            else:
+                _echo_err(
+                    f"error: unexpected exit with status {exc.code!r} (an internal error, not a "
+                    "scan result; rerun as `dottore -v ...` for the traceback)"
+                )
+            raise typer.Exit(int(ExitCode.ERROR)) from exc
+        except Exception as exc:
+            kind = _installed_click_kind(exc)
+            if kind == "exit":
+                # As a stray SystemExit: 1 and 2 are the findings' codes here.
+                code = getattr(exc, "exit_code", 0)
+                if code not in (1, 2):
+                    raise typer.Exit(code) from exc
+                _echo_err(
+                    f"error: unexpected exit with status {code!r} (an internal error, not a "
+                    "scan result; rerun as `dottore -v ...` for the traceback)"
+                )
+            elif kind == "abort":
+                _echo_err("error: aborted")
+            elif kind == "error":
+                format_message = getattr(exc, "format_message", None)
+                message = format_message() if callable(format_message) else str(exc)
+                _echo_err(f"error: {_masked(RuntimeError(message))}")
+            else:
+                _report_unexpected(exc, verbose=int(ctx.meta.get(_VERBOSE_KEY, 0) or 0))
+            raise typer.Exit(int(ExitCode.ERROR)) from exc
+
+
+def _report_unexpected(exc: Exception, *, verbose: int) -> None:
+    """Say on stderr what stopped the command, in one line (and its traceback under ``-v``)."""
+
+    if isinstance(exc, OSError) and exc.errno == errno.EPIPE:
+        _say_broken_pipe()
+        return
+    try:
+        said = _masked(exc)
+    except Exception:  # a message that cannot even be read: its class is what is left
+        said = "<unprintable message>"
+    _echo_err(
+        f"error: unexpected {type(exc).__name__}: {said} (an internal error, not a scan "
+        "result; rerun as `dottore -v ...` for the traceback)"
+    )
+    if verbose:
+        for line in "".join(traceback.format_exception(exc)).splitlines():
+            try:
+                _echo_err(_masked(RuntimeError(line)))
+            except Exception:
+                _echo_err("<unprintable traceback line>")
+
+
+#: What a command whose reader went away says, once, if stderr still has a reader.
+_BROKEN_PIPE = "error: the output stream closed before the command finished (broken pipe)"
+
+
+def _point_at_null(stream: Any) -> bool:
+    """Point ``stream``'s file descriptor at the null device; False when it has none.
+
+    The closed pipe is then never written again: the buffered text the next flush (the close
+    callback below, the interpreter's own at exit) writes goes nowhere, so neither raises a
+    second ``BrokenPipeError``, the one the command-line library turned into exit 1. What
+    Python's documentation advises for a closed stdout (Note on SIGPIPE, ``signal`` module).
+    """
+
+    try:
+        descriptor = stream.fileno()
+    except (AttributeError, OSError, ValueError):
+        return False
+    null = os.open(os.devnull, os.O_WRONLY)
+    try:
+        os.dup2(null, descriptor)
+    finally:
+        os.close(null)
+    return True
+
+
+class _QuietStream:
+    """A stream whose flush into a closed pipe is dropped; everything else is the stream's."""
+
+    def __init__(self, wrapped: Any) -> None:
+        self._wrapped = wrapped
+
+    def flush(self) -> None:
+        try:
+            self._wrapped.flush()
+        except OSError as exc:
+            if exc.errno != errno.EPIPE:
+                raise
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._wrapped, name)
+
+
+def _say_broken_pipe() -> None:
+    """Silence the closed stdout and say why on stderr (silenced too when it is closed as well)."""
+
+    if not _point_at_null(sys.stdout):
+        # A stream with no descriptor (a test runner's buffer): quiet it here, as the
+        # command-line library's own wrapper does (no private module of it is imported for that).
+        sys.stdout = _QuietStream(sys.stdout)
+    try:
+        typer.echo(_BROKEN_PIPE, err=True)
+    except OSError:
+        _point_at_null(sys.stderr)
+
+
+def _echo_err(text: str) -> None:
+    # stderr may be gone too: the exit code is then all that is left to say it.
+    with contextlib.suppress(OSError):
+        typer.echo(text, err=True)
+
+
+def _counted() -> Any:
+    """A counted flag's type (``-v``, ``-vv``), named so the help shows no value after it.
+
+    The help printed ``-v, --verbose  INTEGER  [default: 0]``, as if it took a number (pre-merge
+    audit of e6a1ab9b, LOW 8); the rich help leaves out a type named ``boolean``. The base is the
+    type Typer gives a counted option itself, read off one, not imported from a private module.
+    """
+
+    base = type(TyperOption(param_decls=["-v"], count=True).type)
+    counted = type("_Counted", (base,), {"name": "boolean", "__doc__": _counted.__doc__})
+    return counted(min=0)
 
 
 def _message(exc: BaseException) -> str:
@@ -128,35 +331,41 @@ def _print_usage_error(exc: BaseException) -> None:
     print(f"error: {_message(exc)}", file=sys.stderr)
 
 
+#: A usage error: printed with the command's usage block, its message masked.
+_USAGE_ERRORS: tuple[type[BaseException], ...] = (_typer_error("UsageError"),)
+
+
 def run_masked(call: Callable[[], Any]) -> NoReturn:
     """Run ``call`` (the command tree in click's non-standalone mode) and exit with its code.
 
     A usage error (a bad value, an unknown option or command, an extra argument) is printed
     masked and exits 3 (``ExitCode.ERROR``, A-9); a bare ``dottore``, which prints the help,
-    keeps its exit code; any other click error is printed masked with its own code; an abort
-    exits 1, and Ctrl-C 130 (which click returns as that code), as click's standalone mode does.
+    keeps its exit code. Any other error of the library (``FileError`` included) is printed
+    masked and exits 3, and an abort says ``error: aborted`` and exits 3, as the root group's
+    guard says one raised in a command (A-9's closure, u12 A-80). Ctrl-C keeps 130, which a
+    command returns as its code. The classes are Typer's public ones (``_typer_error``).
     """
 
     try:
         code = call()
-    except _click_classes("UsageError") as exc:
+    except _USAGE_ERRORS as exc:
         # The help of a bare `dottore` (no_args_is_help) was printed when the error was built;
         # Typer prints nothing more for it either.
         if type(exc).__name__ != "NoArgsIsHelpError":
             _print_usage_error(exc)
         sys.exit(int(ExitCode.ERROR))
-    except _click_classes("ClickException") as exc:
+    except _CLICK_ERRORS as exc:
         _mask_in_place(exc)
-        print(f"error: {_message(exc)}", file=sys.stderr)
-        sys.exit(int(getattr(exc, "exit_code", ExitCode.ERROR)))
-    except _click_classes("Abort"):
-        print("Aborted!", file=sys.stderr)
-        sys.exit(1)
+        _echo_err(f"error: {_message(exc)}")
+        sys.exit(int(ExitCode.ERROR))
+    except _ABORTS:
+        _echo_err("error: aborted")
+        sys.exit(int(ExitCode.ERROR))
     # A command returns nothing or raises `typer.Exit(code)`, which non-standalone mode returns.
     sys.exit(code if isinstance(code, int) and not isinstance(code, bool) else 0)
 
 
-class _MaskedGroup(TyperGroup):
+class _MaskedGroup(OperationalErrorGroup):
     """The root command, whose usage errors go through the CLI's mask on every path (u12 A-82).
 
     Parsing the root's options (``make_context``) and resolving and parsing a sub-command
@@ -167,6 +376,11 @@ class _MaskedGroup(TyperGroup):
     ``error:`` line (:func:`run_masked`). The console script used to point at the Typer app, and
     an install made then keeps calling it; with the masking only in ``cli.main.main``, three
     paths printed the key (pre-merge audits of A-82, MEDIUM 1 and round 2, LOW 1).
+
+    It is the exit-code guard (:class:`OperationalErrorGroup`, u12 A-80) with the mask around it:
+    each override calls ``super()``, so an unexpected exception still exits 3 in one masked line,
+    and the library's own exits 1 around the root context (a broken pipe while printing help,
+    ``Aborted!``) are still made 3.
     """
 
     def make_context(
@@ -178,14 +392,14 @@ class _MaskedGroup(TyperGroup):
     ) -> Any:
         try:
             return super().make_context(info_name, args, parent=parent, **extra)
-        except _click_classes("ClickException") as exc:
+        except _CLICK_ERRORS as exc:
             _mask_in_place(exc)
             raise
 
     def invoke(self, ctx: Any) -> Any:
         try:
-            return super().invoke(ctx)
-        except _click_classes("ClickException") as exc:
+            return super().invoke(ctx)  # the guard of OperationalErrorGroup runs inside
+        except _CLICK_ERRORS as exc:
             _mask_in_place(exc)
             raise
 
@@ -234,21 +448,19 @@ app.add_typer(schema_app, name="schema")
 
 # A usage error (an unknown option, a bad value) exits 3, the operational-error code. Click's
 # default is 2, which in this tool means "findings at or above --fail-on", so a CI step with a
-# typo in its flags reported a finding the scan never made (audit 2026-10-03, R17 / A-9).
-# Typer 0.26 raises from its own vendored copy of click, so both classes are set; a Typer
-# without the copy simply skips it.
-def _usage_errors_exit_3() -> None:
-    import importlib
-
-    for name in ("click.exceptions", "typer._click.exceptions"):
-        try:
-            module = importlib.import_module(name)
-        except ImportError:
-            continue
-        module.UsageError.exit_code = int(ExitCode.ERROR)
+# typo in its flags reported a finding the scan never made (audit 2026-10-03, R17 / A-9). Any
+# other error of the library (`ClickException`, `FileError`) exited 1, which means findings
+# below --fail-on (pre-merge audit of e6a1ab9b, LOW 5). The classes set are those Typer raises
+# and catches, whichever copy of click they come from.
+def _click_errors_exit_3() -> None:
+    # The classes Typer raises, found as the guard finds them (`_typer_error`), never through a
+    # private module path; a separately installed click is not imported here, its exceptions are
+    # mapped where one arrives (`_installed_click_kind`).
+    for name in ("UsageError", "ClickException"):
+        _typer_error(name).exit_code = int(ExitCode.ERROR)  # type: ignore[attr-defined]
 
 
-_usage_errors_exit_3()
+_click_errors_exit_3()
 
 
 def _version_callback(value: bool) -> None:
@@ -272,7 +484,26 @@ def _streams_escape_what_they_cannot_encode(ctx: typer.Context) -> None:
         errors = getattr(stream, "errors", None)
         if reconfigure is not None and errors is not None:
             reconfigure(errors="backslashreplace")
-            ctx.call_on_close(partial(reconfigure, errors=errors))
+            ctx.call_on_close(partial(_restore_stream, reconfigure, errors))
+
+
+def _restore_stream(reconfigure: Any, errors: str) -> None:
+    """Give a stream its error handler back; a reader that went away is exit 3 (u12 A-80).
+
+    Reconfiguring flushes, and a command whose output was still buffered met the closed pipe
+    here, after the command had returned: the command-line library turned that
+    ``BrokenPipeError`` into exit 1, which here means findings below ``--fail-on``, and a live
+    scan with findings piped into a closed reader sent its requests and exited 1 with nothing
+    said (pre-merge audit of ``e6a1ab9b``, MEDIUM 2).
+    """
+
+    try:
+        reconfigure(errors=errors)
+    except OSError as exc:
+        if exc.errno != errno.EPIPE:
+            raise
+        _say_broken_pipe()
+        raise typer.Exit(int(ExitCode.ERROR)) from exc
 
 
 @app.callback()
@@ -282,14 +513,43 @@ def _root(
         bool,
         typer.Option("--version", callback=_version_callback, is_eager=True, help="Show version."),
     ] = False,
+    verbose: Annotated[
+        int,
+        typer.Option(
+            "-v",
+            "--verbose",
+            count=True,
+            click_type=_counted(),
+            show_default=False,
+            help="Print the traceback of an internal error (exit 3), for any command. "
+            "`run -v` also prints the resolved plan.",
+        ),
+    ] = 0,
 ) -> None:
     """Il Dottore root - see ``dottore <command> --help`` for each command."""
 
+    ctx.meta[_VERBOSE_KEY] = verbose
     _streams_escape_what_they_cannot_encode(ctx)
 
 
 def _spec_paths(spec: list[Path] | None) -> list[Path]:
-    return list(spec) if spec else DEFAULT_SPEC_PATHS
+    """``--spec-path`` as given, else the default the reading commands share (u12 A-80).
+
+    A fallback to the battery beside the package is said on stderr: in a pack's own repository
+    (``pack.yaml`` at its root, no ``specs/``) a command read the built-in battery without a
+    word (pre-merge audit of e6a1ab9b, MEDIUM 3). ``lint`` does not fall back at all.
+    """
+
+    if spec:
+        return list(spec)
+    paths = wiring.default_spec_paths()
+    if paths == [wiring.PACKAGED_SPEC_PATH]:
+        _echo_err(
+            "note: there is no specs/ directory here, so this reads the battery beside the "
+            f"installed package: {visible_controls(str(wiring.PACKAGED_SPEC_PATH))} (pass "
+            "--spec-path to read another)"
+        )
+    return paths
 
 
 # --- run -------------------------------------------------------------------------
@@ -499,8 +759,19 @@ def _masked(exc: BaseException) -> str:
     # included; the entropy fallback, which cannot tell a sha256 or a random directory name from
     # a key, runs only on what is not kept below. Keeping a path raw skipped the email and
     # key-shape rules too (an existing `GoogleDrive-<email>` directory printed the address).
-    plain = Redactor(entropy_threshold=math.inf)
-    entropy = Redactor(patterns=[])
+    # The late patterns (the key formats, the JWT and the UUID, u01 A-78) run last, on what the
+    # entropy pass shows of each stretch it reads, as they run last in the redactor: run by
+    # `plain`, before the entropy pass, a key glued to a word took less than the pass took of its
+    # token (`x_<key>` printed `x_`); and neither redactor here has them, so each keeps as a
+    # mask only the types it had (one written in the error, `«REDACTED:jwt:...»` in a labelled
+    # value, is read as text by `entropy`, which then masks the value, as it did). What is kept
+    # (a digest, an existing path) is kept from them too: run over the whole message, they
+    # masked a UUID directory of an existing evidence root (pre-merge audit of A-78, L5).
+    # Without the late patterns, `plain` masks the number rules' numbers inside a UUID as
+    # before A-78, so the paths it leaves to keep are the ones it left before.
+    plain = Redactor(entropy_threshold=math.inf, late=False)
+    entropy = Redactor(patterns=[], late=False)
+    late = Redactor(patterns=[], entropy_threshold=math.inf)
     # A bare digest stays readable only when the error itself carries it as one this tool
     # computed (`digests` on ScopeChecksumError and TamperError): the redactor cannot tell a
     # sha256 from a 64-hex key, so keeping every bare 64-hex printed a raw key pasted as an
@@ -581,10 +852,10 @@ def _masked(exc: BaseException) -> str:
     done = 0
     for start, end in merged:
         kept = text[start:end]
-        shown.append(_entropy_masked(entropy, text[done:start]))
+        shown.append(late.redact_late(_entropy_masked(entropy, text[done:start])))
         shown.append(CREDENTIAL_MASK if holds_secret(kept) else kept)
         done = end
-    shown.append(_entropy_masked(entropy, text[done:]))
+    shown.append(late.redact_late(_entropy_masked(entropy, text[done:])))
     joined = "".join(shown)
     if loopback is not None:
         joined = joined.replace(_LOOPBACK_MARK, loopback)
@@ -593,6 +864,7 @@ def _masked(exc: BaseException) -> str:
 
 @app.command()
 def run(
+    ctx: typer.Context,
     target: Annotated[
         list[Path] | None,
         typer.Option("-t", "--target", help="Target file(s) (target.yaml). Repeatable."),
@@ -719,8 +991,9 @@ def run(
         typer.Option(
             "--include-needs-review",
             help="Also gate unconfirmed fails (not reproduced on every attempt of one variant, "
-            "or with --runs 1 of the spec, or below the confidence threshold). Undecided "
-            "results never gate.",
+            "or with --runs 1 of the spec, or below the confidence threshold, or reported by "
+            "the judge alone); SARIF then gives them their band's level. Undecided results "
+            "never gate.",
         ),
     ] = False,
     compare: Annotated[bool, typer.Option("--compare", help="Model-comparison matrix.")] = False,
@@ -739,16 +1012,31 @@ def run(
     ] = None,
     run_db: Annotated[Path | None, typer.Option("--run-db", help="Run store SQLite path.")] = None,
     spec_path: Annotated[
-        list[Path] | None, typer.Option("--spec-path", help="Spec search path (default specs/).")
+        list[Path] | None,
+        typer.Option(
+            "--spec-path",
+            help="Spec search path (default specs/ here, else the battery beside the package).",
+        ),
     ] = None,
     no_color: Annotated[bool, typer.Option("--no-color", help="Disable colour output.")] = False,
     quiet: Annotated[
         bool, typer.Option("-q", "--quiet", help="Suppress per-spec progress.")
     ] = False,
-    verbose: Annotated[int, typer.Option("-v", "--verbose", count=True, help="Verbosity.")] = 0,
+    verbose: Annotated[
+        int,
+        typer.Option(
+            "-v",
+            "--verbose",
+            count=True,
+            click_type=_counted(),
+            show_default=False,
+            help="Print the resolved plan, then run (-vv: the skipped and blocked ids too).",
+        ),
+    ] = 0,
 ) -> None:
     """Run a campaign against one or more targets."""
 
+    ctx.meta[_VERBOSE_KEY] = max(verbose, int(ctx.meta.get(_VERBOSE_KEY, 0) or 0))
     targets = list(target or []) + list(target_pos or [])
     outputs: dict[str, Path] = {}
     if o_json is not None:
@@ -822,7 +1110,7 @@ def run(
         raise typer.Exit(ExitCode.ERROR)
 
     try:
-        outcome = run_mod.execute_run(opts, _spec_paths(spec_path))
+        outcome = run_mod.execute_run(opts, _spec_paths(spec_path), default_spec_path=not spec_path)
     except ScopeRequiredError as exc:
         typer.echo(f"error: {_masked(exc)}", err=True)
         raise typer.Exit(ExitCode.ERROR) from exc
@@ -839,10 +1127,27 @@ def run(
         # step treating 1 as "carry on" would read a refused endpoint as a clean-ish scan.
         typer.echo(f"error: {_masked(exc)}", err=True)
         raise typer.Exit(ExitCode.ERROR) from exc
+    except sqlite3.Error as exc:
+        # The run store failed while the run used it (a lock held past the busy timeout, a full
+        # disk): an operational error, named after the store (u10 A-80).
+        _store_failed(opts.run_db or run_mod.DEFAULT_RUN_DB, exc)
 
     # The dry-run plan is printed by execute_run itself (it owns the resolved plan);
     # echoing a second, contentless line here just duplicated the header.
     raise typer.Exit(int(outcome.exit_code))
+
+
+def _store_failed(run_db: Path, exc: sqlite3.Error) -> NoReturn:
+    """Say which run store failed and exit 3 (a sqlite3 error that reached a command).
+
+    A lock held past the wait names its store already, and is said as it is.
+    """
+
+    from ildottore.store.migrations import StoreLocked
+
+    said = str(exc) if isinstance(exc, StoreLocked) else f"the run store at {run_db} failed: {exc}"
+    typer.echo(f"error: {_masked(RuntimeError(said))}", err=True)
+    raise typer.Exit(ExitCode.ERROR) from exc
 
 
 # --- fleet -----------------------------------------------------------------------
@@ -871,6 +1176,24 @@ def fleet(
     categories: Annotated[
         str | None, typer.Option("-p", "--categories", help="Comma-separated categories.")
     ] = None,
+    o_json: Annotated[Path | None, typer.Option("-oJ", help="Write JSON report.")] = None,
+    o_html: Annotated[Path | None, typer.Option("-oH", help="Write HTML report.")] = None,
+    o_sarif: Annotated[Path | None, typer.Option("-oS", help="Write SARIF report.")] = None,
+    o_junit: Annotated[Path | None, typer.Option("-oX", help="Write JUnit XML report.")] = None,
+    o_all: Annotated[
+        Path | None, typer.Option("-oA", help="Write all four formats to <prefix>.*")
+    ] = None,
+    evidence_root: Annotated[
+        Path | None, typer.Option("--evidence-root", help="Evidence store root dir.")
+    ] = None,
+    run_db: Annotated[Path | None, typer.Option("--run-db", help="Run store SQLite path.")] = None,
+    spec_path: Annotated[
+        list[Path] | None,
+        typer.Option(
+            "--spec-path",
+            help="Spec search path (default specs/ here, else the battery beside the package).",
+        ),
+    ] = None,
     no_color: Annotated[bool, typer.Option("--no-color", help="Disable colour output.")] = False,
 ) -> None:
     """Expand a fleet.yaml into an authorization scope + one target file per model.
@@ -879,6 +1202,9 @@ def fleet(
     reference, a local model, a raw URL, or an MCP server). Keys are never written, each
     entry references an env var. With ``--run`` it scans every expanded target right away.
     A judge is authorized only when the fleet file declares it in a ``judge:`` block.
+
+    ``--spec-path``, ``--evidence-root``, ``--run-db`` and ``-oJ/-oH/-oS/-oX/-oA`` mean what they
+    mean to ``run``; without ``--run`` they are carried into the printed ``dottore run`` line.
     """
 
     try:
@@ -899,13 +1225,24 @@ def fleet(
         typer.echo(f"skipped: {target_id} ({reason})")
     judge_file = judge if judge is not None else materialized.judge_path
 
+    asked = (("json", o_json), ("html", o_html), ("sarif", o_sarif), ("junit", o_junit))
+    outputs = {fmt: path for fmt, path in asked if path is not None}
     if not run_now:
         joined = " ".join(f'"{p}"' for p in materialized.target_paths)
         # Carry the judge into the hint: the scope authorizes it, and an operator following a
-        # hint that omits it drops the judge from the run.
+        # hint that omits it drops the judge from the run. The run options too, for the same
+        # reason (a hint without them writes the reports and the stores somewhere else).
         judge_arg = f' --judge "{judge_file}"' if judge_file is not None else ""
+        flags = {"json": "-oJ", "html": "-oH", "sarif": "-oS", "junit": "-oX"}
+        carried = [f'--spec-path "{p}"' for p in spec_path or []]
+        carried += [f'--evidence-root "{evidence_root}"'] if evidence_root is not None else []
+        carried += [f'--run-db "{run_db}"'] if run_db is not None else []
+        carried += [f'{flags[fmt]} "{path}"' for fmt, path in outputs.items()]
+        carried += [f'-oA "{o_all}"'] if o_all is not None else []
+        tail = "".join(f" {arg}" for arg in carried)
         typer.echo(
             f'\nRun it:\n  dottore run {joined} --scope "{materialized.scope_path}"{judge_arg}'
+            f"{tail}"
         )
         raise typer.Exit(ExitCode.CLEAN)
 
@@ -916,16 +1253,26 @@ def fleet(
         categories=[c.strip() for c in categories.split(",")] if categories else [],
         runs=runs,
         no_color=no_color,
+        outputs=outputs,
+        output_all_prefix=o_all,
+        evidence_root=evidence_root,
+        run_db=run_db,
+        extra_inputs=[("the fleet file", config)],
     )
     try:
-        outcome = run_mod.execute_run(opts, _spec_paths(None))
+        # The same default spec path as `run` (u12 A-80): it was `specs/` in the working
+        # directory with no option to change it, so `fleet --run` worked from the repository
+        # root only ("path not found: specs").
+        outcome = run_mod.execute_run(opts, _spec_paths(spec_path), default_spec_path=not spec_path)
     # AdapterError included for the same reason `run` includes it (see that handler): it
     # derives from Exception, so `fleet --run` used to turn an HTTP 401 or an off-allowlist
     # endpoint into a traceback and exit **1**, which in this tool means "findings below the
     # threshold". Identical condition, identical code path underneath, two exit codes.
-    except (ScopeRequiredError, PolicyError, AdapterError, ValueError, OSError) as exc:
+    except (ScopeRequiredError, PolicyError, AdapterError, TamperError, ValueError, OSError) as exc:
         typer.echo(f"error: {_masked(exc)}", err=True)
         raise typer.Exit(ExitCode.ERROR) from exc
+    except sqlite3.Error as exc:
+        _store_failed(opts.run_db or run_mod.DEFAULT_RUN_DB, exc)
     raise typer.Exit(int(outcome.exit_code))
 
 
@@ -1037,7 +1384,9 @@ def coverage(
         )
         raise typer.Exit(ExitCode.ERROR)
     try:
-        result = coverage_mod.battery_coverage(list(paths or DEFAULT_SPEC_PATHS), suite=suite)
+        result = coverage_mod.battery_coverage(
+            _spec_paths(paths), suite=suite, default_spec_path=not paths
+        )
     except (OSError, ValueError) as exc:
         typer.echo(f"error: {_masked(exc)}", err=True)
         raise typer.Exit(ExitCode.ERROR) from exc
@@ -1058,7 +1407,19 @@ def lint(
 ) -> None:
     """Schema + policy + fixtures-prove-detection lint (u02 command body)."""
 
-    search = paths or DEFAULT_SPEC_PATHS
+    # Strict: `specs/` here or the paths given, never the packaged battery. Linting that in a
+    # pack's own repository printed "lint OK ... across 75 spec(s)" over a broken spec of the
+    # pack, exit 0 (pre-merge audit of e6a1ab9b, MEDIUM 3). With no path and no `specs/` here
+    # it is refused as the reading commands refuse a missing spec path (exit 3).
+    if not paths and not Path("specs").is_dir():
+        typer.echo(
+            "error: spec path not found: specs. Pass the spec path to lint (dottore lint <dir>); "
+            "with none, lint reads specs/ in the working directory and never the battery beside "
+            "the installed package.",
+            err=True,
+        )
+        raise typer.Exit(ExitCode.ERROR)
+    search = list(paths) if paths else [Path("specs")]
     # A path the operator typed is echoed by the path findings, through the CLI's mask as every
     # other error line is: `lint <key>` printed the key (pre-merge audit of A-82, LOW a).
     code, output = run_lint(search, as_json=as_json, mask=lambda text: _masked(ValueError(text)))
@@ -1081,7 +1442,12 @@ def registry_ls(
 
     try:
         specs, unloaded = registry_mod.list_specs_and_unloaded(
-            _spec_paths(spec_path), category=category, owasp=owasp, tag=tag, suite=suite
+            _spec_paths(spec_path),
+            category=category,
+            owasp=owasp,
+            tag=tag,
+            suite=suite,
+            default_spec_path=not spec_path,
         )
     except ValueError as exc:  # an unknown suite, a spec path that holds nothing (A-82)
         typer.echo(f"error: {_masked(exc)}", err=True)
@@ -1100,7 +1466,9 @@ def describe(
     """Show one spec's detail card."""
 
     try:
-        spec = describe_mod.describe_spec(_spec_paths(spec_path), spec_id)
+        spec = describe_mod.describe_spec(
+            _spec_paths(spec_path), spec_id, default_spec_path=not spec_path
+        )
     except ValueError as exc:  # a spec path that holds nothing (A-82)
         typer.echo(f"error: {_masked(exc)}", err=True)
         raise typer.Exit(ExitCode.ERROR) from exc
@@ -1183,10 +1551,13 @@ def replay(
     from ildottore.store import TamperError
 
     try:
-        result, warning = replay_mod.replay_checked(evidence_root, run_id, run_db)
+        with run_mod.lock_waits_noted():
+            result, warning = replay_mod.replay_checked(evidence_root, run_id, run_db)
     except (OSError, ValueError, TamperError) as exc:
         typer.echo(f"error: {_masked(exc)}", err=True)
         raise typer.Exit(ExitCode.ERROR) from exc
+    except sqlite3.Error as exc:
+        _store_failed(run_db, exc)
     if warning is not None:
         # It names the --run-db path; written out like an error (`_masked`).
         typer.echo(f"warning: {visible_controls(warning)}", err=True)

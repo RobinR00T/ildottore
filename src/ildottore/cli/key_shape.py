@@ -13,7 +13,6 @@ word of a name refused ``sort_key``, ``session`` and ``max_token``.
 
 from __future__ import annotations
 
-import math
 import re
 from typing import Final
 from urllib.parse import unquote_plus
@@ -22,8 +21,12 @@ from ildottore.redactor import Redactor, credential_patterns
 
 __all__ = ["CREDENTIAL_NAMES", "key_shape", "names_a_credential", "normalised_name"]
 
-_FORMATS: Final = Redactor(patterns=credential_patterns(), entropy_threshold=math.inf)
-_ENTROPY: Final = Redactor(patterns=[])
+#: The credential formats: the built-in ones, and the documented key formats and the JWT, which
+#: the redactor masks whatever their entropy (u01 A-78). `without_entropy` leaves the UUID out,
+#: as it does for a model name: one names a tenant or a record, and no key format is one.
+_FORMATS: Final = Redactor(patterns=credential_patterns()).without_entropy()
+#: The entropy rule alone (its hex runs included): a hexadecimal identifier is let through first.
+_ENTROPY: Final = Redactor(patterns=[], late=False)
 #: A hexadecimal identifier, with a short lowercase prefix (`proj_`, `req_`) or none, or a UUID:
 #: what a trace, request, tenant or project id looks like, high in entropy and no key.
 _IDENTIFIER: Final = re.compile(

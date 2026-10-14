@@ -19,15 +19,77 @@ import re
 import tempfile
 from collections.abc import Callable, Sequence
 from pathlib import Path
-from typing import Protocol
+from typing import Final, Protocol
 
-from ildottore.redactor import Pattern, Redactor
+from ildottore.redactor import (
+    KeysNotDistinct,
+    Pattern,
+    Redactor,
+    mask_keys,
+    redact_split,
+    split_texts,
+)
 from ildottore.shared.models import Attempt, EvidenceRef
 from ildottore.store import paths
 
 
 class RedactionLeakError(RuntimeError):
-    """A raw secret/PII shape survived redaction - the write is refused (DL2)."""
+    """A raw secret/PII shape survived redaction - the write is refused (DL2).
+
+    ``evidence_refused`` is the structural marker the runner reads (``core`` imports no store):
+    it stores the attempt again with the pieces of its reply withheld (u01 A-77) instead of
+    ending the campaign, and a second refusal ends it as before.
+    """
+
+    evidence_refused = True
+
+
+class EvidenceStoreError(OSError):
+    """The evidence root cannot take a run's artifacts; the message names the root (u10 A-80)."""
+
+
+def check_root_path(root: Path) -> None:
+    """Refuse, writing nothing, an evidence root that cannot hold a directory (u10 A-80).
+
+    For the commands that promise to write nothing: a root that is a regular file, or lies
+    under one, is refused there too. The run itself proves the root with :func:`prepare_run`.
+    """
+
+    root = Path(root)
+    if root.exists():
+        if not root.is_dir():
+            raise EvidenceStoreError(f"cannot write evidence under {root}: it is not a directory")
+        return
+    ancestor = paths.nearest_existing(root.parent)
+    if ancestor is not None and not ancestor.is_dir():
+        raise EvidenceStoreError(
+            f"cannot write evidence under {root}: {ancestor} is not a directory"
+        )
+
+
+def prepare_run(root: Path, run_id: str, *, probes: bool = False) -> None:
+    """Create ``<root>/<run_id>/attempts`` (and ``probes``) and prove a file can be written there.
+
+    Called before a run sends anything. A root that was a regular file used to be found by the
+    first attempt's write, after the batch it belonged to was paid for (125 requests, then
+    ``NotADirectoryError``, nothing stored, and the requests counted against the resume's
+    ceiling). The proof is a temporary file created and removed in each directory, the way every
+    artifact is written (``_atomic_write``); the reader lists ``*.json`` only.
+    """
+
+    directories = [paths.attempts_dir(root, run_id)]
+    if probes:
+        directories.append(paths.probes_dir(root, run_id))
+    for directory in directories:
+        try:
+            directory.mkdir(parents=True, exist_ok=True)
+            descriptor, name = tempfile.mkstemp(
+                dir=directory, prefix=".write-check-", suffix=".tmp"
+            )
+            os.close(descriptor)
+            os.unlink(name)
+        except OSError as exc:
+            raise EvidenceStoreError(f"cannot write evidence under {root}: {exc}") from exc
 
 
 def _strip_media_carrier_bytes(obj: object) -> None:
@@ -53,13 +115,27 @@ def _strip_media_carrier_bytes(obj: object) -> None:
             _strip_media_carrier_bytes(item)
 
 
+#: One SHA-256 digest as the runner writes it (``shared.media.media_digest``).
+_SHA256_HEX: Final = re.compile(r"[0-9a-f]{64}")
+
+
+def _is_digest_list(value: object) -> bool:
+    """True for what the runner writes under ``media_sha256``: a list of SHA-256 hex digests."""
+
+    return isinstance(value, list) and all(
+        isinstance(digest, str) and _SHA256_HEX.fullmatch(digest) for digest in value
+    )
+
+
 def _pop_media_digest(dump: object) -> object | None:
     """Remove and return ``request.metadata.media_sha256`` (the chain-of-custody digest).
 
     The digest is a SHA-256 hex list: non-sensitive (a one-way hash) and the whole point of the
     multimodal evidence trail, but its entropy is above the redactor's threshold, so leaving it in
     would let redaction mask it into oblivion. It is exempted from redaction and restored verbatim
-    after the fail-closed guard runs (see ``put``).
+    after the fail-closed guard runs (see ``put``), only in that shape: a value under the name
+    that is anything else (a text, a list holding one) was put back unread, a key name being no
+    proof of what it holds (audit of main de122e26, LOW 7). It is redacted like any value.
     """
 
     if not isinstance(dump, dict):
@@ -68,7 +144,7 @@ def _pop_media_digest(dump: object) -> object | None:
     if not isinstance(request, dict):
         return None
     metadata = request.get("metadata")
-    if not isinstance(metadata, dict) or "media_sha256" not in metadata:
+    if not isinstance(metadata, dict) or not _is_digest_list(metadata.get("media_sha256")):
         return None
     digest: object = metadata.pop("media_sha256")
     return digest
@@ -171,18 +247,20 @@ class FsEvidenceStore:
         *,
         journal: ArtifactJournal | None = None,
     ) -> EvidenceRef:
-        # Value-redact the dump with the injected redactor, then mask dict KEYS separately
-        # so a secret in a key (e.g. a model-controlled tool-call argument name) is masked
-        # too (DL2). Keys are masked here but VALUES are left to ``redactor.redact``, so an
+        # Mask dict KEYS first, so a secret in a key (e.g. a model-controlled tool-call argument
+        # name) is masked too (DL2), then the VALUES with the injected redactor: each string,
+        # and each text the strings at one place in the items of a list make joined (a logprob's
+        # tokens, a WebSocket transcript's deltas: A-77). Keys first, so the lists are joined
+        # under the names the guard reads. Values are left to ``redactor.redact``, so an
         # incomplete object-redactor still leaves a raw value for the fail-closed guard to
-        # catch (the guard re-scans keys and values independently).
+        # catch (the guard re-scans keys, values and joined texts independently).
         dump = attempt.model_dump(mode="json")
         _strip_media_carrier_bytes(dump)
         # The chain-of-custody media digest is a safe one-way hash but its entropy is above the
         # redactor's threshold, so exempt it: pop it out before redaction + the fail-closed guard,
         # then restore it verbatim into the redacted payload that is hashed and written.
         media_digest = _pop_media_digest(dump)
-        redacted = self._mask_keys(self._redactor.redact(dump))
+        redacted = redact_split(self._redactor, self._mask_keys(dump))
         self._assert_no_leak(_canonical_json(redacted))
         _restore_media_digest(redacted, media_digest)
         payload = _canonical_json(redacted)
@@ -221,44 +299,33 @@ class FsEvidenceStore:
         a live target, which carries real logprobs/usage/latency, persists correctly.
         """
 
-        if _canonical_json(self._rescan_strings(json.loads(payload))) != payload:
+        parsed = json.loads(payload)
+        if _canonical_json(self._rescan_strings(parsed)) != payload:
             raise RedactionLeakError("unredacted secret/PII shape survived; write refused (DL2)")
+        # A secret in pieces: each piece passes the scan above, the text they make does not
+        # (A-77). Each text the strings at one place in the items of a list make is redacted
+        # joined, and must come back as it is.
+        for joined in split_texts(parsed):
+            if self._redactor.redact_text(joined) != joined:
+                raise RedactionLeakError(
+                    "a secret/PII shape split over the items of a list survived; "
+                    "write refused (DL2)"
+                )
 
     def _mask_keys(self, obj: object) -> object:
         """Mask dict KEYS via ``redact_text`` (recursively), leaving values untouched.
 
-        Values are already handled by the injected ``redactor.redact``; this only closes
-        the secret-in-a-key vector without hiding an incomplete value-redaction from the
-        fail-closed guard.
+        Values are handled by the injected ``redactor.redact``; this only closes the
+        secret-in-a-key vector without hiding an incomplete value-redaction from the fail-closed
+        guard. Two keys that mask alike are numbered (:func:`ildottore.redactor.mask_keys`, which
+        the reports use too), and keys no number tells apart refuse the write.
         """
 
-        if isinstance(obj, dict):
-            # Two keys can mask to one (`a@x.io` and `b@y.io` both read `«REDACTED:email»`):
-            # the second used to replace the first, and one value was gone from the evidence
-            # (pre-merge audit of the hostile-text block). A later one is numbered instead, and
-            # the numbered name is redacted itself: a suffix changes what the rules see (` (2)`
-            # after a date made a phone, ` #10000` after a label word a labelled secret, and
-            # `, #2` after `password: Secret` let the label rule take a value it refuses at the
-            # end), so a name that was not a fixed point made the leak guard refuse the reply.
-            # Each base counts on from its last number, so many colliding keys stay linear.
-            masked: dict[str, object] = {}
-            last: dict[str, int] = {}
-            for key, value in obj.items():
-                name = base = self._redactor.redact_text(str(key))
-                # More tries than names taken means the redaction swallows the number (from
-                # 10^8 it reads as a phone): refuse rather than loop (no reply holds that many).
-                for _ in range(len(masked) + 1):
-                    if name not in masked:
-                        break
-                    last[base] = last.get(base, 1) + 1
-                    name = self._redactor.redact_text(f"{base}, #{last[base]}")
-                else:
-                    raise RedactionLeakError("evidence keys could not be told apart; write refused")
-                masked[name] = self._mask_keys(value)
-            return masked
-        if isinstance(obj, list):
-            return [self._mask_keys(item) for item in obj]
-        return obj
+        try:
+            return mask_keys(self._redactor, obj)
+        except KeysNotDistinct as exc:
+            message = "evidence keys could not be told apart; write refused"
+            raise RedactionLeakError(message) from exc
 
     def _rescan_strings(self, obj: object) -> object:
         """Apply ``redact_text`` to every string leaf; leave numbers/None as-is.

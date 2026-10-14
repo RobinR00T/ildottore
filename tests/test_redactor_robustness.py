@@ -111,7 +111,14 @@ def test_every_mask_type_the_tool_writes_is_kept_as_written() -> None:
         written |= set(re.findall(r'Pattern\(\s*"(\w+)"', code))
         written |= set(re.findall(r'_MASK_TEMPLATE(?:_HASHED)?\.format\(type="(\w+)"', code))
     assert len(written) >= 15
-    kept = redactor_mod._OWN_MASK_TYPES | {p.type for p in redactor_mod._default_patterns()}
+    # The late patterns' types too (A-78): a redactor keeps them as it keeps its patterns' (the
+    # labelled rule alone reads them as text, `test_redactor_own_late_masks.py`).
+    late = set(redactor_mod._LATE_MASK_TYPES)
+    assert late == {"hex_token", *(p.type for p in redactor_mod._late_patterns())} - {
+        p.type for p in redactor_mod._default_patterns()
+    }
+    kept = redactor_mod._OWN_MASK_TYPES | {p.type for p in redactor_mod._default_patterns()} | late
+    assert kept == redactor_mod.Redactor()._mask_types
     assert written <= kept, sorted(written - kept)
 
 
@@ -334,12 +341,22 @@ def test_many_evidence_keys_that_collide_are_numbered_in_linear_time(tmp_path: P
     from ildottore.store.evidence_fs import FsEvidenceStore
 
     store = FsEvidenceStore(tmp_path, redactor=Redactor(salt="s"))
-    # 24,000 keys: 0.55 s here, 1.6 s under a CI-like coverage tracer; counting each base from
-    # 1 again took 31 s (quadratic), so 15 s separates the two on a slower runner too.
-    keys = {f"user{i}@x.io": i for i in range(24000)}
-    started = time.perf_counter()
-    masked = store._mask_keys(keys)
-    assert time.perf_counter() - started < 15.0 and len(masked) == 24000
+    # Counting each base from 1 again was quadratic: 24,000 keys took 31 s. Timed against a
+    # quarter of them in the same process, linear work takes about 4 times as long and quadratic
+    # work about 16, on any runner: an absolute limit (15 s) failed under the coverage tracer of
+    # a slower CI runner at 16.4 s for linear work (CI of #113). The ceiling only catches a hang.
+
+    def timed(n: int) -> float:
+        keys = {f"user{i}@x.io": i for i in range(n)}
+        started = time.perf_counter()
+        masked = store._mask_keys(keys)
+        elapsed = time.perf_counter() - started
+        assert len(masked) == n
+        return elapsed
+
+    small, large = timed(6_000), timed(24_000)
+    assert large < 120.0, large
+    assert large < 8 * small, (small, large)
 
 
 def test_the_skip_branches_take_only_long_runs() -> None:

@@ -55,7 +55,9 @@ def _selected(coverage: BatteryCoverage, framework: str) -> tuple[AxisCoverage, 
     return tuple(a for a in coverage.axes if a.key == framework)
 
 
-def battery_coverage(spec_paths: list[Path], *, suite: str | None = None) -> BatteryCoverage:
+def battery_coverage(
+    spec_paths: list[Path], *, suite: str | None = None, default_spec_path: bool = False
+) -> BatteryCoverage:
     """Load the registry (optionally narrowed to a suite) and compute static coverage.
 
     An unregistered ``--suite`` **raises**. It used to resolve to the empty spec set and
@@ -67,7 +69,7 @@ def battery_coverage(spec_paths: list[Path], *, suite: str | None = None) -> Bat
     registry, load_errors = wiring.load_registry(spec_paths)
     # A path that does not exist or holds nothing printed 0% on every axis and exited 0: the
     # same wrong answer as an unknown suite (u12 A-82, CLI audit L7).
-    wiring.refuse_spec_paths_that_hold_nothing(load_errors, to="measure")
+    wiring.refuse_spec_paths_that_hold_nothing(load_errors, to="measure", default=default_spec_path)
     specs: list[AttackSpec]
     if suite is not None:
         from ildottore.cli.flags import resolve_suite_id, unknown_suite

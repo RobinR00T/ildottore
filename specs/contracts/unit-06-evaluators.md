@@ -280,7 +280,23 @@ verdict and nothing of the judge's exchange is persisted, `docs/04 §5`.) PII/se
   `tests/evaluators/test_one_combination_rule.py` and `tests/registry/test_deprecated_combination.py`
   (48 tests: on `feb148f` the first does not import, `shared.combination` being new, and 6 of the
   second's 7 fail; with that module alone added, 17 of the 48 fail), the rewritten
-  `tests/evaluators/test_combine.py`.
+  `tests/evaluators/test_combine.py`. **Amended 2026-10-11 after the audit of the scoring:** a
+  fail the judge alone decided does not skip the runner's `setup_not_reached` check, since the
+  judge read a reply to a scene that never reached the model (LOW 2, u08's half); `run --help`
+  names it among the fails `--include-needs-review` gates (LOW 3: the help listed every other
+  kind); and SARIF gives a fail that needs review at most `warning`, not its band's `error`
+  (LOW 4, u11's half), so code scanning does not fail a check `dottore` passes; under
+  `--include-needs-review`, which makes it gate, it keeps its band's level (the pre-merge audit
+  of `d07a1088`, LOW 3, u11's half).
+- **A-74's u06 half (amended 2026-10-12 after the pre-merge audit of `d07a1088`, MEDIUM 2): an
+  `authz_leak` with fewer than two replies still reads the owner map.** It returned
+  `capability_unavailable` before reading anything, so with two identities, the owner's send
+  failed and the other's reply showing the owner's canary, the leak was not seen. The map is the
+  scope's (the runner fills it before each send, u08's half), and "A received B-only data" needs
+  no reply of B's: a canary the map gives another identity, in a reply that came back, is the
+  confirmed fail it is with two (`_owner_violations`, audit M14); anything else is
+  `capability_unavailable`, as before. Checked by `tests/evaluators/test_data_leak.py` (1 test,
+  failing on `d07a1088`).
 - `ruff check`, `mypy src/ildottore/evaluators` clean; `lint-imports` green.
 
 ## §8 Out of scope / forbidden

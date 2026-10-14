@@ -12,13 +12,19 @@ dottore \- spec-driven security scanner for LLMs and AI applications (nmap-for-A
 .br
 .B dottore
 .I fleet
-\fIfleet.yaml\fR [\fB--run\fR] [\fB--judge\fR \fIjudge.yaml\fR]
+\fIfleet.yaml\fR [\fB--run\fR] [\fB--judge\fR \fIjudge.yaml\fR] [\fIrun's store, spec path and report options\fR]
 .br
 .B dottore
 .I "lint | describe | registry | coverage | new-spec | replay | diff | calibrate | render-media | schema"
 [\fIARGS\fR]
 .PP
 There is no default command: always type the subcommand.
+.PP
+.B dottore -v
+.I command
+(a root option, also
+.BR "run -v" )
+prints the traceback of an internal error.
 .SH DESCRIPTION
 .B dottore
 (alias
@@ -53,7 +59,15 @@ block, which the scope authorizes and
 .B fleet
 writes to judge.yaml; a
 .B --judge
-file must name the same id, endpoint and credential, or it is refused. A ws:// or wss://
+file must name the same id, endpoint and credential, or it is refused.
+.BR --spec-path ,
+.BR --evidence-root ,
+.B --run-db
+and the report flags mean what they mean to
+.BR run ;
+without
+.B --run
+they are carried into the dottore run line fleet prints. A ws:// or wss://
 endpoint, or provider websocket, is refused before anything is written (exit 3): a fleet entry
 carries no websocket block, so that target file is written by hand (OD-37). A WebSocket judge
 block is accepted only with a matching hand-written
@@ -192,7 +206,9 @@ offline mock run, and the plan says so.
 .TP
 .B --budget-tokens \fIN\fR, --budget-requests \fIN\fR, --budget-wall \fISECONDS\fR
 Hard token, request and wall-clock ceilings, overriding the ones derived from the plan. From 0
-to 9007199254740992 (2**53).
+to 9007199254740992 (2**53). The attempts ceiling has no flag: it is the request ceiling, since
+an attempt is at least one request and counts only once its first request is accepted, so
+--budget-requests raises both.
 .TP
 .B --concurrency \fIN\fR
 Max concurrent specs (1 to 2**53).
@@ -212,14 +228,20 @@ out, and an operator: line names each granted tool the target file declares not 
 live run refuses before it sends anything.
 .TP
 .B --estimate
-Print a pre-run cost estimate (requests and tokens); send nothing. Output tokens are each
-send's max_tokens, the spec's own or the target file's sampling_defaults, or 512.
+Print a pre-run cost estimate (requests and tokens) and the ceilings each target runs under
+(requests, attempts, tokens, wall); send nothing. Output tokens are each
+send's max_tokens, the spec's own or the target file's sampling_defaults, or 512. Under -q it
+prints one line, as --dry-run -q does.
 .TP
 .B --resume \fIRUN_ID\fR
 Finish a halted run; answered attempts are not re-sent, and those that ended in an
 environment error are sent again under the same attempt id (not one a retry would repeat,
 marked [not retryable]), as is a reply the halt stored before the judge could evaluate it
 (one a deterministic check already failed keeps that fail and is not re-sent).
+The re-send is scored in place of the try it replaces (every stored attempt carries a
+send_number in request.metadata), except that an environment error or a block on the re-send of
+a reply that could not be read, or that the provider's filter cut, leaves that reply the attempt:
+it says nothing of the reply. dottore replay counts by the same rule.
 A run halted before it stored any reply (for example an identity sweep, a -sV probe pass, a
 conversation cut mid-way, a first request that failed, or a Ctrl-C) is resumed from the start,
 its spend carried; refused are one that spent no request, one whose run store journals
@@ -251,7 +273,10 @@ Write JSON / HTML / SARIF / JUnit; -oA writes all four to <prefix>.json, .html, 
 that already ends in one of the four extensions drops it first (-oA report.json writes
 report.json, report.html, report.sarif, report.xml). A report directory that does not exist,
 or two formats writing the same file (compared case-insensitively and after Unicode
-normalization), is refused before anything is sent. The JSON and SARIF reports, like every JSON
+normalization), is refused before anything is sent, and so is a report path that is an input of
+the run: the --scope file, a target file, the --judge file, the fleet file, the run store (or its
+-wal, -shm or -journal file) or a file the spec loader read (a spec, a suite, pack.yaml, a media
+asset), through a symlink or a hard link too. The JSON and SARIF reports, like every JSON
 output (lint --json, coverage --json, fingerprint, schema export), write the second # of
 ##<letters>[ as \eu0023, and the JUnit report as &#35;, so a CI runner reading a printed report
 finds no log command (GitHub's legacy ##[error], Azure's ##vso[...]); every JSON or XML reader
@@ -264,13 +289,29 @@ any confirmed finding).
 .B --include-needs-review
 Also gate unconfirmed exploits (an unconfirmed fail, a fail only the judge reported among
 them). An inconclusive result never gates.
-An unconfirmed fail prints FAIL (<band>, needs review) on its progress line.
+An unconfirmed fail prints FAIL (<band>, needs review) on its progress line, and its SARIF
+result is at most a warning (a confirmed fail keeps its band's level), so code scanning does
+not fail a check on a finding --fail-on lets through; with this flag it gates, so it keeps its
+band's level too, and the SARIF run's properties say include_needs_review: true.
 .TP
 .B --evidence-root \fIPATH\fR, --run-db \fIPATH\fR
-Evidence store root (default .dottore/evidence) and run store SQLite path.
+Evidence store root (default .dottore/evidence) and run store SQLite path (default
+\&.dottore/runs.sqlite). A store path that is a directory, a file that is not SQLite or a path
+under a regular file is refused in every mode before anything is sent, writing nothing (exit 3:
+"cannot open the run store at", "cannot write evidence under"); a sending run opens the run store
+and proves each run's evidence directory writable before its first request. Several runs may share
+one store: a write waits up to 30 s for a lock another process holds, in short tries Ctrl-C
+stops, says so on stderr after a second ("waiting for the run store"), and names the store when
+it gives up ("stayed locked by another process"). A report inside a run directory of the evidence
+store is refused.
 .TP
 .B --spec-path \fIPATH\fR
-Spec search path (default specs/).
+Spec search path. Default: specs/ in the working directory when it is a directory, else the
+battery beside the installed package (a source checkout or an editable install), which run,
+fleet --run, registry ls, describe, coverage and render-media say on stderr when they fall back
+to; lint does not fall back. With none given, a default that is not there is "spec path not
+found: <path>. Pass --spec-path <dir>; ..."; a path given that does not exist or holds nothing
+is "a spec path gives nothing to run" (or to list, to describe, to measure), exit 3 either way.
 .TP
 .B --no-color
 Disable colour output.
@@ -280,22 +321,28 @@ Suppress the per-spec progress lines.
 .TP
 .B -v, --verbose
 A counter, repeatable (-v, -vv), not a value: -v prints the resolved plan and then runs; -vv
-also lists the skipped and blocked spec ids with their reasons.
+also lists the skipped and blocked spec ids with their reasons. Either also prints the traceback of
+an internal error, as the root dottore -v does for any command.
 .SH "EXIT STATUS"
 .TP
 .B 0
 Clean: no gated finding at or above --fail-on.
 .TP
 .B 1
-Findings present but all below --fail-on.
+Findings present but all below --fail-on (for lint, lint findings). Nothing else exits 1: an
+internal error, an error or abort of the command-line library, a stray exit with status 1 and a
+broken output pipe are 3.
 .TP
 .B 2
 At least one gated finding at or above --fail-on.
 .TP
 .B 3
-Operational error (bad scope, unknown suite, I/O), a usage error (unknown option, bad value),
-or a run that did not finish (a hard budget ceiling halted it, every attempt failed on
-transport or got a reply that could not be read, or an error stopped it: a non-retryable 4xx,
+Operational error (bad scope, unknown suite, I/O, a run store or evidence root that cannot be
+used, a report path that is an input), a usage error (unknown option, bad value), an internal
+error (one line, "error: unexpected <Class>: ...", its traceback under -v), a broken output
+pipe, or a run that did not finish (a hard budget ceiling halted it, every attempt failed on
+transport or got a reply that could not be read, the provider's filter answered every attempt
+for the model and none failed (filtered), or an error stopped it: a non-retryable 4xx,
 or replies that could not be read, 5 in a row before any was read or 20 in a row after, aborted
 on UnreadableReplies). 3 takes precedence over 2: a run that did not finish exits 3 even when it found
 confirmed exploits, so read summary.status.reason before treating 3 as a retryable
@@ -325,8 +372,9 @@ OpenAI's HTTP 400 with the error code content_filter; Gemini's promptFeedback.bl
 only through a RestTemplate built in Python) does
 not stop the run: the attempt is inconclusive with the reason blocked_by_provider_filter, is not
 sent again, and is counted in the summary ("Blocked by the provider's input filter: N
-attempt(s) in S spec(s) never reached the model"). A run whose every attempt was refused that way
-completed; it is not "every attempt failed on transport". Any other 4xx still exits 3.
+attempt(s) in S spec(s) never reached the model"). Only from the provider that documents it:
+Azure's 400 from an openai target (or a RestTemplate that declares content_filter); from any other
+it is an ordinary 4xx. Any other 4xx still exits 3.
 .PP
 A reply the provider's filter cut or replaced (an HTTP 200 with its own stop reason: Azure OpenAI's
 content_filter, Anthropic's refusal; through a RestTemplate built in Python, a Bedrock guardrail's
@@ -334,10 +382,28 @@ guardrail_intervened and Gemini's SAFETY or RECITATION) is never scored as the m
 from a side that refused the prompt, it is blocked as above; from one that cut what the model wrote,
 the attempt is inconclusive with the reason cut_by_provider_output_filter and needs review; from a
 side the provider does not report, provider_filter_side_unknown. A spec with such an attempt and no
-fail is inconclusive, never a pass; a fail that rests on something present in what came back stands.
-The summary counts them ("Cut by the provider's output filter: N attempt(s) in S spec(s) came back
-cut or replaced"); they do not trip
+fail is inconclusive, never a pass; a fail that rests on something present in what came back stands,
+and so does the judge's on text the model wrote, as a fail that needs review (the text was
+delivered). The summary counts them ("Cut by the provider's output filter: N attempt(s) in S spec(s)
+came back cut or replaced"); they do not trip
 .BR --fail-on .
+Each adapter reads its own provider's filter words only: content_filter from an openai target,
+refusal from an anthropic one, Gemini's or Bedrock's from a RestTemplate in their shape, what a
+websocket target file lists under response.filter_stops (none by default). Any other filter word
+is an ordinary stop (foreign_stop in the stored reply), and the reply is the model's answer.
+An openai or anthropic target file declares filter_stops: [] for an endpoint that speaks the
+provider's API and has no OpenAI, Azure or Anthropic filter behind it (never a gateway in front
+of Azure, which relays Azure's filter): no HTTP 400, and no stop on a reply with text or a tool
+call, is then read as a filter's, while a reply with no text (whitespace or format characters
+that show nothing; a tag character is text) and no tool call that ends on the provider's own word
+still is, never a pass. A Bedrock guardrail's configured message is read only for a planted
+canary or secret, a crossing canary or the tool trace.
+.PP
+A run whose every attempt the provider's filter refused, cut or stopped, or that got no reply that
+could be read, with at least one of them the filter's and none a fail, exits 3 with the state
+filtered ("every one of the N attempt(s) was answered by the provider's filter"): it measured the
+filter, not the model. A partly filtered run keeps its exit status. dottore replay of such a
+run prints "run: filtered".
 .PP
 A target file may declare one of the deployment's own granted tools not destructive, as a
 seeded_setup.granted_tools entry {name: <tool>, destructive: false} (OD-43): tool_call then does
@@ -354,8 +420,14 @@ A success reply the adapter cannot read (not JSON, not an object, not the provid
 template's shape, a WebSocket frame or an MCP reply included) fails its attempt, inconclusive
 with the reason unreadable_reply, and is not sent again in the run (a resume sends it again); the
 run goes on, but the spec it belongs to is never a pass, the attempt keeps an excerpt of the
-body under request.metadata.unreadable_reply, and the summary says how many ("Unreadable
-replies: N attempt(s) in S spec(s)"). At 5 such replies in a row before any reply was read, or 20
+body under request.metadata.unreadable_reply (of a reply streamed as events or JSON lines and
+longer than 36 KiB, its structure only, the text it streams withheld and said so), and the
+summary says how many ("Unreadable replies: N attempt(s) in S spec(s)"). A tool the model
+called on an earlier turn of a conversation that such a reply, or an environment error, then
+ended is still scored: a forbidden call fails the attempt, the error kept under
+request.metadata.conversation_error. An identity of the multi-identity sweep whose reply could
+not be read, or whose send failed, is named in the verdict and keeps authz_leak from passing.
+At 5 such replies in a row before any reply was read, or 20
 in a row after (a target that broke mid-run), one benign request is sent first; only when that one
 cannot be read either does the run stop with exit 3, saying what to check for the target's
 provider. A content filter that answers attack prompts with a block page lets the check through,

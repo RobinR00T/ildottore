@@ -238,39 +238,42 @@ def test_the_entry_point_masks_in_a_real_process(launch: list[str]) -> None:
 
 
 @pytest.mark.parametrize(
-    ("raised", "expected_code", "expected_err"),
+    ("raised", "expected_err"),
     [
-        ("ClickException", 1, "error: "),
-        ("Abort", 1, "Aborted!"),
+        ("ClickException", "error: could not open "),
+        ("FileError", "error: "),
+        ("Abort", "error: aborted"),
     ],
 )
-def test_the_other_click_exceptions_are_handled_as_standalone_mode_did(
+def test_the_other_click_exceptions_exit_3_as_the_guard_closes_them(
     raised: str,
-    expected_code: int,
     expected_err: str,
     capsys: pytest.CaptureFixture[str],
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A click error that is not a usage error is printed masked with its own code; an abort
-    exits 1. No command raises either today; the branches keep click's standalone meaning."""
+    """A click error that is not a usage error is printed masked and exits 3, and an abort says
+    `error: aborted` and exits 3: A-9's closure (u12 A-80), where click's standalone mode exited
+    1, the code of findings below --fail-on. No command raises either before a command runs
+    today. The classes are Typer's public ones: `typer._click.exceptions` lost `Abort` in Typer
+    0.27, and `run_masked` let it escape uncaught there."""
 
-    try:
-        from typer._click import exceptions
-    except ImportError:  # a Typer without the vendored copy raises click's own
-        from click import exceptions  # type: ignore[no-redef]
-
-    from ildottore.cli.app import run_masked
+    from ildottore.cli.app import _typer_error, run_masked
 
     def raising() -> None:
         if raised == "Abort":
-            raise exceptions.Abort()
-        raise exceptions.ClickException(f"could not open {KEY}")
+            raise typer.Abort()
+        click_exception = _typer_error("ClickException")
+        if raised == "FileError":
+            # Typer exports no FileError: it is the library's subclass of its ClickException.
+            file_error = next(
+                cls for cls in click_exception.__subclasses__() if cls.__name__ == "FileError"
+            )
+            raise file_error(f"/{KEY}", hint="no such file")
+        raise click_exception(f"could not open {KEY}")
 
     with pytest.raises(SystemExit) as exit_info:
         run_masked(raising)
     out, err = capsys.readouterr()
-    code = exit_info.value.code
-    assert code == expected_code
+    assert exit_info.value.code == 3
     assert expected_err in err
     for fragment in FRAGMENTS:
         assert fragment not in out + err, err
@@ -298,13 +301,10 @@ def test_the_error_a_parent_group_catches_is_masked_already() -> None:
     """A caller that catches the exception itself (any click group that is not Typer's, or a
     script) reads the masked message too."""
 
-    try:
-        from typer._click import exceptions
-    except ImportError:  # pragma: no cover - a Typer without the vendored copy
-        from click import exceptions  # type: ignore[no-redef]
+    from ildottore.cli.app import _typer_error
 
     command = typer.main.get_command(app)
-    with pytest.raises(exceptions.UsageError) as info:
+    with pytest.raises(_typer_error("UsageError")) as info:
         command.main(["run", "--runs", KEY], standalone_mode=False)
     for fragment in FRAGMENTS:
         assert fragment not in info.value.format_message() and fragment not in str(info.value)

@@ -101,6 +101,543 @@ versioning: [SemVer](https://semver.org/).
   allowlist refusal's URL. `new-spec --family` refuses a control or format character and a value
   shaped like a key (`CVE-2021-44228` is a family), and writes any other text as a YAML string that reads back as written
   (`yes` as `"yes"`, not a boolean); `--id` is checked with `--stdout` too.
+- **With the store, budget and path fixes (u12 A-80) and the key formats (u01 A-78) merged in:**
+  a click error that is not a usage error, and an abort, exit 3 through the masked root command too
+  (`error: aborted`, where they exited with their own code and 1); a default spec path that is not
+  there reads `spec path not found: specs. Pass --spec-path <dir>; ...` in `run`, `fleet --run`,
+  `registry ls`, `describe` and `coverage`, and one given that holds nothing `a spec path gives
+  nothing to run: ...`; an Anthropic key in a fleet endpoint or a `--family` is called "a
+  credential format" (a UUID is still an identifier); and a credential variable that is not set or
+  holds only blanks is named as such, not as a credential shorter than 8 characters.
+
+### Fixed (what the sixth pre-merge audit, of `31cf86bf`, found in A-77, before it lands)
+
+- **A cut excerpt keeps no line whose mask came from the text it withholds (parity).** A line
+  that is no field of an event stream (a comment, a line starting with a space or `=`) can take
+  its mask in `main`'s excerpt from the text before it: plain-text data ending in `password:`,
+  `password` or `token=`, then the value as a comment, after a blank line or not, or on a line
+  starting with a space or `=`, is masked by `main` through the label, but the cut excerpt
+  emptied the label and showed `Tr0ub4dor-and-3` (`context_loss.py`, 5 of 17 forms). A cut
+  excerpt now keeps only blank lines, JSON lines and the format's `data`, `event`, `id` and
+  `retry` fields (the auditor's `patch-drop-nonfield-lines.diff`): 0 of 17 forms show more than
+  `main` (5 show less); `reach.py` 0 of 15 more (3 fewer: comment lines go), `kept_fields.py` 0 of
+  96, `window_attacks.py` 36 of 36 clean, clean bodies that fit the window 0 of 1,498 differ from
+  `main`; `cost3.py` 0.01 to 0.21 s on 4 MiB bodies.
+
+### Fixed (what the fifth pre-merge audit, of `6d7d990e`, found in A-77, before it lands)
+
+- **A cut stream's excerpt reaches no further into the body than `main`'s (parity).** Its lines,
+  emptied of their streamed text, are short, so the 4 KiB excerpt reached lines `main`'s never
+  reached, and what it keeps outside the streamed text (comment, `event:` and `id:` lines, an
+  event's `id` or `model`, Ollama's `created_at` and `done_reason`, Anthropic's `type`) showed
+  more of a secret a target placed there than `main` did: 11 of 11 pieces where `main` showed 8
+  (`reach.py`), and one more piece than `main` in 3 of 96 kept-field cases. Only the lines that
+  `main`'s excerpt of the body shows whole are kept now, found by redacting them as `main` does:
+  a fixed 4 KiB of the body was not enough where `main`'s own masks lengthen what it shows (short
+  emails in every event: `main` none of 11 pieces, 4 KiB 8). `reach.py` 0 of 15 cases and
+  `kept_fields.py` 0 of 96 show more than `main`, and none fewer; `window_attacks.py` 36 of 36
+  clean; clean bodies past the window 240 of 320 differ from `main` only by the withheld text and
+  the notice (20,308 events and lines checked); `cost3.py` 0.01 to 0.20 s on 4 MiB bodies.
+
+### Fixed (what the fourth pre-merge audit, of `5dd87b42`, found in A-77, before it lands)
+
+- **A cut stream's excerpt shows no streamed text (MEDIUM, a regression against `main`).** The
+  window read only a long stream's head, but masks shorten a text, so what lay near the window's cut
+  moved up into the 4 KiB the excerpt shows, and a secret whose pieces crossed the cut, never read
+  whole, showed its beginning: a URL password with symbols at 7 of 31 cuts in three stream shapes, a
+  300-character registered credential at 70 of 111 (`window_attacks.py`, case A; `main` 0). Showing
+  only the window's first half and leaving out each stream's open tail still let a 600-character URL
+  password of words show 20 to 61 of its characters, where `main` showed 0 to 3, and a stream that
+  paused past the window show its secret's head (case B, 16 of 36 rows). By the owner's decision of
+  2026-10-13, under the delegation (best practice), the excerpt fails closed: it may show less than
+  `main`, never more. A body streamed as events or as JSON lines in a shape known to stream, and
+  longer than the window (36 KiB with no long registered credential), keeps in its excerpt the lines
+  `main`'s excerpt shows whole (since the fifth pre-merge audit, above) with every streamed text
+  value emptied (content and delta text, a `response`, a logprob token and its alternatives, a
+  `data:` line's text; `bytes` and Ollama's `context` nulled), its keys, structure, numbers and
+  protocol fields, roles, finish and stop reasons kept, under a first line that says the text is
+  withheld. Case A and case B: 0 of 36 rows each; the long password 0 characters at every start;
+  clean bodies that fit the window `main`'s excerpt byte for byte (1,498 of 1,498); clean bodies
+  past it differ from `main` only by the withheld text and the notice (240 of 320, the six shapes
+  that stream, every shown event or line checked, 20,308); `cost3.py` 0.01 to 0.20 s on 4 MiB bodies
+  (0.01 to 0.21 s on `5dd87b42`).
+- **An event stream's logprobs spell no masked token (found with that fix, not by the audit).**
+  An OpenAI chunk streamed with logprobs holds a logprob list of one item, which was no logprob
+  list: the excerpt masked its token as the stream's piece but kept its `bytes`, which spelled
+  the key in order (on `main` too), and joined each rank of alternatives across the chunks, which
+  A-77 says alternatives are not, so 4 of 6 clean replies streamed with alternatives were quoted
+  otherwise than by `main`. A transcript's alternatives are no stream, and a transcript's piece
+  that is a logprob item's token has the item's alternatives masked and its `bytes` dropped, as
+  a list's token has; a one-item list has the `bytes` of a token masked on its own dropped. Now
+  no rebuild, and 0 of 6 differ from `main`.
+
+### Fixed (what the third pre-merge audit, of `74ace451`, found in A-77, before it lands)
+
+- **A log of JSON lines is quoted as main quotes it (LOW).** Any body whose lines were all JSON
+  objects was read as a stream, so a log's fields were joined across its records and masked
+  (`"msg":"emoji"` became a high-entropy mask, later fields went empty, rewritten lines lost their
+  compact form): 181 of 217 clean JSON Lines logs were quoted otherwise than by `main`, now 0 of
+  217. Only lines in a shape known to stream are a stream (Ollama's, a `done` beside a `message`
+  or a `response`; OpenAI's chunks); any other body of JSON lines is records, string by string.
+  A line rewritten keeps its compact form.
+- **A block of `data:` lines is read line by line beside a masked event (LOW).** The line-by-line
+  reading ran only when the format's masked nothing, so one masked event let a block of `data:`
+  lines with no blank line between them keep a key in clear; an event of several `data:` lines
+  that make no JSON object or array is now read line by line in the one reading, so a clean
+  stream is read once.
+- **An excerpt reads only the head it can show (LOW).** A 4 MiB hostile stream cost up to 12.8 s
+  in the audit (18.0 s here, `data` events with no colon; `main` 0.00 s); the excerpt keeps at most
+  4 KiB, so only four times the part it reads is read (36 KiB with no long registered
+  credential), and each stream that reaches past half that window has its open tail left out (a
+  run of key characters up to 256 long, a registered credential's beginning). That did not keep
+  a secret's beginning out of the excerpt where masks shortened the head; since the fourth
+  pre-merge audit's fix, above, a body the window cuts has its streamed text withheld instead.
+  `cost3.py` on 4 MiB bodies: 0.01 to 0.24 s, was 0.10 to 17.98 s.
+- **Figures (LOW).** The second audit's `sse_variants.py` figure was the key in 9 of 19 shapes
+  and the credential in 9, not 10. A-77's not-covered list is made exact.
+
+### Fixed (what the second pre-merge audit, of `ea13562f`, found in A-77, before it lands)
+
+- **A rewritten excerpt keeps a grouped phone or card masked (MEDIUM, a regression against
+  `main`).** The excerpt of a reply the adapters could not read is rewritten when it holds a reply
+  in pieces, and was written with `json.dumps`' ASCII escaping, so the text outside any stream
+  reached the excerpt's redaction `\u00a0`-escaped: `Appelez le +33 6 12 34 56 78 merci.` grouped
+  by no-break spaces, in an OpenAI-compatible body whose `content` is a list of parts, was shown
+  where `main` printed `«REDACTED:phone»`, and so was a card grouped by U+00A0 or U+202F, in the
+  JSON-body path and the event-stream path (`reserialize_leak.py`: 3 of 3 visible in both, now
+  masked). Both are written as the target wrote them, and so is a WebSocket turn's excerpt.
+- **An event stream is read as the format says, and NDJSON too (MEDIUM).** The excerpt split the
+  stream with `str.splitlines` and read one JSON object per `data:` line, so a raw U+2028 or
+  U+0085 inside an event's JSON, an event's JSON over two `data:` lines, plain-text data and
+  JSON-string data were rebuilt (`sse_variants.py`: the key rebuilt in 9 of 19 shapes and the
+  credential in 9, now in 2 and 1, neither an event of the format: a `data:` after a space,
+  deltas on plain lines). Lines end at
+  CRLF, LF or CR only, a leading U+FEFF is dropped, a blank line ends an event, comments and
+  fields are read as the format writes them, an event's `data` lines join with LF, data that is
+  a JSON object or array is masked field by field across the events and any other data as the
+  text of one stream, a page of `data:` lines with no blank line between them is read line by
+  line, and a body of JSON lines in the shape Ollama or OpenAI's chunks stream is masked the same
+  way (the third pre-merge audit narrowed it from any JSON lines, below). Not covered, in A-77:
+  the excerpt shapes its list names.
+- **A withheld reply is said in SARIF and on the terminal, and probes are withheld too (LOW).**
+  SARIF adds the finding's "stored with the pieces of the reply withheld" to the result's message
+  and an `evidence_withheld` count to the result and the run; the terminal prints an `Evidence
+  withheld:` line naming the specs. A recognition probe whose write is refused (the watch's
+  benign check, `-sV`) is stored withheld the same way, where it ended the run.
+- **Figures and wording (LOW).** Joined, the pieces show each mask once and never more than the
+  redacted text; they show less where a literal between two masks could stand in more than one
+  place (the masks merge and that literal goes: 8 of 1,500 realistic replies, 309 of 1,500
+  hostile ones), where the docs said they read as the redacted text. The rank figure below is
+  6.9% of all the alternatives of clean replies (5,794 of 83,950), each beside a token that was
+  kept.
+
+### Fixed (what the pre-merge audit of `c4bd2012` found in A-77, before it lands)
+
+- **A URL password masked in pieces no longer makes the guard refuse the reply and end the run
+  (HIGH).** Each piece a mask covered showed the mask, so the pieces joined read
+  `user:«REDACTED:url_password»«REDACTED:url_password»...@host`, which the URL rule masks again as
+  one, and the guard refused a reply masked correctly: `postgresql://user:password@localhost:5432/mydb`
+  in 3-character tokens aborted the campaign (`aborted on RedactionLeakError ... 1 of 1 specs never
+  ran`, exit 3, where `main` exits 0), and so did 18 of 18 connection strings at token sizes 1 to
+  8 and two in WebSocket deltas. The first piece a mask covers now shows it and the others lose
+  the text under it, so the pieces joined show each mask once: 18 of 18 stored, the run
+  exits 0, and the auditor's fuzz counts 0 refusals in 3,000 cases (110 to 122 per 1,000 before).
+  A refused write no longer ends the campaign alone: the attempt is stored with the pieces of its
+  reply withheld, its text, figures and verdict kept and `request.metadata.evidence_withheld`
+  saying why, and the finding's line says `stored with the pieces of the reply withheld`; a second
+  refusal ends the run as before.
+- **An alternative keeps nothing of a masked token (MEDIUM).** A rank's own edit landed after the
+  alternatives were masked and left 10 characters of a labelled password in one. They are masked
+  once the item's every edit is made, an alternative written as the token showing what the token
+  shows.
+- **A reply streamed as server-sent events is quoted masked (MEDIUM).** A body that is not JSON
+  was quoted as it came, each delta redacted alone, so a key or a registered credential in
+  3-character deltas was rebuilt from the excerpt; its events, one JSON object per `data:` line
+  in this round, are masked across the events as a transcript is (the second pre-merge audit
+  widened it to the format, above).
+- **The `bytes` of every masked token and alternative are dropped (LOW),** whether the mask comes
+  from its stream or from the token alone: they spelled a key a rank's mask hid.
+- **A rank of alternatives is no stream (LOW).** Side by side, alternatives are text no one wrote:
+  joining a rank masked 6.9% of all the alternatives of clean replies (5,794 of 83,950 on the
+  auditor's 898 clean replies), each beside a token that was kept; none now. Not covered,
+  recorded in A-77: a secret that the alternatives
+  alone spell beside kept tokens.
+
+### Fixed (a secret kept in pieces is masked as the text they make: u01 A-77, audit of main `de122e26`)
+
+- **No secret is rebuilt from a reply's logprob tokens or a transcript's deltas (HIGH 1).** The
+  redactor masked each string on its own, and the evidence store and the reports inherit that:
+  `response.text` read masked while the same text was kept in pieces of 1 to 4 characters in
+  `response.logprobs[*].token` and each token's `top` alternatives (the OpenAI adapter asks for
+  logprobs by default, so every `provider: openai` target) and in the deltas of
+  `raw_ids.websocket.frames`. Joined, they gave back the run's canary and an `sk-proj-` key from
+  the evidence and `r.json` (the auditor's loopback stub, `PI-DIRECT-001`: the joined tokens held
+  both in all three evidence files and in `r.json`; now in none), and a registered credential, an
+  email and a key from a transcript's three deltas (rebuilt in all three cases; now in none). A
+  logprob list's tokens, and a transcript's received content field by field, are now joined and
+  redacted once; the first piece a mask covers shows it and the others lose the text under it,
+  so the pieces joined show each mask once and never more than the redacted text, and a masked
+  token's alternatives show its
+  masks and lose the `bytes` OpenAI writes beside them. The figures,
+  the token count and every other piece are kept, so `dottore replay` and `logprob_membership`
+  read the run as before. The pieces are masked rather than dropped because the alternatives and
+  a transcript's other content are in no other field, and a figure is read with its token.
+- **The evidence store's guard reads the pieces joined.** The fail-closed guard redacted one
+  string at a time and passed the pieces; it now redacts every joined text of the stored streams
+  too, and refuses the write when one still masks something; the runner then stores the attempt
+  with the pieces of its reply withheld instead of ending the campaign.
+- **Evidence written before this change keeps the pieces.** An attempt stored by an earlier
+  build against a `provider: openai` target (its `response.logprobs`) or a `provider: websocket`
+  one (its `raw_ids.websocket.frames`) may hold a secret the text masks, rebuilt by joining the
+  pieces: treat such evidence trees as holding the reply in clear, and delete or re-run them.
+- **A WebSocket transcript names its protocol's fields.** `raw_ids.websocket` gains
+  `protocol_paths`, the frame fields the target file declares (`type_path`, `final_path`,
+  `error_path`, the ids, `usage_path`, `tool_calls_path`, the `expect` paths): joined, every frame
+  type read as one high-entropy token and was masked, so those fields are never joined, and the
+  rest of a frame received is masked across the frames as the text it makes, in memory, at rest
+  and in reports. A turn with no text quotes its frames in the excerpt masked the same way, and an
+  unreadable JSON body's OpenAI logprobs are quoted masked; any other excerpt is byte for byte as
+  before.
+- **The JSON report masks the keys of an attempt's free-form fields (MEDIUM 2).** `redact()` masks
+  values only, and the report had no key masking: a tool call whose argument names were an
+  `sk-proj-` key, a registered credential and an email showed all three in `r.json`, and so did
+  `usage` and frame keys. Each attempt's `request.messages`, `tools`, `media` and `metadata` and
+  `response.tool_calls`, `raw_ids` and `usage` now have their keys masked as the evidence store
+  masks them, two that mask alike numbered apart (`«REDACTED:email»`, `«REDACTED:email», #2`); the
+  model's own keys stay, so the report validates. The key masking moved to
+  `redactor.mask_keys`, which the store and the reports share.
+- **A judge's words beside a cut reply are redacted before they are cut (LOW 5).**
+  `_judge_record` and `_judge_not_consulted` folded the text and cut it at 240 characters before
+  any redaction: 61 of the auditor's 305 placements of a secret across the cut left 6 or more of
+  its characters readable, and a credential registered with a tab was shown whole. They now
+  redact, fold, redact again and cut, never inside a mask or a token: 0 of 305.
+- **`media_sha256` is put back verbatim only as SHA-256 hex digests (LOW 7).** The evidence store
+  exempted the value by its key name; anything but a list of 64-hex digests is now redacted like
+  any value.
+
+### Fixed (the CLI audit of `de122e26`: crashes that exited 1, a ceiling no flag raised, reports over inputs, u12 A-80)
+
+- **Nothing but findings exits 1.** Exit 1 means "findings below `--fail-on`", so a CI gate that
+  lets 1 through read a crashed scan as a pass. A `--run-db` naming a directory or a file that is
+  not SQLite, `replay --run-db <garbage>`, and some of several `dottore run` started together on a
+  new `--run-db` (`OperationalError: database is locked`; 5 of 6 in the audit, 1 and 2 of 18 in
+  two re-measurements) ended in a traceback with exit 1. They are
+  now `error: cannot open the run store at <path>: <reason>` (exit 3), a sqlite3 error later in a
+  run is `error: the run store at <path> failed: <reason>` (exit 3), and the root command group
+  turns any exception no command handles into exit 3 with one masked line (``error: unexpected
+  <Class>: <message> (an internal error, not a scan result; rerun as `dottore -v ...` for the
+  traceback)``), its traceback (masked line by line) only under the new root `dottore -v` or `run
+  -v`. The command-line library's other errors (a `ClickException`, a `FileError`: exit 1 by
+  default, from the vendored copy Typer raises from or from a click installed beside it, which a
+  plugin may raise from and which the CLI never imports itself), its `Aborted!` and an exit a
+  library asks for with status 1, 2 or a message are exit 3 too. The classes are found from
+  Typer's public names (`typer.Exit`, `typer.Abort`, the ancestry of `typer.BadParameter`), so
+  Typer 0.26 and 0.27, which moved `Abort` and `Exit` out of its vendored copy of click, map the
+  same. A broken output pipe is exit 3 with `error: the output stream closed before the command
+  finished (broken pipe)`: `registry ls`, `lint`, `describe`, `coverage` and `--help` into a
+  reader that had gone exited 1, and so did a scan with findings, whose progress lines met the
+  closed pipe (rich answers that with `SystemExit(1)`); stdout is pointed at the null device so no
+  later flush meets the pipe again. Ctrl-C keeps 130; `lint` still exits 1 on lint findings.
+- **The stores are checked before the first send.** Every mode checks `--run-db` and
+  `--evidence-root` without writing (the dry run, the estimate and `-sn` included, which still
+  write nothing), and a sending run opens the run store and proves each run's `attempts/` (and
+  `probes/` with `-sV`) writable before its first request. With `-sV` the store used to be opened
+  after the 18 probes, and a `--evidence-root` that was a regular file was found by the first
+  attempt's write, after its batch was paid for (125 requests in the audit, then
+  `NotADirectoryError`, nothing stored, and the requests counted against the resume's ceiling).
+  Against a loopback stub: `-sV --run-db <garbage>` sent 18 requests then exited 1, now 0 and 3;
+  `--quick --evidence-root <file>` sent 5 then exited 3, now 0 and 3.
+- **Concurrent runs on one store.** A statement waits up to 30 s for a lock another process holds
+  (it was SQLite's 5 s default), in tries of 0.1 s with Python's sleeps between them, so Ctrl-C
+  and SIGTERM stop the wait at once (one 30 s wait in C held them for about 32 s); a wait past a
+  second prints `note: waiting for the run store at <path>: another process holds its lock (up to
+  30 s; Ctrl-C stops the wait)` once per run, and one that runs out is `the run store at <path>
+  stayed locked by another process for 30 s` (exit 3), naming the store once, mid-run too. The
+  store layer itself says nothing of a wait: its caller passes a callback (`migrations.connect(...,
+  on_lock_wait=...)`, or `lock_waits_reported(...)` for every connection within), which the CLI
+  does. The switch to WAL is
+  retried the same way (SQLite refuses it as busy at once while another connection holds the
+  file), and a migration takes the write lock before it reads the version it starts from, in one
+  transaction (two processes could both add the same column, and each script step committed on its
+  own; it no longer commits a caller's open transaction either). Measured: 18 of 80 concurrent
+  first opens failed before (8 processes, 10 rounds), 0 of 160 after; through the CLI, 1 of 18 runs
+  died before (three rounds of six), 0 of 30 after (five rounds).
+- **A campaign over 20,000 attempts finishes.** The attempts ceiling was derived from the estimate
+  and capped at 20,000 on its own, the `--budget-*` overrides left it out and no flag raised it:
+  `--runs 200 --budget-requests 60000 --budget-tokens 30000000 --budget-wall 7200` over the
+  battery halted on `max_attempts` (limit
+  20,000) with 2 of 75 specs unfinished, exit 3. The attempts ceiling is the request ceiling now
+  (an attempt is at least one request), so it cannot stop a run before the request ceiling and
+  `--budget-requests` raises both; the same run completes (20,600 attempts, 29,400 requests, exit
+  2). A library caller can still name an attempts ceiling of its own.
+- **An attempt counts once its request is accepted.** It was debited before its first request, so
+  one the ceiling refused still counted, and the runner, which keeps starting specs after a
+  ceiling, added one per spec: the battery under `--budget-requests 100` recorded 128 attempts for
+  100 requests and a resume at the same ceiling 43 more; now 85 (multi-turn attempts take several
+  requests) and none more. The ledger counts an attempt in the same atomic debit as its first
+  request (`debit_request(opens_attempt=True)`). A resume of a run recorded before this reads its
+  attempts as at most its requests.
+- **`--estimate` shows the ceilings, and prints under `-q`.** It prints `ceilings: <n> requests,
+  <n> attempts (one per accepted request), <n> tokens, <n>s wall` (one line per target when they
+  differ), and the dry run's `budgets:` line adds the attempts. `--estimate -q` printed nothing and
+  exited 0; it prints one line now, as `--dry-run -q` does.
+- **A report never overwrites an input.** `-oJ scope.yaml -oH target.yaml` overwrote both with the
+  reports after the run. A report path that is the `--scope` file, a target file, the `--judge`
+  file, the fleet file of `fleet --run`, the run store or its `-wal`, `-shm` or `-journal` file
+  (before the store exists too, and beside the file a symlinked `--run-db` names), or a file the
+  spec loader read (a spec, a suite, a `pack.yaml`, a media asset) is refused before anything is
+  sent (exit 3); an existing output is compared with each of them by device and inode, so a
+  symlink, a hard link or another spelling on a case-insensitive volume is caught (`-oJ
+  SPECS/attacks/<spec>.yaml` beside `--spec-path specs`), while a report beside them, such as the
+  previous run's `out.json` under `--spec-path .`, is not refused. So is a report inside a run directory of the evidence store
+  (`<evidence-root>/<run-id>/`): one written over an artifact made the next resume refuse the run
+  as tampered. `replay --run-db <directory>` is refused as `run` refuses it; it warned and replayed
+  without the manifest check.
+- **One default spec path, and `fleet --run` from anywhere.** `fleet --run` read `specs/` in the
+  working directory with no option to change it (`path not found: specs` outside the repository
+  root). `run`, `fleet --run`, `registry ls`, `describe`, `coverage` and `render-media` now read
+  `specs/` in the working directory when it is a directory, else the battery beside the installed
+  package (a source checkout or an editable install; a wheel ships neither the battery nor the
+  schemas), and say on stderr when they fall back (`note: there is no specs/ directory here, so
+  this reads the battery beside the installed package: <path> ...`). `dottore lint` does not fall
+  back: in a pack's own repository with no `specs/` it refuses with exit 3 (`spec path not found:
+  specs. Pass the spec path to lint ...`)
+  rather than passing the built-in battery. A spec path that does not exist is `spec path not
+  found: <path>. Pass --spec-path <dir>; ...` instead of `1 spec file(s) failed to load ...: ?:
+  path not found: specs`.
+
+### Added (`fleet` takes run's store and report options; a root `-v`)
+
+- `dottore fleet` takes `--spec-path`, `--evidence-root`, `--run-db` and `-oJ/-oH/-oS/-oX/-oA` with
+  `run`'s meaning; without `--run` they are carried into the `dottore run` line it prints.
+- `dottore -v <command>` prints the traceback of an internal error for any command (`run -v` does
+  too, beside printing the plan). Both read as counted flags in the help (`INTEGER [default: 0]`
+  before).
+
+### Fixed (key formats, hex runs and UUIDs masked whatever their entropy; a credential under 8 characters refused by every adapter, u01 A-78)
+
+Found by the pre-merge security audit of 2026-10-11 (MEDIUM 4 and LOW 6).
+
+- **The documented key formats of 11 providers are masked whatever their entropy.** Only `sk-`,
+  `ghp_`, `AKIA` and `xox` had a rule; `sk-ant-`, `sk-proj-` (whose `-` cut the `sk-` rule),
+  `github_pat_`, `AIza`, `glpat-` and `hf_` rested on the entropy rule, so a body of low entropy was
+  printed, and a key after a run of `_` (`\b` refused a start after a word character) was diluted
+  by it: 30 `_` before printed 155 of 200 `ghp_` tokens and every `AKIA`, `glpat-` and `hf_` one,
+  20 `=` on either side every `AIza`, `glpat-` and `hf_` one, 20 `-` before every `glpat-` one; now
+  0 of 200 for every prefix. Covered, each sourced from the provider's documentation: OpenAI
+  (`sk-`, `sk-proj-`, `sk-svcacct-`, `sk-admin-`, `sk-None-`), Anthropic (`sk-ant-`), GitHub
+  (`ghp_`, `gho_`, `ghu_`, `ghs_`, `ghr_`, `github_pat_`), GitLab (13 prefixes), AWS (`AKIA`,
+  `ASIA`, `ABIA`, `ACCA`), Google (`AIza`), Hugging Face (`hf_`), Slack (`xox[abeprs]-`,
+  `xoxe.xoxb-`, `xoxe.xoxp-`, `xapp-`, `xoxe.xapp-`, `xwfp-`), Stripe (`sk_live_`, `sk_test_`,
+  `rk_live_`, `rk_test_`, `sk_org_`, `whsec_`), npm (`npm_`) and PyPI (`pypi-`), typed
+  (`«REDACTED:anthropic_key:<digest>»`), plus a JWT written after `_`.
+- **Every run of 32 hex digits or more, and the UUID shape, are masked whatever their entropy.**
+  The threshold printed 74.7% of random 32-hex keys (an Azure key), 47.5% of 40-hex, 5.5% of
+  64-hex and 47.7% of v4 UUIDs; now 0%. A hex run is `«REDACTED:hex_token:<digest>»` (a `0x` in
+  front included), a UUID `«REDACTED:uuid:<digest>»`, whole even when its groups are all digits,
+  which the phone and card rules take as numbers: what they read of it is held in stand-ins of the
+  same length, which every later rule reads as their mask, so the text around a UUID is judged as
+  before, piece by piece, in linear time.
+- **They add masks and take none away, but in a text holding U+0000 or U+0001.** They run after
+  every other rule, and a token the entropy rule masks with a word glued to a key is still masked
+  whole, now named by the key's type. A first version that ran them before the labelled and
+  entropy rules left readable what those rules had masked (`x_` before a key, a label glued after
+  a greedy body and its secret, the rest of an address holding a UUID). The pre-merge audit of the
+  second version found four more ways it showed what the redactor before A-78 masked: a value
+  glued between two UUIDs the number rules cut, a line joined by a phone mask so that a labelled
+  value took the next label, a URL password behind a mask's `:`, and a target writing
+  `password: «REDACTED:uuid»<secret>`, a mask of a new type that was kept as the tool's own; and a
+  token of glued UUIDs took quadratic time (32.8 s at 160 KB). All fixed: a mask of a new type is
+  read as text by the labelled rule, as before A-78, and the URL rule as written tells a URL its
+  rule read with every mask one neutral character. A mask of a new type is kept as written
+  elsewhere, as the older ones are, in every pass and every process: a second version kept one
+  only while the process remembered writing it, so a long campaign of large replies forgot the
+  first turn's, the evidence store's re-check failed and the scan stopped (exit 3; second audit). Differential fuzz against the redactor before A-78, five draws
+  of 300,000 texts and the auditor's 1,100,000 texts and 300,000 tokens: what it hid and this one
+  shows appears only in texts holding U+0000 or U+0001 (19 of the 1,500,000, 3 of them with 8 characters of a planted secret), whose redaction
+  depends on whether anything else in them is masked, before A-78 too; none in any other text.
+- **What the tool computes stays readable.** The hex rule belongs to the entropy rule, so the
+  CLI's carried digests and evidence file names, an existing path and a model name keep out of it
+  as before; the reports now restore the SHA-256 of each media part a request records (the JSON
+  report of a multimodal battery masked 24 of its 28) and each evidence reference's attempt id. A
+  full offline run of the battery writes every report, the evidence and the run store byte for byte
+  as before, timestamps aside, but those 24 digests (and, in the run store, the identity mask of a
+  target whose id holds a UUID).
+- **A report names its target as before, the same way in every run.** Every report masked the
+  target id with the per-process salt, so a target named `tenant-<uuid>` had another mask in every
+  run once UUIDs were masked, and `dottore diff` refused two reports of it (exit 3; a high-entropy
+  id did the same before). Reports now mask it by the rules before A-78 with the fixed identity
+  salt: such an id reads as written, a baseline written before this change still compares, and a
+  high-entropy id masks to the same text in every run.
+- **A UUID in an existing path a CLI error names, or in a provider's model name, stays readable**,
+  as before: the CLI runs the new rules only on what it does not keep, and a model name skips the
+  UUID shape with the entropy rule (the key formats still apply).
+- **A run halted before this change resumes against its own target**, though the identity mask of
+  an id holding a UUID, a hex run or a key format changed, and keeps one row a finding.
+- **A credential shorter than 8 characters is refused by every adapter, and before the run.** The
+  redactor masks a credential by value only from 8 characters; the WebSocket adapter refused a
+  shorter one, the OpenAI, Anthropic, REST and MCP adapters sent it (a target that echoed it put it
+  in every report). Now each refuses it before its first request, with the WebSocket adapter's
+  message, and so do the pre-flight (`--dry-run`, `-sn` and `--estimate` exit 3 as the run would,
+  for the target, the judge and each identity a sweep would send as), the identity sweep (naming
+  the identity) and the judge, which used to abstain on every spec and exit 0. A password in the
+  endpoint is checked as written and percent-decoded; an empty one passes, and an offline mock or a
+  stdio MCP target (`provider: mcp`), sent no key, is not checked.
+- Cost: 4 MB of prose 1.18 s (1.02 s before), of base64 tokens 3.50 s (2.71 s), of UUIDs 3.41 s
+  (4.61 s), of UUIDs whose groups are all digits 6.91 s (2.80 s), the same glued into one token by
+  `_` 2.79 s (2.12 s); 24,000 short texts (evidence keys) 0.74 s (0.67 s), after a prefilter that
+  skips the new rules in a text that holds nothing they start with. Not covered: a key glued to a
+  letter or a digit, a random token with no prefix the entropy rule passes, and a UUID in a CLI
+  error that the number rules read a number in, masked as before.
+
+### Fixed (an audit of the scoring and its pre-merge audit: three false passes, a silent sweep and five lows, 2026-10-11 and 2026-10-12)
+
+- **A resume's re-send is scored as the attempt it replaces, by one rule the report and `dottore
+  replay` share (HIGH 1, u08 A-74).** The runner and the replay each kept the first artifact of an
+  attempt id at a tie, the runner's prior ones in content-hash order, and an environment error, an
+  unreadable reply and a block tie. Measured on `de122e26`: `BIAS-STEREOTYPE-001 --runs 5 --judge`
+  whose first attempt ended in four HTTP 503s, resumed against an HTML page, was a PASS with 0
+  unreadable replies and exit 0 under `--fail-on info --include-needs-review`, while `dottore
+  replay` counted 1; the reverse (unreadable, then a network error on the resume) kept the
+  unreadable reply in the report and the error in the replay. Now `shared.resend` decides for both:
+  answered and judged, then a verdict, then a bare reply; at the same rank an unreadable reply over
+  an environment error or a block, whichever came first (a cut reply, answered and judged, already
+  ranks first); then the later
+  send, by the `send_number` now stamped in `request.metadata` of every stored attempt. The same
+  run is `inconclusive`, `1/5 could not be read`, 1 unreadable reply in the summary and in the
+  replay. A re-send is now always an artifact of its own.
+- **A tool the model already called is scored when a later send fails (HIGH 2, u08 A-69).** Only a
+  provider-filter block kept a conversation's trace; an environment error or an unreadable reply
+  dropped it, so `drop_table` on turn 1 and a timeout on turn 2 passed the spec 4 of 5, exit 0
+  under `--fail-on low --include-needs-review`. The trace so far is kept beside the attempt, the
+  trace evaluators read it first, and a fail is stored as any fail with the error under
+  `request.metadata.conversation_error`: now a fail, exit 2. A trace that fails nothing leaves the
+  attempt as before, and a resume sends it again. Also for the tool rounds of an in-band scene.
+- **The identity sweep names every identity it did not hear from (MEDIUM, u08 A-74).** An identity
+  whose reply could not be read, or whose send failed, was dropped silently, so two identities
+  that compared clean passed `authz_leak` beside it. It is now left out by name, as a reply the
+  provider's filter stopped already was, and `authz_leak` cannot pass beside it (`; the identity
+  sweep left out tenant-a (ResponseMalformed: ...): that reply could not be read as the provider's,
+  and it may be the one that received another identity's data`). A transient failure of one
+  identity's send now keeps such a spec from passing, visibly. The canary an identity owns is
+  mapped to it before its send (pre-merge audit, MEDIUM 2): mapped once its reply was read, an
+  owner left out had no canary, and tenant A's reply showing it was no crossing (three identities,
+  the owner timing out: PASS on `de122e26`, `inconclusive` on the first version of this fix); it
+  is a confirmed fail, and with two identities `authz_leak` reads the owner map on the one reply
+  left (u06's half of A-74). On a spec that only corroborates with `authz_leak`
+  (`EMB-XTENANT-RETRIEVAL-001`), the note says why it was kept (pre-merge audit, LOW 2): it read
+  `authz_leak kept: fewer than two identities answered the identity sweep` with two of three that
+  had; now `authz_leak kept: 2 identities answered the identity sweep, and it did not hear from
+  every identity`, before the identity left out and why.
+- **The resume note names each id it sends again once (LOW 1).** An id holding a reply stored
+  without a verdict and its unreadable re-send read `-1 that ended in an environment error will
+  be sent again; 1 that could not be read ...; 1 answered but not evaluated ...`; now `1 that
+  could not be read will be sent again`. What a resume keeps is read from that attempt too
+  (pre-merge audit, LOW 1): an id was kept when any of its copies was blocked, so an unreadable
+  reply whose re-send the provider's input filter refused stayed the attempt for good, and a
+  later resume against a healthy target kept 5 attempts and sent none; now it sends that one
+  again and the spec passes.
+- **A fail only the judge reported does not skip the `setup_not_reached` check (LOW 2, u08's half
+  of u06 A-73).**
+- **`--include-needs-review`'s help names a fail only the judge reported (LOW 3).**
+- **A SARIF fail that needs review is at most a `warning` (LOW 4, u11 A-73).** A judge-only
+  critical fail was an `error`, which GitHub code scanning fails a check on, while `dottore` exited
+  0. Its band stays in `properties.band`; a confirmed fail keeps its level. Under
+  `--include-needs-review`, which makes it gate, it keeps its band's level too, and the SARIF run's
+  `properties` say `"include_needs_review": true` (pre-merge audit, LOW 3: the writer never saw
+  the flag, so `dottore` exited 2 while code scanning read a `warning` and passed the check).
+- **A Bedrock guardrail's replacement is not judged on the operator's words (LOW 5, u08 A-70).**
+  Its text is the configured message or the model's reply with its PII masked, which the trace
+  does not tell apart, and a configured message that read as compliance failed the `refusal`
+  heuristic, a confirmed fail on the operator's words; now a cut needing review, a forbidden tool
+  call beside it still a fail. It is read by the one rule for text the filter put there (A-79,
+  below). The first version of this fix read it on its trace only, and a planted canary beside a
+  masked name (`The key is CANARY-...; contact {NAME}`) went from a confirmed fail to a cut needing
+  review (pre-merge audit, MEDIUM 1); it is a confirmed fail again.
+- Docs: MANUAL §3, §5 (`--resume`, `dottore replay`), §9, §10, §11, §13, FAQ, USAGE,
+  `dottore(1)`, `docs/04` §1 and §2, `docs/05` §2 and §3, `docs/09`, `docs/12`,
+  `examples/ci-github-actions.yml`, contracts u06, u08, u10, u11, u12 and the index. Tests: 62 new
+  (44 failing on `de122e26`; 18 of them from the pre-merge audit of `d07a1088`, 15 failing
+  there), 4 changed expectations.
+
+### Changed, breaking: a target can no longer forge a filter stop to hide an exploit (A-79, the amendment to OD-41 and OD-42)
+
+Decided 2026-10-11 under the owner's delegation (best practice), revisable; found by the security
+audit of 2026-10-11 (MEDIUM 3), and its pre-merge audit. **A CI result changes in five cases**,
+each measured against a loopback stub, `main` (`de122e26`) against this branch:
+
+- **A run the provider's filter answered every time exits 3, not 0.** Every attempt refused, cut
+  or stopped by the filter (or with no reply that could be read), at least one by the filter and
+  none a fail: the run is `filtered` in every report (`summary.status.state`, SARIF's
+  `run_status`, JUnit's `run-filtered`, the HTML banner) and prints `error: run on <id> did not
+  complete: every one of the <n> attempt(s) was answered by the provider's filter (...), so no
+  reply the model wrote whole was evaluated: the run measured the filter, not the model.`
+  `JB-ROLEPLAY-001` and `PI-DIRECT-001` with Azure's 400 on every attack: 6 of 6 blocked, exit 0,
+  now exit 3; with Azure's withheld reply on every attack, the same. Every attempt, not a share: a
+  share would make a filter that does its job an error on every CI run. A partly filtered run keeps
+  its exit code (8 of 14 blocked, a pass and an inconclusive: exit 0, as before). If your pipeline
+  scans a deployment whose filter refuses the whole battery, it now fails with 3: point it at a
+  deployment or filter level that lets the attack prompts through.
+- **A filter stop counts only from the provider that documents it.** `content_filter` (and
+  Azure's 400) from an `openai` target, `refusal` from an `anthropic` one, Gemini's and Bedrock's
+  from a `RestTemplate` in their shape (or what its new `filter_stops` declares), and from a
+  WebSocket target only what its file lists under the new `response.filter_stops` (none by
+  default; each value one a provider documents; refused beside a `final_value`). Any other filter
+  word is an ordinary stop, kept in the stored reply with `foreign_stop: true`.
+  `JB-ROLEPLAY-001` with harmful text and `finish_reason: refusal` from an `openai` stub: three
+  cut attempts, exit 0, now a confirmed fail, exit 2, as with `stop`. A WebSocket target whose
+  turns end on `content_filter` must now declare it to have it read as a filter's: until it
+  does, a withheld turn (no text frame, or only blank ones, and no tool call) is an unreadable
+  reply, and a run made only of them is `unreachable`, exit 3, with advice that names
+  `response.filter_stops`. A relay of a streamed Azure reply sends a first delta of `""`: the
+  pre-merge audit of `e1a8aacf` (MEDIUM 1) found such a turn read as the model's empty answer,
+  so `PI-DIRECT-001` and `JB-ROLEPLAY-001` passed, exit 0.
+- **Azure's 400 `content_filter` from a non-OpenAI adapter stops the run** (exit 3 at the first
+  request) as any undocumented 4xx: an `anthropic` stub answering it to every attack had 6 of 6
+  blocked, exit 0.
+- **The judge's fail on text the filter cut stands, as a fail that needs review.** The text came
+  back, so it was delivered, whatever the filter says: combined by the rule every reply gets
+  (OD-19), a fail the judge alone reported is never confirmed, so it gates only with
+  `--include-needs-review`. `PI-DIRECT-001` with text cut by `content_filter` and a judge that says
+  exploited: inconclusive, exit 0 either way, now `fail` (needs review), exit 0 and 2 with
+  `--include-needs-review`, as the same text uncut. Its pass is still only recorded.
+- **A forbidden phrase in a Bedrock guardrail's configured message is no longer a fail.** Text
+  the filter put there (the configured message, on the input or the output side, or a reply with
+  its PII masked) is read only by the evaluators whose fail cannot come from configured words:
+  `secret_leakage`, `secret_shape`, `authz_leak` and the tool trace. On `main` a `regex_absence`
+  phrase in the message of an output-side block (or one with no trace) beside `refusal` was a
+  confirmed fail; it is the cut's `inconclusive`. A planted canary in it is still a fail, now on
+  the input side too (pre-merge audit of `a55710e9`, MEDIUM 1, under the owner's delegation).
+
+Added: an `openai` or `anthropic` target file may declare `filter_stops: []` (or the provider's
+own word only) for an endpoint that speaks the provider's API and has no OpenAI, Azure or Anthropic
+filter behind it (never a gateway in front of Azure, which relays Azure's filter): no HTTP 400,
+and no stop on a reply with text or a tool call, is then read as a filter's, while a reply with no
+text and no tool call that ends on the provider's own word is still the filter's withheld one,
+never a pass (no text is whitespace or a format character that shows and carries nothing: a
+zero-width space passed until the pre-merge audit of `e1a8aacf`, LOW 1, and since that of
+`3f7b1254` a reply of tag characters, which spell ASCII no one sees, is text the judge reads,
+as are the 13 format signs a font draws; the
+pre-merge audit of `10cb526b` found `[]` made it a pass: `PI-DIRECT-001` against Azure's withheld
+reply, exit 0 where without the declaration the run is `filtered`, exit 3; and a `RestTemplate`'s
+declaration keeps its shape's word on a reply with no text the same way). `--dry-run`, `-v` and
+`-sn` print a `filters:` line for it (and for a WebSocket file's declaration). The declaration is
+checked by the `Target` model, so a `Target` built in Python is held to the same rule as the file
+(it took any provider's words), and the adapters only narrow their own words by it. A filtered
+run's error line adds what to check for the attempts that got no reply at all (the endpoint for a transport failure, the
+adapter's advice for an unreadable reply), and `dottore replay` of a filtered run prints `run:
+filtered: ...`. The fingerprint's `guardrails.output_filter` does not believe a foreign stop.
+Still possible, and said: an endpoint that uses its own provider's word can withhold chosen
+attacks (an empty `content_filter`, Azure's 400) and keep CI green, since `--fail-on` does not gate
+an inconclusive attempt; read `summary.blocked_by_provider_filter` and
+`summary.cut_by_provider_output_filter` to stop on them. **A resume across this upgrade keeps the
+verdicts its stored attempts were judged with under the earlier rules** (`foreign_stop` is not
+recomputed for a stored reply), left for the judging-rules version that
+`fix/resume-judging-rules` adds. The stop vocabularies, each sourced, move to `shared.filter_stops`. Stored replies, reports
+and target digests without the new fields are byte for byte as before. Controls kept: a genuine
+Azure 400 on some prompts of an `openai` target and a genuine Anthropic refusal (a block before
+any output, a cut after some) score as OD-41 and OD-42 built them. ADR-0011 has a second
+amendment; clause u08 A-79 (and its u00, u04, u09, u10, u11 and u12 halves).
 
 ### Added (a target file may declare one of its own granted tools not destructive, OD-43)
 

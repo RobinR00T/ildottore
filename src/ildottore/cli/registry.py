@@ -24,6 +24,7 @@ def list_specs(
     owasp: str | None = None,
     tag: str | None = None,
     suite: str | None = None,
+    default_spec_path: bool = False,
 ) -> list[AttackSpec]:
     """Return the registered specs matching every provided filter.
 
@@ -34,7 +35,12 @@ def list_specs(
     """
 
     return list_specs_and_unloaded(
-        spec_paths, category=category, owasp=owasp, tag=tag, suite=suite
+        spec_paths,
+        category=category,
+        owasp=owasp,
+        tag=tag,
+        suite=suite,
+        default_spec_path=default_spec_path,
     )[0]
 
 
@@ -45,6 +51,7 @@ def list_specs_and_unloaded(
     owasp: str | None = None,
     tag: str | None = None,
     suite: str | None = None,
+    default_spec_path: bool = False,
 ) -> tuple[list[AttackSpec], list[LintError]]:
     """:func:`list_specs`, plus the load errors the spec paths gave.
 
@@ -53,7 +60,7 @@ def list_specs_and_unloaded(
     """
 
     registry, unloaded = wiring.load_registry(spec_paths)
-    wiring.refuse_spec_paths_that_hold_nothing(unloaded, to="list")
+    wiring.refuse_spec_paths_that_hold_nothing(unloaded, to="list", default=default_spec_path)
     if suite is not None:
         from ildottore.cli.flags import resolve_suite_id, unknown_suite
 

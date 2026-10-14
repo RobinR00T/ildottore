@@ -289,7 +289,9 @@ def test_new_spec_stdout_checks_the_id_too() -> None:
 def test_new_spec_refuses_a_family_shaped_like_a_key() -> None:
     result = runner.invoke(app, ["new-spec", "--id", "PI-NEW-001", "--family", _KEY, "--stdout"])
     assert result.exit_code == 3, result.output
-    assert "--family is a high-entropy token, the shape of a key (not shown)" in result.output
+    # A credential format since main's u01 A-78 reads Anthropic's keys; a high-entropy token
+    # before it. Either is the shape of a key.
+    assert "--family is a credential format, the shape of a key (not shown)" in result.output
     assert _KEY[:16] not in result.output
     for family in ("prompt_injection", "deepteam-mapped", "nova-iopc-mapped", "rai01"):
         assert (
