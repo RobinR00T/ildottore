@@ -20,7 +20,10 @@ versioning: [SemVer](https://semver.org/).
   -v`. The command-line library's other errors (a `ClickException`, a `FileError`: exit 1 by
   default, from the vendored copy Typer raises from or from a click installed beside it, which a
   plugin may raise from and which the CLI never imports itself), its `Aborted!` and an exit a
-  library asks for with status 1, 2 or a message are exit 3 too. A broken output pipe is exit 3 with `error: the output stream closed before the command
+  library asks for with status 1, 2 or a message are exit 3 too. The classes are found from
+  Typer's public names (`typer.Exit`, `typer.Abort`, the ancestry of `typer.BadParameter`), so
+  Typer 0.26 and 0.27, which moved `Abort` and `Exit` out of its vendored copy of click, map the
+  same. A broken output pipe is exit 3 with `error: the output stream closed before the command
   finished (broken pipe)`: `registry ls`, `lint`, `describe`, `coverage` and `--help` into a
   reader that had gone exited 1, and so did a scan with findings, whose progress lines met the
   closed pipe (rich answers that with `SystemExit(1)`); stdout is pointed at the null device so no

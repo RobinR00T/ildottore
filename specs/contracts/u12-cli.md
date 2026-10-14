@@ -1377,11 +1377,18 @@ Checked by `tests/cli/test_run_store_errors.py` (35), `tests/cli/test_evidence_r
 (10), `tests/cli/test_attempt_ceiling.py` (12), `tests/cli/test_estimate_quiet.py` (2),
 `tests/cli/test_report_paths_inputs.py` (19), `tests/cli/test_fleet_run_options.py` (13),
 `tests/cli/test_broken_pipe.py` (9, each in a subprocess writing into a reader closed before it
-starts), `tests/cli/test_guard_subclass.py` (25: the same exit codes through a subclass of
+starts), `tests/cli/test_guard_subclass.py` (30: the same exit codes through a subclass of
 `OperationalErrorGroup` that overrides `main` and `invoke` and calls `super()`, the way another
 root group composes with it, the group keeping no state; and the installed click's exceptions,
-with the CLI run once with click made unimportable) and `tests/store/test_store_open_errors.py`
-(19).
+with the CLI run once with click made unimportable; and the classes Typer itself raises, through
+real commands, caught as mapped) and `tests/store/test_store_open_errors.py` (19).
+
+The classes the guard maps are found from Typer's public names, never from a private module of
+it: `typer.Exit` and `typer.Abort`, which Typer catches, and `ClickException` and `UsageError` in
+the ancestry of `typer.BadParameter`; a class that cannot be found fails the import. Looked up by
+name in `typer._click.exceptions`, the `Abort` that Typer 0.27 moved to `typer.exceptions`
+resolved to nothing and was quietly no longer mapped, so `Aborted!` exited 1 again on CI's Typer
+0.27.3 (CI of #114). The suite passes on Typer 0.26.8 and 0.27.3.
 
 ## §8 Out of scope / forbidden
 - MUST NOT implement attack/mutation/evaluation/scoring/reporting/fingerprint logic (u05-u11,

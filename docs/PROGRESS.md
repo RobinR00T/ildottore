@@ -3,6 +3,22 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-14 (morning): CI of #114 on Typer 0.27.3, fixed
+
+- PR #114's CI (typer 0.27.3, click 8.5.0; this machine has typer 0.26.8) failed collecting
+  `tests/cli/test_guard_subclass.py`: `typer._click.exceptions` has no `Abort` in 0.27 (`Abort` and
+  `Exit` moved to `typer.exceptions`). Worse, the guard's lookup swallowed the `AttributeError`, so
+  on 0.27.3 `Aborted!` was quietly exit 1 again. Reproduced with the 0.27.3 wheel pip had already
+  cached on this machine, put first on `PYTHONPATH` (nothing downloaded or installed): 4 tests
+  failed on `ca2a0e41`.
+- The guard's classes come from Typer's public names now (`typer.Exit`, `typer.Abort`, the ancestry
+  of `typer.BadParameter`), a class that cannot be found fails the import, and no private module
+  of Typer is imported (`PacifyFlushWrapper` replaced by a small wrapper of its own, the counted
+  `-v` type read off a `TyperOption`). New tests raise through real Typer commands and assert the
+  class Typer raised is the one mapped. The whole suite passes on 0.26.8 and on 0.27.3.
+- Seen, not changed here: the dependencies are floors only (`typer>=0.12`), so CI resolves the
+  newest of each, and nothing tests the floors.
+
 ## State, 2026-10-13 (night): the round-2 audit of `f51a7d07`, its four LOWs fixed
 
 - The round-2 audit found `f51a7d07` merge-ready (the merge reverts nothing, no send path escapes
