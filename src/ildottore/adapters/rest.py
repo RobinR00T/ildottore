@@ -18,8 +18,15 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from ildottore.adapters.base import BaseAdapter, ResponseMalformed
+from ildottore.shared.filter_stops import (
+    BEDROCK_FILTER_STOPS,
+    GEMINI_FILTER_STOPS,
+    NO_FILTER_STOPS,
+    documented_stops,
+    normalized_stop,
+)
 from ildottore.shared.models import Capabilities, ModelRequest, ModelResponse
-from ildottore.shared.provider_filter import INPUT_SIDE, OUTPUT_SIDE, UNKNOWN_SIDE, is_filter_stop
+from ildottore.shared.provider_filter import INPUT_SIDE, OUTPUT_SIDE, UNKNOWN_SIDE
 
 __all__ = ["RestAdapter", "RestTemplate", "get_path"]
 
@@ -108,6 +115,14 @@ class RestTemplate:
     * ``finish_path`` / ``id_path`` / ``usage_path`` - optional response paths.
     * ``static_body`` - fields merged into every request (e.g. ``model``).
     * ``static_headers`` - headers merged into every request.
+    * ``filter_stops`` - the stop reasons the endpoint writes at ``finish_path`` when a
+      provider's filter acted (u04 A-79), each one a provider documents
+      (``shared.filter_stops``). Left ``None``, the template's shape says: one in Bedrock
+      Converse's (``finish_path`` ``stopReason``) reads Bedrock's, one in Gemini's (``text_path``
+      under ``candidates.``) Gemini's and Vertex AI's, any other none. A filter word the template
+      does not read is an ordinary stop (``ModelResponse.foreign_stop``), except its shape's own
+      word on a reply with no text, which is that filter's withheld reply whatever is declared
+      (:attr:`shape_filter_stops`; pre-merge audit of ``10cb526b``, MEDIUM).
     """
 
     path: str = "/"
@@ -119,6 +134,35 @@ class RestTemplate:
     usage_path: str | None = None
     static_body: Mapping[str, Any] = field(default_factory=dict)
     static_headers: Mapping[str, str] = field(default_factory=dict)
+    filter_stops: frozenset[str] | None = None
+
+    def __post_init__(self) -> None:
+        # Each one a provider documents, trimmed and in lower case: a typo would leave a filter
+        # unread, and a word with no source would have no side (u04 A-79).
+        if self.filter_stops is not None:
+            object.__setattr__(self, "filter_stops", documented_stops(self.filter_stops))
+
+    @property
+    def reads_filter_stops(self) -> frozenset[str]:
+        """The stops this template reads as its provider's filter (u04 A-79)."""
+
+        if self.filter_stops is not None:
+            return self.filter_stops
+        return self.shape_filter_stops
+
+    @property
+    def shape_filter_stops(self) -> frozenset[str]:
+        """The stops of the provider whose shape the template has, whatever it declares.
+
+        Bedrock's for a ``finish_path`` of ``stopReason``, Gemini's and Vertex AI's for a
+        ``text_path`` under ``candidates.``, none otherwise (u04 A-79).
+        """
+
+        if self.finish_path == _CONVERSE_STOP_PATH:
+            return BEDROCK_FILTER_STOPS
+        if self.text_path.startswith(_GEMINI_TEXT_ROOT):
+            return GEMINI_FILTER_STOPS
+        return NO_FILTER_STOPS
 
 
 @dataclass
@@ -143,6 +187,22 @@ class RestAdapter(BaseAdapter):
     @property
     def _endpoint_path(self) -> str:
         return self.template.path
+
+    @property
+    def filter_stops(self) -> frozenset[str]:
+        """The template's (:attr:`RestTemplate.reads_filter_stops`; u04 A-79).
+
+        A target file's ``provider: rest`` target has the generic template, with no
+        ``finish_path``, so it reads none: its replies carry no stop at all.
+        """
+
+        return self.template.reads_filter_stops
+
+    @property
+    def own_filter_stops(self) -> frozenset[str]:
+        """The stops of its template's shape (:attr:`RestTemplate.shape_filter_stops`)."""
+
+        return self.template.shape_filter_stops
 
     @property
     def unreadable_advice(self) -> str:
@@ -225,6 +285,10 @@ class RestAdapter(BaseAdapter):
 
         if not self.template.text_path.startswith(_GEMINI_TEXT_ROOT):
             return None
+        # A template that reads none of Gemini's filter stops does not speak its filter's
+        # vocabulary, and its prompt block is not read either (u04 A-79).
+        if not self.filter_stops & GEMINI_FILTER_STOPS:
+            return None
         if get_path(payload, self.template.text_path) is not None:
             return None
         reason = get_path(payload, "promptFeedback.blockReason")
@@ -257,13 +321,18 @@ class RestAdapter(BaseAdapter):
                 finish_reason = candidate
 
         text = get_path(payload, self.template.text_path)
-        if text is None and is_filter_stop(finish_reason):
+        if (
+            text is None
+            and normalized_stop(finish_reason) in self.filter_stops | self.own_filter_stops
+        ):
             # The provider's filter stopped the reply and left no text (OD-42): a Gemini candidate
             # stopped with ``SAFETY`` can come without its text (Vertex AI's reference, on
             # ``FinishReason`` ``SAFETY``: "When streaming, the content field is empty if
             # content filters block the output", read 2026-10-11). It was a product error that
             # stopped the campaign; it is a reply with no text and that stop reason, which the
-            # runner never reads as the model's answer. Read at ``finish_path`` only, as before.
+            # runner never reads as the model's answer. Read at ``finish_path`` only, as before,
+            # and only for a stop the template reads (u04 A-79), or its shape's own word, which on
+            # a reply with no text is the filter's whatever is declared: another is no text.
             text = ""
         if text is None:
             raise ResponseMalformed(
@@ -318,7 +387,8 @@ class RestAdapter(BaseAdapter):
 
         if self.template.finish_path != _CONVERSE_STOP_PATH:
             return None
-        if (finish_reason or "").strip().lower() != _GUARDRAIL_INTERVENED:
+        stop = normalized_stop(finish_reason)
+        if stop != _GUARDRAIL_INTERVENED or stop not in self.filter_stops:
             return None
         trace = get_path(payload, "trace.guardrail")
         if not isinstance(trace, Mapping):

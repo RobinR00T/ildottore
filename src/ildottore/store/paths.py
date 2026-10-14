@@ -144,6 +144,19 @@ def attempt_path(root: Path, run_id: str, sha256: str) -> Path:
     return _assert_inside(root, attempts_dir(root, run_id) / f"{validate_sha256(sha256)}.json")
 
 
+def nearest_existing(path: Path) -> Path | None:
+    """``path`` or its closest ancestor that exists, or ``None`` when none does.
+
+    For the read-only checks of a store path that does not exist yet (u10 A-80): the ancestor a
+    run would create it under has to be a directory.
+    """
+
+    for candidate in (path, *path.parents):
+        if candidate.exists():
+            return candidate
+    return None
+
+
 def relative_uri(root: Path, path: Path) -> str:
     """Return ``path`` as a POSIX string relative to ``root`` (portable ref).
 

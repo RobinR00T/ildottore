@@ -153,8 +153,12 @@ async def execute_conversation(
     now: Callable[[], float] | None = None,
     pacer: RateLimiter | None = None,
     setup: InBandSetup | None = None,
+    opens_attempt: bool = False,
 ) -> AttemptResult:
     """Run one multi-turn conversation and return one aggregate :class:`AttemptResult`.
+
+    ``opens_attempt``: the conversation is one attack attempt, counted with its first send
+    (u08 A-80); the turns and tool rounds after it are requests of the same attempt.
 
     Threads each attacker turn (optionally mutated by ``mutate_turn``) with the prior
     assistant replies as ``messages`` history, sending each through
@@ -172,7 +176,10 @@ async def execute_conversation(
 
     An env error on **any** turn aborts the conversation and returns an ``env_error``
     result whose attempt has ``response=None`` (the runner records ``inconclusive``, never
-    a fabricated fail from a half-finished dialogue). So does a turn the provider's input filter
+    a fabricated fail from a half-finished dialogue), as does a reply the adapter could not read.
+    When the model had called a tool by then, the result carries its last reply with the whole
+    trace so far in ``trace_so_far``, beside the attempt: the runner's trace evaluators read it,
+    and only a fail of theirs changes what is stored. So does a turn the provider's input filter
     refused (OD-41): the conversation stops there, its result is ``filter_blocked`` and carries
     that turn's error, and the runner records it ``inconclusive: blocked_by_provider_filter``.
     The turns before it reached the model; the one it refused did not, so the dialogue never
@@ -218,9 +225,12 @@ async def execute_conversation(
         # A turn the provider's input filter refused did not reach the model, but the turns
         # before it did, and a tool the model called on one of them was called (OD-41, u08 A-69):
         # the trace so far rides on the model's last reply, so the runner's trace evaluators can
-        # read it. Without a call there is nothing to read, and an environment error keeps none.
+        # read it. So it does when a later send ended in an environment error or an unreadable
+        # reply, kept beside the attempt rather than on it (``AttemptResult.trace_so_far``): it
+        # used to be dropped, and a forbidden call already made passed the spec (audit of the
+        # scoring, 2026-10-11, HIGH 2). Without a call there is nothing to read.
         partial = None
-        if result.filter_blocked and trace_tool_calls and answered is not None:
+        if trace_tool_calls and answered is not None:
             partial = answered.model_copy(
                 update={"tool_calls": [dict(call) for call in trace_tool_calls]}
             )
@@ -231,7 +241,7 @@ async def execute_conversation(
             messages=messages,
             system_prompt=system_prompt,
             sampling=sampling,
-            response=partial,
+            response=partial if result.filter_blocked else None,
             latency_ms=None,
             error=result.attempt.error or "conversation aborted after an environment error",
             setup=setup,
@@ -251,10 +261,11 @@ async def execute_conversation(
             retries=result.retries,
             errors=result.errors,
             unreadable=result.unreadable,
+            trace_so_far=None if result.filter_blocked else partial,
         )
 
     async def send(turn_index: int, suffix: str) -> AttemptResult:
-        nonlocal crossed
+        nonlocal crossed, opens_attempt
         if crossed is not None:
             # Plain, not the reply-carrying subclass: that reply belongs to one turn, and this
             # conversation has none to store.
@@ -268,6 +279,9 @@ async def execute_conversation(
             tools=tools,
             turns_total=len(turns),
         )
+        # The first send counts the conversation as one attempt; a refused first send counts
+        # nothing and ends the conversation, so the flag is spent either way.
+        first, opens_attempt = opens_attempt, False
         try:
             return await execute_attempt(
                 adapter,
@@ -283,6 +297,7 @@ async def execute_conversation(
                 sleep=sleep,
                 now=now,
                 pacer=pacer,
+                opens_attempt=first,
             )
         except ReplyOverBudget as halt:
             crossed = halt
@@ -474,9 +489,9 @@ async def reproduce_conversation(
 ) -> list[AttemptResult]:
     """Execute the pinned conversation ``n`` times (repro), one aggregate attempt each.
 
-    Mirrors :func:`~ildottore.core.reproduce.reproduce` for the multi-turn path: one
-    ``debit_attempt`` per conversation (each turn additionally debits a request inside
-    :func:`execute_attempt`), stable ``attempt_id`` per run so resume skips completed
+    Mirrors :func:`~ildottore.core.reproduce.reproduce` for the multi-turn path: one attempt
+    per conversation, counted with its first request (each turn debits a request inside
+    :func:`execute_attempt`, u08 A-80), stable ``attempt_id`` per run so resume skips completed
     conversations, and results returned in order. Against the deterministic mock all ``n``
     conversations are byte-identical; against a real target they measure repro honestly.
 
@@ -494,7 +509,6 @@ async def reproduce_conversation(
         attempt_id = attempt_id_for(spec_id, mutation, run_index)
         if completed is not None and attempt_id in completed:
             continue
-        ledger.debit_attempt()
         try:
             result = await execute_conversation(
                 adapter,
@@ -517,6 +531,7 @@ async def reproduce_conversation(
                 # battery's requests, and the measured breach was 19x the authorized rate.
                 pacer=pacer,
                 setup=setup,
+                opens_attempt=True,
             )
         except ReplyOverBudget as halt:
             results.append(halt.result)

@@ -196,6 +196,9 @@ fleet, labels, pack) is refused past 100 levels with its aliases expanded, which
 reach from 4 KB of text (`tests/cli/test_deep_json.py`, `test_replay.py`,
 `test_resume_integrity.py`), and past 100,000 nodes with them expanded, which 15 doubling
 anchors reach from 265 bytes (u01 A-37, `tests/cli/test_yaml_expansion.py`).
+Amended 2026-10-12 (A-80): a class nobody listed no longer reaches the terminal as a traceback
+with exit 1: the root command group maps any exception no handler caught to exit 3 with one line,
+and a sqlite3 error from the run store is named after the store.
 
 **A-10 A resumed run is bound to its target.** `--resume` refuses a run id whose stored run
 belongs to a different target, and refuses when no run store is available to check. Unbound, it
@@ -1104,9 +1107,9 @@ the base stops at the first bad finding too). Outside the clause, and said so ra
 
 **A-69 (u08's clause; this unit's half, added 2026-10-10, OD-41) The CLI says what the provider's
 input filter refused, and does not call it a dead target.** A run whose every attempt the filter
-refused completed: the provider answered every request, so it is not `unreachable` (which
-means every attempt failed on transport or, since A-74, got a reply that could not be read) and
-exits by the findings, 0 when none is a gated `fail`.
+refused is not `unreachable` (which means every attempt failed on transport or, since A-74, got a
+reply that could not be read): the provider answered every request. It completed and exited by the
+findings until A-79 (below), which makes it `filtered`, exit 3.
 The terminal summary, under the coverage block (never silenced by `-q`), prints `Blocked by the
 provider's input filter: <k> attempt(s) in <s> spec(s) never reached the model (<spec ids>); they
 are inconclusive, not refusals by the model and not exploits` when `k` is not 0, and the `Not
@@ -1210,7 +1213,212 @@ sends again because they could not be read (`; <k> that could not be read will b
 LOW 1), and one that keeps none says so (`keeps none of the <n> attempt(s) it stored across <s>
 spec(s) (none was answered, or failed in a way a retry would repeat)`; it said `keeps 0
 attempt(s)`, verification of `07aa0b3a`, LOW 2). The report schema's `status` description names `aborted` and the wider `unreachable`.
-Checked by `tests/cli/test_malformed_reply_campaign.py`.
+Checked by `tests/cli/test_malformed_reply_campaign.py`. **Amended 2026-10-11 after the audit of the
+scoring (LOW 1):** the note names each id it sends again once, by the artifact that is its attempt
+(`shared.resend`, u08 A-74), and so counts what it keeps (`blocked`, `trimmed`): it counted an id
+in every category one of its artifacts fell in, so an id holding a reply stored without a verdict
+and that reply's unreadable re-send read `-1 that ended in an environment error will be sent again;
+1 that could not be read will be sent again; 1 answered but not evaluated before the halt will be
+sent again`; it now reads `1 that could not be read will be sent again`
+(`runner.unjudged_attempt_ids` reads the attempt too). Checked by
+`tests/cli/test_resume_resend_scored.py`, failing on `de122e26`.
+
+**A-79 (u08's clause; this unit's half, added 2026-10-11, the amendment to OD-41 and OD-42,
+decided under the owner's delegation, best practice, revisable) A run the provider's filter
+answered every time is not complete, and exits 3.** Until A-79 a run whose every attempt the
+filter refused or cut was complete, every spec inconclusive, and exited 0: a fully filtered run
+read green, and a target that wrote a filter's answer to every attack (Azure's 400 from any
+adapter, an empty reply with a filter's stop) turned CI green with nothing evaluated (security
+audit of 2026-10-11, MEDIUM 3: `JB-ROLEPLAY-001` and `PI-DIRECT-001`, 6 of 6 blocked, exit 0).
+`_filtered_reason` (`cli/run.py`), read after `_unreachable_reason` for a target whose campaign
+completed, makes it `filtered` when every attempt was refused, cut or stopped by the filter
+(`blocked_by_provider_filter`, `cut_by_output_filter`, `filter_side_unknown` of
+`shared.provider_filter`, by the verdict's reason) or got no reply that could be read, at least one
+was the filter's, and none is a `fail` (a fail on a trace or on what came back was measured, and
+decides). The run prints `error: run on <id> did not complete: every one of the <n> attempt(s) was
+answered by the provider's filter[ or got no reply that could be read] (<k> refused by its input
+filter, <k> cut or replaced by its output filter, <k> stopped by it on a side it did not report,
+<k> failed before a reply could be read: the non-zero ones), so no reply the model wrote whole was
+evaluated: the run measured the filter, not the model. To measure the model, run it where the
+filter lets the attack prompts through; every such attempt is in the reports, none of them a pass`
+through `for_terminal`, every report carries the state `filtered` with that reason, and the exit
+code is 3 (A-9), as an unreachable target's. Every attempt, not a share: the share that settles a
+spec (a pass needs more than half of its attempts) was the alternative, not taken, because it
+would make a deployment whose filter refuses most of an attack battery, the filter working, an
+error on every CI run, and a target that forges a filter's answer could stay under any share below
+all. A partly filtered run keeps its exit code (the 8-of-14 run of A-69 still exits 0). The
+report schema's `status` description names `filtered`. After the pre-merge audit of `a55710e9`:
+when some attempts were not the filter's, the line adds the unreachable reason's advice for them,
+`. The other <k> failed on transport: check the target file's endpoint, and that the target is
+up. The first: <error>` (or, for replies it could not read, the adapter's own advice; LOW 1: 3
+withheld and 4 transport failures were told only to find a deployment whose filter lets the
+prompts through); the rule is `shared.provider_filter.filtered_run`, which `dottore replay`
+applies too, one attempt per id, printing `run: filtered: the provider's filter answered every
+attempt for the model (...)`, since the run store keeps no run state (LOW 5). A target file's top
+level gains `filter_stops` (a `Target` field, so A-53's check reads it): for an `openai` or
+`anthropic` target only, `[]` or the provider's own word, refused otherwise naming the file and
+the field, never a value (`_filter_stops` in `cli/wiring.py`, which applies
+`shared.filter_stops.target_filter_stops`, the rule the `Target` model applies to every other path
+since the pre-merge audit of `10cb526b`, LOW; LOW 3, best-practice addition), and
+`--dry-run`, `-v` and `-sn` print a `filters:` line for a file that declares it or a WebSocket
+file's `response.filter_stops` (`_filter_stops_line`). For `[]` the line says what still reads:
+`<id>'s target file declares filter_stops: [], so no HTTP 400 is read as its provider's filter and
+a reply with text or a tool call is scored as the model's, whatever its stop; a reply with no text
+and no tool call that ends on content_filter is still the filter's withheld one, never a pass`;
+for an `anthropic` file the word is `refusal` and the HTTP 400 clause is left out, since that
+adapter never reads one (pre-merge audit of `e1a8aacf`, LOW 4). Until the audit of `10cb526b`
+(MEDIUM) it said every reply was the model's, and an empty `content_filter` passed
+`PI-DIRECT-001` with exit 0 where the run without the declaration is `filtered`, exit 3. Checked by
+`tests/cli/test_filter_stop_provenance_campaign.py` (44 tests; 40 fail on `de122e26`, 15 on
+`10cb526b`, the auditor's d1 through the CLI for `openai` and `anthropic`, the plan line and the
+model's refusals among them, and 7 on `e1a8aacf`: d1 with a zero-width space, a WebSocket turn
+withheld after a blank delta through `execute_run` on `""`, `"  "` and a zero-width space, a
+failed provider's lone error, the Anthropic plan line, and the plan line's new words, and 2 on
+`3f7b1254`: harmful text in tag characters, undeclared and under `[]`, which the judge reads (6
+requests, a fail that needs review, exit 0; `3f7b1254` never consulted it); the first
+13: the two ways a run is filtered, an `openai` target's foreign stops, an `anthropic` target
+answering Azure's 400, the judge's fail on cut text with and without `--include-needs-review`, a
+WebSocket file's declaration and its refusal,
+and three controls: a genuine Azure 400 on some prompts, a genuine Anthropic refusal before and
+after output, the same text without a filter word; 9 fail on `de122e26`), and by the four tests of
+`test_provider_filter_campaign.py` and `test_provider_output_filter_campaign.py` whose every
+attempt was filtered, which now expect exit 3.
+
+**A-78 (u01's clause; this unit's half, added 2026-10-11) The CLI masks the key formats last, and
+refuses a credential under 8 characters before anything is sent.** `_masked` runs the late patterns
+on each stretch of the message its entropy pass reads, after that pass, and keeps what it keeps (an
+existing path, a carried digest, a spec file name) from them too: run over the whole message, as in
+the first version of this half, they masked the UUID directory of an existing evidence root, which
+`de122e26` printed as written (pre-merge audit of A-78, L5). Its two redactors run without them, so
+`x_<key>` is masked as the token the entropy pass masks and a mask of a late type written in an
+error is read as text, as before; without the UUID pattern its first redactor masks a number read
+inside a UUID as `de122e26` did, so the paths left to keep are the same, and such a UUID in an error
+shows as it did (one with no number in it is masked whole). `check_target_credential`, the
+pre-flight of the target and the judge, refuses a credential shorter than 8 characters (a
+`ValueError` with the adapters' message; not for a target the run routes to the offline mock, read
+from the file it loaded, nor for a stdio MCP target), and `check_identity_credentials` refuses one
+of a scope identity for each plan that sweeps identities, naming it, so `--dry-run`, `-sn` and
+`--estimate` exit 3 as the run would; the first version checked the sweep's identities only at the
+send, and its three pre-flight modes exited 0 for such a scope (L4). The stdio exemption asks for
+`provider: mcp` as well as `transport: stdio` (`wiring._launched_locally`): only the MCP adapter
+launches a local server, and an OpenAI target with that field passed the pre-flight and stopped at
+the send (L4). `build_real_adapter` refuses it too; the identity sweep names the identity
+(`live, identity 'second': the credential is shorter than 8 characters, ...`); and the judge raises
+the adapters' `CredentialTooShort` rather than abstain, which made every judged spec inconclusive
+and exited 0 without a word. Against a loopback stub on `de122e26` a 7-character key was sent with
+every request, a judge's too (exit 0); now each case exits 3 with nothing sent. Checked by
+`tests/cli/test_short_credential_cli.py` (17 tests, 14 fail on `de122e26` and 6 on `0b4b1f14`; the
+2 of an offline mock failed on the first version of this half, which also read the target file
+twice, breaking a piped `-t <(...)`) and `tests/cli/test_uuid_identifiers_readable.py` (4; 2 fail on
+`de122e26` and 2 on `0b4b1f14`).
+
+**A-80 A run checks its stores and its paths before it sends, and nothing but findings exits 1
+(added 2026-10-12, CLI audit of `de122e26`; the stores' half is u10, the ledger's u08).**
+Exit 1 means "findings below `--fail-on`", so a CI step that lets 1 through read a crashed scan as
+a pass, and each of these crashed or misled after the traffic it could have refused before:
+
+* **The run store.** A `--run-db` naming a directory, a file that is not SQLite or a path under a
+  regular file, `replay --run-db <garbage>` (and `<directory>`, which warned and replayed without
+  the manifest check), and some of several runs started together on a new store
+  (`OperationalError: database is locked`: 5 of 6 in the audit, 1 and 2 of 18 in two
+  re-measurements) ended in a traceback with exit 1, and with `-sV` the 18
+  probes went out first: the store was first opened inside the per-target loop. Every mode checks
+  both store paths read-only before anything else (`--dry-run`, `--estimate` and `-sn` included,
+  which still write nothing); a sending run then opens the run store and proves each run's
+  `attempts/` (and `probes/` with `-sV`) writable before its first request (`_open_stores`). The
+  refusal is `error: cannot open the run store at <path>: <reason>` (exit 3); a sqlite3 error that
+  reaches `run`, `fleet --run` or `replay` later is `error: the run store at <path> failed:
+  <reason>` (exit 3). A lock another process holds is waited for in Python, 30 s in all, in tries
+  of 0.1 s, so Ctrl-C and SIGTERM stop the wait at once (SQLite's own 30 s timeout slept in C and
+  held them for about 32 s, pre-merge audit of `e6a1ab9b`, LOW 1); a wait past a second prints
+  `note: waiting for the run store at <path>: another process holds its lock (up to 30 s; Ctrl-C
+  stops the wait)` once per run and store (`cli.run.lock_waits_noted`, the callback the store
+  layer is given; it was once per connection, so once per store operation, round-2 audit of
+  `f51a7d07`, LOW 3), and one that runs out is `the run store at <path> stayed locked by another
+  process for 30 s` (`cannot open the run store at <path>: another process held its lock for 30 s`
+  when it is met opening the store), the store named once, mid-run included (u10's half).
+* **The evidence root.** A `--evidence-root` that was a regular file was found by the first
+  attempt's write, after its batch was paid for (125 requests, then `NotADirectoryError`, nothing
+  stored, the requests counted against the resume's ceiling). It is `error: cannot write evidence
+  under <root>: <reason>` (exit 3) before any send now.
+* **Any exception no command handles.** The root group (`cli.app.OperationalErrorGroup`) turns it
+  into exit 3 and one line, ``error: unexpected <Class>: <message> (an internal error, not a scan
+  result; rerun as `dottore -v ...` for the traceback)``, the message through `_masked`; the
+  traceback is printed only under `-v` (`dottore -v <command>`, or `run -v`, both counted flags),
+  each line through `_masked`. The library's own errors are exit 3 too: `ClickException` and
+  `FileError` (exit 1 by default) by class, as `UsageError` already was, and those of a click
+  installed beside the vendored copy, which Typer does not catch and which only a plugin raises
+  (read from `sys.modules` when one arrives; the CLI never imports that click, round-2 LOW 2),
+  its `Abort` (`error: aborted`), and a `SystemExit` of 1, 2 or a text (`error: unexpected exit with status ...`; 0 and
+  3 up keep their code). A broken stdout pipe is exit 3 with `error: the output stream closed
+  before the command finished (broken pipe)`, wherever it is met: in the command (the guard), in
+  the root context's close callback, which reconfigures stdout and so flushes what was still
+  buffered (`_restore_stream`), in rich, which answers it with `SystemExit(1)`, or around the root
+  context, where help is printed and the library itself exited 1 (`OperationalErrorGroup.main`,
+  which also makes the library's `Aborted!` there exit 3); stdout is then
+  pointed at the null device, so no later flush meets the pipe. The first version of this clause
+  stopped at the guard, and the close callback's flush turned the 3 back into 1 (`registry ls`,
+  `lint`, `describe`, `coverage`, and a live scan with findings, which sent its requests and exited
+  1 with nothing said; pre-merge audit of `e6a1ab9b`, MEDIUM 2). Ctrl-C keeps its 130. `dottore
+  lint` still exits 1 for lint findings, which are findings. This closes A-9 for the classes
+  nobody listed: the handler tuples stay, and what they miss is no longer a traceback with exit 1.
+* **The attempts ceiling.** A campaign of more than 20,000 attempts could never finish (no flag
+  raised that ceiling); it is the request ceiling now (u08's half), and `--estimate` prints the
+  ceilings, attempts included (`ceilings: <n> requests, <n> attempts (one per accepted request),
+  ...`, one line per target when they differ), as the dry run's `budgets:` line does.
+* **`--estimate -q`** printed nothing and exited 0. It prints one line, as `--dry-run -q` does:
+  `estimate: <n> requests over <s> spec-runs across <t> target(s) at runs=<r>, ~<k> tokens`, then
+  the judge requests, the `-sV` probes and what a resume already did when there are any.
+* **A report never overwrites an input.** `-oJ scope.yaml -oH target.yaml` overwrote both with the
+  reports. A report path is refused (exit 3, before anything is sent) when it is the `--scope`
+  file, a target file, the `--judge` file, the fleet file of `fleet --run`, the run store or the
+  `-wal`, `-shm` or `-journal` file beside it (by resolved path, so before the store exists too,
+  for the path given and for the file a symlinked store names), or a file the spec loader read
+  (`LoadResult.files`: each `pack.yaml`, spec and suite file and each media asset a spec inlined,
+  checked once they are loaded, still before any send); an existing output is compared with each
+  of them by device and inode, so a symlink, a hard link or another spelling on a case-insensitive
+  volume is the same file. Every file under the spec path was protected at first, which refused
+  the rerun of `run --spec-path . -oJ out.json` (round-2 audit of `f51a7d07`, LOW 1); before that
+  the first version compared resolved paths with the spec roots, and
+  `os.path.realpath` keeps the case it is given: `-oJ SPECS/attacks/AC-BFLA-001.yaml` beside
+  `--spec-path specs` exited 2 and overwrote the spec on the macOS default volume, MEDIUM 1). A
+  report inside a run directory of the evidence store (a directory under `--evidence-root` holding
+  `attempts/` or `probes/`, or named after the run being resumed) is refused too: one written over
+  an artifact made the next resume refuse the run as tampered (LOW 3).
+* **One default spec path.** `fleet --run` read `specs/` in the working directory with no option
+  to change it ("path not found: specs" anywhere but the repository root) and had no
+  `--evidence-root`, `--run-db` or `-o*`. `run`, `fleet --run`, `registry ls`, `describe`,
+  `coverage` and `render-media` read `wiring.default_spec_paths()`: `specs/` in the working
+  directory when it is a directory, else the battery beside the installed package (a source
+  checkout or an editable install; a wheel ships neither the battery nor the schemas), and say so
+  on stderr when they fall back (`note: there is no specs/ directory here, so this reads the
+  battery beside the installed package: <path> (pass --spec-path to read another)`). `dottore lint`
+  does not fall back: falling back, it linted the built-in battery in a pack's own repository and
+  printed "lint OK ... across 75 spec(s)", exit 0, over a broken spec of the pack (MEDIUM 3); with
+  no path and no `specs/` here it refuses, exit 3, `error: spec path not found: specs. Pass the
+  spec path to lint (dottore lint <dir>); ...` (the rule decided for this branch and
+  `fix/cli-input-validation`, which keeps one refusal mechanism for missing spec paths). `fleet` takes
+  `--spec-path`, `--evidence-root`, `--run-db` and `-oJ/-oH/-oS/-oX/-oA` with `run`'s meaning and,
+  without `--run`, carries them into the `dottore run` line it prints. A spec path that does not
+  exist is `error: spec path not found: <path>. Pass --spec-path <dir>; ...`, not "1 spec file(s)
+  failed to load".
+
+Checked by `tests/cli/test_run_store_errors.py` (36), `tests/cli/test_evidence_root_preflight.py`
+(10), `tests/cli/test_attempt_ceiling.py` (12), `tests/cli/test_estimate_quiet.py` (2),
+`tests/cli/test_report_paths_inputs.py` (19), `tests/cli/test_fleet_run_options.py` (13),
+`tests/cli/test_broken_pipe.py` (9, each in a subprocess writing into a reader closed before it
+starts), `tests/cli/test_guard_subclass.py` (30: the same exit codes through a subclass of
+`OperationalErrorGroup` that overrides `main` and `invoke` and calls `super()`, the way another
+root group composes with it, the group keeping no state; and the installed click's exceptions,
+with the CLI run once with click made unimportable; and the classes Typer itself raises, through
+real commands, caught as mapped) and `tests/store/test_store_open_errors.py` (19).
+
+The classes the guard maps are found from Typer's public names, never from a private module of
+it: `typer.Exit` and `typer.Abort`, which Typer catches, and `ClickException` and `UsageError` in
+the ancestry of `typer.BadParameter`; a class that cannot be found fails the import. Looked up by
+name in `typer._click.exceptions`, the `Abort` that Typer 0.27 moved to `typer.exceptions`
+resolved to nothing and was quietly no longer mapped, so `Aborted!` exited 1 again on CI's Typer
+0.27.3 (CI of #114). The suite passes on Typer 0.26.8 and 0.27.3.
 
 **A-81 A resume is bound to the rules that judged its halted half (added 2026-10-12, CLI audit of
 2026-10-11, H2; amended the same day after the pre-merge audit of `22269e0c`, and on 2026-10-13

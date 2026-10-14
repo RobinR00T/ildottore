@@ -67,7 +67,7 @@ dry-run: plan resolved, sent nothing.
   sampling: local-llama's sampling_defaults fills temperature 0.0 on 0 of 10, top_p 1.0 on 9 of 10 specs (a spec's own value wins)
   would send: 125 requests over 10 specs at runs=5
   pacing:  0.5 req/s ceiling (S8)
-  budgets: 500000 tokens, 2000 requests, 1800s wall (derived from this plan)
+  budgets: 500000 tokens, 2000 requests, 2000 attempts, 1800s wall (derived from this plan, or --budget-requests, --budget-tokens, --budget-wall)
 ```
 
 Three things in there are worth reading carefully, because the previous version of this
@@ -165,7 +165,22 @@ Cut by the provider's output filter: 8 attempt(s) in 2 spec(s) came back cut or 
 
 and `reports/openai.json` carries `summary.cut_by_provider_output_filter`. Before 2026-10-11 both
 specs passed. A planted canary in a partial reply the filter cut is still a confirmed fail; a
-secure marker a spec wants present (`DOS-TOKEN-AMP-001`'s) is not held against an empty one.
+secure marker a spec wants present (`DOS-TOKEN-AMP-001`'s) is not held against an empty one; and
+the judge's fail on a partial reply stands as a fail that needs review, since the text was
+delivered whatever the filter says.
+
+Only the provider's own filter words are read (A-79, since 2026-10-11): `content_filter`, and
+Azure's 400, from this `openai` target; Anthropic's `refusal`, Gemini's `SAFETY` or Bedrock's
+`guardrail_intervened` in its reply is an ordinary stop, so a target cannot hide what it wrote
+behind another provider's word. And a run the filter answers every time never reads green: with
+the stub refusing every prompt, the same command exits 3 after 14 attack requests (the stub's
+target is `tgt`):
+
+```
+error: run on tgt did not complete: every one of the 14 attempt(s) was answered by the provider's filter (14 refused by its input filter), so no reply the model wrote whole was evaluated: the run measured the filter, not the model. To measure the model, run it where the filter lets the attack prompts through; every such attempt is in the reports, none of them a pass
+```
+
+and the report's `summary.status.state` is `filtered`. Until 2026-10-11 that run exited 0.
 
 A 200 that is not the provider's reply (an HTML page, JSON without `choices`) fails only its
 attempt (OD-21), and its spec is `inconclusive`, never a pass: the reply that broke may be the one
@@ -192,7 +207,18 @@ and scan them all:
 dottore fleet examples/fleet.yaml --run
 # or expand only (review the generated files first):
 dottore fleet examples/fleet.yaml --out .dottore/fleet
+# run's store and report options work here too, and are carried into the printed command:
+dottore fleet examples/fleet.yaml --out .dottore/fleet -oJ fleet.json --run-db .dottore/runs.sqlite
 ```
+
+The last line prints `Run it:` followed by `dottore run <the two target files> --scope
+".dottore/fleet/scope.yaml" --judge ".dottore/fleet/judge.yaml" --run-db ".dottore/runs.sqlite" -oJ
+"fleet.json"` (checked 2026-10-12 from a directory outside the repository, with the editable
+install of INSTALL.md: `fleet` and `run` read `specs/` there when it exists, else the battery
+beside the installed package, and say on stderr when they fall back, so neither needs the
+repository root any more; `fleet --run` used to fail with `path not found: specs` anywhere else.
+A wheel built from this repository ships neither the battery nor the schemas, so this holds for a
+source checkout or an editable install only).
 
 `examples/fleet.yaml` declares its judge in a `judge:` block, so the generated scope
 authorizes it and `fleet` writes it to `.dottore/fleet/judge.yaml`. Passing
@@ -253,7 +279,7 @@ dry-run: plan resolved, sent nothing.
   sampling: support-agent-staging's sampling_defaults fills temperature 0.0 on 0 of 2 specs (a spec's own value wins)
   would send: 20 requests over 2 specs at runs=5
   pacing:  5.0 req/s ceiling (S8)
-  budgets: 500000 tokens, 2000 requests, 1800s wall (derived from this plan)
+  budgets: 500000 tokens, 2000 requests, 2000 attempts, 1800s wall (derived from this plan, or --budget-requests, --budget-tokens, --budget-wall)
 ```
 
 `PI-INDIRECT-RAG-001` needs a poisoned document in the knowledge base and is not declared, so
@@ -283,7 +309,11 @@ so `target.websocket.yaml` declares it: the handshake frame (`{{token}}` is the 
 `auth_ref` resolves to), the query frame (`{{prompt}}`), how the streamed reply is read back
 (`text_path`, the `final_path`/`final_value` that ends a turn, the `ignore_types` to discard,
 `error_path`, `timeout_seconds`), a session-start frame and the reconnect cap. The adapter
-knows nothing else. `scope.websocket.yaml` authorizes `wss://` as it would `https://`
+knows nothing else. If the server relays a provider's filter verdict at `final_path` (a gateway
+in front of Azure OpenAI that ends a turn with `content_filter`), list those words under
+`response.filter_stops` and leave `final_value` out; without it, no word at `final_path` is read
+as a filter's (A-79), and a turn that ends on one with no text, or only blank text, and no tool
+call cannot be read. `scope.websocket.yaml` authorizes `wss://` as it would `https://`
 (cleartext `ws://` only to loopback), and a redirect at the upgrade is never followed. Both
 files are written by hand: a fleet entry carries no `websocket:` block, so `dottore fleet`
 refuses a `ws://` or `wss://` endpoint (exit 3, nothing written) and points here (OD-37):
@@ -311,7 +341,7 @@ dry-run: plan resolved, sent nothing.
   not seeded: 1 spec(s) on ws-assistant-staging, their scene is not in the deployment as seeded_setup declares it, or their tool trace cannot be read through this adapter (-vv says which)
   would send: 125 requests over 10 specs at runs=5
   pacing:  0.5 req/s ceiling (S8)
-  budgets: 500000 tokens, 2000 requests, 1800s wall (derived from this plan)
+  budgets: 500000 tokens, 2000 requests, 2000 attempts, 1800s wall (derived from this plan, or --budget-requests, --budget-tokens, --budget-wall)
 ```
 
 The target declares `rag: true` and no tools, so six specs are skipped for capability and the

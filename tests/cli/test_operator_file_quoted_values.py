@@ -53,10 +53,12 @@ from .conftest import make_spec, write_spec_tree
 
 runner = CliRunner()
 
-#: A value of a million characters: with its file around it, under the 1 MiB read cap.
-BIG = "a" * 1_000_000
+#: A value of a million characters: with its file around it, under the 1 MiB read cap. Not a
+#: hex digit: a run of 32 or more is masked whatever its entropy (u01 A-78), and these tests read
+#: what the refusal quotes.
+BIG = "q" * 1_000_000
 #: For a file that holds a value twice, or two values.
-HALF = "b" * 400_000
+HALF = "w" * 400_000
 
 SCOPE_HEAD = 'version: "1.0"\ntargets:\n'
 TARGET = "id: mock-target\ntype: chatbot\n"
@@ -388,8 +390,8 @@ ALIAS = "found undefined alias " + repr(BIG)
 ALIAS_CUT = f"{ALIAS[:300]}... ({len(ALIAS)} characters)"
 #: Long values for a run store's ids and an endpoint's path. A target or scope id longer than
 #: 128 characters is refused when its file is loaded (A-57), so no file brings one this long.
-ENTRY = "c" * 300_000
-NAME = "d" * 300_000
+ENTRY = "k" * 300_000  # not hex digits, as BIG (A-78)
+NAME = "m" * 300_000
 #: An id and an identity name of 128 characters, as A-57 allows, that repr writes as
 #: `\U000e0001` and `\U000e0020` each: 1,282 characters, so a refusal that quotes them still
 #: cuts them (audits of A-57: with these cases gone, 14 of the 19 sites that quote a target id

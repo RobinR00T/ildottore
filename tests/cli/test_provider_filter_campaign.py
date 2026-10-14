@@ -301,23 +301,31 @@ def test_the_campaign_goes_on_past_attack_prompts_the_provider_filter_refuses(
     ) in result.stdout
 
 
-def test_a_run_whose_every_attempt_was_blocked_is_complete_not_unreachable(
+def test_a_run_whose_every_attempt_was_blocked_is_filtered_and_exits_3(
     tmp_path: Path, azure: tuple[int, dict[str, Any]]
 ) -> None:
-    """The provider answered every request, so the target is not unreachable: the run completes,
-    the spec is inconclusive and not exercised, and the exit code is not an error's."""
+    """The provider answered every request, so the target is not unreachable; and its filter
+    answered every one for the model, so nothing the model wrote was evaluated. Until the
+    amendment to OD-41 (u12 A-79, decided 2026-10-11 under the owner's delegation) the run was
+    complete and exited 0, a fully filtered run reading green: it is ``filtered`` and exits 3,
+    as an unreachable target does. Each attempt is still OD-41's block."""
 
     port, state = azure
     argv = [*_argv(tmp_path, port, "PI-DIRECT-001"), "-oJ", str(tmp_path / "r.json")]
     result = CliRunner().invoke(app, argv)
 
-    assert result.exit_code == 0, result.output
-    assert (state["attack"], state["blocked"]) == (6, 6)
-    assert "did not complete" not in result.output
+    assert result.exit_code == 3, result.output
+    assert (state["attack"], state["blocked"]) == (6, 6), "the campaign went on past each block"
+    assert (
+        "error: run on azure did not complete: every one of the 6 attempt(s) was answered by the "
+        "provider's filter (6 refused by its input filter), so no reply the model wrote whole was "
+        "evaluated: the run measured the filter, not the model."
+    ) in result.output
     report = json.loads((tmp_path / "r.json").read_text(encoding="utf-8"))
-    assert report["summary"]["status"]["state"] == "complete"
+    assert report["summary"]["status"]["state"] == "filtered"
     assert report["summary"]["coverage"]["not_exercised"] == ["PI-DIRECT-001"]
     assert report["summary"]["by_status"] == {"inconclusive": 1}
+    assert report["summary"]["blocked_by_provider_filter"]["attempts"] == 6
 
 
 @pytest.mark.parametrize(

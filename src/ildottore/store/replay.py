@@ -22,6 +22,7 @@ from ildottore.shared.provider_filter import (
     cut_attempt_ids,
     side_unknown_attempt_ids,
 )
+from ildottore.shared.resend import one_per_attempt_id
 from ildottore.shared.unreadable import unreadable_attempt_ids
 from ildottore.store import paths
 
@@ -53,22 +54,17 @@ class ReplayResult:
     attempt_hashes: tuple[str, ...] = ()
 
     def effective_attempts(self) -> tuple[Attempt, ...]:
-        """One attempt per id: answered and judged, else any with a verdict, else a bare reply.
+        """One attempt per id, by the rule the runner scores with (``shared.resend``).
 
-        A resume sends an attempt that ended in an environment error again under its id (F11),
-        so the failed try and its re-send can both be on disk. Both are history and the listing
-        shows them, but only one is the attempt: counting both printed 10 attempts and a 0.60
-        rate for a spec the report scored 6 of 6. A reply stored without a verdict (a ceiling
-        stopped its evaluation) is sent again too, and its re-send is the attempt, judged or
-        ended in an environment error, as the runner scores it.
+        A resume sends an attempt that ended in an environment error, or whose reply could not
+        be read, again under its id (F11), so the failed try and its re-send can both be on disk.
+        Both are history and the listing shows them, but only one is the attempt: counting both
+        printed 10 attempts and a 0.60 rate for a spec the report scored 6 of 6. The artifacts are
+        read in file-name order, their content hashes, so a rule of its own that kept the first at
+        a tie counted another attempt than the report did (audit of the scoring, 2026-10-11).
         """
 
-        kept: dict[str, Attempt] = {}
-        for attempt in self.attempts:
-            current = kept.get(attempt.attempt_id)
-            if current is None or _answer_rank(attempt) > _answer_rank(current):
-                kept[attempt.attempt_id] = attempt
-        return tuple(kept.values())
+        return tuple(one_per_attempt_id(self.attempts))
 
     @property
     def n(self) -> int:
@@ -123,17 +119,6 @@ class ReplayResult:
         """
 
         return len(unreadable_attempt_ids(self.effective_attempts()))
-
-
-def _answer_rank(attempt: Attempt) -> tuple[bool, bool, bool]:
-    """Which artifact of one attempt id is the attempt: answered and judged, then judged.
-
-    The runner's rule (``core.runner._answer_rank``): a verdict outranks a bare reply.
-    """
-
-    answered = attempt.response is not None
-    judged = attempt.verdict is not None
-    return (answered and judged, judged, answered)
 
 
 def _load_verified_attempt(artifact: Path) -> Attempt:

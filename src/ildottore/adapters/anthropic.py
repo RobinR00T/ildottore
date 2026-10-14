@@ -22,6 +22,7 @@ from dataclasses import dataclass
 from typing import Any, ClassVar, Final
 
 from ildottore.adapters.base import BaseAdapter, ResponseMalformed
+from ildottore.shared.filter_stops import ANTHROPIC_FILTER_STOPS
 from ildottore.shared.media import MediaError, render_media_part
 from ildottore.shared.models import Capabilities, ModelRequest, ModelResponse, Sampling
 
@@ -136,6 +137,8 @@ class AnthropicAdapter(BaseAdapter):
     anthropic_version: str = _ANTHROPIC_VERSION
     #: False for a model that takes no ``temperature`` or ``top_p`` (u12 A-68): neither is sent.
     sampling_enabled: bool = True
+    #: The target file's ``filter_stops`` (u04 A-79), ``None`` when it declares none.
+    declared_filter_stops: frozenset[str] | None = None
     #: A 400 that names a sampling parameter is refused in words that name the capability.
     sends_sampling: ClassVar[bool] = True
 
@@ -151,6 +154,31 @@ class AnthropicAdapter(BaseAdapter):
     @property
     def _endpoint_path(self) -> str:
         return "/v1/messages"
+
+    @property
+    def filter_stops(self) -> frozenset[str]:
+        """Anthropic's ``refusal``, and no other provider's (u04 A-79).
+
+        The Messages API documents no other filter stop, so ``content_filter`` or ``SAFETY`` in a
+        reply is an ordinary stop, and so is Azure's HTTP 400 ``content_filter`` body: an
+        undocumented 4xx, which stops the campaign as any other does. A target file that declares
+        ``filter_stops: []`` (an endpoint that speaks the API and has no Anthropic filter behind
+        it) reads none on a reply with text or a tool call; an empty reply that ends on
+        ``refusal`` is still the filter's (:attr:`own_filter_stops`).
+        """
+
+        # Narrowed, never widened: a declaration built past the Target model's check (an
+        # adapter made by hand, a ``model_copy``) cannot add another provider's word (pre-merge
+        # audit of 10cb526b, LOW).
+        if self.declared_filter_stops is not None:
+            return self.declared_filter_stops & ANTHROPIC_FILTER_STOPS
+        return ANTHROPIC_FILTER_STOPS
+
+    @property
+    def own_filter_stops(self) -> frozenset[str]:
+        """``refusal``, whatever the file declares: on an empty reply, the filter's."""
+
+        return ANTHROPIC_FILTER_STOPS
 
     @property
     def carries_tool_definitions(self) -> bool:

@@ -21,7 +21,6 @@ from ildottore.core.reproduce import reproduce
 from ildottore.core.runner import (
     CampaignResult,
     CampaignRunner,
-    _one_per_attempt_id,
     answered_attempt_ids,
     unjudged_attempt_ids,
 )
@@ -42,6 +41,7 @@ from ildottore.shared.models import (
     TestRun,
     Verdict,
 )
+from ildottore.shared.resend import one_per_attempt_id
 from ildottore.store import replay_run
 from ildottore.store.evidence_fs import FsEvidenceStore
 from ildottore.store.replay import ReplayResult
@@ -400,7 +400,7 @@ def test_a_re_send_with_a_verdict_is_the_attempt_whichever_was_written_first(
         else _UNJUDGED.model_copy(update={"response": None, "error": "boom", "verdict": _verdict()})
     )
     order = [re_send, _UNJUDGED] if judged_first else [_UNJUDGED, re_send]
-    assert _one_per_attempt_id(order) == [re_send]
+    assert one_per_attempt_id(order) == [re_send]
     replay = ReplayResult(run_id="r", attempts=tuple(order))
     assert list(replay.effective_attempts()) == [re_send]
     assert replay.n == 1

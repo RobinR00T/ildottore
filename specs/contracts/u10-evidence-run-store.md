@@ -36,8 +36,9 @@ the u00 protocols:
 ## §4 Known constraints: KEEP / DECIDE
 - KEEP: evidence artifacts are **immutable + content-addressed** (SHA-256); a rewrite with the
   same content is a no-op, differing content is a new ref (never overwrites).
-- KEEP: SQLite opened with `PRAGMA journal_mode=WAL`, `foreign_keys=ON`; all writes in a
-  transaction; schema version tracked in a `schema_version` table (forward-only migrations).
+- KEEP: SQLite opened with `PRAGMA journal_mode=WAL`, `foreign_keys=ON`, a 30 s interruptible lock wait;
+  all writes in a transaction, a migration in one under the write lock; schema version tracked in
+  a `schema_version` table (forward-only migrations) (A-80).
 - KEEP: redaction is **fail-closed**: if the redactor errors or a raw-secret pattern survives,
   refuse the write and raise, never persist unredacted.
 - KEEP: paths-with-spaces safe; store root from config, never hardcoded; no writes outside root.
@@ -166,6 +167,15 @@ attempt id, by the verdict's reason or, without a verdict, by the error's mark
 `inconclusive (unreadable_reply)` on their line and a footer line for the count. A resume sends
 such an attempt again (the mark is not the not-retryable one). Checked by
 `tests/cli/test_malformed_reply_campaign.py` and `tests/core/test_unreadable_replies.py`.
+**Amended 2026-10-11 after the audit of the scoring (HIGH 1, u08 A-74):** which artifact of an id
+is the attempt, for `effective_attempts()` and every count above, is the runner's rule, read from
+one place (`shared.resend.one_per_attempt_id`): the replay kept the first artifact at a tie in
+file-name order, the content hash, so it could count another attempt than the report. Every
+attempt artifact carries `request.metadata.send_number` (`1` for an id's first send in the run,
+one more for each re-send), so a re-send is never byte-identical to the try it replaces and is an
+artifact of its own; an artifact stored before the stamp reads as sent before every stamped one, so
+an older run replays and resumes as it did, ties between two of its artifacts going to an outcome
+that never lets its spec pass. Checked by `tests/core/test_resend_is_the_attempt.py`.
 
 **A-70 (u08's clause; this unit's half, added 2026-10-11, OD-42) The evidence keeps a cut reply as
 it came, and a replay re-derives it.** A reply the provider's filter cut or replaced is stored with
@@ -174,7 +184,16 @@ guardrail trace, `response.filter_side`, beside the verdict `inconclusive:
 cut_by_provider_output_filter` or `provider_filter_side_unknown`; an input-side block read from a
 reply keeps the reply and an error ending in ` [blocked_by_provider_filter]` (A-69). A reply without
 a filter stop is stored byte for byte as before (`filter_side` is left out of a dump when unset, so
-content hashes do not move). `ReplayResult.cut_by_provider_output_filter()` and
+content hashes do not move). Since A-79 (u08) a reply whose stop is another provider's filter word
+is stored with `foreign_stop: true` (left out when false, so no other hash moves) and read back as
+a reply with an ordinary stop; a target file's `websocket.response.filter_stops` (and an `openai` or `anthropic` file's
+`filter_stops`) is in the target digest only when declared, so a run stored before it resumes.
+**Open, for the judging-rules version (`fix/resume-judging-rules`):** a resume across this upgrade
+keeps the verdicts its stored attempts were judged with under the earlier rules: a reply stored
+before A-79 carries no `foreign_stop`, which is not recomputed, so an attempt another provider's
+filter word made a cut stays a cut, a judge's fail recorded beside a cut stays inconclusive, and a
+guardrail message's deterministic fail stays a fail. Nothing here bumps a version; that branch's
+re-judge-or-refuse rule is where it is settled (pre-merge audit of `a55710e9`, LOW 6). `ReplayResult.cut_by_provider_output_filter()` and
 `provider_filter_side_unknown()` count them, one per attempt id, by the verdict's reason or, on a
 reply stored without a verdict, by its stop reason (`shared.provider_filter`); they stay in `N` and
 are never a success. `dottore replay` writes `inconclusive (cut_by_provider_output_filter)` or
@@ -195,6 +214,76 @@ it (the record left out otherwise, so every other artifact is byte for byte as b
 `dottore replay` reads the record, never the text, to write `(operator declaration)` after such
 an attempt's status and a footer line with their count. Checked by
 `tests/cli/test_operator_declaration_campaign.py`.
+
+**A-77 (u01's clause; this unit's half, added 2026-10-12, audit of main `de122e26`, HIGH 1 and
+LOW 7) No secret is rebuilt from the pieces the evidence keeps, and the guard reads them joined.**
+`put` masks an attempt's keys first (`redactor.mask_keys`, the numbering of two keys that mask
+alike as before), then its values with `redactor.redact_split`: each string, and each stream's
+joined text (a logprob list's tokens, a WebSocket transcript's received content field by field),
+so the run's canary, which the store registers,
+a key and a registered credential in 3-character tokens or in 3 deltas are masked in the pieces
+too; keys first, so the streams are joined under the names the guard reads. The fail-closed guard
+redacts every joined text of the stored payload's streams (`redactor.split_texts`) as it redacts
+every string, and refuses the write when one changes: before, it scanned one string at a time and
+passed the pieces. The figures, the token count and the shape are as before, so `replay_run`
+validates the attempt and `logprob_membership` scores it to the same verdict and confidence. The
+guard's criterion stands: since the pre-merge audit of `c4bd2012`, joined, the pieces show each
+mask once and never more than the redacted text (less only where a literal between two masks
+could stand in more than one place: 8 of 1,500 realistic replies, 309 of 1,500 hostile ones), so
+a reply the redactor masked passes it (a mask repeated in every
+piece it covered read, joined, as a run the URL rule masked again, and the guard refused 18 of 18
+connection strings). A refusal is a `RedactionLeakError` with the marker `evidence_refused`, which
+the runner answers, for an attempt and for a probe (`put_probe`), by storing it again with its
+pieces withheld (u08's half). The
+media digest (`request.metadata.media_sha256`) is put back verbatim only in the shape the runner
+writes, a list of SHA-256 hex digests; anything else under that name (a text, a list holding one)
+was put back unread and is now redacted like any value (LOW 7). Checked by
+`tests/store/test_split_values_at_rest.py` (three of its first five tests fail on `de122e26`; the
+two that pass there check that replay and the evaluator read what they read before; its 18 URL
+cases fail on `c4bd2012`).
+
+**A-78 (u01's clause; this unit's half, added 2026-10-11) The run store keeps one row a finding
+across the change of the identity masks.** A-78's patterns change the identity mask
+(`redact_identity`, fixed salt) of a value holding a UUID, a run of 32 hex digits, a key format or
+a JWT after `_`: a finding id (`<spec>::<target>`) of such a target was keyed under another string
+by the redactor before A-78. `_upsert_finding` writes a finding under the current mask and drops the
+row under the mask `redactor.identity_masks` gives for before A-78, when they differ, so a resume
+across the change keeps one row a finding (it kept two). The spec, target and judge digests and the
+scope digests stay unredacted, and the evidence store keeps `request.metadata.media_sha256` as
+written, as before: the hex rule reads none of them. The reports name a target by the rules
+before A-78 (u11), while the store keeps its identity mask by the current ones, which the resume
+checks read, in the run row's `target_id` and, since the round-2 audit (R2-L6), in its
+`meta_json.target_ids`, which took the store's per-process salt. Checked by `tests/store/test_identity_masks_before_a78.py` (12 tests; on `de122e26` the
+file stops at collection, which has no `identity_masks`, and 9 fail with the compatibility code
+taken out).
+
+**A-80 (u12's clause; this unit's half, added 2026-10-12) The stores open under contention, say
+which path failed, and prove themselves before a send.** `migrations.connect` returns a
+`StoreConnection`: SQLite waits 0.1 s per try, and `execute`, `executemany` and `commit` retry
+while it answers busy, `BUSY_TIMEOUT_S` (30 s, was SQLite's 5 s default) in all, with Python's
+interruptible sleeps between tries, so Ctrl-C and SIGTERM stop a wait at once (a single 30 s wait
+in C held them for about 32 s, pre-merge audit of `e6a1ab9b`, LOW 1); a wait past `NOTICE_AFTER_S`
+(1 s) is told, once per connection, to the caller's callback (`connect(on_lock_wait=...)`, or
+`lock_waits_reported(callback)` for every connection opened within, a context variable the caller
+sets and resets; nothing by default: the store wrote CLI text to stderr itself, round-2 audit of
+`f51a7d07`, LOW 4), and one that runs out raises `StoreLocked` (a `sqlite3.OperationalError`
+carrying the store and the wait) naming the store, which `SqliteRunStore` then says once (it
+read "the run store at X failed: the run store at X stayed locked ...", LOW 3); a stale snapshot
+(`SQLITE_BUSY_SNAPSHOT`) is not waited on. That covers the switch to WAL, which SQLite answers
+busy at once, without its busy handler, while another connection holds the file (18 of 80
+concurrent first opens failed, 0 of 160 after). `migrate` takes the write lock (`BEGIN IMMEDIATE`)
+before it reads the version it starts from and applies every pending step in that one transaction
+(two processes migrating together could both add the same column, and `executescript` committed
+each script step on its own), and refuses a connection with a transaction already open rather
+than committing it. A path that cannot
+be opened (a directory, a file that is not SQLite, a path under a regular file), or a sqlite3 error
+inside `with SqliteRunStore(...)`, is a `RunStoreError` (an `OSError`) whose message names the
+path. `check_store_path` and `evidence_fs.check_root_path` refuse such paths writing nothing (for
+the modes that send nothing, and for `replay --run-db`), both through `paths.nearest_existing`;
+`evidence_fs.prepare_run` creates `<root>/<run>/attempts` (and
+`probes`) and writes and removes a temporary file in each before the first send, raising
+`EvidenceStoreError` (an `OSError`) naming the root. Checked by
+`tests/store/test_store_open_errors.py` and `tests/cli/test_evidence_root_preflight.py`.
 
 ## §8 Out of scope / forbidden
 - MUST NOT compute scores/severity (u07), evaluate responses (u06), or render reports (u11) -

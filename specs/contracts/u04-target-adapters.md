@@ -350,6 +350,88 @@ reads as U+FFFD, since httpx decodes the stream as text.
   this one (`test_base.py`, `test_openai.py`, `test_anthropic.py`, `test_rest.py`,
   `test_deep_replies.py`, `test_websocket.py`, `test_websocket_premerge.py`,
   `test_provider_filter_block.py`).
+- **A-77 (u01's clause; this unit's half, added 2026-10-12, audit of main `de122e26`, HIGH 1) A
+  WebSocket transcript names its protocol's fields, and nothing the adapter quotes rebuilds a
+  secret from its pieces.** The transcript is `raw_ids["websocket"] = {"frames": [...],
+  "protocol_paths": [...]}`: beside the frames (OD-34, unchanged), the dotted paths the target file
+  declares as the protocol's (`type_path`, `final_path`, `error_path`, `tool_calls_path`,
+  `usage_path`, `model_path`, `id_path`, and the `expect` path of the handshake and of the session
+  start), never `text_path` or a path above it. Every other field of a frame received is the
+  reply's content, which the redactor joins across the frames field by field (`redact_split`, u01
+  A-77), in memory where `redact_ids` builds the record and again at rest and in the reports, which
+  read the paths from the transcript without the target file (a transcript stored before them is
+  read with the frame type at `type`, the default `type_path`). A secret the server streams in deltas
+  was redacted delta by delta and rebuilt from the evidence (an `sk-proj-` key, a registered
+  credential and an email in three deltas, measured with the loopback fake chat server). A turn
+  with no text quotes its frames received in the excerpt with that content masked as one text
+  (`mask_split` over the transcript): the frames were `json.dumps`ed and redacted as one string, so
+  each delta was masked alone. `reply_excerpt` reads a JSON body's logprob streams the same way
+  (`_split_masked`: OpenAI's `logprobs.content` tokens, their `top_logprobs` shown masked beside a
+  masked token, and the `bytes` of every masked token or alternative, which spell it, dropped; an
+  event stream's chunk holding one logprob item has the same done to it, its alternatives no
+  stream, so its `bytes` no longer spell a key its tokens no longer show), and
+  a body streamed as server-sent events when no stream was asked for, masked across the events
+  as a transcript is (it is not JSON, so it was quoted as it came, each delta redacted alone,
+  pre-merge audit of `c4bd2012`, MEDIUM 3). The stream is read as the format says (WHATWG HTML,
+  server-sent events, since the second pre-merge audit, MEDIUM 2): a line ends at CRLF, LF or CR
+  only (a raw U+2028 or U+0085 inside an event's JSON no longer splits it), a leading U+FEFF is
+  dropped, a blank line ends an event, a line starting with a colon is a comment, a field is what
+  precedes the first colon with one space after it dropped, and an event's `data` lines join with
+  LF; data that is a JSON object or array is masked field by field across the events (`type`,
+  `event`, `object`, `id`, `model`, `created`, `created_at`, `system_fingerprint`, `done` and
+  `done_reason` its protocol's fields), and any other data (a bare delta, a JSON string, decoded)
+  as the text of one stream. An event of several `data:` lines that make no object or array
+  joined (a page of `data:` lines with no blank line between them, which the format reads as one
+  event) is read line by line, each line a unit, in the same reading (third pre-merge audit,
+  LOW 3: a second reading ran only when the first masked nothing, so a masked event beside such a
+  block kept its key). A body of JSON lines is a stream only in a shape known to stream (each line
+  Ollama's, a `done` beside a `message` or a `response`, or an OpenAI chunk); any other is records,
+  masked string by string as `main` masks it (LOW 2: 181 of 217 clean JSON Lines logs were quoted
+  otherwise). Only the head the excerpt can read is read: four times its read extent (twice what
+  it keeps plus four times the longest registered credential or 256), cut at a line end, 36 KiB
+  with no long credential. A body that fits that head is masked as above. One longer than it has its
+  streamed text withheld instead (the owner's decision of 2026-10-13, under the delegation, best
+  practice: fail closed, an excerpt may show less than `main`, never more): the excerpt keeps the
+  lines `main`'s excerpt of the body shows whole and that are blank, JSON or a `data`, `event`, `id`
+  or `retry` field (a comment or a line starting with a space or `=` can take its mask in `main`'s
+  excerpt from a label in the text withheld: sixth pre-merge audit, `Tr0ub4dor-and-3` shown in 5 of
+  17 forms), with every streamed text value in them emptied (content and delta text, a `response`, a
+  message's content, a logprob token and its alternatives, a `data:` line's text; `bytes` and
+  Ollama's `context` nulled), and keeps keys, structure, numbers, booleans and the protocol's fields
+  above, and a `role`, a `finish_reason`, a `stop_reason` and a `service_tier`, at any depth (an
+  event's `delta.type`, a tool call's `id`); its first line says, once, that the text it streams is
+  withheld because the reply is longer than the head the excerpt reads. A secret whose pieces cross
+  the head's cut is never read whole, so no rule can mask it: masked across the head, what lay near
+  the cut moved up into the 4 KiB the excerpt keeps (fourth pre-merge audit, MEDIUM: a URL password
+  with symbols showed its beginning at 7 of 31 cuts, a 300-character registered credential at 70 of
+  111), and with only the head's first half shown and a stream's open tail left out, a 600-character
+  URL password of words still showed 20 to 61 of its characters and a stream that paused past the
+  head showed its secret's beginning. Withheld, none shows; a clean body past the head differs from
+  `main`'s excerpt only by that text and the notice (240 of 320 in the auditor's eight shapes, the
+  six that stream; every event or line shown equals the body's with its text emptied, 20,308
+  checked), and one that fits is `main`'s byte for byte (1,498 of 1,498). Only `main`'s whole lines
+  are kept since the fifth pre-merge audit: emptied, the lines are short, so the 4 KiB reached lines
+  `main`'s never reached, and a secret placed outside the streamed text (comment, `event:` or `id:`
+  lines, an event's `id` or `model`) showed 11 of 11 pieces where `main` showed 8; a fixed 4 KiB of
+  the body was not enough either, since `main`'s own masks lengthen what it shows (short emails in
+  every event: `main` none of 11, 4 KiB 8). The excerpt is read from that head alone (LOW 4: a 4 MiB
+  stream of tiny events cost up to 12.8 s, `main` 0.00 s; now under 0.25 s on every shape of the
+  audit's `cost3.py`). A masked unit is written again on one `data` line (a text holding LF, on as
+  many), JSON in the compact form it had, every other line as it came. A body rewritten (a JSON body
+  or a stream) is written with `ensure_ascii` off, as the target wrote it: escaped, a phone or a
+  card grouped by U+00A0 or U+202F outside any stream reached the excerpt's redaction as `\u00a0`
+  and was shown where `main` masked it (second pre-merge audit, MEDIUM 1), and a WebSocket turn's
+  frames are quoted the same way. Not read: what u01 A-77's not-covered list names for the excerpt
+  (a line that is no field of the format, pieces in a comment, `event:` or `id:` line, JSON lines in
+  another shape, among them). Any other body, or one holding no such stream, is quoted byte for byte
+  as before; its `size` is the body's as it came. Checked by
+  `tests/adapters/test_split_values_in_replies.py` (its first seven fail on `de122e26`, the three
+  event-stream cases on `c4bd2012`, the six grouped-number cases and 12 of the 20 stream shapes on
+  `ea13562f`, the log, block and window cases on `74ace451`, on `5dd87b42` the five cases of a
+  secret straddling the window's cut or reaching past it from the shown half and an event stream's
+  logprobs, on `5646b218` a secret at any offset of a cut stream, a paused stream, and a clean
+  stream past the window, on `6d7d990e` a cut excerpt's reach, and on `31cf86bf` the five forms of a
+  value after a label in the withheld text).
 
 - **A reply the provider's filter stopped keeps its stop reason, and the REST adapter reads a
   Bedrock guardrail's side (added 2026-10-11, OD-42; the runner's half is u08 A-70).** The stop
@@ -385,11 +467,110 @@ reads as U+FFFD, since httpx decodes the stream as text.
     `RECITATION` or `MODEL_ARMOR` stop, and OD-41's Gemini prompt block are read only by a
     `RestTemplate` built in Python (pre-merge audit, M3). A target file's openai, anthropic and
     websocket providers carry their stops as before.
-  - The stop words are generic, so they are read whichever adapter carries them: a WebSocket
-    target's final frame that holds `content_filter`, `refusal` or `safety` at its finish path is
-    read as that filter's stop too, as the fingerprint already read it (L7).
+  - The stop words were generic, read whichever adapter carried them (L7): a WebSocket target's
+    final frame that held `content_filter`, `refusal` or `safety` at its finish path was read as
+    that filter's stop. **Superseded by A-79 below**: each adapter reads its own provider's words.
   Checked by `tests/adapters/test_provider_output_filter.py` (49 tests; it does not collect on
   `6d5f7ae`).
+
+- **A-78 (u01's clause; this unit's half, added 2026-10-11, pre-merge security audit, LOW 6) Every
+  adapter refuses a credential shorter than 8 characters before its first request.** The redactor
+  masks a registered credential by value only from 8 characters, so a shorter one a target echoes
+  reaches the evidence and every report. The WebSocket adapter refused one before any dial (its
+  pre-commit audit, F5); the OpenAI, Anthropic and REST adapters (`BaseAdapter.send`) and the MCP
+  adapter over HTTP sent it, the resolved `auth_ref` and a password in the endpoint URL alike.
+  `adapters.base.refuse_short_credential(id, api_key, url)` runs right after the allowlist gate in
+  each of them, the WebSocket adapter's included, and raises `CredentialTooShort` (an
+  `AdapterProductError`) with the WebSocket adapter's message: `<id>: the credential is shorter than
+  8 characters, which the redactor cannot mask by value; nothing was sent`. A password is checked as
+  written and as it reads percent-decoded; an empty one is no credential and passes
+  (`https://<token>:@host` sends a user only); a stdio MCP server, which is sent no key, is not
+  checked (only the MCP adapter honours `transport: stdio`: on any other provider the field is
+  ignored, the key goes over the wire, and the CLI checks it, pre-merge audit of A-78, L4).
+  `MIN_CREDENTIAL_LEN` is `redactor.KNOWN_SECRET_MIN_LEN`, re-exported by the WebSocket module. The
+  CLI refuses it earlier too (u12). Checked by `tests/adapters/test_short_credentials.py` (39 tests;
+  on `de122e26` the file stops at collection, which lacks `MIN_CREDENTIAL_LEN` and
+  `refuse_short_credential`, and 19 fail with the two given stand-ins in a copy of the file; the test
+  adapters that used the key `k` use one of 10). The no-entropy twin a model name goes through
+  (`redact_ids`, `Redactor.without_entropy`) drops the UUID pattern with the entropy rule, so a
+  deployment's model name holding one reads as before A-78 for the fingerprint's metadata layer
+  (u01's clause, L5).
+
+- **A-79 (this unit's half; the clause is u08's, added 2026-10-11, the amendment to OD-41 and
+  OD-42, decided under the owner's delegation, best practice, revisable) A stop is a filter's only
+  from the provider that documents it.** A target writes its own stop reason and error body, and
+  every adapter read every provider's filter words: an OpenAI-compatible target that answered
+  `refusal`, `SAFETY` or `guardrail_intervened`, or a WebSocket target that ended a turn on
+  `content_filter`, had its reply read as a filter's cut, and any adapter read Azure's HTTP 400
+  `content_filter` as a block (security audit of 2026-10-11, MEDIUM 3). The criterion:
+  - every adapter says which stops it honours, `filter_stops` (a `frozenset` of trimmed,
+    lower-case words): `BaseAdapter` none; `OpenAIAdapter` `content_filter`; `AnthropicAdapter`
+    `refusal`; `RestAdapter` its template's `reads_filter_stops`, which is `RestTemplate.filter_stops`
+    when set and otherwise the template's shape: Bedrock's (`guardrail_intervened`,
+    `content_filtered`) for a `finish_path` of `stopReason`, Gemini's and Vertex AI's (`safety`,
+    `blocklist`, `prohibited_content`, `spii`, `model_armor`, `recitation`) for a `text_path`
+    under `candidates.`, none otherwise (a target file's `provider: rest` target has the generic
+    template, with no `finish_path`, and reads none); `WebSocketAdapter` its file's
+    `response.filter_stops` (u00), none by default. The vocabularies, each sourced, are in
+    `shared.filter_stops`; a declaration must name values from them (`documented_stops`), refused
+    otherwise, and a WebSocket declaration beside a `final_value` is refused (every turn ends on
+    that value);
+  - every success reply leaves an adapter through `shared.provider_filter.stop_provenance`
+    (`BaseAdapter._checked`; the WebSocket adapter's turn): a stop that is some provider's filter
+    word and not one the adapter honours keeps its spelling and gets `ModelResponse.foreign_stop:
+    true` (u00), which every reader reads as an ordinary stop (u08). A REST body with no text and
+    a foreign stop is a `ResponseMalformed`, and so is a WebSocket turn with no text, no call and
+    only an undeclared word; the Bedrock trace is read only beside an honoured
+    `guardrail_intervened`;
+  - Azure's HTTP 400 `content_filter` is a `ProviderFilterBlock` only from an adapter that
+    honours `content_filter` (OpenAI's, or a REST template that declares it); from any other it is
+    an `AdapterStatusError`, an undocumented 4xx that stops the campaign, as before OD-41.
+    Gemini's `promptFeedback.blockReason` is read only by a template that honours one of Gemini's
+    stops (a template in Gemini's shape does, unless its `filter_stops` says otherwise);
+  - an `openai` or `anthropic` target file may declare `filter_stops` (u00 `Target`, u12): `[]`
+    for an endpoint that speaks the provider's API and has no such filter behind it (not a gateway
+    in front of Azure OpenAI, which relays Azure's), or the provider's own word only, checked by
+    the `Target` model on every path (`shared.filter_stops.target_filter_stops`). The composition
+    root passes it as the adapter's `declared_filter_stops`, which `filter_stops` returns
+    intersected with the provider's own words, so a declaration built past the model (by hand, a
+    `model_copy`) narrows and never widens them (pre-merge audit of `10cb526b`, LOW): with `[]` no
+    Azure 400, and no stop on a reply with text or a tool call, is read as a filter's (pre-merge
+    audit of `a55710e9`, LOW 3, best-practice addition);
+  - every adapter also says what its provider documents whatever is declared,
+    `own_filter_stops`: `BaseAdapter` none (the WebSocket adapter none either), `OpenAIAdapter`
+    `content_filter`, `AnthropicAdapter` `refusal`, `RestAdapter` its template's
+    `shape_filter_stops` (the shape's, as above). `stop_provenance` never marks a reply with no
+    text (`blank_text`: whitespace and the format characters that show and carry nothing, the
+    redactor's `EMPTY_FORMAT_RANGES`, so a zero-width space is none, pre-merge audit of
+    `e1a8aacf`, LOW 1, and a tag character or a format sign a font draws is text, that of
+    `3f7b1254`, LOW) and no tool call that ends on one of them: that
+    is the filter's withheld reply, scored as
+    without the declaration, never a pass. A gateway in front of Azure relays Azure's empty
+    `content_filter`, and the first version marked it foreign under `[]`, so `PI-DIRECT-001`
+    passed and the run exited 0 where without the declaration it is `filtered`, exit 3 (pre-merge
+    audit of `10cb526b`, MEDIUM). A REST body with no text reads the shape's word too, as `""`;
+  - the WebSocket adapter's `unreadable_advice` names `response.filter_stops`: a file written
+    before A-79 whose server ends a withheld turn on a filter word gets an unreadable reply for it
+    until the word is declared (LOW 2). A withheld turn is one with no tool call and no text
+    frame, or only blank ones (`blank_text`), ending on a documented filter word the file does
+    not declare: a relay of a streamed Azure reply sends a first delta of `""`, and until the
+    pre-merge audit of `e1a8aacf` (MEDIUM 1) only a turn with no text frame at all was
+    unreadable, so that one was the model's empty answer and passed, exit 0. A blank turn on a
+    declared word is the filter's cut, one on an ordinary stop an empty answer, as before.
+  Measured on `de122e26` through the CLI: an `openai` stub answering `JB-ROLEPLAY-001` with
+  harmful text and `finish_reason: refusal` gave three cut attempts and exit 0, and gives a
+  confirmed fail, exit 2, as the same text with `stop` does; an `anthropic` stub answering every
+  attack with Azure's 400 gave six blocked attempts and exit 0, and stops at the first, exit 3.
+  Checked by `tests/adapters/test_filter_stop_provenance.py` (54 tests; 52 fail on `de122e26`, the
+  two controls pass; 25 fail on `10cb526b`, among them the empty reply on the provider's own word
+  under a declaration, from OpenAI, Anthropic and a Gemini template, and an adapter given another
+  provider's word; 19 on `e1a8aacf`, among them `blank_text` on 8 strings and a zero-width reply
+  through the OpenAI adapter; 11 on `3f7b1254`: `blank_text` on 8 tag and sign strings, the
+  three kinds partitioning the redactor's list, the tag reply undeclared and under `[]` and a
+  sign under `[]`), `tests/adapters/test_provider_filter_block.py` (59: the Azure 400 from the
+  adapters that do not read it, 2 of them failing on `de122e26`) and the WebSocket cases of
+  `tests/adapters/test_malformed_replies.py` (42 tests; the blank turn on `""`, `"  "` and a
+  zero-width space, 3 failing on `e1a8aacf`, and its control).
 
 ## §8 Out of scope / forbidden
 - MUST NOT import or call vendor SDKs (`openai`, `anthropic` packages): httpx only (ADR-0002).
