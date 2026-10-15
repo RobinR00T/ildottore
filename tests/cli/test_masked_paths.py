@@ -54,7 +54,9 @@ def _complete_report(path: Path) -> Path:
 
 
 def _not_a_report(path: Path) -> Path:
-    path.write_text(json.dumps({"findings": 3}), encoding="utf-8")
+    # A JSON number: a document that is neither a report nor a list of findings. An envelope
+    # without `schema_version` is refused on its own line since u12 A-82.
+    path.write_text(json.dumps(3), encoding="utf-8")
     return path
 
 
@@ -455,7 +457,10 @@ def test_main_rule_stops_where_path_exists_raises(monkeypatch: pytest.MonkeyPatc
 
 def _halted_report(path: Path, reason: str) -> Path:
     status = {"complete": False, "state": "halted", "reason": reason}
-    path.write_text(json.dumps({"findings": [], "summary": {"status": status}}), encoding="utf-8")
+    path.write_text(
+        json.dumps({"schema_version": "1.0", "findings": [], "summary": {"status": status}}),
+        encoding="utf-8",
+    )
     return path
 
 

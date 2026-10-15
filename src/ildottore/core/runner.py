@@ -93,6 +93,7 @@ from ildottore.shared.enums import (
     InconclusiveReason,
     VerdictStatus,
 )
+from ildottore.shared.error_text import error_text
 from ildottore.shared.media import MediaError, media_digests
 from ildottore.shared.models import (
     AttackSpec,
@@ -850,7 +851,7 @@ class CampaignRunner:
                     )
             elif isinstance(outcome, Exception):
                 if error is None:
-                    error = f"aborted on {type(outcome).__name__}: {outcome}" + _notes(outcome)
+                    error = f"aborted on {error_text(outcome)}" + _notes(outcome)
             elif isinstance(outcome, BaseException):
                 raise outcome  # KeyboardInterrupt / cancellation are not campaign outcomes
             elif outcome is not None:

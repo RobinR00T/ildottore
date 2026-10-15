@@ -79,7 +79,9 @@ def captured(monkeypatch: pytest.MonkeyPatch) -> list[tuple[run_mod.RunOptions, 
 
     seen: list[tuple[run_mod.RunOptions, list[Path]]] = []
 
-    def capture(opts: run_mod.RunOptions, spec_paths: list[Path]) -> run_mod.RunOutcome:
+    def capture(
+        opts: run_mod.RunOptions, spec_paths: list[Path], *, default_spec_path: bool = False
+    ) -> run_mod.RunOutcome:
         seen.append((opts, spec_paths))
         return run_mod.RunOutcome(exit_code=ExitCode.CLEAN)
 

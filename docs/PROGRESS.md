@@ -3,6 +3,130 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-14 (evening): merged with `fix/no-secret-in-fragments` (`33782ad3`), which main now holds
+
+- `33782ad3` (#115, with #114 `7cdd91a2` and main `030b79e0`) merged in as `007e3c41`, a real
+  merge, as `scratch/fixcli3/MERGE-PLAN.md` decided; #114 and #115 have since landed, and main
+  `d526747e` has the tree of `33782ad3`. One root class, `_MaskedGroup(OperationalErrorGroup)`,
+  with Typer's public names only (`_click_classes` is gone); A-80's exit codes (`run_masked`: any
+  other click error and an abort exit 3); one missing-spec-path mechanism, A-80's wording when no
+  spec path was given (run, fleet --run, registry ls, describe, coverage; test added at
+  `d3e748e4`, 3 of 3 failing on both parents); strict `lint`; `allow_inf_nan=False` kept.
+- Found by the merge and resolved: A-80's `LoadResult.files` (a list) beside this branch's count,
+  now `spec_files_read`; A-78's UUID pattern left out of `credential_patterns()` and `key_shape`
+  reading the late key formats through `without_entropy()`, so a tenant UUID in a fleet endpoint
+  is kept; an Anthropic key is now "a credential format"; a credential variable that is not set or
+  holds only blanks is named by A-82's check rather than refused as shorter than 8 characters;
+  A-78's stdio test reads A-82's transport refusal. Each listed in u12 A-82's merge paragraph.
+- `make gates` green on the merged tree (`007e3c41`): 6,984 tests (6,983 passed, 1 skipped), 97.68% coverage,
+  75 specs lint OK, four contracts kept, self-scan, bandit and pip-audit clean; the same 6,984 with
+  `GITHUB_ACTIONS=true CI=true`, and the whole suite against Typer 0.27.3 (the extracted wheel
+  first on `PYTHONPATH`, nothing installed). The M7 fuzz (687 cases, `main()`, `app()` and the
+  click command), `m3probe.py` (32 of 32 legitimate endpoints kept, 35 of 35 hostile refused),
+  `m3c.py`, the family fuzz and the M4 live checks give the same results as before the merge; the
+  22 new CLI test files of both branches pass on Typer 0.27.3 (529, 1 skipped).
+
+## State, 2026-10-13 (night): the round-3 audit of `3321a786` (A-82), fixed; the merge prepared
+
+- `?<key>=1`, `#<key>=x` and `;<key>=x`, accepted again by the round-2 rework, are refused (a
+  parameter name shaped like a key); twenty more credential names; a masked usage error carries no
+  chained cause, so a group of the installed click prints no raw value. The residuals are stated as
+  their class (8 to 64 hex digits, optionally after a short prefix, and low-entropy values, under
+  names outside the list; `new-spec --family <hex>`), and embedding in a plain click group as
+  supported for usage errors only.
+- The merge with `fix/cli-store-budgets-paths` is decided and planned
+  (`_ildottore-tren/scratch/fixcli3/MERGE-PLAN.md`): one root class
+  `_MaskedGroup(OperationalErrorGroup)`; A-80's exit codes (`ClickException`, `FileError`, `Abort`
+  and a stray `SystemExit` exit 3); one missing-path mechanism with A-80's wording for the default
+  path; `allow_inf_nan=False` on `timeout_seconds`. Not merged yet.
+- `make gates` green on `68b7cc48`: 5793 tests (317 new, 245 of which fail on `de122e26`), 97.81%
+  coverage; the round-3 probe (`m3c.py`) and `m3probe.py` (32/32, 35/35) clean but for the
+  declared hex values under neutral names.
+
+## State, 2026-10-13 (evening): the round-2 audit of `e1824e99` (A-82, merge-ready), its LOWs fixed
+
+- LOW 1: the root command (`app._MaskedGroup`, Typer `cls=`) masks a usage error in place where
+  click raises it, so `typer.main.get_command(app)()`, a parent group and `python -m typer` print
+  it masked; `_MaskedTyper` is gone. LOWs 2 to 4: `cli.key_shape` (credential formats and entropy
+  outside hex ids and UUIDs, never PII; whole normalised credential names) for a fleet endpoint's
+  path, query and fragment and for `new-spec --family`. LOW 5: names printed as written, and a
+  long file name's wording for a write. LOW 6: `--spec-path` of a name no file system holds.
+- Reruns: the audit's fleet probe 32 of 32 legitimate endpoints accepted and 35 of 35 hostile ones
+  refused, nothing written or shown; its M7 fuzz through four entries (806 cases) leaks nothing but
+  `new-spec --family <32 hex>`, which is written as the family asked for (a hex id is no key, as in
+  a fleet endpoint); M4 live, query-key and family checks clean; `repro.sh` clean. `make gates`
+  green on `52fb9cce`: 5769 tests (293 new, 221 of which fail on `de122e26`), 97.82% coverage.
+- Merge plan (coordinator, 13-10): `fix/cli-store-budgets-paths` lands first; then `origin/main` is
+  merged here on the coordinator's word, keeping one missing-path mechanism
+  (`refuse_spec_paths_that_hold_nothing`, `PATH_NOT_FOUND`, exit 3, with fixcli1's wording for the
+  default fallback path), a strict `lint` with no path and no `specs/` (exit 3, no fallback to the
+  built-in battery), and `allow_inf_nan=False` on `timeout_seconds` in `shared/models.py`.
+
+## State, 2026-10-12 (late morning): the pre-merge audit of `f9dbed49` (A-82), fixed
+
+- Three MEDIUM and eight LOW, one commit each on `fix/cli-input-validation`. MEDIUM 1: the exported
+  `app` runs `main()` when called, so the console script an older install generated masks too
+  (the audit's fuzz: 60 leaking usage errors there, 0 now). MEDIUM 2: the CHANGELOG marks each
+  breaking change with its own `### Changed (breaking for ...)` heading. MEDIUM 3 (pre-existing):
+  a fleet endpoint whose query or fragment carries a credential, or that `urlsplit` reads with no
+  host, is refused before anything is written. LOWs: `lint`, `describe` and `schema export` mask
+  what they echo (a); the registry reads one file read twice as one declaration (b); docs/06's
+  provider sentence (c); the report schema and the manual say "since `f12ba833`" (d, a v0.1.0
+  report does not validate, as before); a name too long to open is described by its length,
+  `--scope` included (e); the version refusals reworded (f); the masking tests no longer depend on
+  the launcher's program name (g); `Sampling`'s exported description is as before (h). The
+  environment is read in the CLI wiring and passed to `unset_variable`.
+- The rerun of the audit's M7 fuzz found two more in `new-spec`, fixed: `--stdout` did not check
+  `--id`, and `--family <key>` printed the key into the scaffold.
+- Reruns: the audit's M7 fuzz (687 cases) 0 leaks through `main()` and `app()`, 63 on
+  `de122e26`; its M4 live checks send nothing on each refusal; its query-key check writes no key;
+  the original audit's `fuzz.py`, `fuzz2.py` and `fuzz3.py` flag only the run-store tracebacks
+  (fixcli1's H1); `scratch/fixcli3/repro.sh` exits 3 with the field named on every case. `make
+  gates` green on `ff6568ed` with `PYTHONPATH` set to the worktree's `src`: 5711 tests (5476 on
+  `main` at `de122e26`, 235 new, 182 of which fail there), 97.85% coverage, 75 specs lint OK, four
+  import contracts kept, self-scan, bandit and pip-audit clean. One gates run before that
+  (`253967d4`) failed `test_a_fifo_report_path_is_written_in_place` once, a timing test this
+  branch does not touch; it passed alone five times and in the next full run.
+
+## State, 2026-10-12 (morning): CLI input validation, from the full CLI audit of `de122e26` (u12 A-82)
+
+- On `fix/cli-input-validation` (worktree `wt/fixcli3`, from `main` at `de122e26`), one commit per
+  finding: the audit's M4 to M9, L2, L4, L5, L7, L8 and L10 (fixcli1 and fixcli2 hold the others).
+  Clause A-82 in u12, with halves in u01 (scope version, identity variable names), u02 (the path
+  codes, the loose-tree notes, collisions naming both files), u11 (the report schema) and u00
+  (finite `Sampling`, `shared.credential_refs`, `shared.error_text`); no new OD.
+- M7: the console scripts run `cli.main:main`, which prints a usage error through `_masked`
+  (exit 3); `--runs "$KEY"` printed the key. **An installed `dottore` keeps the old entry point
+  until it is reinstalled.** M4: a live run or `fingerprint` refuses an unset or blank credential
+  variable before any traffic, naming it; a dry run warns; `env://NONE` is never read. M8: an
+  `env://` name is `[A-Za-z_][A-Za-z0-9_]*` in target, scope and fleet files; a fleet endpoint with
+  user info is refused. M5: `provider` and `transport` take known values (A-53's open item). M6:
+  `Sampling` is finite. M9 and L7: `PATH_NOT_FOUND` and `NO_SPECS` (lint exit 3), `FILES_NOT_READ`,
+  and every spec-path consumer refuses a path that holds nothing; `registry ls --suite nope`;
+  scope and fleet `version`. L2: a collision refuses the run. L4 and L5: `diff` reads schema 1 and
+  knows a SARIF log; the report schema constrains run and findings, `schema export --name report`.
+  L8: separated figures, one unknown-suite wording, `--timeout` 1 to 86,400 with a timeout that
+  says so and no empty reason, `127.0.0.1` kept in a URL. L10: `new-spec --family`.
+- The self-review found one more: `--family yes` (or `null`, `123`) scaffolded a tag YAML reads as
+  a boolean, a null or a number; a plain word is now checked by reading it back.
+- Measured before and after with `scratch/fixcli3/repro.sh` (the audit's cases, on `de122e26`
+  through the old `app()` entry and on the branch through `main()`): every case the audit listed now
+  refuses with exit 3 and a line that names the field, or keeps its words; no key is printed.
+- Tests: 197 new in 8 files (`tests/cli/test_usage_errors_masked.py`,
+  `test_credential_variables.py`, `test_provider_transport_values.py`, `test_non_finite_values.py`,
+  `test_spec_paths_that_hold_nothing.py`, `test_spec_id_collisions.py`,
+  `test_report_and_file_versions.py`, `test_cli_messages_read_right.py`), 148 of which fail on
+  `de122e26` (three of the files need this branch's new modules to import there); two reports of
+  earlier builds kept as fixtures, and the audit's 89 reports validated through
+  `DOTTORE_REPORT_CORPUS`. `make gates` green on `669d9ec7` with `PYTHONPATH` set to the
+  worktree's `src` (only PROGRESS's figures and the clause's counts follow it): 5673 tests (5476 on
+  `main` at `de122e26`, 197 new), 97.85% coverage (`shared/credential_refs.py`,
+  `shared/error_text.py`, `cli/lint.py` and `cli/new_spec.py` 100%), 75 specs lint OK, four import
+  contracts kept, self-scan, bandit and pip-audit clean.
+- Expected conflicts with fixcli1 and fixcli2 in `cli/app.py`, `cli/run.py` and `cli/wiring.py`
+  (and with fixscore and fixstop in `core/runner.py`, one line here), and a doc conflict in the
+  MANUAL's troubleshooting table and the CHANGELOG head.
+
 ## State, 2026-10-14 (afternoon): stacked on #114 (fix/cli-store-budgets-paths, `7cdd91a2`)
 
 - `git merge --no-ff 7cdd91a2` (`10d73aac`): #114 holds main `030b79e0` and lands first. The code

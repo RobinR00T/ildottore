@@ -230,7 +230,27 @@ def _format_error(err: ValidationError) -> str:
     # surrogate there, a traceback before A-40 too, is closed on main by A-54 (#89), which reports
     # it before the schema runs (pre-merge audit of #90).
     location = path_text(tuple(err.absolute_path))
-    return f"{location}: {_cut(err.message)}"
+    return f"{location}: {_cut(_separated(err))}"
+
+
+def _separated(err: ValidationError) -> str:
+    """The message, an integer it opens with written with thousands separators (u12 A-82).
+
+    ``99999999999999999999 is greater than the maximum of 4`` reached the CLI as
+    ``«REDACTED:phone» is greater than ...``: the redactor reads a long digit run as a phone
+    number. A separated figure is not one, and is the value as written.
+    """
+
+    instance = err.instance
+    written = repr(instance)
+    if (
+        isinstance(instance, int)
+        and not isinstance(instance, bool)
+        and abs(instance) >= 1000
+        and err.message.startswith(written)
+    ):
+        return f"{instance:,}{err.message[len(written) :]}"
+    return err.message
 
 
 def _cut(text: str) -> str:

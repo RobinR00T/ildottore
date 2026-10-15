@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import fnmatch
 import json
+import math
 import os
 import shutil
 import signal
@@ -43,7 +44,7 @@ from typing import Any
 from ildottore.cli import interrupts, wiring
 from ildottore.cli import resume as resume_mod
 from ildottore.cli.exit_codes import ExitCode, exit_code_for, fail_on_band
-from ildottore.cli.flags import QUICK_SUITE, resolve_suite_id, resolve_timing
+from ildottore.cli.flags import QUICK_SUITE, resolve_suite_id, resolve_timing, unknown_suite
 from ildottore.cli.render import ProgressPrinter
 from ildottore.core.budgets import (
     DEFAULT_COMPLETION_TOKENS,
@@ -123,9 +124,6 @@ __all__ = [
     "resolve_target_plans",
     "select_specs",
 ]
-
-#: How the loader says a spec path does not exist (``registry.loader``).
-_PATH_NOT_FOUND = "path not found: "
 
 #: Where a run keeps its evidence and its run store when ``--evidence-root`` / ``--run-db``
 #: are not given (``replay`` and ``fleet --run`` read the same defaults).
@@ -1495,6 +1493,22 @@ def _flag_figure(value: int) -> str:
     return f"a {'negative ' if value < 0 else ''}number of more than 21 digits"
 
 
+def _float_figure(value: float) -> str:
+    """A float flag's value as an error quotes it: with thousands separators (no phone number
+    to the CLI's redactor, u12 A-82), or as Python writes ``nan``, ``inf`` and an exponent."""
+
+    if not math.isfinite(value) or (value and not 1e-4 <= abs(value) < 1e21):
+        return repr(value)
+    return f"{value:,}"
+
+
+#: The per-attempt timeout a run takes, in seconds (u12 A-82, CLI audit L8). Below a second no
+#: model answers; `--timeout 1e-300` timed every attempt out at once and the run ended
+#: `TimeoutError: `. A day is the longest a spec's own `budget.timeout_s` may ask for.
+MIN_TIMEOUT_S = 1.0
+MAX_TIMEOUT_S = 86_400.0
+
+
 def _validate_options(opts: RunOptions) -> None:
     """Refuse an option the campaign would only trip over at the end, before anything is sent.
 
@@ -1506,8 +1520,12 @@ def _validate_options(opts: RunOptions) -> None:
     """
 
     fail_on_band(opts.fail_on)
-    if opts.timeout_s is not None and not opts.timeout_s > 0:
-        raise ValueError(f"--timeout must be greater than 0 seconds (got {opts.timeout_s})")
+    # Written so a NaN refuses too: no comparison holds for it.
+    if opts.timeout_s is not None and not MIN_TIMEOUT_S <= opts.timeout_s <= MAX_TIMEOUT_S:
+        raise ValueError(
+            f"--timeout must be at least 1 second and at most {MAX_TIMEOUT_S:,.0f} (a day; got "
+            f"{_float_figure(opts.timeout_s)})"
+        )
     # An upper bound too (A-55): a `--runs` of 306 digits was an OverflowError in the plan's
     # float arithmetic, a traceback with exit 1, and `--budget-tokens -1` passed the dry run and
     # the estimate with exit 0 while the run refused it.
@@ -1859,14 +1877,22 @@ def lock_waits_noted() -> Iterator[None]:
         yield
 
 
-def execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
-    """Run the campaign :func:`_execute_run` describes, SIGTERM and SIGHUP as Ctrl-C."""
+def execute_run(
+    opts: RunOptions, spec_paths: list[Path], *, default_spec_path: bool = False
+) -> RunOutcome:
+    """Run the campaign :func:`_execute_run` describes, SIGTERM and SIGHUP as Ctrl-C.
+
+    ``default_spec_path``: no ``--spec-path`` was given, so ``spec_paths`` is the default
+    (``wiring.default_spec_paths``), which a refusal names as such (u12 A-80).
+    """
 
     with _termination_as_interrupt(), lock_waits_noted():
-        return _execute_run(opts, spec_paths)
+        return _execute_run(opts, spec_paths, default_spec_path=default_spec_path)
 
 
-def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
+def _execute_run(
+    opts: RunOptions, spec_paths: list[Path], *, default_spec_path: bool = False
+) -> RunOutcome:
     """Run a full campaign for every target and return the aggregate outcome.
 
     Order of refusals, all before any adapter exists (contract §4 KEEP, zero sends):
@@ -1888,8 +1914,8 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
     # rate is a ceiling the operator authorizes; zero or less is not one (audit 2026-10-03, R8).
     if opts.rate is not None and not opts.rate > 0:
         raise ValueError(
-            f"--rate must be greater than 0 requests per second (got {opts.rate}); omit it to "
-            "use the timing template's rate"
+            f"--rate must be greater than 0 requests per second (got {_float_figure(opts.rate)}); "
+            "omit it to use the timing template's rate"
         )
     _validate_options(opts)
     if opts.scope is None:
@@ -1979,20 +2005,10 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
     # parsed, so a one-letter typo removed a spec from the battery and the run still printed
     # "Specs run: 1 of 1 planned" and `complete` (audit 2026-10-03, F-10).
     registry, load_errors, files_read = wiring.load_registry_reading(spec_paths)
-    missing = [
-        e.message.removeprefix(_PATH_NOT_FOUND)
-        for e in load_errors
-        if e.message.startswith(_PATH_NOT_FOUND)
-    ]
-    if load_errors and len(missing) == len(load_errors):
-        # A spec path that does not exist is not a spec file that failed to load: it read
-        # "1 spec file(s) failed to load ...: ?: path not found: specs", run from anywhere but
-        # the repository root (u12 A-80).
-        raise SpecLoadError(
-            f"spec path not found: {', '.join(missing)}. Pass --spec-path <dir>; without it a "
-            "run reads specs/ in the working directory, else the battery beside the installed "
-            "package when that is a source checkout."
-        )
+    # A spec path that does not exist or holds nothing is not a spec file that failed to load:
+    # it read "1 spec file(s) failed to load ...: ?: path not found: specs", run from anywhere
+    # but the repository root (u12 A-80), and of an empty directory (u12 A-82).
+    wiring.refuse_spec_paths_that_hold_nothing(load_errors, to="run", default=default_spec_path)
     if load_errors:
         # Counted by FILE: one bad file yields many findings (17 for one target example), and
         # the message said "17 spec file(s)" (review of PR #32).
@@ -2005,6 +2021,25 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
             f"{len(files)} spec file(s) failed to load and would silently leave the "
             f"battery: {shown}{more}. Run `dottore lint` on the spec path and fix them first.",
             spec_files=_spec_files_on_disk(spec_paths, [e.path for e in load_errors[:5] if e.path]),
+        )
+    # A spec id two files declare: the first loaded won without a word (u12 A-82, CLI audit
+    # L2). Refused whatever the selection, as a broken file is: which spec an id names is the
+    # battery's question, and lint already calls it an error.
+    collisions = wiring.spec_id_collisions(registry)
+    if collisions:
+        shown = "; ".join(
+            f"spec id {spec_id!r} is declared twice: by {' and by '.join(files)}"
+            for spec_id, files in list(collisions.items())[:5]
+        )
+        more = f" (and {len(collisions) - 5} more id(s))" if len(collisions) > 5 else ""
+        raise SpecLoadError(
+            f"{shown}{more}; a run would take the first file and drop the other without a "
+            "word. Give one of them another id, or leave one spec path out (`dottore lint` "
+            "lists every collision).",
+            spec_files=_spec_files_on_disk(
+                spec_paths,
+                [name for files in collisions.values() for name in files],
+            ),
         )
     # Before anything is sent, and against what the loader read: a report over a spec, a suite,
     # a pack.yaml or a media asset is refused, one beside them is not (u12 A-80).
@@ -2027,10 +2062,8 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
     if suite_name is not None:
         suite_id = resolve_suite_id(suite_name)
         if not registry.has_suite(suite_id):
-            known = ", ".join(sorted(s.id for s in registry.suites())) or "<none>"
             raise ScopeError(  # operational error surfaced to exit >2 by the caller
-                f"suite {suite_name!r} (resolved to {suite_id!r}) is not registered. "
-                f"Registered suites: {known}"
+                unknown_suite(suite_name, suite_id, [s.id for s in registry.suites()])
             )
         suite_specs = registry.resolve(suite_id)
 
@@ -2128,6 +2161,31 @@ def _execute_run(opts: RunOptions, spec_paths: list[Path]) -> RunOutcome:
         raise ValueError(
             f"{pace} is less than one request per {wall:,}-second wall-clock ceiling, so the "
             "run would wait past that ceiling between two sends; raise the rate or --budget-wall"
+        )
+
+    # A credential variable that is not set, before anything is sent, the -sV probes included:
+    # an unset `env://TYPO` read as "no credential", every request went out without one, and
+    # the run stopped on a bare `HTTP 401` that named nothing (u12 A-82, CLI audit M4). A mode
+    # that sends nothing says it and goes on: the variable is the environment's, not the
+    # wiring's, and a dry run on a machine without the key is how a pipeline is checked.
+    unset = wiring.unset_credentials(
+        scope,
+        [real for _, _, (_, real) in routes if real is not None],
+        judge=judge_target,
+        specs=selected,
+    )
+    if unset and (opts.discovery_only or opts.dry_run or opts.estimate):
+        print(
+            visible_controls(
+                f"warning: {'; '.join(unset)}: a live run refuses this before sending "
+                f"anything; {wiring.UNSET_CREDENTIAL_ADVICE}"
+            ),
+            file=sys.stderr,
+        )
+    elif unset:
+        raise ValueError(
+            f"{'; '.join(unset)}, so every request would go out without a credential; nothing "
+            f"was sent: {wiring.UNSET_CREDENTIAL_ADVICE}"
         )
 
     # Resolved BEFORE the fingerprint pass, which SENDS. It used to sit after it, so

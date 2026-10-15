@@ -37,10 +37,18 @@ bytes verified are the bytes the run reads. The `ssh-keygen -Y` recipe, run for 
 
 Not to explore (`registry ls`, `describe`, `lint`, `schema`) or to scan a **local** model
 via Ollama. You need a key only to scan a **hosted** model, and it is passed by env-var
-reference (`auth_ref: env://…`), never written to a file. A key shorter than 8 characters is
-refused before anything is sent (`the credential is shorter than 8 characters, which the
-redactor cannot mask by value`): the redactor masks a credential the tool read by its value only
-from that length, so a target that echoed a shorter one would put it in every report.
+reference (`auth_ref: env://OPENAI_API_KEY`), never written to a file. What follows `env://`
+is the variable's name (letters, digits and `_`, not starting with a digit): a key pasted there is
+refused without being printed. A key shorter than 8 characters is refused before anything is sent
+(`the credential is shorter than 8 characters, which the redactor cannot mask by value`): the
+redactor masks a credential the tool read by its value only from that length, so a target that
+echoed a shorter one would put it in every report. A live `run` or `fingerprint` refuses a
+variable that is not set (or holds only blanks, which is no key rather than a short one) before it
+sends anything, and names it; `--dry-run` warns about it and goes on, so a pipeline can be checked
+on a machine without the key. A target that takes no key leaves `auth_ref` out of its target
+file; a scope identity, which needs a reference, writes `env://NONE`, which is never read. Until
+2026-10-11 an unset variable meant "no credential": the requests went out without one and the run
+stopped on a bare HTTP 401.
 
 ### What does `--judge` do, and do I need it?
 
@@ -150,7 +158,10 @@ stored as evidence, so a multi-turn run is as reproducible as a single shot.
 present, `1` for findings below it, `0` clean, `3` on error. Only exploited (`fail`)
 findings trip the gate, and only confirmed ones unless you pass `--include-needs-review`. A bad
 option (`--fail-on bogus`, `--timeout 0`, two formats writing one file) is refused with exit
-`3` before anything is sent. For regression-only gating, compare against a baseline with
+`3` before anything is sent, and a value of the wrong type is a usage error, also `3`, printed
+through the same mask as every error (a key that a shell variable put into `--runs` is not
+echoed). `dottore lint` exits `0` clean, `1` when a spec fails lint and `3` when a path does not
+exist or holds nothing to lint. For regression-only gating, compare against a baseline with
 `dottore diff baseline.json current.json`. See [`examples/ci-github-actions.yml`](../examples/ci-github-actions.yml).
 In the SARIF you upload to code scanning, a fail that needs review is at most a `warning` (since
 2026-10-11), so code scanning, which by default fails a pull request's check on an `error`, does
@@ -241,7 +252,11 @@ Category aliases for `-p`: `pi`, `jailbreak`, `leakage`, `tool`, `rag`, `output`
 
 Yes, that is the point. `dottore new-spec …` scaffolds a YAML spec; fill `attack`,
 `expected_secure_behavior`, `evaluators` and golden `fixtures` (a vulnerable fixture the
-scanner must flag, a hardened one it must pass), then `dottore lint specs/`. See
+scanner must flag, a hardened one it must pass), then `dottore lint specs/`. A directory with a
+`pack.yaml` is read as a pack (`attacks/` and `suites/`); one without is read as loose specs, its
+own `*.yaml` files only, and `lint` says so: a path that holds none exits `3` with `NO_SPECS`,
+naming the YAML files in its subdirectories it did not read, where until 2026-10-11 it printed
+`lint OK ... across 0 spec(s)`. A spec id two files declare refuses `run`, naming both files. See
 [`06-extensibility-suites.md`](06-extensibility-suites.md) and [`CONTRIBUTING.md`](../CONTRIBUTING.md).
 
 ### Does it support MCP servers?

@@ -97,8 +97,9 @@ dottore fleet fleet.yaml --run
 dottore registry ls [--category .. --owasp .. --suite .. --tag ..]
 dottore coverage [--framework owasp|atlas|iopc|aisvs] [--suite ..] [--json]   # what the battery tests, nothing sent
 dottore describe PI-DIRECT-001
-dottore lint specs/
+dottore lint specs/          # exit 0 clean, 1 a spec fails lint, 3 a path that holds nothing
 dottore new-spec --id PI-XYZ-001 --family prompt_injection
+dottore schema export --name report   # the JSON report's schema (also suite, pack, test-plan, attack-spec)
 dottore replay <run-id> --evidence-root .dottore/evidence --run-db .dottore/runs.sqlite   # reproduce a past run, checked against the run store
 
 # Regression gate: compare a run against a stored baseline (CI-gateable)
@@ -126,9 +127,9 @@ dottore calibrate report.json labels.yaml
 | `-A` | aggressive: implies `-sV` + `--deep` (fingerprint first, then `-T2` unless you pass `-T`) |
 | `--runs N` | reproducibility runs (default 5; 1 to 9,007,199,254,740,992, `2**53`, as for `--top-tests`, `--concurrency` and the `--budget-*` flags, which take 0 too) |
 | `-T 0..5` | timing template (default 3; `--quick` implies 0, `--deep`/`-A` imply 2; an explicit `-T` wins); higher is faster/louder |
-| `--rate` / `--concurrency` / `--timeout` | max req/s, greater than 0 and, on a live target, at least one request per wall-clock ceiling, as a `-T` template's pace must be (one shared ceiling for the whole campaign: retries, `-sV` probes, the identity sweep and the `--judge` model included; not applied to an offline mock run, and the plan says so) · max concurrent specs · per-attempt timeout |
+| `--rate` / `--concurrency` / `--timeout` | max req/s, greater than 0 and, on a live target, at least one request per wall-clock ceiling, as a `-T` template's pace must be (one shared ceiling for the whole campaign: retries, `-sV` probes, the identity sweep and the `--judge` model included; not applied to an offline mock run, and the plan says so) · max concurrent specs · per-attempt timeout, 1 to 86,400 s |
 | `--resume RUN_ID` | finish a halted run (exit 3): answered attempts are not re-sent; those that ended in an environment error are sent again (not one a retry would repeat, marked `[not retryable]`), and so is a reply the halt stored before the judge could see it (unless a deterministic check had already failed it: that fail is kept); a run halted before it stored any reply (inside an identity sweep, say) starts again with its spend carried, unless the run store shows evidence the tree does not hold, or the run predates the artifact journal; a campaign that already spent its wall-clock ceiling is refused before sending (raise `--budget-wall`); it must keep the campaign's planning mode (adaptive with `-sV`, `-A` or `--deep`), checked before any ceiling (with `--deep` alone such a resume plans in declared order, says so on stderr when an earlier part planned with a fingerprint, and the run store's `mutator_orders` records what each invocation planned with), and with `-sV` a request ceiling too small for the probe pass is refused with advice that fits the campaign: raise `--budget-requests`, or drop `-sV` only if it did not plan adaptively and the ceiling holds the rest of it without the probes; a run an older version started, which sent none of its target files' `sampling_defaults`, resumes without them (stderr says so); a re-send is scored in place of the try it replaces, by the `send_number` every stored attempt carries, except that an environment error or a block on the re-send of a reply that could not be read, or that the provider's filter cut, leaves that reply the attempt, and `dottore replay` counts by the same rule |
-| `--dry-run` | resolve + validate, send nothing; a `sampling:` line says what the target file's `sampling_defaults` fills, or that it is not sent |
+| `--dry-run` | resolve + validate, send nothing; a `sampling:` line says what the target file's `sampling_defaults` fills, or that it is not sent; a `warning:` names a credential variable that is not set, which a live run refuses before sending |
 | `--estimate` | print a pre-run cost estimate (requests + tokens) and the ceilings each target runs under (`ceilings: <n> requests, <n> attempts (one per accepted request), <n> tokens, <n>s wall`); no sends. Output tokens are each send's `max_tokens` (the spec's own, else `sampling_defaults`) or 512. Under `-q` it prints one line, as `--dry-run -q` does |
 | `--compare` | model-comparison matrix across targets (needs two or more `-t`) |
 | `--hardened` | replay hardened fixtures (clean-run smoke) on a mock target; refused on a live one |
@@ -238,7 +239,11 @@ host and port (`localhost:11434`), so a local model does not authorize the machi
 ports (an offline `mock://` entry sends nothing and keeps a bare host).
 
 Keys are never written to the file: each entry names an env var (`api_key_env`), resolved
-only at send time. `provider` is inferred from the endpoint (`/chat/completions` -> openai,
+only at send time. A value that is not a variable's name (the key pasted there), an endpoint
+that carries a credential (`user:password@`, a path segment or a parameter shaped like a key,
+a parameter named like a credential such as `?api_key=` or `?accessToken=`, a URL with no host) and a `provider` the tool does not have are refused before anything is written,
+never quoted; an entry with no `api_key_env` is sent no credential (`env://NONE` in
+the scope, no `auth_ref` in its target file). `provider` is inferred from the endpoint (`/chat/completions` -> openai,
 `/messages` -> anthropic, else `rest`). A WebSocket target is not a fleet entry: a `ws://` or
 `wss://` endpoint, or `provider: websocket`, is refused before anything is written (exit 3),
 since its target file needs a `websocket:` block; write it by hand from

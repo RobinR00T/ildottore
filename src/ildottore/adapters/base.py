@@ -51,6 +51,7 @@ from ildottore.redactor import (
     redact_split,
     registered_secrets,
 )
+from ildottore.shared.error_text import error_text
 from ildottore.shared.filter_stops import NO_FILTER_STOPS, OPENAI_FILTER_STOPS
 from ildottore.shared.logprobs import readable_logprob
 from ildottore.shared.models import (
@@ -1386,7 +1387,7 @@ class BaseAdapter(ABC):
                         retry_now = False
                         raw = await self._read_capped(response)
             except (httpx.TimeoutException, httpx.TransportError) as exc:
-                last_env_detail = f"{type(exc).__name__}: {exc}"
+                last_env_detail = error_text(exc)
                 await self._maybe_backoff(attempt, attempts)
                 continue
 

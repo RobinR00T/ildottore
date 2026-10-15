@@ -140,7 +140,7 @@ not read by the runner: every mutation variant of every spec is sent `--runs` ti
 
 **Options are validated before the campaign.** `run` refuses, with exit 3 and before the scope
 is loaded or anything is sent: a `--rate` that is not greater than 0; an unknown `--fail-on`
-band; `--timeout` not greater than 0; `--concurrency`, `--top-tests` or `--runs` below 1; a
+band; `--timeout` below 1 second or above 86,400 (a day; NaN and infinity included, A-82); `--concurrency`, `--top-tests` or `--runs` below 1; a
 negative `--budget-tokens`, `--budget-requests` or `--budget-wall` (the dry run printed it and
 exited 0, the run refused it); any of those six past `2**53` (9,007,199,254,740,992, where the
 run of whole numbers a float holds exactly ends: `--runs` of a few hundred digits crashed the
@@ -165,7 +165,16 @@ block and the `-sV` probe pass included), a live run whose pace (`--rate`, or th
 template's) is under one request per wall-clock ceiling (`--budget-wall`, or the 7,200 s cap of
 a derived one) is refused too, as is any live run under `--budget-wall 0`: the ceiling is
 checked when a send is charged, and such a run waited past it (A-55). A live `--judge` over
-attack targets that are all mocks is excepted: that run is not paced, so not checked.
+attack targets that are all mocks is excepted: that run is not paced, so not checked. So is a
+credential variable that is not set (a target's, the `--judge` model's, a swept identity's):
+a live run refuses it naming the variable, and a mode that sends nothing warns and goes on
+(A-82). A spec path that yields nothing, and a spec id two files declare, are refused there too.
+
+**Usage errors go through the mask (A-82).** The console scripts run `ildottore.cli.main:main`,
+which runs the command tree in click's non-standalone mode and prints a usage error (a bad value,
+an unknown option or command) as `Usage: ...`, `Try '... --help' for help.` and `error: <message>`
+through the CLI's redactor, exit 3: `--runs "$KEY"` printed the key in clear when click printed
+the error itself.
 
 **Resume sends again what ended in an environment error (F11, built 2026-10-04).** `--resume
 <run-id>` skips every attempt the halted run ANSWERED and sends again, under the same attempt

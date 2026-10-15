@@ -69,6 +69,7 @@ from ildottore.core.runner import (
     PolicyGate,
     fill_sampling,
     store_withholding,
+    sweeps_identities,
     unsent_fields,
 )
 from ildottore.evaluators import build_default_registry as build_evaluator_registry
@@ -85,7 +86,19 @@ from ildottore.policy import (
 )
 from ildottore.policy.scope import MAX_ID_CHARS
 from ildottore.redactor import register_known_secret
-from ildottore.registry import LintError, Registry, load_paths, non_json_values, non_string_keys
+from ildottore.registry import (
+    PATH_CODES,
+    PATH_NOT_FOUND_TEXT,
+    LintCode,
+    LintError,
+    Registry,
+    load_paths,
+    non_json_values,
+    non_string_keys,
+)
+from ildottore.registry import (
+    Severity as LintSeverity,
+)
 from ildottore.reporting import RunStatus, get_reporter
 from ildottore.scoring import DefaultRiskScorer
 from ildottore.shared.config_errors import (
@@ -95,6 +108,13 @@ from ildottore.shared.config_errors import (
     shown_endpoint,
     validation_problems,
     yaml_problem,
+)
+from ildottore.shared.credential_refs import (
+    ENV_NAME_RULE,
+    NO_CREDENTIAL,
+    env_name_of,
+    is_env_name,
+    unset_variable,
 )
 from ildottore.shared.digits import described, too_long
 from ildottore.shared.enums import Category, TargetType
@@ -122,6 +142,8 @@ from ildottore.store import FsEvidenceStore, SqliteRunStore
 __all__ = [
     "MOCK_SCENARIOS",
     "PROBE_SPEC_ID",
+    "TARGET_PROVIDERS",
+    "TARGET_TRANSPORTS",
     "BuiltRunner",
     "ProbeCeilingHit",
     "ProbePass",
@@ -151,6 +173,7 @@ __all__ = [
     "planted_secrets",
     "read_target_file",
     "real_adapter_factory",
+    "refuse_spec_paths_that_hold_nothing",
     "request_url_for",
     "resolve_auth_ref",
     "sampling_fallback",
@@ -161,8 +184,10 @@ __all__ = [
     "scope_endpoint_of",
     "sent_sampling_for",
     "shown_auth_ref",
+    "spec_id_collisions",
     "takes_sampling",
     "target_uses_mock",
+    "unset_credentials",
     "utc_timestamp",
     "with_sent_sampling",
     "with_takes_sampling",
@@ -264,7 +289,77 @@ def load_registry_reading(
     """
 
     result = load_paths(spec_paths)
-    return Registry.from_packs(result.packs), list(result.errors), list(result.files)
+    # A warning (``FILES_NOT_READ``) is lint's to print: it refuses nothing here.
+    errors = [e for e in result.errors if e.severity is LintSeverity.ERROR]
+    return Registry.from_packs(result.packs), errors, list(result.files)
+
+
+def spec_id_collisions(registry: Registry) -> dict[str, list[str]]:
+    """Each spec id more than one loaded file declares, with those files in load order.
+
+    ``lint`` reports such a collision (``ID_COLLISION``); a run took the first file and dropped
+    the rest without a word, a ``--spec-path`` pack that redeclared a shipped id included (u12
+    A-82, CLI audit L2). A file the loader did not record (a pack built in code) reads
+    ``<pack id>``.
+    """
+
+    files: dict[str, list[str]] = {}
+    for pack in registry.packs():
+        for index, spec in enumerate(pack.specs):
+            files.setdefault(spec.id, []).append(pack.spec_file(index) or f"<pack {pack.id}>")
+    # One file read twice (a spec path given twice, or `specs` and `specs/attacks`) declares
+    # nothing twice: the same bytes, whichever is taken.
+    return {
+        spec_id: found
+        for spec_id, found in files.items()
+        if len({_real(name) for name in found}) > 1
+    }
+
+
+def _real(name: str) -> str:
+    """``name`` resolved, to tell one file read twice from two files; as given if it cannot be."""
+
+    try:
+        return str(Path(name).resolve())
+    except (OSError, RuntimeError, ValueError):
+        return name
+
+
+#: For each command's verb, how it is given a spec path and how it is named, for the refusal of
+#: a default spec path that is not there (u12 A-80's wording).
+_DEFAULT_SPEC_PATH_READERS: dict[str, tuple[str, str]] = {
+    "run": ("--spec-path <dir>", "a run"),
+    "list": ("--spec-path <dir>", "registry ls"),
+    "describe": ("--spec-path <dir>", "describe"),
+    "measure": ("the spec path to coverage (dottore coverage <dir>)", "coverage"),
+}
+
+
+def refuse_spec_paths_that_hold_nothing(
+    load_errors: list[LintError], *, to: str, default: bool = False
+) -> None:
+    """Refuse a spec path that does not exist or yields no spec or suite (u12 A-82).
+
+    ``registry ls --spec-path nonexistent`` warned and exited 0, ``coverage`` of a missing or
+    empty path printed 0% and exited 0, and ``run`` said "spec file(s) failed to load" of a
+    path that holds none (CLI audit L7, M9). ``to`` is the command's verb (``run``, ``list``).
+    ``default`` says no spec path was given: one that is not there is then the default
+    (``default_spec_paths``), and the refusal says how to pass one and what is read without it
+    (u12 A-80: a run from anywhere but the repository root read "spec file(s) failed to load").
+    """
+
+    found = [e for e in load_errors if e.code in PATH_CODES]
+    if not found:
+        return
+    if default and all(e.code is LintCode.PATH_NOT_FOUND for e in found):
+        flag, reader = _DEFAULT_SPEC_PATH_READERS.get(to, ("--spec-path <dir>", "the command"))
+        names = ", ".join(e.message.removeprefix(PATH_NOT_FOUND_TEXT) for e in found)
+        raise ValueError(
+            f"spec path not found: {names}. Pass {flag}; without it {reader} reads specs/ in the "
+            "working directory, else the battery beside the installed package when that is a "
+            "source checkout."
+        )
+    raise ValueError(f"a spec path gives nothing to {to}: {'; '.join(e.message for e in found)}")
 
 
 # --- policy / scope ----------------------------------------------------------------
@@ -700,14 +795,26 @@ def resolve_auth_ref(auth_ref: str | None) -> str | None:
     caller passes it straight into the adapter's ``api_key``, which itself never
     appears in evidence: the redactor masks ``raw_ids``, and the value never enters
     a ``ModelRequest``/``ModelResponse``). ``None`` in ⇒ ``None`` out (no auth
-    configured). An unsupported scheme (e.g. ``vault://``, deferred) raises rather
-    than silently sending an unauthenticated request.
+    configured), and so does ``env://NONE``, the reference that names no credential, without
+    reading a variable. An unsupported scheme (e.g. ``vault://``, deferred) raises rather
+    than silently sending an unauthenticated request, and so does a name that is no variable's.
+    A variable that is not set still resolves to ``None`` here: a live run refuses it before
+    anything is sent (:func:`unset_credentials`), and a dry run warns about it (u12 A-82).
     """
 
-    if auth_ref is None:
+    if auth_ref is None or auth_ref == NO_CREDENTIAL:
+        # `env://NONE` says "no credential" (u12 A-82): its variable is never read, so a
+        # `NONE` some other tool exported is not sent as a key.
         return None
-    if auth_ref.startswith("env://"):
-        name = auth_ref.removeprefix("env://")
+    name = env_name_of(auth_ref)
+    if name is not None:
+        if not is_env_name(name):
+            # The loaders refuse such a file; a reference built in code is refused here, and
+            # never quoted: it was a key pasted where a variable's name belongs (M8).
+            raise ValueError(
+                "auth_ref names no environment variable after env:// (a name is "
+                f"{ENV_NAME_RULE}); write the variable's name, never the key"
+            )
         raw = os.environ.get(name)
         # Registered before it is used, raw AND stripped: every Redactor in the process then
         # masks it by value, including inside an HTTP library's error text. And stripped,
@@ -882,6 +989,13 @@ def build_real_adapter(
             sampling_enabled=takes,
             declared_filter_stops=_declared_filter_stops(target),
         )
+    if provider not in ("", "rest"):
+        # The loader refuses such a file (u12 A-82); a target built in code is refused here
+        # rather than sent the REST adapter's `{"prompt": ...}` body, as `provider: skynet` was.
+        raise ValueError(
+            f"target {target.id!r} has unknown provider {quoted(target.provider)}; expected one "
+            f"of {', '.join(TARGET_PROVIDERS)}"
+        )
     template = RestTemplate(path=parts.path or "/")
     return RestAdapter(
         id=target.id,
@@ -895,6 +1009,13 @@ def build_real_adapter(
         advice=REST_TARGET_FILE_ADVICE,
         **extra,
     )
+
+
+#: The ``provider`` values a target file may give (read stripped and case-folded). Absent, a live
+#: endpoint routes to the generic REST adapter, as ``rest`` does (u12 A-82, CLI audit M5).
+TARGET_PROVIDERS: tuple[str, ...] = ("anthropic", "mcp", "openai", "rest", "websocket")
+#: The ``transport`` values: ``http`` (the default) and ``stdio``, a local MCP server.
+TARGET_TRANSPORTS: tuple[str, ...] = ("http", "stdio")
 
 
 def _declared_filter_stops(target: Target) -> frozenset[str] | None:
@@ -963,6 +1084,60 @@ def _authorized_api_key(scope: Scope, target: Target) -> str | None:
     return resolve_auth_ref(target.auth_ref)
 
 
+#: What a refusal or a dry run's warning about an unset variable advises (u12 A-82).
+UNSET_CREDENTIAL_ADVICE = (
+    "export each variable before the run; a target that takes no credential leaves auth_ref "
+    "out of its target file, and a scope identity that carries none writes env://NONE"
+)
+
+
+def unset_credentials(
+    scope: Scope,
+    targets: list[Target],
+    *,
+    judge: Target | None = None,
+    specs: list[AttackSpec] | None = None,
+) -> list[str]:
+    """One phrase per credential a live run would read from a variable that is not set.
+
+    ``targets`` are the ones sent to over the wire. Each one's ``auth_ref``; each identity of its
+    scope entry when the scope declares two or more and a spec of ``specs`` sweeps identities on
+    it (the sweep sends the attack as each one, ``build_identity_probes``); and the ``--judge``
+    model's when it is live. ``env://NONE`` and a target with no ``auth_ref`` send none on
+    purpose and are not listed. Names the variable, never a value (CLI audit M4: an unset
+    ``env://TYPO`` sent every request without a credential and the run stopped on a bare
+    ``HTTP 401``).
+    """
+
+    problems: list[str] = []
+
+    def check(who: str, auth_ref: str | None) -> None:
+        # The environment is read here, in the wiring, as `resolve_auth_ref` reads it.
+        found = unset_variable(auth_ref, os.environ)
+        if found is not None and auth_ref is not None:
+            name, state = found
+            problems.append(
+                f"{who} auth_ref {shown_auth_ref(auth_ref)} names the environment variable "
+                f"{name}, which is {state}"
+            )
+
+    for target in targets:
+        check(f"target {quoted(target.id)}", target.auth_ref)
+        entry = scope.target(target.id)
+        if entry is None or len(entry.identities) < 2:
+            continue
+        if any(sweeps_identities(spec, target) for spec in specs or []):
+            for identity in entry.identities:
+                check(
+                    f"target {quoted(target.id)} identity {quoted(identity.name)} (the scope's, "
+                    "sent by the identity sweep)",
+                    identity.auth_ref,
+                )
+    if judge is not None and request_url_for(judge) is not None:
+        check(f"the --judge model {quoted(judge.id)}", judge.auth_ref)
+    return problems
+
+
 def check_target_credential(scope: Scope, target: Target, *, sends: bool = True) -> None:
     """Assert the scope authorized ``target``'s ``auth_ref`` (raises ``ValueError`` if not).
 
@@ -975,8 +1150,10 @@ def check_target_credential(scope: Scope, target: Target, *, sends: bool = True)
     api_key = _authorized_api_key(scope, target)
     # A credential the redactor could not mask by value is refused here too, so `--dry-run`, `-sn`
     # and `--estimate` answer what the run would (u04 A-78); a stdio MCP server and an offline
-    # mock (``sends`` false) are sent no key.
-    if sends and not _launched_locally(target):
+    # mock (``sends`` false) are sent no key. A variable that is not set or holds only blanks is
+    # no credential at all: :func:`unset_credentials` says so, a refusal on a live run and a
+    # warning on a mode that sends nothing (u12 A-82), rather than "shorter than 8 characters".
+    if sends and not _launched_locally(target) and not _variable_unset(target.auth_ref):
         try:
             refuse_short_credential(target.id, api_key, target.endpoint)
         except CredentialTooShort as exc:
@@ -997,6 +1174,8 @@ def check_identity_credentials(scope: Scope, target: Target) -> None:
     if scope_target is None or len(scope_target.identities) < 2 or _launched_locally(target):
         return
     for ident in scope_target.identities:
+        if _variable_unset(ident.auth_ref):
+            continue  # no credential: `unset_credentials` names it when the sweep would send it
         try:
             refuse_short_credential(
                 f"{target.id}, identity {quoted(ident.name)}",
@@ -1005,6 +1184,15 @@ def check_identity_credentials(scope: Scope, target: Target) -> None:
             )
         except CredentialTooShort as exc:
             raise ValueError(str(exc)) from None
+
+
+def _variable_unset(auth_ref: str | None) -> bool:
+    """True when ``auth_ref`` names an environment variable that is not set or holds only blanks.
+
+    The environment is read here, in the wiring, as :func:`resolve_auth_ref` reads it.
+    """
+
+    return unset_variable(auth_ref, os.environ) is not None
 
 
 def _launched_locally(target: Target) -> bool:
@@ -1691,6 +1879,7 @@ def _target_from(path: Path, raw: dict[str, Any]) -> Target:
     endpoint = raw.get("endpoint")
     model = raw.get("model")
     auth_ref = raw.get("auth_ref")
+    _check_env_reference(path, "auth_ref", auth_ref)
     sampling_raw = raw.get("sampling_defaults")
     sampling = None
     if sampling_raw is not None:
@@ -1705,6 +1894,7 @@ def _target_from(path: Path, raw: dict[str, Any]) -> Target:
             ) from exc
 
     transport = raw.get("transport")
+    _check_provider_and_transport(path, provider, transport)
     command_raw = raw.get("command")
     command: list[str] | None = None
     if command_raw is not None:
@@ -1731,6 +1921,53 @@ def _target_from(path: Path, raw: dict[str, Any]) -> Target:
         websocket=websocket,
         filter_stops=_filter_stops(path, raw.get("filter_stops"), provider),
     )
+
+
+def _check_provider_and_transport(path: Path, provider: object, transport: object) -> None:
+    """Refuse a ``provider`` or a ``transport`` this tool does not have (u12 A-82, CLI audit M5).
+
+    A-53 closed a misspelled key and left a misspelled value open: ``provider: skynet`` sent an
+    OpenAI endpoint the REST adapter's ``{"prompt": ...}`` bodies, ``transport: carrier-pigeon``
+    read as ``http``, and a stdio MCP target with ``transport: stido`` or ``provider: mpc`` ran
+    on the offline mock and passed. Read as the routing reads them, stripped and case-folded;
+    both are text or absent here (``_read_target_yaml``). ``stdio`` launches a local MCP server,
+    so another provider with it is refused too: nothing else would read it.
+    """
+
+    name = provider.strip().lower() if isinstance(provider, str) else None
+    if name is not None and name not in TARGET_PROVIDERS:
+        raise ValueError(
+            f"target file {path} has invalid provider {quoted(provider)}; expected one of "
+            f"{', '.join(TARGET_PROVIDERS)} (leave it out for the generic REST adapter)"
+        )
+    if not isinstance(transport, str):
+        return
+    if transport.strip().lower() not in TARGET_TRANSPORTS:
+        raise ValueError(
+            f"target file {path} has invalid transport {quoted(transport)}; expected http or "
+            "stdio (stdio launches a local MCP server, with provider: mcp and a command)"
+        )
+    if transport.strip().lower() == "stdio" and name != "mcp":
+        raise ValueError(
+            f"target file {path}: transport stdio is for provider mcp (a local MCP server "
+            "launched from its command); leave transport out for this provider"
+        )
+
+
+def _check_env_reference(path: Path, field: str, value: object) -> None:
+    """Refuse an ``env://`` reference whose name is no environment variable's (u12 A-82, M8).
+
+    Never quoted: what follows ``env://`` there is most often the key itself, pasted where its
+    variable's name belongs, and a name with a space or a quote cannot be set by any shell.
+    """
+
+    name = env_name_of(value) if isinstance(value, str) else None
+    if name is not None and not is_env_name(name):
+        raise ValueError(
+            f"target file {path} '{field}' names no environment variable after env:// (a name "
+            f"is {ENV_NAME_RULE}, not shown here): write {field}: env://NAME with the "
+            "variable's name, never the key"
+        )
 
 
 def provider_returns_tool_calls(target: Target) -> bool:

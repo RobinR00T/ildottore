@@ -28,10 +28,13 @@ class DescribeError(KeyError):
         self.unloaded = unloaded or []
 
 
-def describe_spec(spec_paths: list[Path], spec_id: str) -> AttackSpec:
+def describe_spec(
+    spec_paths: list[Path], spec_id: str, *, default_spec_path: bool = False
+) -> AttackSpec:
     """Return the spec with ``spec_id`` (raises :class:`DescribeError` if absent)."""
 
     registry, errors = wiring.load_registry(spec_paths)
+    wiring.refuse_spec_paths_that_hold_nothing(errors, to="describe", default=default_spec_path)
     try:
         return registry.get(spec_id)
     except SpecNotFoundError as exc:

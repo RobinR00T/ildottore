@@ -58,7 +58,9 @@ class StatSignature(BaseModel):
     replaces a heavy/ambiguous-license embedder (``AGENTS.md §3``, OD-9).
     """
 
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    # A pack is a data file anyone can write (docs/06); a NaN centroid made every distance NaN
+    # and an infinite one every distance infinite, so neither is a number it may hold (A-82).
+    model_config = ConfigDict(extra="forbid", frozen=True, allow_inf_nan=False)
 
     centroid: list[float] = Field(min_length=1)
 
@@ -72,7 +74,7 @@ class SignatureEntry(BaseModel):
     centroid. ``version`` is optional (a family-only entry has no version guess).
     """
 
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    model_config = ConfigDict(extra="forbid", frozen=True, allow_inf_nan=False)
 
     family: str
     version: str | None = None

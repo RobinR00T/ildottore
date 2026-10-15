@@ -75,16 +75,24 @@ block is accepted only with a matching hand-written
 file, and no judge.yaml is written for it.
 .TP
 .B lint
-Schema, policy and fixtures-prove-detection lint of the specs.
+Schema, policy and fixtures-prove-detection lint of the specs. A directory with a pack.yaml is
+read as a pack (attacks/ and suites/); one without is read as loose specs, its own *.yaml and
+*.yml files only. A path that does not exist (PATH_NOT_FOUND) or yields no spec and no suite
+file (NO_SPECS, which names the YAML files in its subdirectories it did not read) exits 3; YAML
+files a loose tree left unread are a FILES_NOT_READ warning. Exit 0 clean, 1 an error in a spec,
+suite or pack, 3 a path that gives nothing to lint (3 wins over 1).
 .TP
 .B describe
 Show one spec's detail card.
 .TP
 .B registry ls
-List the attack-spec catalogue (filter by --category, --owasp, --tag, --suite).
+List the attack-spec catalogue (filter by --category, --owasp, --tag, --suite). A --suite that is
+not registered, and a --spec-path that does not exist or yields nothing, are refused (exit 3).
 .TP
 .B new-spec
-Scaffold a new attack spec and empty fixtures.
+Scaffold a new attack spec and empty fixtures. A --family holding a control or format character,
+shaped like a key (a credential format or a high-entropy token), or nothing but spaces is refused (exit 3) and nothing is written; any other text is written as a
+YAML string that reads back as written.
 .TP
 .B replay
 Re-read a run from stored evidence, sending nothing. When the run store
@@ -108,7 +116,9 @@ counted the same way; replies that could not be read as
 .TP
 .B diff
 Compare a run against a baseline of the same target and surface regressions (CI-gateable);
-a report covering several targets, or one that cannot be read, is refused (exit 3). A fix the
+a report covering several targets, or one that cannot be read, is refused (exit 3), and so is a
+report whose schema_version is not 1 or 1.<minor>, one with none, a SARIF log and a document
+with no findings list (a bare JSON list of findings is read). A fix the
 target file's declaration of a tool not destructive may have made reads FIXED (operator
 declaration, OD-43).
 .TP
@@ -125,7 +135,7 @@ Render a multimodal spec's carriers to disk for inspection (a PNG for an image p
 pinned WAV for an audio part) and print each path, media type, size and SHA-256; no target.
 .TP
 .B schema export
-Print the JSON Schemas that validate every spec.
+Print the JSON Schemas that validate every spec, and the JSON report's (--name report).
 .SH "RUN OPTIONS"
 The full list, as
 .B dottore run --help
@@ -204,7 +214,7 @@ an attempt is at least one request and counts only once its first request is acc
 Max concurrent specs (1 to 2**53).
 .TP
 .B --timeout \fISECONDS\fR
-Per-attempt timeout.
+Per-attempt timeout, from 1 to 86400 (a day).
 .TP
 .B --runs \fIN\fR
 Reproducibility runs (default 5; 1 to 2**53).
@@ -214,7 +224,8 @@ Reproducibility runs (default 5; 1 to 2**53).
 Resolve and validate the plan, authorize every target; send nothing. Its sampling: and judge
 sampling: lines say what a target or judge file's sampling_defaults fills and what does not go
 out, and an operator: line names each granted tool the target file declares not destructive
-(dottore-scope(5)).
+(dottore-scope(5)). A credential variable that is not set is a warning: line naming it, which a
+live run refuses before it sends anything.
 .TP
 .B --estimate
 Print a pre-run cost estimate (requests and tokens) and the ceilings each target runs under
@@ -298,7 +309,9 @@ store is refused.
 Spec search path. Default: specs/ in the working directory when it is a directory, else the
 battery beside the installed package (a source checkout or an editable install), which run,
 fleet --run, registry ls, describe, coverage and render-media say on stderr when they fall back
-to; lint does not fall back. A path that does not exist is "spec path not found" (exit 3).
+to; lint does not fall back. With none given, a default that is not there is "spec path not
+found: <path>. Pass --spec-path <dir>; ..."; a path given that does not exist or holds nothing
+is "a spec path gives nothing to run" (or to list, to describe, to measure), exit 3 either way.
 .TP
 .B --no-color
 Disable colour output.
@@ -336,6 +349,16 @@ confirmed exploits, so read summary.status.reason before treating 3 as a retryab
 infrastructure error.
 .PP
 Only an exploited (fail) finding trips the gate; pass and inconclusive never do.
+.PP
+A usage error is printed with its message through the same mask as every error line, so a key a
+shell variable put into a typed option (--runs "$KEY") is not echoed. The installed dottore and
+dott run ildottore.cli.main:main; a script an older install generated, which calls app(), masks
+the same way, as does a program that holds the command in a click group of its own, or python -m
+typer. lint, describe and schema export mask what they echo of a path or a name.
+.PP
+.B lint
+has its own: 0 clean, 1 an error-severity finding, 3 a path that does not exist or yields nothing
+to lint.
 .PP
 SIGTERM and SIGHUP stop a run as Ctrl-C does, whether Ctrl-C itself is at its default or
 ignored (as for a job a script starts with &): the requests in flight are cancelled, the spend
