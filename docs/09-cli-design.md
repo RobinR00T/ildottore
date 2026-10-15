@@ -218,7 +218,8 @@ of their sources, and bound the same way. The first design listed the verdict co
 two audits found code it missed (2026-10-12 and 13): the default was inverted under the owner's
 delegation. A run records
 it (`context_json.judging_rules`, beside `tool_version`) when it starts, `--version` prints it, and
-a resume under other rules, or of a run that records none, is refused before it sends, with no
+a resume under other rules, or of a run that records none (one a version from before
+`shared.judging_rules.JUDGING_RULES_SINCE` halted), is refused before it sends, with no
 flag: the stored replies are redacted, so judging the kept ones again is not possible. The other
 refusals name what changed and the flag that restores it (M1): the field of a spec
 (`in severity (2)`) and `--spec-path`, the selection flags the run was made with, the field

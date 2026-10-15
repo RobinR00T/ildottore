@@ -22,15 +22,15 @@ versioning: [SemVer](https://semver.org/).
   `de122e26` alike.
 - **The code that judges is bound to the run, deny by default.** `shared.judging_rules.
   judging_digest` is a SHA-256 over every file of the package but `ildottore.testing` (the golden
-  harness of the test suite): 162 of the 164 modules on the tree merged with main at `d526747e`
-  (159 of 161 before), with their comments, docstrings and blank lines left out (decorators kept),
-  and the 6 data files the package reads, byte for byte, by suffix (`.yaml`, `.sql`, `.json`,
+  harness of the test suite): 165 of the 167 modules at landing (main at `a906cea9`), with their
+  comments, docstrings and blank lines left out (decorators kept), and the 6 data files the package
+  reads, byte for byte, by suffix (`.yaml`, `.sql`, `.json`,
   `.j2`: the fingerprint signatures, the run store schema, the report schemas and the HTML
   template); dotfiles and any other suffix are not the package's source, so a stray `.DS_Store`
   changes nothing. A run records it when it starts (`judging_digest`, with a short digest of each
-  file as `judging_files`), computed from the installed package once per process (0.32 s on Python
-  3.12 and 3.14 and 0.64 s on 3.9, measured on 2026-10-13 over 1.9 MB of source; the merged tree
-  is 2.1 MB), and a resume under another digest is refused, with no flag, naming both and the
+  file as `judging_files`), computed from the installed package once per process (0.35 to 0.38 s
+  on Python 3.12 and 3.14 and 0.74 s on 3.9, measured at landing over the 2.2 MB of the 171 files),
+  and a resume under another digest is refused, with no flag, naming both and the
   files that differ (five at most): `run '<id>' was
   judged under the same judging rules (1) by other code: its judging digest is <64 hex> and this
   installation's is <64 hex> (Il Dottore's code changed since the halt: an upgrade, a reinstall or
@@ -87,8 +87,8 @@ versioning: [SemVer](https://semver.org/).
   for this: finish it with the version that started it (`dottore --version` names its judging
   rules), or start a fresh run.` A version is written `v<version>`, so one of any PEP 440 shape
   reads in clear (`1.2.3.4` read as an IPv4 address and `2026.10.12` as a phone number to the
-  error redactor, L-5). A run that records no rules was made by a version before the record and is
-  refused the same way (`records no judging rules (the record exists since <JUDGING_RULES_SINCE>),
+  error redactor, L-5). A run that records no rules was made by a version before the record (one
+  from before `JUDGING_RULES_SINCE`) and is refused the same way (`records no judging rules (the record exists since <JUDGING_RULES_SINCE>),
   so it was made by an Il Dottore older than this one ...`). A run whose rules differ is refused for
   them before its other fields are checked, so a newer run is not called corrupt over a field this
   version does not know (L-4). Judging the kept replies again was checked first and is not
@@ -97,8 +97,9 @@ versioning: [SemVer](https://semver.org/).
   the evaluators look for the raw value, no logprob is kept, and the judge would have to be asked
   again. No flag waives the refusal (`--resume-unverified` included), and `--dry-run` and
   `--estimate` refuse too. Against the H2 run above: exit 3, 0 requests sent, nothing written.
-- **Breaking.** Every run that records no judging rules is refused by its resume, whatever version
-  halted it and whatever its rules were: finish it with the version that started it, or start a
+- **Breaking.** Every run that records no judging rules, which is every run a version from before
+  `shared.judging_rules.JUDGING_RULES_SINCE` halted, is refused by its resume, whatever its rules
+  were: finish it with the version that started it, or start a
   fresh run. A version before this one does not read the record, so it can resume a run this
   version started; its rewrite of the context drops the record, and this version then refuses that
   run as an older one's.
@@ -123,7 +124,8 @@ versioning: [SemVer](https://semver.org/).
   otherwise unchanged ... Resume without --hardened, or start a fresh run.`; a run made with
   `--hardened` is told to resume with it, an edited `mock_scenario` is named, and a changed field
   of the target file is named (`its capabilities field changed ... Restore that field of the
-  target file as it was`). A run halted before this version is refused for its rules first
+  target file as it was`). A run halted by a version from before `JUDGING_RULES_SINCE` is refused
+  for its rules first
   (above), so the `--spec-path` advice is only given where it is safe.
 - **A corrupt run-context value was read as something else** (L6, on `de122e26`): `adaptive: "x"`
   as adaptive planning on, and the resume refused for a mode the run never recorded;

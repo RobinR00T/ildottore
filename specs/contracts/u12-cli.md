@@ -1451,10 +1451,10 @@ are the same class.
   left out by `tokenize` and `ast` positions, decorators kept; the same on 3.9, 3.12 and 3.14, CI
   runs 3.11), and the data files the package reads, byte for byte, chosen by suffix
   (`DATA_SUFFIXES`: `.yaml`, `.sql`, `.json`, `.j2`; a test checks that every non-Python file of the
-  package has one), dotfiles and caches skipped. That is 168 files on the tree merged with main at
-  `d526747e`: 162 of the 164 modules and 6 data files. It is computed from the installed package
-  once per process (0.32 s on 3.12 and 3.14 and 0.64 s on 3.9, measured on 2026-10-13 over the 165
-  files of then), recorded when a run starts (`context_json.judging_digest`, with each file's
+  package has one), dotfiles and caches skipped. That is 171 files at landing (main at
+  `a906cea9`): 165 of the 167 modules and 6 data files. It is computed from the installed package
+  once per process (0.35 to 0.38 s on 3.12 and 3.14 and 0.74 s on 3.9, measured at landing over
+  2.2 MB), recorded when a run starts (`context_json.judging_digest`, with each file's
   8-hex digest as `judging_files`), and a resume under another digest, or of a run that records the
   rules and no digest, is refused with no flag, naming both digests (carried by
   `cli.resume.ResumeRefused.digests`, so the error masking keeps them readable) and the files that
@@ -1531,12 +1531,12 @@ are the same class.
   be asked again, which is traffic the resume did not plan. A re-judged report would be wrong in
   the direction that costs.
 * **Landing.** Version `1` is the rules as of the merge that introduced it, whatever lands before:
-  main was merged into the branch on 2026-10-14 (`d526747e`, five branches), version 1 re-pinned
-  there provisionally (a `PIN_HISTORY` line saying so and its frozen line) and
-  `JUDGING_RULES_SINCE` set to that day. At the landing merge the landing pin replaces the
-  provisional one, in `PIN_HISTORY` and in the frozen file at the same place, the one pin replaced
-  in place: it never reached `main` and version 1 is unreleased; the date moves to the landing day
-  if it differs. Nothing has to be listed: what landed before is covered by default.
+  main was merged into the branch on 2026-10-14 (`d526747e`, five branches) with version 1
+  re-pinned there provisionally, then again at landing on 2026-10-15 (`a906cea9`, the sixth),
+  where `JUDGING_RULES_SINCE` took that day and the landing pin replaced the provisional one, in
+  `PIN_HISTORY` and in the frozen file at the same place: the one pin replaced in place, since it
+  never reached `main` and version 1 was unreleased. Nothing has to be listed: what landed before
+  is covered by default.
 * **Limits, said.** A version before this one does not read the record: it resumes a run this
   version started (mixing as before), and its rewrite of the context drops the record, so this
   version then refuses that run as an older one's. The package version is recorded, not compared:

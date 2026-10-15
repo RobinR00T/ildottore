@@ -1334,8 +1334,9 @@ without it. Nor is a run an older version halted for this one: the attempts a re
 the verdicts the rules of the version that judged them gave, and those rules change (OD-16, OD-19,
 OD-21, OD-41 and OD-42 did in one week, under one `0.1.0`). The run store records the version of
 the rules when a run starts (`context_json.judging_rules`, which `dottore --version` prints beside
-the package version), and a resume under other rules, or of a run that records none, is refused
-before anything is sent: finish it with the version that started it, or start a fresh run. The
+the package version), and a resume under other rules, or of a run that records none (one a
+version from before `shared.judging_rules.JUDGING_RULES_SINCE` halted), is refused before anything
+is sent: finish it with the version that started it, or start a fresh run. The
 kept replies are not judged again because they cannot be: they are stored redacted, a leaked
 canary as `«REDACTED:canary:…»`, and the evaluators look for the raw value.
 
@@ -1692,8 +1693,8 @@ A journaled artifact still `pending` (the process stopped between the journal en
 write) may be missing without being a deletion, unless a finding cites it. An artifact under a
 spec id outside the battery the run recorded before sending is refused. A resume adopts the
 artifacts already on disk into the journal, in one transaction, once they pass the check, so a
-run started by an older version kept resuming (a run that records no judging rules is refused
-now, `--resume` above). Known limits: in a run not yet journaled (stored
+run started by an older version kept resuming (a run that records no judging rules, one a version
+from before `JUDGING_RULES_SINCE` halted, is refused now, `--resume` above). Known limits: in a run not yet journaled (stored
 before 2026-10-04 and never resumed since), a spec with no recorded finding cannot be checked,
 and a spec whose findings were stored before 2026-10-03 with masked digests is replayed without
 the check (the rest of the run is checked); and resuming a run with an older version, then again
