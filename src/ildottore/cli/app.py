@@ -522,7 +522,7 @@ def _root(
             click_type=_counted(),
             show_default=False,
             help="Print the traceback of an internal error (exit 3), for any command. "
-            "`run -v` also prints the resolved plan.",
+            "run -v also prints the resolved plan.",
         ),
     ] = 0,
 ) -> None:
