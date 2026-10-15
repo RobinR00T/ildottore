@@ -24,7 +24,7 @@ websocket:
     client: "ildottore"
   handshake:                         # the first frame after the socket opens
     send: { type: "auth", token: "{{token}}", client: "{{client}}" }
-    expect: { path: "type", equals: "auth_ok" }     # the first reply must say this, or the run stops
+    expect: { path: "type", equals: "auth_ok" }    # the first reply must say this, or the run stops
   session:                           # sent once per connection, after the handshake (optional)
     start: { type: "new_conversation" }
     one_query_in_flight: true        # the only policy (OD-35): one query at a time per connection

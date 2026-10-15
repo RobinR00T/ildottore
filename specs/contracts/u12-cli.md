@@ -49,9 +49,10 @@ gate is never bypassable**: not by `-A`, not by any flag (`docs/09 §5`, `docs/0
 - KEEP: exit codes `0` clean · `1` findings below `--fail-on` · `2` at/above `--fail-on` · `>2`
   operational error (`docs/09 §4`). As built the operational code is `3`, and it also covers a
   run that did not finish and a command-line usage error (an unknown option exits 3, so it
-  cannot be read as "findings at/above"). `--fail-on` gates **confirmed** findings; `--include-needs-review`
-  extends the gate to the unconfirmed **fails** only (an inconclusive or a pass never gates,
-  although an inconclusive that was sent reads `needs_review` in the reports, `docs/05 §2`).
+  cannot be read as "findings at/above"). `--fail-on` gates **confirmed** findings;
+  `--include-needs-review` extends the gate to the unconfirmed **fails** only (an inconclusive or a
+  pass never gates, although an inconclusive that was sent reads `needs_review`
+  in the reports, `docs/05 §2`).
 - KEEP: `-T0..-T5` expand to concrete rate/concurrency/timeout defaults in `flags.py` (documented
   table); explicit `--rate/--concurrency/--timeout` override the template.
 - DECIDED (OD-5, signed off as built on 2026-10-11 under the owner's delegation, revisable):
@@ -253,14 +254,15 @@ a claim about a whole campaign checked only against the invocation in front of i
   alone, which is timing template T2 over the same battery, records adaptive mode without
   changing any order; a resume must still match it.)
 
-**The target AND ITS ROUTE are the things with no opt-in.** `--resume-unverified` waives the battery, the
-context and the spend, and a second audit pointed it at a run row with no target id and resumed
-a vulnerable app's evidence into a hardened app's report with zero requests sent: one flag was
-disarming two checks, and its help text advertises a budget consequence. A run that does not record its target, **or its route**, is refused outright, with no flag. The
-first version made only the target ID unwaivable, and a third audit walked through the gap it
-left: a run row whose context column was absent still accepted `--resume-unverified --hardened`,
-which flips the offline replay, so one half's criticals were published as the other's. A context
-row that merely lacked the digest key skipped the check silently, with no flag and no notice.
+**The target AND ITS ROUTE are the things with no opt-in.** `--resume-unverified` waives the
+battery, the context and the spend, and a second audit pointed it at a run row with no target id and
+resumed a vulnerable app's evidence into a hardened app's report with zero requests sent: one flag
+was disarming two checks, and its help text advertises a budget consequence. A run that does not
+record its target, **or its route**, is refused outright, with no flag. The first version made only
+the target ID unwaivable, and a third audit walked through the gap it left: a run row whose context
+column was absent still accepted `--resume-unverified --hardened`, which flips the offline replay,
+so one half's criticals were published as the other's. A context row that merely lacked the digest
+key skipped the check silently, with no flag and no notice.
 
 **A refusal says what changed and the flag that restores it (amended 2026-10-12, CLI audit of
 2026-10-11, M1 and L6).** Three refusals said neither: a spec edit read "restore the specs as they
@@ -378,11 +380,11 @@ clause and is not changed by it.
 
 Checked through the real CLI against a counting stub by `tests/cli/test_probe_pass_spend.py`: a
 503 and a 401 on the first and on the sixth probe (a 200 that is not JSON stopped the pass too
-until OD-21, 2026-10-11; it fails only its probe now, checked beside a reply nested too deeply); SIGINT and SIGTERM sent
-to a subprocess with a probe on the wire (its Ctrl-C handler restored, since a shell that starts
-pytest with `&` passes SIGINT on ignored); an interruption at the write after a pass that
-succeeded; a write that fails; a stop after the write; a resume that completes; and the two cases
-not recorded, each comparing the store with what the stub served.
+until OD-21, 2026-10-11; it fails only its probe now, checked beside a reply nested too deeply);
+SIGINT and SIGTERM sent to a subprocess with a probe on the wire (its Ctrl-C handler restored, since
+a shell that starts pytest with `&` passes SIGINT on ignored); an interruption at the write after a
+pass that succeeded; a write that fails; a stop after the write; a resume that completes; and the
+two cases not recorded, each comparing the store with what the stub served.
 
 **A-60 SIGTERM and SIGHUP stop a run as Ctrl-C does, inside a callback too (added 2026-10-08,
 amended 2026-10-09 and 2026-10-10).** `execute_run` turned them into Ctrl-C by installing
@@ -1212,16 +1214,16 @@ the provider's`; with transport failures only, the reason is as before. A resume
 sends again because they could not be read (`; <k> that could not be read will be sent again`,
 LOW 1), and one that keeps none says so (`keeps none of the <n> attempt(s) it stored across <s>
 spec(s) (none was answered, or failed in a way a retry would repeat)`; it said `keeps 0
-attempt(s)`, verification of `07aa0b3a`, LOW 2). The report schema's `status` description names `aborted` and the wider `unreachable`.
-Checked by `tests/cli/test_malformed_reply_campaign.py`. **Amended 2026-10-11 after the audit of the
-scoring (LOW 1):** the note names each id it sends again once, by the artifact that is its attempt
-(`shared.resend`, u08 A-74), and so counts what it keeps (`blocked`, `trimmed`): it counted an id
-in every category one of its artifacts fell in, so an id holding a reply stored without a verdict
-and that reply's unreadable re-send read `-1 that ended in an environment error will be sent again;
-1 that could not be read will be sent again; 1 answered but not evaluated before the halt will be
-sent again`; it now reads `1 that could not be read will be sent again`
-(`runner.unjudged_attempt_ids` reads the attempt too). Checked by
-`tests/cli/test_resume_resend_scored.py`, failing on `de122e26`.
+attempt(s)`, verification of `07aa0b3a`, LOW 2). The report schema's `status` description names
+`aborted` and the wider `unreachable`. Checked by `tests/cli/test_malformed_reply_campaign.py`.
+**Amended 2026-10-11 after the audit of the scoring (LOW 1):** the note names each id it sends again
+once, by the artifact that is its attempt (`shared.resend`, u08 A-74), and so counts what it keeps
+(`blocked`, `trimmed`): it counted an id in every category one of its artifacts fell in, so an id
+holding a reply stored without a verdict and that reply's unreadable re-send read `-1 that ended in
+an environment error will be sent again; 1 that could not be read will be sent again; 1 answered but
+not evaluated before the halt will be sent again`; it now reads
+`1 that could not be read will be sent again` (`runner.unjudged_attempt_ids` reads the attempt too).
+Checked by `tests/cli/test_resume_resend_scored.py`, failing on `de122e26`.
 
 **A-79 (u08's clause; this unit's half, added 2026-10-11, the amendment to OD-41 and OD-42,
 decided under the owner's delegation, best practice, revisable) A run the provider's filter
@@ -1349,19 +1351,20 @@ a pass, and each of these crashed or misled after the traffic it could have refu
   `FileError` (exit 1 by default) by class, as `UsageError` already was, and those of a click
   installed beside the vendored copy, which Typer does not catch and which only a plugin raises
   (read from `sys.modules` when one arrives; the CLI never imports that click, round-2 LOW 2),
-  its `Abort` (`error: aborted`), and a `SystemExit` of 1, 2 or a text (`error: unexpected exit with status ...`; 0 and
-  3 up keep their code). A broken stdout pipe is exit 3 with `error: the output stream closed
-  before the command finished (broken pipe)`, wherever it is met: in the command (the guard), in
-  the root context's close callback, which reconfigures stdout and so flushes what was still
-  buffered (`_restore_stream`), in rich, which answers it with `SystemExit(1)`, or around the root
-  context, where help is printed and the library itself exited 1 (`OperationalErrorGroup.main`,
-  which also makes the library's `Aborted!` there exit 3); stdout is then
-  pointed at the null device, so no later flush meets the pipe. The first version of this clause
-  stopped at the guard, and the close callback's flush turned the 3 back into 1 (`registry ls`,
-  `lint`, `describe`, `coverage`, and a live scan with findings, which sent its requests and exited
-  1 with nothing said; pre-merge audit of `e6a1ab9b`, MEDIUM 2). Ctrl-C keeps its 130. `dottore
-  lint` still exits 1 for lint findings, which are findings. This closes A-9 for the classes
-  nobody listed: the handler tuples stay, and what they miss is no longer a traceback with exit 1.
+  its `Abort` (`error: aborted`), and a `SystemExit` of 1, 2 or a text
+  (`error: unexpected exit with status ...`; 0 and 3 up keep their code). A broken stdout pipe is
+  exit 3 with `error: the output stream closed before the command finished (broken pipe)`, wherever
+  it is met: in the command (the guard), in the root context's close callback, which reconfigures
+  stdout and so flushes what was still buffered (`_restore_stream`), in rich, which answers it with
+  `SystemExit(1)`, or around the root context, where help is printed and the library itself exited 1
+  (`OperationalErrorGroup.main`, which also makes the library's `Aborted!` there exit 3); stdout is
+  then pointed at the null device, so no later flush meets the pipe. The first version of this
+  clause stopped at the guard, and the close callback's flush turned the 3 back into 1
+  (`registry ls`, `lint`, `describe`, `coverage`, and a live scan with findings, which sent its
+  requests and exited 1 with nothing said; pre-merge audit of `e6a1ab9b`, MEDIUM 2). Ctrl-C keeps
+  its 130. `dottore lint` still exits 1 for lint findings, which are findings. This closes A-9 for
+  the classes nobody listed: the handler tuples stay, and what they miss is no longer a
+  traceback with exit 1.
 * **The attempts ceiling.** A campaign of more than 20,000 attempts could never finish (no flag
   raised that ceiling); it is the request ceiling now (u08's half), and `--estimate` prints the
   ceilings, attempts included (`ceilings: <n> requests, <n> attempts (one per accepted request),
@@ -1397,11 +1400,11 @@ a pass, and each of these crashed or misled after the traffic it could have refu
   printed "lint OK ... across 75 spec(s)", exit 0, over a broken spec of the pack (MEDIUM 3); with
   no path and no `specs/` here it refuses, exit 3, `error: spec path not found: specs. Pass the
   spec path to lint (dottore lint <dir>); ...` (the rule decided for this branch and
-  `fix/cli-input-validation`, which keeps one refusal mechanism for missing spec paths). `fleet` takes
-  `--spec-path`, `--evidence-root`, `--run-db` and `-oJ/-oH/-oS/-oX/-oA` with `run`'s meaning and,
-  without `--run`, carries them into the `dottore run` line it prints. A spec path that does not
-  exist is `error: spec path not found: <path>. Pass --spec-path <dir>; ...`, not "1 spec file(s)
-  failed to load".
+  `fix/cli-input-validation`, which keeps one refusal mechanism for missing spec paths). `fleet`
+  takes `--spec-path`, `--evidence-root`, `--run-db` and `-oJ/-oH/-oS/-oX/-oA` with `run`'s meaning
+  and, without `--run`, carries them into the `dottore run` line it prints. A spec path that does
+  not exist is `error: spec path not found: <path>. Pass --spec-path <dir>; ...`, not "1 spec
+  file(s) failed to load".
 
 Checked by `tests/cli/test_run_store_errors.py` (36), `tests/cli/test_evidence_root_preflight.py`
 (10), `tests/cli/test_attempt_ceiling.py` (12), `tests/cli/test_estimate_quiet.py` (2),
@@ -1505,9 +1508,10 @@ are the same class.
   over one); a plugin that cannot be loaded is recorded, its type being unknown. Today the record
   is empty: a spec names a type of the schema's `EvaluatorType`, and a plugin may not reuse a
   built-in type (the registry refuses a duplicate).
-* **Recorded when a run starts.** `context_json.judging_rules`, `judging_digest`, `tool_version` (the package that
-  started the run, kept by its resumes) and `tool_versions` (every invocation's package, in order,
-  appended as `mutator_orders` is). `dottore --version` prints `dottore <version> (judging rules
+* **Recorded when a run starts.** `context_json.judging_rules`, `judging_digest`, `tool_version`
+  (the package that started the run, kept by its resumes) and `tool_versions` (every invocation's
+  package, in order, appended as `mutator_orders`
+  is). `dottore --version` prints `dottore <version> (judging rules
   <n>)`.
 * **A resume under other rules is refused before anything is sent** (exit 3), older or newer,
   naming both versions, why and what to do: finish it with the version that started it, or start a
@@ -1648,36 +1652,40 @@ this branch by `scratch/fixcli3/repro.sh`:
 * **Messages (L8).** A figure the tool prints is written with thousands separators (`-T`, the
   `--rate` and `--timeout` refusals, an integer a spec schema error opens with), which the redactor
   does not read as a phone number, and an `OSError` for a file name too long to open gives its
-  length, not the name (`_masked`). The unknown-suite refusal has one wording (`flags.unknown_suite`),
-  naming the resolved id only for an alias: after a name ending in `passwd`, `(resolved` read as the
-  password of a label and was masked. `--timeout` is at least 1 second and at most 86,400
-  (`MIN_TIMEOUT_S`, `MAX_TIMEOUT_S`; NaN and infinity refused); the per-attempt timeout raises
-  `TimeoutError: no reply within the per-attempt timeout of <N> s`, and an exception with no message
-  is written `<Class> (no detail given)` (`shared.error_text`, in the engine's attempt errors, the
-  runner's abort reason and the adapters' last transport error): `--timeout 1e-300` ended a run
-  `TimeoutError: ` with nothing after. `127.0.0.1`, one of the allowlist's own loopback hosts, is
-  kept readable in a URL's authority (`_LOOPBACK_IN_URL`), unless a registered credential holds it.
+  length, not the name (`_masked`). The unknown-suite refusal has one wording
+  (`flags.unknown_suite`), naming the resolved id only for an alias: after a name ending in
+  `passwd`, `(resolved` read as the password of a label and was masked. `--timeout` is at least 1
+  second and at most 86,400 (`MIN_TIMEOUT_S`, `MAX_TIMEOUT_S`; NaN and infinity refused); the
+  per-attempt timeout raises `TimeoutError: no reply within the per-attempt timeout of <N> s`, and
+  an exception with no message is written `<Class> (no detail given)` (`shared.error_text`, in the
+  engine's attempt errors, the runner's abort reason and the adapters' last transport error):
+  `--timeout 1e-300` ended a run `TimeoutError: ` with nothing after. `127.0.0.1`, one of the
+  allowlist's own loopback hosts, is kept readable in a URL's authority (`_LOOPBACK_IN_URL`), unless
+  a registered credential holds it.
 * **Scaffolds (L10).** `new-spec --family` refuses a control or format character (Cc, Cf, Zl, Zp)
   and blank text, never echoing it, and writes any other value as a YAML string that reads back as
   written: a plain word as before, unless YAML 1.1 reads it as something else (`yes`, `null`,
   `123`, found by the self-review), which is quoted; nothing is created for a refused scaffold.
 
-Tests (317 in 8 files after the three amendments below, one skipped without `DOTTORE_REPORT_CORPUS`): `tests/cli/
-test_usage_errors_masked.py`, `test_credential_variables.py`, `test_provider_transport_values.py`,
-`test_non_finite_values.py`, `test_spec_paths_that_hold_nothing.py`, `test_spec_id_collisions.py`,
-`test_report_and_file_versions.py` and `test_cli_messages_read_right.py`; on `de122e26` 107 of the 135
-in the five files that import there fail, and the other three import `shared.credential_refs`,
+Tests (317 in 8 files after the three amendments below, one skipped without
+`DOTTORE_REPORT_CORPUS`): `tests/cli/ test_usage_errors_masked.py`, `test_credential_variables.py`,
+`test_provider_transport_values.py`, `test_non_finite_values.py`,
+`test_spec_paths_that_hold_nothing.py`, `test_spec_id_collisions.py`,
+`test_report_and_file_versions.py` and `test_cli_messages_read_right.py`; on `de122e26` 107 of the
+135 in the five files that import there fail, and the other three import `shared.credential_refs`,
 `shared.error_text` and `reporting.report_schema`, which `de122e26` does not have: with those three
 added to it as this branch has them (the schema function reading `de122e26`'s own schema), 80 of
-138 of their 182 fail (one skipped), so 245 of the 317 in all. Tests that pinned the old behaviour now
-pin the new one: `test_real_target_routing` (an unknown provider routed to REST), `test_commands`
-(an unknown suite listed nothing), `test_loader` and `test_pr45_followups` (a missing path was a
-`PARSE_ERROR` and a warning), `test_audit_block6_cli_reports` (`--timeout` wording) and the reports
-hand-built without `schema_version` in five test files, and `test_authz_leak_corroboration` follows the reworded `env://NONE` comment of `examples/scope.local.yaml`. Outside the clause, said rather than pinned:
-a literal key in a scope identity's `auth_ref` is still loaded (it is refused when a target names
-it, and `vault://` references stay a u01 shape); a target file's endpoint with user info is still
-read (its password masked by value, SEC-02); `--rate inf` is still taken; a per-file read error in a
-spec tree (permission, link loop) is still a `PARSE_ERROR`, exit 1.
+138 of their 182 fail (one skipped), so 245 of the 317 in all. Tests that pinned the old behaviour
+now pin the new one: `test_real_target_routing` (an unknown provider routed to REST),
+`test_commands` (an unknown suite listed nothing), `test_loader` and `test_pr45_followups` (a
+missing path was a `PARSE_ERROR` and a warning), `test_audit_block6_cli_reports` (`--timeout`
+wording) and the reports hand-built without `schema_version` in five test files, and
+`test_authz_leak_corroboration` follows the reworded `env://NONE` comment of
+`examples/scope.local.yaml`. Outside the clause, said rather than pinned: a literal key in a scope
+identity's `auth_ref` is still loaded (it is refused when a target names it, and `vault://`
+references stay a u01 shape); a target file's endpoint with user info is still read (its password
+masked by value, SEC-02); `--rate inf` is still taken; a per-file read error in a spec tree
+(permission, link loop) is still a `PARSE_ERROR`, exit 1.
 
 Amended after the pre-merge audit of `f9dbed49` (2026-10-12), each its own commit:
 * MEDIUM 1: the in-process `app` is a Typer subclass whose call runs `main()` (`app._MaskedTyper`),
