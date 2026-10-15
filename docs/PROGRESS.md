@@ -61,8 +61,20 @@ neighbouring entries can interleave (an older branch merged later sits above a n
   two-identity rows, replay 140 and 350, the HTML-stub transcript (9 requests, 8 attempts, 0
   tokens, byte-identical), the mixed-stub fingerprint warning, Scenario B.
   `make --no-print-directory gates` on the merged tree, plain and with `GITHUB_ACTIONS=true CI=true`:
-  green both times, 7003 passed and 1 skipped, 97.68% coverage. The CI example's pin and the
-  rewrap wait for the last sibling.
+  green both times, 7003 passed and 1 skipped, 97.68% coverage.
+- Stacked on #117 (`fix/resume-judging-rules`, head `e92a7541`, not yet landed), merged with
+  `--no-ff` (`aad7b64c`, one CHANGELOG conflict). Its "corrupt run-context value is refused"
+  heading is labelled breaking (30 labelled headings); its A-81 row is in the index already, and
+  the CLI's options are as on `a906cea9`. The gates then failed one test,
+  `test_the_judging_code_is_the_code_its_version_was_pinned_for`: this branch's help and
+  docstring text in `cli/app.py` and `cli/run.py` changes the judging digest, so version 1 is
+  re-pinned by an appended line (`dbfbedd7`, "help and docstring text only"), PINNED moved, no
+  line edited. Re-measured on that tree and unchanged: item 11 (a blank or three-space variable
+  exits 0 under `--dry-run`, `-sn` and `--estimate`, a five-character one exits 3), 33/545, the
+  `docs/16` rows, replay 140 and 350, the HTML-stub line, the fingerprint warning, Scenario B.
+  `make --no-print-directory gates`, plain and with `GITHUB_ACTIONS=true CI=true`: green both
+  times, 7107 passed and 1 skipped, 97.70% coverage. The CI example's pin and the rewrap wait for
+  #117 to land.
 
 ## State, 2026-10-15 (landing): main (`a906cea9`) merged in, version 1 pinned at landing (u12 A-81)
 

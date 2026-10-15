@@ -27,9 +27,9 @@ the file, schema copy, build or pipeline it names.
   that is not JSON (it fails only its probe, exit 0), the Bedrock guardrail item (closed by OD-42)
   in the OD-41 rows, a duplicate OD-41 row in `docs/12`; the scope checksum is "an integrity
   check, not a signature (OD-2)" in `specs/scope.example.yaml`.
-- **The ledger.** CHANGELOG headings whose body states a break say "breaking for <whom>" (28 with
-  main merged in: 17 labelled by this branch, 7 by #116, and 4 of the merged siblings' brought to
-  the rule),
+- **The ledger.** CHANGELOG headings whose body states a break say "breaking for <whom>" (30 with
+  main and #117 merged in: 17 labelled by this branch, 7 by #116, 1 by #117, and 5 of the merged
+  siblings' brought to the rule),
   and the file's header says when; `00-INDEX.md` gains the A-37 row, records A-62 and A-64 as
   reserved and unused (A-75 stays the next free number), reads OD-1 to OD-47 in order, and names
   each unit's files (u04's `mcp.py`, `websocket.py`, `comprehending.py`; u01's `safe_yaml.py`;
@@ -51,7 +51,8 @@ the file, schema copy, build or pipeline it names.
   `schema export --name report` and the spec path's fallback to the battery beside the package;
   the root `-v` help loses its backticks; a credential variable set but empty under `--dry-run`, `-sn` or
   `--estimate` is a warning and exit 0, where #113 exited 3, now said in the A-82 entry and in
-  `dottore-scope(5)`.
+  `dottore-scope(5)`. With #117 merged, judging rules version 1 is re-pinned by an appended line
+  for this branch's help and docstring text, which cannot change a verdict.
 ### Changed (breaking for a halted run: a resume is bound to the rules that judged it, u12 A-81)
 
 - **A run halted on an older version resumed into a report that contradicted itself.** A resume
