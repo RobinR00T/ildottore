@@ -326,6 +326,10 @@ also lists the skipped and blocked spec ids with their reasons. Either also prin
 an internal error, as the root dottore -v does for any command.
 .SH "GLOBAL OPTIONS"
 .TP
+.B -v, --verbose
+Before the command: print the traceback of an internal error (exit 3), for any command; run -v
+also prints the resolved plan. A counter, repeatable (-vv).
+.TP
 .B --version
 Print the version (dottore 0.1.0) and exit.
 .TP
@@ -336,14 +340,15 @@ As each
 .B dottore \fICOMMAND\fR --help
 prints them. A
 .B --spec-path
-that is left out searches specs/ under the current directory.
+that is left out is specs/ in the working directory when it is a directory, else the battery
+beside the installed package, as for run; lint does not fall back.
 .SS "fleet \fIfleet.yaml\fR"
 .TP
 .B --out \fIPATH\fR
 Directory for the generated scope.yaml, target files and judge.yaml (default .dottore/fleet).
 .TP
 .B --run
-Scan every expanded target right away, with the specs under specs/ of the current directory.
+Scan every expanded target right away, with the spec path run would use.
 .TP
 .B --judge \fIPATH\fR
 Judge target.yaml; it must match the fleet file's judge: block, which is used on its own when
@@ -354,6 +359,11 @@ With
 .BR --run :
 the reproducibility runs (default 5), a comma-separated category selection and no colour, as
 for run.
+.TP
+.B --spec-path \fIPATH\fR, --evidence-root \fIPATH\fR, --run-db \fIPATH\fR, -oJ, -oH, -oS, -oX \fIPATH\fR, -oA \fIPREFIX\fR
+As for run: with
+.B --run
+they apply to the scan; without it they are carried into the printed dottore run line.
 .SS "fingerprint \fITARGET\fR"
 .TP
 .B --scope \fIPATH\fR
@@ -383,7 +393,8 @@ Machine-readable output.
 .TP
 .B --json
 Machine-readable output: the counts, the errors, the warnings and ok. The exit status is 0 when
-lint passes and 1 when it finds an error.
+lint passes, 1 when it finds an error in what it read, and 3 when a path does not exist or
+holds no spec or suite.
 .SS "describe \fISPEC_ID\fR"
 .TP
 .B --spec-path \fIPATH\fR
@@ -426,8 +437,8 @@ Run store whose findings are the evidence manifest (default .dottore/runs.sqlite
 .SS "schema export"
 .TP
 .B --name \fITEXT\fR
-Print one schema: attack-spec, pack, suite or test-plan; any other name is refused (exit 3)
-with that list. Without it, one JSON object holds all four.
+Print one schema: attack-spec, pack, report, suite or test-plan; any other name is refused
+(exit 3) with that list. Without it, one JSON object holds all five.
 .SS "diff \fIBASELINE CURRENT\fR, calibrate \fIREPORT LABELS\fR"
 Arguments only: two JSON run reports, or a report and an operator labels file.
 .SH "EXIT STATUS"
