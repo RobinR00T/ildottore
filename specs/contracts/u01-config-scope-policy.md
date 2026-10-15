@@ -30,11 +30,11 @@ it is built, by the spec loader's own measure, A-37.) Provide
 `PolicyEngine.check(target, endpoint, spec)`
 → `allow` | `blocked_by_policy(reason)` answering: target in scope? endpoint on allowlist
 (default-deny, S3)? spec's category/id enabled by the active **policy pack**? dangerous payload
-marked `test_only` (S5; enforced from the category, A-29)? Layer-B / PII-elicitation specs **off
-unless the pack enables them** (`docs/11 §5`, DL4/DL5). `config.py` sources scanner secrets from
-**env/vault**, never files. (A target's `auth_ref` resolves `env://` only; `vault://` is deferred
-and raises.) `redactor.py` is the single choke point masking secrets/keys/PII in logs, console,
-evidence and reports (S6, DL2); it is import-cheap and dependency-free so every layer can call it.
+marked `test_only` (S5; enforced from the category, A-29)? Layer-B / PII-elicitation specs **off unless the pack enables them**
+(`docs/11 §5`, DL4/DL5). `config.py` sources scanner secrets from **env/vault**, never files.
+(A target's `auth_ref` resolves `env://` only; `vault://` is deferred and raises.)
+`redactor.py` is the single choke point masking secrets/keys/PII in logs, console, evidence and
+reports (S6, DL2); it is import-cheap and dependency-free so every layer can call it.
 
 ## §3 Dependencies & interface contracts
 - Consumes `shared.models.{Target, Capabilities}` and any `shared` enums for categories; does
@@ -59,10 +59,10 @@ evidence and reports (S6, DL2); it is import-cheap and dependency-free so every 
   and the operator signs out of band (§9).
 
 ## §5 Implementation plan (each step its own commit, green before next)
-1. `errors.py` + `config.py`: typed config model (Pydantic v2), env/vault sourcing,
-   `--unsafe-render` and `--allow-pii-elicitation` flag surface. (As built: the typed `SafetyFlags`
-   carry both values, default off; neither is a CLI flag, so the DL4 run key cannot be turned on
-   from `dottore`. OD-11, decided 2026-10-11: the run flag is added only together with a flag that
+1. `errors.py` + `config.py`: typed config model (Pydantic v2), env/vault sourcing, `--unsafe-render`
+   and `--allow-pii-elicitation` flag surface. (As built: the typed `SafetyFlags` carry both
+   values, default off; neither is a CLI flag, so the DL4 run key cannot be turned on from
+   `dottore`. OD-11, decided 2026-10-11: the run flag is added only together with a flag that
    loads a policy pack, never alone, since alone it would enable nothing.)
 2. `redactor.py`: pattern registry (key prefixes `sk-`/`ghp_`/`AKIA`/`xoxb-`/JWT/PEM + PII:
    email/phone/card/IBAN/national-id/IP), masking with type-tag, structural walk over dict/list.

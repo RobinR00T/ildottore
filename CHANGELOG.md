@@ -152,11 +152,10 @@ the file, schema copy, build or pipeline it names.
   already sending stops at its own next unreadable reply, and every reply sent is stored. Measured
   against a stub answering every request with an HTML page: 9 requests at the default
   `--concurrency 4` (6 at 1), 27 with `-sV` (18 probes, then 9), 24 at 1; on `6d5f7ae`, 4 and 1;
-  two readable replies and then that page: 26 to 27 requests (the replies in flight vary), exit 3; a
-  filter answering attack prompts with a 200 block page: the default battery finishes, 160 of 550
-  attacks blocked, exit 0. A shorter run that read nothing is `unreachable`, and its reason says the
-  replies could not be read and what to check (it said "failed on transport"). The report schema's
-  `status` description names `aborted` and the wider `unreachable`.
+  two readable replies and then that page: 26 to 27 requests (the replies in flight vary), exit 3; a filter answering attack prompts
+  with a 200 block page: the default battery finishes, 160 of 550 attacks blocked, exit 0. A shorter run that read nothing is `unreachable`, and its reason
+  says the replies could not be read and what to check (it said "failed on transport"). The report
+  schema's `status` description names `aborted` and the wider `unreachable`.
 - A REST template whose `text_path` starts at an index (Hugging Face's `0.generated_text`) reads a
   body that is a JSON array; it was refused as not an object.
 - **Schema note** (added 2026-10-12): `summary.unreadable_reply` is a new optional property of a
@@ -177,11 +176,11 @@ the file, schema copy, build or pipeline it names.
   `tests/adapters/test_malformed_replies.py` (37), `tests/adapters/test_rest_array_body.py` (1),
   `tests/core/test_unreadable_replies.py` (15), `tests/cli/test_malformed_reply_campaign.py` (11);
   the tests that pinned the old rule assert this one (`tests/adapters/test_base.py`,
-  `test_openai.py`, `test_anthropic.py`, `test_rest.py`, `test_deep_replies.py`,
-  `test_websocket.py`, `test_websocket_premerge.py`, `test_provider_filter_block.py`,
-  `test_provider_output_filter.py`, `tests/cli/test_probe_pass_spend.py`,
-  `tests/fingerprint/test_probe_failures.py`, `tests/cli/test_input_filter_probe.py`), and the
-  golden JSON report snapshot gains `summary.unreadable_reply`.
+  `test_openai.py`, `test_anthropic.py`, `test_rest.py`, `test_deep_replies.py`, `test_websocket.py`,
+  `test_websocket_premerge.py`, `test_provider_filter_block.py`, `test_provider_output_filter.py`,
+  `tests/cli/test_probe_pass_spend.py`, `tests/fingerprint/test_probe_failures.py`,
+  `tests/cli/test_input_filter_probe.py`), and the golden JSON report snapshot gains
+  `summary.unreadable_reply`.
 
 ### Fixed (what the verification of `07aa0b3a` found in OD-21, before it landed)
 
@@ -226,8 +225,8 @@ the file, schema copy, build or pipeline it names.
   stop now carries each one's result, refunded and stored, as a reply that crossed a token ceiling
   is.
 - MEDIUM 2: after one readable reply nothing stopped a target that broke mid-run (2 readable, then
-  HTML: 355 requests, 353 unreadable, exit 0). The watch counts unreadable replies in a row, 20
-  after the endpoint was proven.
+  HTML: 355 requests, 353 unreadable, exit 0). The watch counts unreadable replies in a row, 20 after
+  the endpoint was proven.
 - LOW 1, a resume sends unreadable attempts again; LOW 2, a template rooted at an index reads an
   array, and a target file's `provider: rest` target is not told to check a template it cannot
   declare; LOW 3, the CLI recognises an unreadable attempt by its verdict's reason or its error's
@@ -254,8 +253,8 @@ the file, schema copy, build or pipeline it names.
   00-INDEX row, the MANUAL and `docs/02-threat-model.md` S6; `tests/test_json_log_commands.py`
   (20 tests: the rewrite, a 400-example property that the parsed data and its re-serialization are
   byte for byte the plain serializer's, each JSON output and the JUnit report through the CLI, and
-  the fast path; it does not collect on `6d5f7ae`), and `tests/test_terminal_log_commands.py`'s JSON
-  test now asserts the escape (it pinned the raw prefix as an open decision).
+  the fast path; it does not collect on `6d5f7ae`), and `tests/test_terminal_log_commands.py`'s JSON test now asserts the escape (it
+  pinned the raw prefix as an open decision).
 
 ### Decided (five open decisions closed under the owner's delegation, 2026-10-11)
 
@@ -303,11 +302,11 @@ where to reverse it.
   planner skips the spec as `capability_unavailable: target does not declare mcp`: nothing is sent
   and the run does not count it as covered. Against the same stub: no attempt.
 - **Figures.** The dry run of `examples/target.local.yaml` plans 33 specs, all 33 with a judge
-  (on `0685f2c`: 34 specs, 33 with a judge). A hardened mock run on a chat-like target (tools, rag
-  and memory declared) credits 26/30 IoPC techniques (27/30 before: `IOPC-T2.004` is this spec's
-  alone); its other coverage figures are unchanged. The battery coverage `dottore coverage` prints
-  reads the specs, not a target, and is unchanged (8/10 OWASP, 13/16 ATLAS, 27/30 and 23/23 IoPC,
-  5/51, 12/95 and 0/45 AISVS).
+  (on `0685f2c`: 34 specs, 33 with a judge). A hardened mock run on a chat-like target (tools, rag and memory declared)
+  credits 26/30 IoPC techniques (27/30 before: `IOPC-T2.004` is this spec's alone); its other
+  coverage figures are unchanged. The battery coverage `dottore coverage` prints reads the specs,
+  not a target, and is unchanged (8/10 OWASP, 13/16 ATLAS, 27/30 and 23/23 IoPC, 5/51, 12/95 and
+  0/45 AISVS).
 - **Compatibility.** A spec that writes `requires: [mcp]` fails validation against an older copy of
   `attack-spec.schema.json`. The target digest leaves `capabilities.mcp` out when it is false or
   set by the provider, so it is unchanged: a run halted before this version resumes against the
@@ -411,12 +410,11 @@ where to reverse it.
   the OD-19 row and the A-73 row of `00-INDEX`, `docs/01`, `docs/03`, `docs/04` §1-§2, `docs/05`,
   `docs/07`, `docs/12`, `docs/14`, the playbook's lesson 7, the MANUAL (§8, §9, the
   `--include-needs-review` row), the FAQ, the README, USAGE and `dottore(1)`. Tests:
-  `tests/evaluators/test_one_combination_rule.py` and
-  `tests/registry/test_deprecated_combination.py` (48 tests: on `feb148f` the first does not import,
-  `shared.combination` being new, and 6 of the second's 7 fail; with that module alone added, 17 of
-  the 48 fail); `tests/evaluators/test_combine.py` rewritten for the one rule; the two helper tests
-  moved to `shared.combination`; three test fixtures and the `requires_policy` test
-  of `tests/test_terminal_log_commands.py` write `deterministic_first`.
+  `tests/evaluators/test_one_combination_rule.py` and `tests/registry/test_deprecated_combination.py`
+  (48 tests: on `feb148f` the first does not import, `shared.combination` being new, and 6 of the
+  second's 7 fail; with that module alone added, 17 of the 48 fail); `tests/evaluators/test_combine.py` rewritten for the one
+  rule; the two helper tests moved to `shared.combination`; three test fixtures and the
+  `requires_policy` test of `tests/test_terminal_log_commands.py` write `deterministic_first`.
 
 ### Changed (a reply that answers nothing decides no spec: OD-16)
 
@@ -452,10 +450,9 @@ where to reverse it.
 - ADR-0007 accepted (with the re-check against OD-41 and OD-42, and its reversal), the OD-16 row
   of `00-INDEX`, u06 §9, u13 §7, a note in u09 §7, `docs/04` §1, the MANUAL (§8 and the
   `mock_scenario` table's note) and the FAQ's MCP entry. Tests:
-  `tests/battery/test_irrelevant_reply.py` (5, all failing on `6d5f7ae` and on `ee202bf`); the two
-  pins that held the old pair (`tests/cli/test_scenario_mode.py`,
-  `tests/fingerprint/test_carrier_measured_offline.py`) pin an empty set, and the resume test that
-  needed a spec without a judge derives one.
+  `tests/battery/test_irrelevant_reply.py` (5, all failing on `6d5f7ae` and on `ee202bf`); the two pins that held
+  the old pair (`tests/cli/test_scenario_mode.py`, `tests/fingerprint/test_carrier_measured_offline.py`)
+  pin an empty set, and the resume test that needed a spec without a judge derives one.
 
 ### Decided (eight open decisions, closed on 2026-10-11 under the owner's delegation)
 
@@ -2316,26 +2313,27 @@ the alternative not taken and how to reverse it, in its `00-INDEX` row and its u
   figure) of about 400 digits went into the spend, and persisting it through `float()` raised
   `OverflowError`: a traceback and exit 1, the code CI reads as "findings below `--fail-on`", and no
   report. A smaller figure past 2^53 was believed and halted the campaign on the token ceiling after
-  the first reply, so every other spec never ran. A figure is now read only when it is a JSON
-  integer from 0 to 2^53, past which a float no longer holds every integer (the spend is persisted
-  as a float), far beyond any one bill (a number written with a fraction or an exponent, such as
-  `12.0`, is not one, as before). One that is not is skipped like an absent one and the next shape
-  is read (`total_tokens`, `tokens`, input plus output, prompt plus completion), as a negative
-  figure always was; a sum past 2^53 is no usage; and with no readable shape the send keeps its
-  reservation. A prompt-cache figure is summed only into a pair. One that is there and unreadable
-  now makes that pair a floor: the reservation is trued up to it, never down. Before, one that was
-  not a non-negative integer (a negative, a float such as `12.0`, a NaN or an infinity, a bool, a
-  string) was read as 0, which trued the reservation down past cache tokens the reply says it
-  billed, and an integer past 2^53 was believed or crashed. Up to 2^53 a figure is still believed,
-  as a bill is, so a target can report more than it used and halt the campaign on the token ceiling,
-  or report less and free its reservation. A campaign's total can pass 2^53; the store then rounds
-  it (by 2 tokens in 5.4e16, measured before #89), it does not fail. Merge note (#89, A-55): every
-  token ceiling is now at most 2^53, so the total passes it only by what replies sent together add
-  once it is crossed (two replies of 2^53 - 1 at `--concurrency 6`, measured after the merge), not
-  after many replies, and one reply of 2^53 fills the largest ceiling. Reproduced on Python 3.14
+  the first reply, so every other spec never ran. A figure is now read only when it is a JSON integer
+  from 0 to 2^53, past which a float no longer holds every integer (the spend is persisted as a
+  float), far
+  beyond any one bill (a number written with a fraction or an exponent, such as `12.0`, is not one,
+  as before). One that is not is skipped like an absent one and the next shape is read
+  (`total_tokens`, `tokens`, input plus output, prompt plus completion), as a negative figure always
+  was; a sum past 2^53 is no usage; and with no readable shape the send keeps its reservation. A
+  prompt-cache figure is summed only into a pair. One that is there and unreadable now makes that
+  pair a floor: the reservation is trued up to it, never down. Before, one that was not a
+  non-negative integer (a negative, a float such as `12.0`, a NaN or an infinity, a bool, a string)
+  was read as 0, which trued the reservation down past cache tokens the reply says it billed, and an
+  integer past 2^53 was believed or crashed. Up to 2^53 a figure is still believed, as a bill
+  is, so a target can report more than it used and halt the campaign on the token ceiling, or report
+  less and free its reservation. A campaign's total can pass 2^53; the store then rounds it (by 2
+  tokens in 5.4e16, measured before #89), it does not fail. Merge note (#89, A-55): every token
+  ceiling is now at most 2^53, so the total passes it only by what replies sent together add once
+  it is crossed (two replies of 2^53 - 1 at `--concurrency 6`, measured after the merge), not after
+  many replies, and one reply of 2^53 fills the largest ceiling. Reproduced on Python 3.14
   against a local OpenAI-compatible stub, on `main` (`0f936b6`) and on #61; found by the pre-commit
-  audit of `fix/target-deep-json`. An integer longer than 4,300 digits is refused earlier by the
-  JSON parser itself, a separate question left open on that branch.
+  audit of `fix/target-deep-json`. An integer longer than 4,300 digits is refused earlier by the JSON
+  parser itself, a separate question left open on that branch.
 - **The same reply crashed `-sV`.** The guardrail probe reads `usage.moderation_latency_ms`, and
   `float()` of a 400-digit integer made `dottore fingerprint` and `run -sV` exit 1 the same way; an
   infinity (`1e400` parses as one), a NaN or a negative figure was recorded as a latency, and the
@@ -2343,17 +2341,16 @@ the alternative not taken and how to reverse it, in its `00-INDEX` row and its u
   JSON. It is now read only when it is a finite, non-negative number a float can hold, and is `null`
   otherwise.
 - **One predicate, not two.** The check #61 wrote for the stored spend (`_is_amount` in the run
-  store) moved to `ildottore.shared.amounts` as `is_amount`, next to `is_count`, so the store and
-  the `-sV` layer read figures with the same rule. The ledger has no check of its own: nothing a
-  reply or this tool hands it can grow past what `float()` converts (clause A-36 in
+  store) moved to `ildottore.shared.amounts` as `is_amount`, next to `is_count`, so the store and the
+  `-sV` layer read figures with the same rule. The ledger has no check of its own: nothing a reply or
+  this tool hands it can grow past what `float()` converts (clause A-36 in
   `specs/contracts/u08-execution-engine.md`). A run store edited by hand to an integer just under
   2^1024 could, on a resume under a token ceiling above 1.8e308 (exit 1, as on `main`). Merge
   note (#89, A-55): `run` now refuses such a ceiling, and a resume from that store under 2^53
   halts on the ceiling with exit 3 and sends nothing (measured after the merge), so it is no
   longer open. Found by its audit and fixed by PR #74 (u04 A-39): a `logprob` in a reply that no
-  float holds made `fingerprint` and `run -sV` exit 1 (it is read in the adapter). Tests:
-  `tests/cli/test_usage_figures.py` (through the CLI,
-  both directions), `tests/core/test_usage_figures.py`, `tests/fingerprint/test_latency_figure.py`,
+  float holds made `fingerprint` and `run -sV` exit 1 (it is read in the adapter). Tests: `tests/cli/test_usage_figures.py` (through the CLI, both
+  directions), `tests/core/test_usage_figures.py`, `tests/fingerprint/test_latency_figure.py`,
   `tests/shared/test_amounts.py`.
 
 ### Fixed (a key on a finding's path, printed as written)
@@ -3258,11 +3255,11 @@ the alternative not taken and how to reverse it, in its `00-INDEX` row and its u
   send attempted: a refused connection counts, as for the attack traffic, and so does a send in
   flight when a signal arrives. When an error or a signal ends the pass before its record is
   complete, stderr says how many requests it sent and what the run now records (or that they could
-  not be added; a signal during that write cuts the line), under `-q` too: `resume: the -sV probe
-  pass on 'api' stopped after 3 request(s), retries included; run-<id> now records 23 request(s)
-  spent` (the ceiling's refusal gives its own count). A fresh run stopped by its pass (no run row,
-  nothing to resume) and a `--resume-unverified` run whose spend was never recorded record nothing,
-  as before. Found by the delta audit of PR #68, reproduced on main `0501752`. Contract u12 A-46.
+  not be added; a signal during that write cuts the line), under `-q` too: `resume: the -sV probe pass on 'api' stopped after 3 request(s),
+  retries included; run-<id> now records 23 request(s) spent` (the ceiling's refusal gives its own
+  count). A fresh run stopped by its pass (no run row, nothing to resume) and a
+  `--resume-unverified` run whose spend was never recorded record nothing, as before. Found by the
+  delta audit of PR #68, reproduced on main `0501752`. Contract u12 A-46.
 - **Signals, found by three audit rounds on this fix.** The first version wrote after a successful
   pass outside the handlers, and a real SIGINT a few milliseconds after the last probe lost all 17
   in 2 of 16 tries; the write is inside them now. A handler's own write has nothing after it: one
@@ -3339,8 +3336,7 @@ the alternative not taken and how to reverse it, in its `00-INDEX` row and its u
   43 s) and integer keys that share one hash make a mapping quadratic (27 s); `run` loads the target
   file four times; a 4,000-digit integer in a typed spec field crashed `lint` with a traceback
   (fixed since by #81); and the operator's files are read whole with no byte limit, their validation
-  errors listed with no limit (both fixed since by #76). An undefined alias or an unknown tag is
-  still named in the refusal,
+  errors listed with no limit (both fixed since by #76). An undefined alias or an unknown tag is still named in the refusal,
 
   base-60 integer (`1:59:59:...`) built in time quadratic in its length and integer keys that share
   one hash made a mapping quadratic, and `run` parsed the target file four times (all three fixed in

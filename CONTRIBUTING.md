@@ -18,8 +18,8 @@ This is the product's extensibility story (`docs/06`). To add an attack:
 1. Work against a unit **contract** in `specs/contracts/`. If none exists, propose one.
 2. Follow the guardrails in `AGENTS.md §3` (security-by-default, permissive licenses only,
    zero tech debt, provably correct). A refactor and a feature never share a PR.
-3. Every module ships tests satisfying `docs/07`. Coverage ≥ 85% in aggregate (OD-13: the gate is
-   aggregate; no per-package threshold is enforced). `lint-imports` green.
+3. Every module ships tests satisfying `docs/07`. Coverage ≥ 85% in aggregate (OD-13: the gate is aggregate; no per-package
+   threshold is enforced). `lint-imports` green.
 4. Log any human-decision fork in the contract §9. Missing decision → an ADR (`docs/adr/`).
 
 ## Two rules about oracles, learned the expensive way

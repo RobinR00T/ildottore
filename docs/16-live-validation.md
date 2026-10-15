@@ -142,9 +142,8 @@ never over an in-band scene; the second row declares no `multi_identity`, and wi
 only `DL-XTENANT-001`, which has no scene, would be swept there), and since PR #60 (merged
 2026-10-09) the estimate prices that too: with two identities the third row is 582, the fourth 737
 and the last 779 (re-measured on 2026-10-12 with `--estimate`: 2, 2 and 4 above the
-single-identity rows, which pricing the sweep left as they were). Before, main priced the last row
-at 780 with two identities, for a run that would send 782 (the sweep
-of `DL-XTENANT-001`, never priced).
+single-identity rows, which pricing the sweep left as they were). Before, main priced the last row at 780 with two
+identities, for a run that would send 782 (the sweep of `DL-XTENANT-001`, never priced).
 
 Two things that table says out loud:
 
@@ -188,8 +187,8 @@ Two things that table says out loud:
   deliberate act in the policy pack, and on someone else's system it needs their authorization
   in writing, not just a flag. Today it is not possible from the command line at all: `dottore`
   has no option to load a policy pack (and none for the PII run key), so none of these eight
-  sends on any CLI run. Whether to add one is an open decision (OD-46). On the fully capable target
-  all eight reach the policy gate and are `blocked_by_policy`. On the bare model the capability
+  sends on any CLI run. Whether to add one is an open decision (OD-46). On the fully capable target all
+  eight reach the policy gate and are `blocked_by_policy`. On the bare model the capability
   filter runs first: the six offensive-simulation specs that require `tools` are among the 40
   capability skips (`inconclusive: capability_unavailable`), and only `DL-PII-ELICIT-001` and
   `JB-OFFENSIVE-RANSOM-CODEGEN-001` are `blocked_by_policy`, which is the "2 blocked (policy)"

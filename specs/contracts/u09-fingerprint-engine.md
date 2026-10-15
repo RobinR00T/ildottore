@@ -163,19 +163,18 @@ checked that it ran. `mock_scenario: comprehending` is an offline target that de
 is sent (zero-width, rot13, base64) and follows the instruction when it survives, so the layer
 produces a real split and the plan comes out in a different order, through the real layer, the
 real mutators and the real planner. It is a **simulated decoder, not a model**: it proves the
-chain, not how any given model behaves, and the docs say so where the claim is made. It also may not
-buy the measurement with a **verdict**: whatever the plain `bare` mock decides, the decoding one
-decides identically, spec by spec over the shipped battery. (The first version of this clause said
-"every spec stays inconclusive", which was false then: three specs decided against any fixed-string
-offline target because their oracles read only the response text. The test asserted it over one spec
-the test itself built, so it could not find that out. Both are fixed: the property is differential
-now, and measured against `specs/`. Since the three oracles were repaired, the last two on
-2026-10-11 (OD-16, ADR-0007), the set of specs that decide is empty, and the test pins that too.)
-What this file checks is the **ordering**; the scoring discriminators (the echo tell, the zero-width
-strip, marker invariance) are pinned by `tests/fingerprint/test_carrier_layer.py`, each one
-individually since 2026-09-22, because an audit removed all three at once and the suite stayed
-green. Checked by `tests/fingerprint/test_carrier_measured_offline.py`
-and `tests/fingerprint/test_carrier_layer.py`.
+chain, not how any given model behaves, and the docs say so where the claim is made. It also may not buy the measurement with a **verdict**: whatever the plain
+`bare` mock decides, the decoding one decides identically, spec by spec over the shipped
+battery. (The first version of this clause said "every spec stays inconclusive", which was false
+then: three specs decided against any fixed-string offline target because their oracles read
+only the response text. The test asserted it over one spec the test itself built, so it could not
+find that out. Both are fixed: the property is differential now, and measured against `specs/`.
+Since the three oracles were repaired, the last two on 2026-10-11 (OD-16, ADR-0007), the set of
+specs that decide is empty, and the test pins that too.) What this file checks is the **ordering**; the scoring discriminators
+(the echo tell, the zero-width strip, marker invariance) are pinned by
+`tests/fingerprint/test_carrier_layer.py`, each one individually since 2026-09-22, because an
+audit removed all three at once and the suite stayed green. Checked by
+`tests/fingerprint/test_carrier_measured_offline.py` and `tests/fingerprint/test_carrier_layer.py`.
 
 **A-35 A probe whose reply comes back refused costs that probe, not the pass (added
 2026-10-07, OD-23).** With `run -sV` or `-A`, one reply the adapters refuse as an environment
@@ -353,8 +352,8 @@ stops already read, the nudge's markers; four more since the verification of `ab
 `tests/adapters/test_status_error.py` (the four HTTP adapters, and a copy and pickle round trip),
 `tests/cli/test_input_filter_probe.py` (the Azure 400
 through the real CLI, `fingerprint` and `run -sV`, both failing on `cd413c0`; the same 400 on the
-nudge still stops the pass) and `tests/fingerprint/test_probe_failures.py` (a refused nudge, a
-refused benign request, both).
+nudge still stops the pass) and `tests/fingerprint/test_probe_failures.py` (a refused nudge, a refused benign request,
+both).
 
 ## §8 Out of scope / forbidden
 - MUST NOT call provider SDKs directly (only via `TargetAdapter`); MUST NOT send any jailbreak /
@@ -398,7 +397,6 @@ refused benign request, both).
   see, was **decided on 2026-10-11 under the owner's delegation (best practice, revisable): set
   it** from the provider's documented refusal of a probe (the benign request or a carrier),
   `true`, else `null` (§7 A-67, last item); not dropped, because unlike OD-17's field it has a
-  producer that can make it true, and not left always-null. The attack phase stopped a campaign on
-  such a 4xx (a product error, F5; OD-21 leaves non-retryable 4xx out of its question) until OD-41
-  (decided 2026-10-10): it now records an attack prompt the filter refused as blocked and goes on
-  (u08 A-69). Owner: human.
+  producer that can make it true, and not left always-null. The attack phase stopped a campaign on such a 4xx (a product error, F5;
+  OD-21 leaves non-retryable 4xx out of its question) until OD-41 (decided 2026-10-10): it now
+  records an attack prompt the filter refused as blocked and goes on (u08 A-69). Owner: human.

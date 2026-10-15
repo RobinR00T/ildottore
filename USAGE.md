@@ -148,11 +148,11 @@ attempt failed on transport, or got a reply that could not be read as the provid
 `"unreachable"`, and one whose replies could not be read 5 in a row before any was read, or 20
 in a row after, and whose one benign check then could not be read either, stops early as
 `"aborted"` (`aborted on UnreadableReplies: ...`, with what to check for that provider); a filter
-that blocks only attack prompts lets the check through, and the run goes on. One unreadable reply
-fails only its attempt (OD-21), and its spec is `inconclusive`, never a pass;
-`summary.unreadable_reply` counts them. A partial scan is never reported as a clean one. Read
-`summary.status.reason` before you treat it as a flake; [`docs/MANUAL.md`](docs/MANUAL.md) explains
-why. Only an **exploited** (`fail`) finding trips the gate; `pass`/`inconclusive` never do.
+that blocks only attack prompts lets the check through, and the run goes on. One unreadable reply fails only its attempt (OD-21), and its spec is
+`inconclusive`, never a pass; `summary.unreadable_reply` counts them. A partial scan is never
+reported as a clean one. Read `summary.status.reason` before you treat it as a flake;
+[`docs/MANUAL.md`](docs/MANUAL.md) explains why. Only an **exploited** (`fail`) finding trips
+the gate; `pass`/`inconclusive` never do.
 
 **A provider's input filter does not stop the scan.** An attack prompt the deployment's own filter
 refuses before the model sees it (Azure OpenAI's HTTP 400 `content_filter`; Gemini's
@@ -228,8 +228,7 @@ See [`specs/fleet.example.yaml`](specs/fleet.example.yaml).
 
 An MCP server reachable over the wire uses `provider: mcp` with an `endpoint`; a local one
 uses `transport: stdio` + `command` and is launched as a subprocess only if the scope target's
-`commands` list authorizes that exact command
-line (default-deny). See [`docs/MANUAL.md`](docs/MANUAL.md).
+`commands` list authorizes that exact command line (default-deny). See [`docs/MANUAL.md`](docs/MANUAL.md).
 
 ## A chat endpoint over a WebSocket
 

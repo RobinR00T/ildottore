@@ -67,9 +67,8 @@ must round-trip any schema-valid YAML and reject any schema-invalid one (schema 
 ## §4 Known constraints: KEEP / DECIDE
 - KEEP: `AttackSpec` field set, enums and constraints are **1:1 with the JSON Schema** (id
   pattern `^[A-Z]+(-[A-Z0-9]+)+$`, `spec_version ^\d+\.\d+$`, `impact/exploitability` 1-4,
-  `confidence_threshold`/`confidence` ∈ [0,1], `runs` 1-50);
-  `model_config = ConfigDict(extra="forbid")` mirrors `additionalProperties:false`. A schema/model
-  drift is a test failure, not a choice.
+  `confidence_threshold`/`confidence` ∈ [0,1], `runs` 1-50); `model_config = ConfigDict(extra="forbid")`
+  mirrors `additionalProperties:false`. A schema/model drift is a test failure, not a choice.
 - KEEP: `VerdictStatus = {pass, fail, inconclusive}`, polarity `pass=secure`/`fail=exploited`.
 - KEEP: models are **frozen** (`frozen=True`) and JSON-serializable; no methods with behavior,
   no I/O, no LLM calls, no business logic (banding lives in u07, not here: expose `Band` enum
@@ -148,8 +147,7 @@ must round-trip any schema-valid YAML and reject any schema-invalid one (schema 
   forbidden-argument walk), because the evaluator and the linter's stub must give one verdict and
   may not import each other; stdlib only, like `shared/patterns.py` (A-33) and
   `shared/refusal_tells.py` (A-27) before it. The verdict stays with u06 and u02: these are the
-  predicates both apply, the one kind of behaviour this unit holds despite §8, as
-  with A-33 and A-27.
+  predicates both apply, the one kind of behaviour this unit holds despite §8, as with A-33 and A-27.
 - **A-72 (u06's clause; this unit's half, added 2026-10-11, OD-43):** `SeededSetup` gains
   `not_destructive`, the granted tools the target file declares not destructive, empty by
   default: a validator refuses a name not in `granted_tools` however the setup is built and keeps

@@ -10,8 +10,8 @@ evidence-backed report mapped to operational risk.
 
 The value is not the prompts. It is **reproducibility + evidence + risk mapping**. Every
 attempt persists its prompt, full response, sampling params, tool traces and the aggregate
-verdict with its reasoning; findings are scored `impact x exploitability x reproducibility` and
-re-derivable with `dottore replay`. A finding we cannot reproduce or evidence is treated as noise.
+verdict with its reasoning; findings are scored `impact x exploitability x reproducibility` and re-derivable
+with `dottore replay`. A finding we cannot reproduce or evidence is treated as noise.
 
 ### Is it safe to run? Will it actually do damage?
 
@@ -148,8 +148,7 @@ present, `1` for findings below it, `0` clean, `3` on error. Only exploited (`fa
 findings trip the gate, and only confirmed ones unless you pass `--include-needs-review`. A bad
 option (`--fail-on bogus`, `--timeout 0`, two formats writing one file) is refused with exit
 `3` before anything is sent. For regression-only gating, compare against a baseline with
-`dottore diff baseline.json current.json`. See
-[`examples/ci-github-actions.yml`](../examples/ci-github-actions.yml).
+`dottore diff baseline.json current.json`. See [`examples/ci-github-actions.yml`](../examples/ci-github-actions.yml).
 
 ### What is "confirmed" vs "needs-review"?
 
@@ -194,25 +193,24 @@ and `-sn` print it on an `operator:` line, every report and the run store state 
 each attempt it changed says so in its verdict, and changing it refuses a resume. It is held to
 the narrowest reading: `false` only (`true`, a quoted `"false"`, a mapping without
 `destructive` and any other key are refused), exact names (a padded one is refused, and the dry
-run flags a grant that is a spec's scene tool but for case), never a tool of a spec's own scene
-(there the scene decides, `destructive: true` included), never `kill_chain_progression`, and never a
-call off the allowlist or an injected or forbidden argument. See MANUAL §4.2 and §8.
+run flags a grant that is a spec's scene tool but for case), never a tool of a spec's own scene (there the scene decides, `destructive: true`
+included), never `kill_chain_progression`, and never a call off the allowlist or an injected or
+forbidden argument. See MANUAL §4.2 and §8.
 
 ### Which suites and categories exist?
 
 Suites: `owasp-llm-top10` (alias `owasp:llm`), `quick`, `multi-turn`, `access-control`,
 `agentic-owasp2026`, `obfuscation-enhancers`, `embeddings`, `agentic-extortion`, `mcp`,
 `responsible-ai`, `guardrail-evasion`, `multimodal`, `structured-output`, `nova-iopc`.
-Category aliases for `-p`: `pi`, `jailbreak`, `leakage`, `tool`, `rag`, `output`, `dos`, `safety`,
-`bias` (long forms accepted). `dottore registry ls` is the source of truth.
+Category aliases for `-p`: `pi`, `jailbreak`, `leakage`, `tool`, `rag`, `output`, `dos`, `safety`, `bias`
+(long forms accepted). `dottore registry ls` is the source of truth.
 
 ### Can I add my own attack without touching the code?
 
 Yes, that is the point. `dottore new-spec …` scaffolds a YAML spec; fill `attack`,
 `expected_secure_behavior`, `evaluators` and golden `fixtures` (a vulnerable fixture the
 scanner must flag, a hardened one it must pass), then `dottore lint specs/`. See
-[`06-extensibility-suites.md`](06-extensibility-suites.md) and
-[`CONTRIBUTING.md`](../CONTRIBUTING.md).
+[`06-extensibility-suites.md`](06-extensibility-suites.md) and [`CONTRIBUTING.md`](../CONTRIBUTING.md).
 
 ### Does it support MCP servers?
 
@@ -339,9 +337,8 @@ again. At 5 in a row before any reply was read, or 20 in a row after, it sends o
 first: a content filter that answers attack prompts with a block page lets it through, and the run
 goes on. Only when that one cannot be read either does the run stop early (exit 3, `aborted on
 UnreadableReplies: ...`, with what to check for that provider); a resume of a run that read replies
-starts with the endpoint proven, and a shorter run that read nothing is `unreachable`. A 4xx is not
-this: it still stops the run ([`MANUAL.md`](MANUAL.md) §3, a reply the
-adapter cannot read; [`adr/0012`](adr/0012-a-reply-the-adapter-cannot-read-is-not-a-verdict.md)).
+starts with the endpoint proven, and a shorter run that read nothing is `unreachable`. A 4xx is not this: it still stops the run ([`MANUAL.md`](MANUAL.md) §3, a
+reply the adapter cannot read; [`adr/0012`](adr/0012-a-reply-the-adapter-cannot-read-is-not-a-verdict.md)).
 
 ### If my system passes Il Dottore, does it meet OWASP AISVS?
 
@@ -374,8 +371,8 @@ OD-43). A spec whose canary has to be in your
 deployment needs `seeded_setup.run_token` (`--dry-run -vv` prints the canary to seed), and your
 deployment must return its tool calls, or a spec whose poison is a tool's result is
 `setup_not_reached` (and a spec judged on its tool trace is not sent through a REST target).
-`examples/target.app.yaml` is a worked file. The offline mock needs none of this: its replies are
-written for the scene (OD-18, `docs/adr/0009-a-spec-setup-never-reaches-a-live-target.md`).
+`examples/target.app.yaml` is a worked file. The offline mock needs none of this: its replies are written for the scene (OD-18,
+`docs/adr/0009-a-spec-setup-never-reaches-a-live-target.md`).
 
 ### Why does a run refuse my target with "target(s) not authorized by the scope"?
 
@@ -402,9 +399,9 @@ a target that lacks the capability they need skips them, and one that has it rep
 end in `error: nothing would be sent` (exit 3), and the message says why: "Widen the selection
 or declare the capability on the target. A spec blocked by policy needs a policy pack that
 enables it, and the CLI cannot load one today (open decision), so it cannot run from
-`dottore`." That open decision is OD-46. For `DL-PII-ELICIT-001` the opt-in is decided (OD-11): the
-pack that enables it and a per-run `--allow-pii-elicitation` flag come together, never the flag
-alone; until then it stays off.
+`dottore`." That open decision is OD-46. For `DL-PII-ELICIT-001` the opt-in is decided (OD-11): the pack that enables it and a
+per-run `--allow-pii-elicitation` flag come together, never the flag alone; until then it stays
+off.
 
 ### Where does evidence live, and is it safe to keep?
 
