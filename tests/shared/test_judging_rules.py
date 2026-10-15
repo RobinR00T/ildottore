@@ -39,10 +39,10 @@ from ildottore.shared.judging_rules import (
 #: Every pin ever made, in order: ``(version, digest, reason)``. Append-only: a line is never edited
 #: or removed, which ``judging_pins.frozen`` beside this file enforces. A new version is a new
 #: line; a version is re-pinned only by a new line whose reason says ``re-pin`` and why (the
-#: landing re-pin on the final tree, or a change that cannot alter a stored verdict). One line is
-#: replaced instead, once: the provisional pin of 2026-10-14 (the tree merged with main before the
-#: last branch landed), which never reached ``main``, by the landing pin, in this tuple and in the
-#: frozen file at the same place, while version 1 is unreleased.
+#: landing re-pin on the final tree, or a change that cannot alter a stored verdict). One line was
+#: replaced instead, once: the provisional pin of 2026-10-14 (``b644c56b``, the tree merged with
+#: main before the last branch landed), which never reached ``main``, by the landing pin, here and
+#: in the frozen file at the same place, while version 1 was unreleased.
 PIN_HISTORY: tuple[tuple[int, str, str], ...] = (
     (
         1,
@@ -78,16 +78,16 @@ PIN_HISTORY: tuple[tuple[int, str, str], ...] = (
     ),
     (
         1,
-        "b644c56b4ca2d5fdcb59a04e1d3f5d6a9989913ba91da581bfd57df571eff8e4",
-        "re-pin 2026-10-14: provisional, the tree merged with main at d526747e (#111 to #115) and "
-        "JUDGING_RULES_SINCE set to the merge day; the landing pin replaces this line once "
-        "fix/cli-input-validation has landed; version 1 is not released",
+        "308311955bfec13158d1aff961d977e13dd4e1556ec9ebc091eab702791494c9",
+        "re-pin 2026-10-15: the rules as of the merge that introduced the version, on main at "
+        "a906cea9 (#111 to #116); replaces the provisional pin of 2026-10-14; version 1 is not "
+        "released",
     ),
 )
 
 #: The digest each version is pinned to now: the last line of :data:`PIN_HISTORY` for it.
 PINNED: dict[int, str] = {
-    1: "b644c56b4ca2d5fdcb59a04e1d3f5d6a9989913ba91da581bfd57df571eff8e4",
+    1: "308311955bfec13158d1aff961d977e13dd4e1556ec9ebc091eab702791494c9",
 }
 
 #: One ``<version> <digest>`` line per pin, appended to and never edited: the history must start
@@ -422,12 +422,12 @@ def test_each_covered_file_has_a_short_digest_for_the_refusal(tmp_path: Path) ->
 
 
 def test_the_digest_costs_well_under_a_second() -> None:
-    """Taken once per process, at run start and by a resume: 0.32 s measured for 165 files
-    (2026-10-13), 168 on the tree merged with main at d526747e."""
+    """Taken once per process, at run start and by a resume: 0.35 to 0.38 s measured for the 171
+    files at landing."""
 
     started = time.perf_counter()
     judging_rules._digest(Path(judging_rules.__file__).resolve().parents[1])
-    assert time.perf_counter() - started < 3.0, "a regression past the measured 0.32 s"
+    assert time.perf_counter() - started < 3.0, "a regression past the measured 0.38 s"
 
 
 def test_a_comment_or_a_docstring_is_not_a_change_and_a_token_or_a_decorator_is() -> None:
