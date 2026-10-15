@@ -23,7 +23,10 @@ The design goal: **95% of "new techniques" are L1/L2 (pure declarative), zero co
   digest, so the lint proof, the resume binding and a reviewer's diff cover it with the spec).
 - Packs are discovered from configured search paths (`--spec-path`, env, config) and merged
   into the **Attack Spec Registry** at startup. Later packs can extend but not silently
-  override earlier ids (id collisions are a lint error).
+  override earlier ids: an id collision is a lint error naming both files, and it refuses a run
+  (A-82). A directory with no `pack.yaml` anywhere below it is read as loose specs, its own
+  `*.yaml` and `*.yml` files only; a search path that yields no spec and no suite is refused
+  (`NO_SPECS`, lint exit 3), naming the YAML files in its subdirectories it did not read.
 - Loading a pack **executes no code and makes no network calls** (S-threat-model): it is parse
   + schema-validate + register only.
 - Every pack is versioned. The design has the registry record which pack/version a finding
@@ -84,7 +87,8 @@ declares its own. What works today, per group:
   registry is consulted. Opening the enum (or a `plugin:` namespace) is needed first.
 - **Adapters: design only.** `pyproject.toml` declares the `dottore.adapters` group and nothing
   reads it; the adapter is chosen by the hard-coded provider switch in `cli/wiring.py`
-  (`openai`, `anthropic`, `mcp`, anything else to the generic REST adapter).
+  (`openai`, `anthropic`, `mcp`, `websocket`, and `rest` or no provider to the generic REST
+  adapter); any other value is refused when the target file loads (u12 A-82).
 - A spec referencing an unknown evaluator `type` fails schema validation in the linter, and an
   unknown mutation fails `UNKNOWN_MUTATOR_TYPE`: never a silent skip.
 - The policy engine gates the requests the scanner sends (allowlist, `test_only`, budgets),

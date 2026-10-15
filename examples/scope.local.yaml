@@ -14,7 +14,7 @@ targets:
         path_prefixes: ["/v1/chat/completions"]
     identities:
       - name: default
-        auth_ref: "env://NONE"      # local Ollama needs no key
+        auth_ref: "env://NONE"      # no credential: env://NONE is never read (local Ollama needs no key)
 
   - id: local-judge                 # must match target.judge.yaml's id
     base_url: "http://localhost:11434/v1/chat/completions"

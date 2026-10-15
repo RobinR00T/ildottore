@@ -53,10 +53,12 @@ from .conftest import make_spec, write_spec_tree
 
 runner = CliRunner()
 
-#: A value of a million characters: with its file around it, under the 1 MiB read cap.
-BIG = "a" * 1_000_000
+#: A value of a million characters: with its file around it, under the 1 MiB read cap. Not a
+#: hex digit: a run of 32 or more is masked whatever its entropy (u01 A-78), and these tests read
+#: what the refusal quotes.
+BIG = "q" * 1_000_000
 #: For a file that holds a value twice, or two values.
-HALF = "b" * 400_000
+HALF = "w" * 400_000
 
 SCOPE_HEAD = 'version: "1.0"\ntargets:\n'
 TARGET = "id: mock-target\ntype: chatbot\n"
@@ -388,8 +390,8 @@ ALIAS = "found undefined alias " + repr(BIG)
 ALIAS_CUT = f"{ALIAS[:300]}... ({len(ALIAS)} characters)"
 #: Long values for a run store's ids and an endpoint's path. A target or scope id longer than
 #: 128 characters is refused when its file is loaded (A-57), so no file brings one this long.
-ENTRY = "c" * 300_000
-NAME = "d" * 300_000
+ENTRY = "k" * 300_000  # not hex digits, as BIG (A-78)
+NAME = "m" * 300_000
 #: An id and an identity name of 128 characters, as A-57 allows, that repr writes as
 #: `\U000e0001` and `\U000e0020` each: 1,282 characters, so a refusal that quotes them still
 #: cuts them (audits of A-57: with these cases gone, 14 of the 19 sites that quote a target id
@@ -861,8 +863,9 @@ URLS: dict[str, Callable[[Path], Case]] = {
             "    model: m\n",
         ),
         None,
-        "is not a URL that can be read",
-        cut_of(f"{NBSP}http://h{SOLIDUS}{LONG}"),
+        # Refused by the entry's own check since u12 A-82, which quotes nothing of the value: a
+        # URL urllib cannot split may hold a key past its host (pre-merge audit, MEDIUM 3).
+        "endpoint: Value error, is not a URL that can be read (its host)",
     ),
     "run-target-port": lambda t: _with(
         _live(t, BAD_PORT), None, "not on allowlist", cut_of(BAD_PORT)
@@ -888,8 +891,7 @@ URLS: dict[str, Callable[[Path], Case]] = {
             + '"\n    model: m\n',
         ),
         None,
-        "is not a URL that can be read",
-        cut_of(f"http://[{LONG}"),
+        "endpoint: Value error, is not a URL that can be read (its host)",
     ),
     "run-target-port-of-5000-digits": lambda t: _with(
         _live(t, "https://api.openai.com:" + "9" * 5_000 + "/v1/chat/completions"),

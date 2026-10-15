@@ -98,3 +98,13 @@ cover the host, or the run refuses to send (default-deny).
   the model is not pulled (`ollama pull …`).
 - **A run does nothing but validates**, you passed `--dry-run` (resolve + validate, send
   nothing). Drop it to actually scan.
+- **`spec path not found: specs`** (exit 3), no `--spec-path` was given and there is neither a
+  `specs/` directory where you run nor a battery beside the installed package. `run`,
+  `fleet --run`, `registry ls`, `describe` and `coverage` read `specs/` in the working directory,
+  else the `specs/` of the source checkout the package was installed from (the editable install
+  above), and say on stderr when they fall back; `dottore lint` reads `specs/` here only. A
+  non-editable install (a wheel, `pip install git+https://...`) ships neither the battery nor the
+  schemas a spec is validated against, so it cannot load specs: use the editable install.
+- **`cannot open the run store at <path>`** or **`cannot write evidence under <root>`** (exit 3,
+  before anything is sent), `--run-db` names a directory or a file that is not SQLite, or
+  `--evidence-root` is a regular file. Point them at a new path.

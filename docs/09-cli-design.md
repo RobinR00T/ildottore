@@ -72,13 +72,15 @@ EXECUTION
   --timeout <s>                     per-attempt timeout
   --budget-tokens / --budget-requests / --budget-wall
                                     hard ceilings; each overrides the one derived from the plan
+                                    (the attempts ceiling is the request ceiling)
   --resume <run-id>                 finish a halted run; answered, judged attempts are kept
   --resume-unverified               resume a run whose integrity record is missing
 
 SAFETY / SCOPE
   --scope scope.yaml                REQUIRED authorization record (default-deny)
   --dry-run                         resolve + validate, send nothing
-  --estimate                        pre-run cost estimate (requests + tokens), send nothing
+  --estimate                        pre-run cost estimate (requests + tokens) and the
+                                    ceilings, send nothing (one line under -q)
   --hardened                        replay the hardened fixtures (clean-run smoke)
 
 OUTPUT
@@ -87,14 +89,19 @@ OUTPUT
                                            prefix ending in one of those has it dropped first)
   --fail-on <info|low|medium|high|critical> CI gate (confirmed findings; default high)
   --include-needs-review                   also gate on unconfirmed fails (never on an
-                                           inconclusive or a pass)
+                                           inconclusive or a pass); SARIF gives them their
+                                           band's level
   --compare                                model-comparison matrix (two or more targets)
-  -v, -vv, -q, --no-color
+  -v, -vv, -q, --no-color                  (-v also prints an internal error's traceback)
   --evidence-root <dir>  --run-db <path>  --spec-path <dir>
+                                           checked before anything is sent; the spec path
+                                           defaults to specs/ here, else the packaged battery
 
 OTHER COMMANDS
   dottore fingerprint <target.yaml> --scope <scope.yaml> [--offline]
   dottore fleet <fleet.yaml> --out <dir> [--run] [--judge ..] [--runs N] [-p ..]
+                [--spec-path ..] [--evidence-root ..] [--run-db ..] [-oJ/-oH/-oS/-oX/-oA ..]
+  dottore -v <command> ...                  any command, with an internal error's traceback
   dottore coverage [--framework all|owasp|atlas|iopc|aisvs] [--suite ..] [--gaps] [--json]
   dottore registry ls [--category ..] [--owasp ..] [--tag ..] [--suite ..]
   dottore describe <spec-id>
@@ -133,22 +140,41 @@ not read by the runner: every mutation variant of every spec is sent `--runs` ti
 
 **Options are validated before the campaign.** `run` refuses, with exit 3 and before the scope
 is loaded or anything is sent: a `--rate` that is not greater than 0; an unknown `--fail-on`
-band; `--timeout` not greater than 0; `--concurrency`, `--top-tests` or `--runs` below 1; a
+band; `--timeout` below 1 second or above 86,400 (a day; NaN and infinity included, A-82); `--concurrency`, `--top-tests` or `--runs` below 1; a
 negative `--budget-tokens`, `--budget-requests` or `--budget-wall` (the dry run printed it and
 exited 0, the run refused it); any of those six past `2**53` (9,007,199,254,740,992, where the
 run of whole numbers a float holds exactly ends: `--runs` of a few hundred digits crashed the
 plan's float arithmetic with exit 1, A-55); a report path whose directory does not exist; and two
 report formats that would write the same
 file (paths compared after resolving, Unicode-normalized and case-folded, because a
-case-insensitive volume treats `R.json` and `r.json` as one file). These used to be accepted,
-and some failed only after the whole campaign had run.
+case-insensitive volume treats `R.json` and `r.json` as one file), or a report path that is an
+input of the run (the scope, a target, the judge, the fleet file, the run store and SQLite's
+files beside it, a spec file: compared as files, so a symlink or a hard link is caught, A-80).
+These used to be accepted, and some failed only after the whole campaign had run.
+
+**The stores are checked before the first send, and nothing but findings exits 1 (A-80).** Every
+mode checks the `--run-db` and `--evidence-root` paths without writing (a directory as the store,
+a file that is not SQLite, a root that is a regular file, a path under one: exit 3); a sending run
+opens the run store and proves each run's evidence directory writable before its first request,
+the `-sV` probes included. Any exception no command handles is exit 3 with one line (`error:
+unexpected <Class>: ...`), its traceback under `-v`; exit 1 is findings below `--fail-on`, and for
+`lint`, lint findings.
 
 Once the scope, the targets and the specs are loaded, and before anything is sent (the resume
 block and the `-sV` probe pass included), a live run whose pace (`--rate`, or the `-T`
 template's) is under one request per wall-clock ceiling (`--budget-wall`, or the 7,200 s cap of
 a derived one) is refused too, as is any live run under `--budget-wall 0`: the ceiling is
 checked when a send is charged, and such a run waited past it (A-55). A live `--judge` over
-attack targets that are all mocks is excepted: that run is not paced, so not checked.
+attack targets that are all mocks is excepted: that run is not paced, so not checked. So is a
+credential variable that is not set (a target's, the `--judge` model's, a swept identity's):
+a live run refuses it naming the variable, and a mode that sends nothing warns and goes on
+(A-82). A spec path that yields nothing, and a spec id two files declare, are refused there too.
+
+**Usage errors go through the mask (A-82).** The console scripts run `ildottore.cli.main:main`,
+which runs the command tree in click's non-standalone mode and prints a usage error (a bad value,
+an unknown option or command) as `Usage: ...`, `Try '... --help' for help.` and `error: <message>`
+through the CLI's redactor, exit 3: `--runs "$KEY"` printed the key in clear when click printed
+the error itself.
 
 **Resume sends again what ended in an environment error (F11, built 2026-10-04).** `--resume
 <run-id>` skips every attempt the halted run ANSWERED and sends again, under the same attempt
@@ -157,7 +183,14 @@ aborted on one), except an error that would repeat identically (a reply over the
 undecodable body, a reply nested too deeply: recorded with `[not retryable]`). The failed try
 stays in the evidence tree
 and is cited as evidence; the finding scores one attempt per id, the answered one, as `replay`
-counts. A resume halted by a ceiling while re-sending keeps the finding a spec already had when
+counts. Since 2026-10-11 both read that from one rule (`shared.resend`, u08 A-74): between two
+artifacts of a rank, a reply that could not be read over an environment error or a block,
+whichever came first (a reply the provider's filter cut is answered and judged, so it ranks first
+already), then the later send by the `send_number`
+every stored attempt carries; each kept the first at a tie in file-name order, so an unreadable
+re-send could be dropped and its spec published as a pass. The resume message names each id it
+sends again once, by that attempt, and what a resume keeps is read from that attempt too, so an
+unreadable reply whose re-send was blocked is sent again by the next resume. A resume halted by a ceiling while re-sending keeps the finding a spec already had when
 that finding held every planned attempt. The resume message says how many attempts are kept and
 how many will be sent again, and `--estimate --resume` subtracts the requests already done (one
 per turn of each). What made this safe: the run store journals every attempt artifact as it is

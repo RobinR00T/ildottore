@@ -14,7 +14,9 @@ checked **before** the socket is dialled (an off-allowlist URL opens zero connec
 redirect at the upgrade is never followed (the scope authorized one URL), the credential is
 inserted in memory at send time and recorded in evidence as its placeholder (``{{token}}``),
 every frame sent and received is kept in ``raw_ids["websocket"]["frames"]`` so the evidence
-store files it redacted, and a turn is bounded in time, bytes and frames.
+store files it redacted, beside the fields the target file declares as the protocol's
+(``protocol_paths``), so the content of the frames received is masked as the text it makes
+(u01 A-77), and a turn is bounded in time, bytes and frames.
 
 One connection per conversation: a single-turn attempt opens, queries and closes; a multi-turn
 attempt keeps its connection across turns (the runner's ``conversation`` metadata names it) and
@@ -48,13 +50,17 @@ import json
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Any, ClassVar, Final, Literal
+from typing import Any, ClassVar, Final, Literal, cast
 
 from websockets.asyncio.client import ClientConnection, connect
 from websockets.exceptions import ConnectionClosed, InvalidHandshake, InvalidStatus, InvalidURI
 
 from ildottore.adapters.base import (
     MAX_RESPONSE_BYTES,
+    # Shortest credential accepted. The redactor masks a registered credential by value only from
+    # 8 characters, and a shorter one echoed in a close reason reached the evidence (pre-commit
+    # audit, F5); the adapter refuses it before any dial, as the HTTP adapters do since u04 A-78.
+    MIN_CREDENTIAL_LEN,
     AdapterEnvError,
     AdapterProductError,
     EndpointNotAllowed,
@@ -64,11 +70,19 @@ from ildottore.adapters.base import (
     ResponseUndecodable,
     RetryConfig,
     redact_ids,
+    refuse_short_credential,
 )
 from ildottore.adapters.rest import get_path
 from ildottore.policy import EndpointAllowlist
-from ildottore.redactor import Redactor
+from ildottore.redactor import (
+    TRANSCRIPT_FRAMES,
+    TRANSCRIPT_PROTOCOL_PATHS,
+    Redactor,
+    mask_split,
+)
 from ildottore.shared.config_errors import quoted
+from ildottore.shared.error_text import error_text
+from ildottore.shared.filter_stops import FILTER_STOPS, normalized_stop
 from ildottore.shared.models import (
     Capabilities,
     JsonDict,
@@ -78,7 +92,7 @@ from ildottore.shared.models import (
     WebSocketSpec,
 )
 from ildottore.shared.nesting import NestedTooDeeply, bounded_loads
-from ildottore.shared.provider_filter import is_filter_stop
+from ildottore.shared.provider_filter import blank_text, stop_provenance
 from ildottore.shared.toolcalls import check_argument_nesting
 from ildottore.shared.wellformed import well_formed_json
 
@@ -153,10 +167,6 @@ MAX_FRAME_DEPTH: Final = 64
 #: used to be, closing a socket mid-turn: pre-commit audit, F4): past this, a new conversation
 #: is refused as an environment error. The runner's concurrency keeps it far below.
 MAX_OPEN_CONVERSATIONS: Final = 256
-#: Shortest credential accepted. The redactor masks a registered credential by value only from
-#: 8 characters, and a shorter one echoed in a close reason reached the evidence (pre-commit
-#: audit, F5); the adapter refuses it before any dial.
-MIN_CREDENTIAL_LEN: Final = 8
 #: Upgrade statuses that mean "try again later", as for the HTTP adapters.
 _RETRYABLE_STATUS: frozenset[int] = frozenset({429, 500, 502, 503, 504})
 #: How long a close handshake may take before the socket is abandoned.
@@ -383,16 +393,29 @@ class WebSocketAdapter:
     def unreadable_advice(self) -> str:
         """What to check when no frame reads as the block says (OD-21, u08 A-74)."""
 
+        # A turn the server ends on a provider filter's word, with no text, is unreadable until
+        # the file declares that word (u04 A-79; pre-merge audit of a55710e9, LOW 2).
         return (
             "check the target file's endpoint and its websocket block: the paths a frame's text, "
             "tool calls and final stop are read at (response.text_path, tool_calls_path, "
-            "final_path)"
+            "final_path), and response.filter_stops when the server ends a turn the provider's "
+            "filter withheld on its filter word"
         )
 
     def _unreadable(self, message: str, body: bytes | str) -> ResponseMalformed:
         """A :class:`ResponseMalformed` with an excerpt of ``body`` and this adapter's advice."""
 
         return ResponseMalformed(message).with_reply(body, self.redactor, self.unreadable_advice)
+
+    @property
+    def filter_stops(self) -> frozenset[str]:
+        """The stops the target file declares under ``response.filter_stops`` (u04 A-79).
+
+        None by default: no WebSocket chat API has a standard stop, so a filter word at the final
+        frame's ``final_path`` is the filter's only when the file says the endpoint relays one.
+        """
+
+        return frozenset(self.spec.response.filter_stops)
 
     @property
     def returns_tool_calls(self) -> bool:
@@ -478,11 +501,7 @@ class WebSocketAdapter:
     def _check_credential(self) -> None:
         """Refuse a credential the redactor could not mask by value, before any dial."""
 
-        if self.api_key is not None and len(self.api_key) < MIN_CREDENTIAL_LEN:
-            raise AdapterProductError(
-                f"{self.id}: the credential is shorter than {MIN_CREDENTIAL_LEN} characters, "
-                "which the redactor cannot mask by value; nothing was sent"
-            )
+        refuse_short_credential(self.id, self.api_key)
 
     async def _drop(self, key: str) -> None:
         conversation = self._conversations.pop(key, None)
@@ -535,7 +554,7 @@ class WebSocketAdapter:
                     await _close(connection)
                 if getattr(exc, "retryable", True) is False:
                     raise  # an overflow in the handshake phase repeats; not re-dialled
-                last = f"{type(exc).__name__}: {exc}"
+                last = error_text(exc)
                 if attempt < attempts - 1:
                     await asyncio.sleep(self.retry.backoff_for(attempt))
             except BaseException:
@@ -718,33 +737,51 @@ class WebSocketAdapter:
             ) from exc
 
         finish = get_path(final, reading.final_path) if final is not None else None
+        stop = normalized_stop(finish if isinstance(finish, str) else None)
+        text = "".join(parts)
         # A turn with no text is still a reply when it carries tool calls (an agent that only
-        # acts) or a stop the provider's filter writes (OD-42 reads it as the filter's cut). Read
-        # first: raised before them, the call was never evaluated (pre-merge audit of 598f0858).
+        # acts) or a stop the provider's filter writes (OD-42 reads it as the filter's cut), one
+        # the target file declares (u04 A-79). Read first: raised before them, the call was never
+        # evaluated (pre-merge audit of 598f0858). A turn whose text is blank (``blank_text``: a
+        # relay of a streamed Azure reply sends a first delta of ``""``) and that ends on a
+        # filter word the file does not declare is read as one with no text frame at all: it was
+        # the model's empty answer and passed (pre-merge audit of e1a8aacf, MEDIUM 1).
         if (
-            not parts
-            and not calls
-            and not is_filter_stop(finish if isinstance(finish, str) else None)
+            not calls
+            and stop not in self.filter_stops
+            and (not parts or (stop in FILTER_STOPS and blank_text(text)))
         ):
+            # The frames are quoted with the content they carry masked as one text: a secret
+            # streamed in deltas was redacted delta by delta and read whole from the excerpt.
+            received = [e for e in frames[start:] if e.get("direction") == "received"]
+            shown = cast("dict[str, Any]", mask_split(self.redactor, self._transcript(received)))
             raise self._unreadable(
-                f"{self.id}: no frame of the turn carried text at path "
-                f"{quoted(reading.text_path)}, a tool call or a filter's stop; not evaluated",
+                (
+                    f"{self.id}: no frame of the turn carried text at path "
+                    f"{quoted(reading.text_path)}, a tool call or a filter stop the file "
+                    "declares; not evaluated"
+                    if not parts
+                    else f"{self.id}: the turn's text at path {quoted(reading.text_path)} was "
+                    "blank, with no tool call, and it ended on a provider filter's word that is "
+                    "not a filter stop the file declares; not evaluated"
+                ),
                 json.dumps(
-                    [e["frame"] for e in frames[start:] if e.get("direction") == "received"],
-                    default=str,
+                    [e["frame"] for e in shown[TRANSCRIPT_FRAMES]], default=str, ensure_ascii=False
                 ),
             )
         recorded = frames if whole else frames[start:]
         conversation.reported = len(frames)
-        ids["websocket"] = {"frames": [dict(f) for f in recorded]}
-        return ModelResponse(
-            text="".join(parts),
+        ids["websocket"] = self._transcript([dict(f) for f in recorded])
+        reply = ModelResponse(
+            text=text,
             tool_calls=calls,
             logprobs=None,  # no WebSocket chat exposes logprobs; never fabricated (ADR-0005)
             finish_reason=finish if isinstance(finish, str) else "final",
             raw_ids=redact_ids(self.redactor, ids),
             usage=usage,
         )
+        # A filter word the file does not declare is an ordinary stop (u04 A-79).
+        return stop_provenance(reply, self.filter_stops)
 
     # --- frames --------------------------------------------------------------------------
 
@@ -865,6 +902,47 @@ class WebSocketAdapter:
         if reading.final_value is None:
             return value is not None
         return _same(value, reading.final_value)
+
+    def _transcript(self, frames: list[JsonDict]) -> dict[str, Any]:
+        """The transcript ``raw_ids["websocket"]`` keeps: the frames, and which of their fields
+        are the protocol's (A-77).
+
+        Every other field of a frame received is the reply's content, which the redactor joins
+        across the frames, field by field, and masks as one text (``redactor.mask_split``): the
+        evidence store, the reports and the store's guard read the same fields from the
+        transcript, without the target file. The protocol's fields are the ones the target file
+        declares (the frame type, the final marker, an error, the ids, usage, tool calls, what a
+        handshake or a session start must say), never the text's path or one above it, and are
+        kept apart: joined, the type of every frame read as one high-entropy token.
+        """
+
+        reading = self.spec.response
+        declared = [
+            reading.type_path,
+            reading.final_path,
+            reading.error_path,
+            reading.tool_calls_path,
+            reading.usage_path,
+            reading.model_path,
+            reading.id_path,
+            *(
+                expect.path
+                for expect in (
+                    self.spec.handshake.expect if self.spec.handshake is not None else None,
+                    self.spec.session.expect,
+                )
+                if expect is not None
+            ),
+        ]
+        text = reading.text_path.split(".")
+        protocol = sorted(
+            {
+                path
+                for path in declared
+                if path is not None and text[: len(path.split("."))] != path.split(".")
+            }
+        )
+        return {TRANSCRIPT_FRAMES: frames, TRANSCRIPT_PROTOCOL_PATHS: protocol}
 
     def _safe(self, text: str) -> str:
         """Text from the wire for an error message: the credential scrubbed, then redacted."""

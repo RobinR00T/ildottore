@@ -97,8 +97,9 @@ dottore fleet fleet.yaml --run
 dottore registry ls [--category .. --owasp .. --suite .. --tag ..]
 dottore coverage [--framework owasp|atlas|iopc|aisvs] [--suite ..] [--json]   # what the battery tests, nothing sent
 dottore describe PI-DIRECT-001
-dottore lint specs/
+dottore lint specs/          # exit 0 clean, 1 a spec fails lint, 3 a path that holds nothing
 dottore new-spec --id PI-XYZ-001 --family prompt_injection
+dottore schema export --name report   # the JSON report's schema (also suite, pack, test-plan, attack-spec)
 dottore replay <run-id> --evidence-root .dottore/evidence --run-db .dottore/runs.sqlite   # reproduce a past run, checked against the run store
 
 # Regression gate: compare a run against a stored baseline (CI-gateable)
@@ -126,26 +127,31 @@ dottore calibrate report.json labels.yaml
 | `-A` | aggressive: implies `-sV` + `--deep` (fingerprint first, then `-T2` unless you pass `-T`) |
 | `--runs N` | reproducibility runs (default 5; 1 to 9,007,199,254,740,992, `2**53`, as for `--top-tests`, `--concurrency` and the `--budget-*` flags, which take 0 too) |
 | `-T 0..5` | timing template (default 3; `--quick` implies 0, `--deep`/`-A` imply 2; an explicit `-T` wins); higher is faster/louder |
-| `--rate` / `--concurrency` / `--timeout` | max req/s, greater than 0 and, on a live target, at least one request per wall-clock ceiling, as a `-T` template's pace must be (one shared ceiling for the whole campaign: retries, `-sV` probes, the identity sweep and the `--judge` model included; not applied to an offline mock run, and the plan says so) · max concurrent specs · per-attempt timeout |
-| `--resume RUN_ID` | finish a halted run (exit 3): answered attempts are not re-sent; those that ended in an environment error are sent again (not one a retry would repeat, marked `[not retryable]`), and so is a reply the halt stored before the judge could see it (unless a deterministic check had already failed it: that fail is kept); a run halted before it stored any reply (inside an identity sweep, say) starts again with its spend carried, unless the run store shows evidence the tree does not hold, or the run predates the artifact journal; a campaign that already spent its wall-clock ceiling is refused before sending (raise `--budget-wall`); it must keep the campaign's planning mode (adaptive with `-sV`, `-A` or `--deep`), checked before any ceiling (with `--deep` alone such a resume plans in declared order, says so on stderr when an earlier part planned with a fingerprint, and the run store's `mutator_orders` records what each invocation planned with), and with `-sV` a request ceiling too small for the probe pass is refused with advice that fits the campaign: raise `--budget-requests`, or drop `-sV` only if it did not plan adaptively and the ceiling holds the rest of it without the probes; a run an older version started, which sent none of its target files' `sampling_defaults`, resumes without them (stderr says so) |
-| `--dry-run` | resolve + validate, send nothing; a `sampling:` line says what the target file's `sampling_defaults` fills, or that it is not sent |
-| `--estimate` | print a pre-run cost estimate (requests + tokens); no sends. Output tokens are each send's `max_tokens` (the spec's own, else `sampling_defaults`) or 512 |
+| `--rate` / `--concurrency` / `--timeout` | max req/s, greater than 0 and, on a live target, at least one request per wall-clock ceiling, as a `-T` template's pace must be (one shared ceiling for the whole campaign: retries, `-sV` probes, the identity sweep and the `--judge` model included; not applied to an offline mock run, and the plan says so) · max concurrent specs · per-attempt timeout, 1 to 86,400 s |
+| `--resume RUN_ID` | finish a halted run (exit 3): answered attempts are not re-sent; those that ended in an environment error are sent again (not one a retry would repeat, marked `[not retryable]`), and so is a reply the halt stored before the judge could see it (unless a deterministic check had already failed it: that fail is kept); a run halted before it stored any reply (inside an identity sweep, say) starts again with its spend carried, unless the run store shows evidence the tree does not hold, or the run predates the artifact journal; a campaign that already spent its wall-clock ceiling is refused before sending (raise `--budget-wall`); it must keep the campaign's planning mode (adaptive with `-sV`, `-A` or `--deep`), checked before any ceiling (with `--deep` alone such a resume plans in declared order, says so on stderr when an earlier part planned with a fingerprint, and the run store's `mutator_orders` records what each invocation planned with), and with `-sV` a request ceiling too small for the probe pass is refused with advice that fits the campaign: raise `--budget-requests`, or drop `-sV` only if it did not plan adaptively and the ceiling holds the rest of it without the probes; a run an older version started, which sent none of its target files' `sampling_defaults`, resumes without them (stderr says so); a re-send is scored in place of the try it replaces, by the `send_number` every stored attempt carries, except that an environment error or a block on the re-send of a reply that could not be read, or that the provider's filter cut, leaves that reply the attempt, and `dottore replay` counts by the same rule |
+| `--dry-run` | resolve + validate, send nothing; a `sampling:` line says what the target file's `sampling_defaults` fills, or that it is not sent; a `warning:` names a credential variable that is not set, which a live run refuses before sending |
+| `--estimate` | print a pre-run cost estimate (requests + tokens) and the ceilings each target runs under (`ceilings: <n> requests, <n> attempts (one per accepted request), <n> tokens, <n>s wall`); no sends. Output tokens are each send's `max_tokens` (the spec's own, else `sampling_defaults`) or 512. Under `-q` it prints one line, as `--dry-run -q` does |
 | `--compare` | model-comparison matrix across targets (needs two or more `-t`) |
 | `--hardened` | replay hardened fixtures (clean-run smoke) on a mock target; refused on a live one |
-| `-oJ/-oH/-oS/-oX/-oA` | JSON / HTML / SARIF / JUnit / all four to `<prefix>.json`, `.html`, `.sarif`, `.xml` (`-oA report.v2` keeps its name: `report.v2.json`; `-oA report.json` is not doubled: `report.json`, `report.html`, ...). Two formats pointed at the same file are refused before anything is sent |
+| `-oJ/-oH/-oS/-oX/-oA` | JSON / HTML / SARIF / JUnit / all four to `<prefix>.json`, `.html`, `.sarif`, `.xml` (`-oA report.v2` keeps its name: `report.v2.json`; `-oA report.json` is not doubled: `report.json`, `report.html`, ...). Two formats pointed at the same file are refused before anything is sent, and so is a report path that is an input of the run (the scope, a target, the judge, the fleet file, the run store, a spec file; through a symlink or a hard link too) |
 | `--fail-on <band>` | CI gate on confirmed findings (`info\|low\|medium\|high\|critical`, default `high`; `info` gates on any confirmed finding) |
-| `--include-needs-review` | also gate unconfirmed exploits (an unconfirmed `fail`, a fail only the judge reported among them); an `inconclusive` result never gates |
-| `--spec-path` | spec search path (default `specs/`) |
+| `--include-needs-review` | also gate unconfirmed exploits (an unconfirmed `fail`, a fail only the judge reported among them); an `inconclusive` result never gates. Without the flag such a fail is at most a `warning` in the SARIF, whatever its band; with it, it gates, and keeps its band's level (`error` for critical or high) |
+| `--spec-path` | spec search path (default `specs/` in the working directory, else the battery beside the installed package, said on stderr when a command falls back; `lint` never falls back) |
+| `--evidence-root` / `--run-db` | evidence store root (default `.dottore/evidence`) and run store (default `.dottore/runs.sqlite`). Checked before anything is sent, writing nothing in `--dry-run`/`--estimate`/`-sn`: a directory as the store, a file that is not SQLite, a root that is a regular file, or a path under one, is refused (exit 3), and a sending run opens both before its first request. Runs may share one store (a lock is waited for up to 30 s, said on stderr, and Ctrl-C stops the wait) |
+| `-v` | prints the resolved plan, then runs (`-vv`: the skipped and blocked ids too); like the root `dottore -v <command>`, it also prints an internal error's traceback |
 
 **Exit codes:** `0` clean · `1` findings below `--fail-on` · `2` findings at/above · `3` error
-(a usage error, such as an unknown option, is `3` too).
+(a usage error, such as an unknown option, is `3` too, and so is an internal error: one line,
+`error: unexpected <Class>: ...`, its traceback under `-v`; nothing but findings exits `1`).
 
 `3` also covers a run that **did not finish**, and it takes precedence over `2`. If a hard
 budget ceiling halts the campaign, the exit code is `3`, the reason is printed, and the report
 carries `summary.status.state = "budget_exhausted"` with `coverage.specs.total` (planned) above
 `coverage.specs.run` (completed); a target that was authorized but answered nothing (every
 attempt failed on transport, or got a reply that could not be read as the provider's) is
-`"unreachable"`, and one whose replies could not be read 5 in a row before any was read, or 20
+`"unreachable"`, one whose every attempt the provider's filter refused, cut or stopped (or that
+got no reply that could be read), with none a fail, is `"filtered"` (it measured the filter, not
+the model; exit `0` until 2026-10-11), and one whose replies could not be read 5 in a row before any was read, or 20
 in a row after, and whose one benign check then could not be read either, stops early as
 `"aborted"` (`aborted on UnreadableReplies: ...`, with what to check for that provider); a filter
 that blocks only attack prompts lets the check through, and the run goes on. One unreadable reply fails only its attempt (OD-21), and its spec is
@@ -160,8 +166,9 @@ refuses before the model sees it (Azure OpenAI's HTTP 400 `content_filter`; Gemi
 attempt, `inconclusive: blocked_by_provider_filter`, and the campaign goes on; the summary counts
 them (`Blocked by the provider's input filter: N attempt(s) in S spec(s) never reached the model`,
 and `summary.blocked_by_provider_filter` in JSON). A spec whose every attempt was blocked is
-inconclusive, never a pass. Any other 4xx still stops the run with `3`
-([`docs/MANUAL.md`](docs/MANUAL.md) §9).
+inconclusive, never a pass, and a run whose every attempt was blocked or cut exits `3`
+(`filtered`). Azure's 400 is read only from an `openai` target: from another provider it is an
+ordinary 4xx. Any other 4xx still stops the run with `3` ([`docs/MANUAL.md`](docs/MANUAL.md) §9).
 
 **A reply the provider's filter cut is never a pass.** A deployment's output filter answers
 HTTP 200 with an empty or canned reply and its own stop reason (Azure OpenAI's `content_filter`, a
@@ -171,7 +178,16 @@ target file's REST target has none). The model may
 have written what the filter hid, so such an attempt is `inconclusive:
 cut_by_provider_output_filter` (or `provider_filter_side_unknown` when the provider does not say
 whether it blocked the prompt or the reply), needs review, and keeps its spec from passing; a fail
-that rests on something present in what came back still stands. The summary counts them (`Cut by
+that rests on something present in what came back still stands, and so does the judge's on text
+the model wrote, as a fail that needs review (`--include-needs-review` gates it). Each adapter
+reads only its own provider's filter words (`content_filter` from `openai`, `refusal` from
+`anthropic`, what a WebSocket file lists under `response.filter_stops`, none by default): any other
+is an ordinary stop, so a target cannot hide its reply behind another provider's word; an
+`openai` or `anthropic` file declares `filter_stops: []` for an endpoint with no such filter behind
+it (never a gateway in front of Azure, which relays Azure's), and even then a reply with no text
+and no tool call that ends on the provider's own word is the filter's, never a pass.
+An endpoint can still withhold chosen attacks with its own provider's word and keep `--fail-on`
+green, so read the counts below if your pipeline should stop on them. The summary counts them (`Cut by
 the provider's output filter: N attempt(s) in S spec(s) came back cut or replaced`, and
 `summary.cut_by_provider_output_filter` in JSON). `--fail-on` does not trip on them: read that key
 if your pipeline should ([`docs/MANUAL.md`](docs/MANUAL.md) §9).
@@ -205,7 +221,15 @@ such as `Prod` and `prod`, are refused on every file system):
 ```bash
 dottore fleet fleet.yaml --out .dottore/fleet      # generate scope + targets, review them
 dottore fleet fleet.yaml --run                     # or scan every target immediately
+dottore fleet fleet.yaml --run -oJ fleet.json --run-db fleet.sqlite   # run's store and report options
 ```
+
+`fleet` takes `--spec-path`, `--evidence-root`, `--run-db` and `-oJ/-oH/-oS/-oX/-oA` with `run`'s
+meaning (without `--run` they are carried into the `dottore run` line it prints), and reads the
+same default spec path as `run`: `specs/` in the working directory, else the battery beside the
+installed package. From a source checkout or an editable install it therefore runs from any
+directory (saying on stderr which battery it read); a wheel ships neither the battery nor the
+schemas, so pass `--spec-path` there and expect the schema to be missing too.
 
 The judge goes in the fleet file too, as a `judge:` block (`id`, `endpoint`, `model`,
 `api_key_env`), because the generated scope is built from that file alone: `fleet` writes it
@@ -215,7 +239,11 @@ host and port (`localhost:11434`), so a local model does not authorize the machi
 ports (an offline `mock://` entry sends nothing and keeps a bare host).
 
 Keys are never written to the file: each entry names an env var (`api_key_env`), resolved
-only at send time. `provider` is inferred from the endpoint (`/chat/completions` -> openai,
+only at send time. A value that is not a variable's name (the key pasted there), an endpoint
+that carries a credential (`user:password@`, a path segment or a parameter shaped like a key,
+a parameter named like a credential such as `?api_key=` or `?accessToken=`, a URL with no host) and a `provider` the tool does not have are refused before anything is written,
+never quoted; an entry with no `api_key_env` is sent no credential (`env://NONE` in
+the scope, no `auth_ref` in its target file). `provider` is inferred from the endpoint (`/chat/completions` -> openai,
 `/messages` -> anthropic, else `rest`). A WebSocket target is not a fleet entry: a `ws://` or
 `wss://` endpoint, or `provider: websocket`, is refused before anything is written (exit 3),
 since its target file needs a `websocket:` block; write it by hand from

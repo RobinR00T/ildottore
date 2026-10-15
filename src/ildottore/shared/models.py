@@ -9,6 +9,7 @@ schema ``additionalProperties: false`` (contract §4 KEEP).
 
 from __future__ import annotations
 
+import math
 from typing import Annotated, Any, Literal
 
 from pydantic import (
@@ -16,6 +17,7 @@ from pydantic import (
     ConfigDict,
     Field,
     SerializerFunctionWrapHandler,
+    ValidationInfo,
     field_validator,
     model_serializer,
     model_validator,
@@ -32,6 +34,7 @@ from ildottore.shared.enums import (
     TargetType,
     VerdictStatus,
 )
+from ildottore.shared.filter_stops import documented_stops, target_filter_stops
 
 # --- shared field constraints (schema §properties) ---------------------------------
 
@@ -202,6 +205,12 @@ MAX_SAMPLING_TOKENS = 200_000
 
 class Sampling(_SchemaMirror):
     """Pinned sampling params (``sampling``)."""
+
+    # The docstring is the exported schema's description, so the reason stays here: a value that
+    # is not finite is refused however the model is built (u12 A-82, CLI audit M6). A spec's
+    # schema check refused `.nan` and `.inf` first (A-54); a target file's `sampling_defaults`
+    # did not, and they reached the JSON report as bare `NaN` and `Infinity`, and the wire.
+    model_config = ConfigDict(allow_inf_nan=False)
 
     temperature: float | None = None
     top_p: float | None = None
@@ -422,7 +431,52 @@ class WebSocketResponse(_Frozen):
     usage_path: Annotated[str, Field(min_length=1)] | None = None
     model_path: Annotated[str, Field(min_length=1)] | None = None
     id_path: Annotated[str, Field(min_length=1)] | None = None
-    timeout_seconds: Annotated[float, Field(gt=0.0, le=600.0)] = 30.0
+    timeout_seconds: Annotated[float, Field(gt=0.0, le=600.0, allow_inf_nan=False)] = 30.0
+    #: The stop reasons the endpoint writes at ``final_path`` when a provider's filter acted on
+    #: the reply (u04 A-79, the amendment to OD-42): each one a provider documents for its own
+    #: filter (``shared.filter_stops``), in the spelling the endpoint sends. None by default: a
+    #: socket's final value is the operator's wire shape, and a filter word there is read as the
+    #: filter's only when the file says the endpoint relays one.
+    filter_stops: list[str] = Field(default_factory=list)
+
+    @field_validator("final_value", mode="before")
+    @classmethod
+    def _final_value_is_finite(cls, value: object) -> object:
+        """A NaN never equals a frame's value, so the turn would wait out its timeout; an
+        infinity is no JSON number a server writes (u12 A-82, CLI audit M6)."""
+
+        if isinstance(value, float) and not math.isfinite(value):
+            raise ValueError("final_value must be a finite number when it is a number")
+        return value
+
+    @field_validator("filter_stops")
+    @classmethod
+    def _documented_filter_stops(cls, value: list[str]) -> list[str]:
+        """Each one a provider documents for its own filter, trimmed and in lower case, once."""
+
+        return sorted(documented_stops(value))
+
+    @model_validator(mode="after")
+    def _filter_stops_need_a_read_final_value(self) -> WebSocketResponse:
+        """A turn that ends on ``final_value`` always stops with it: no filter stop is read."""
+
+        if self.filter_stops and self.final_value is not None:
+            raise ValueError(
+                "response.filter_stops needs final_value left out: a turn ends on the frame where "
+                "final_path equals final_value, so that value is the only stop it can read"
+            )
+        return self
+
+    @model_serializer(mode="wrap")
+    def _without_undeclared_filter_stops(
+        self, handler: SerializerFunctionWrapHandler
+    ) -> dict[str, Any]:
+        """The dump as before A-79 when the file declares no filter stop."""
+
+        dumped: dict[str, Any] = handler(self)
+        if not dumped.get("filter_stops"):
+            dumped.pop("filter_stops", None)
+        return dumped
 
 
 class WebSocketSession(_Frozen):
@@ -475,6 +529,10 @@ class Target(_Frozen):
     optional fields - no change to existing mock behavior).
     """
 
+    # A refusal never quotes what was written (A-53): pydantic's own text would, after the
+    # message, and a Target carries an endpoint that may hold a password.
+    model_config = ConfigDict(hide_input_in_errors=True)
+
     id: str
     type: TargetType
     capabilities: Capabilities = Field(default_factory=Capabilities)
@@ -493,6 +551,44 @@ class Target(_Frozen):
     seeded_setup: SeededSetup | None = None
     # The wire shape of a ``provider: websocket`` target (``None`` for every other provider).
     websocket: WebSocketSpec | None = None
+    # The provider filter stops an ``openai`` or ``anthropic`` target's adapter reads, when its
+    # file says (u04 A-79): ``[]`` for an endpoint that speaks the provider's API and has no such
+    # filter behind it, so its stops on a reply with text or a tool call, and Azure's HTTP 400,
+    # are not read as a filter's (an empty reply on the provider's own word still is). ``None``:
+    # the provider's own. Its own word or nothing, checked here for every path (below) and by the
+    # loader first (``cli.wiring``, which names the file); left out of a dump when ``None``.
+    filter_stops: list[str] | None = None
+
+    @field_validator("filter_stops")
+    @classmethod
+    def _the_providers_own_filter_stops(
+        cls, value: list[str] | None, info: ValidationInfo
+    ) -> list[str] | None:
+        """The provider's own word, or nothing, trimmed, in lower case and sorted (u04 A-79).
+
+        ``shared.filter_stops.target_filter_stops``, the loader's rule: until the pre-merge audit
+        of ``10cb526b`` (LOW) only the loader applied it, so ``Target(provider="openai",
+        filter_stops=["refusal", "guardrail_intervened"])`` built an adapter that read those two
+        as OpenAI's filter. ``provider`` is declared above, so it is validated before this; when
+        it failed, it is not in ``info.data`` and this check is left out, so its own error is the
+        only one (pre-merge audit of ``e1a8aacf``, LOW 3: a second, misleading one said the field
+        was for an openai or anthropic target).
+        """
+
+        if value is None or "provider" not in info.data:
+            return value
+        return sorted(target_filter_stops(info.data["provider"], value))
+
+    @model_serializer(mode="wrap")
+    def _without_an_undeclared_filter(
+        self, handler: SerializerFunctionWrapHandler
+    ) -> dict[str, Any]:
+        """The dump as before A-79 when the file does not declare ``filter_stops``."""
+
+        dumped: dict[str, Any] = handler(self)
+        if dumped.get("filter_stops") is None:
+            dumped.pop("filter_stops", None)
+        return dumped
 
 
 class TokenLogprob(_Frozen):
@@ -530,7 +626,8 @@ class ModelResponse(_Frozen):
     ``logprobs is None`` when the target lacks the logprobs capability (ADR-0005). ``raw_ids``
     holds what a transport returns beyond these fields: scalars at the top (a request id, a model
     echo) and a transport's record under its own key, such as the WebSocket frame transcript in
-    ``raw_ids["websocket"]["frames"]`` (OD-34: no field of its own, decided 2026-10-11).
+    ``raw_ids["websocket"]["frames"]`` (OD-34: no field of its own, decided 2026-10-11), beside
+    the frame fields its target file declares as the protocol's, ``protocol_paths`` (A-77).
 
     ``filter_side`` is the side the provider's own trace says its filter acted on, for a reply
     stopped by that filter (OD-42, u00 and u08 A-70): ``input`` (the prompt was blocked),
@@ -539,6 +636,13 @@ class ModelResponse(_Frozen):
     ``None`` and ``shared.provider_filter`` reads the side from the stop reason. A ``None`` is
     left out of a dump, so a reply without one is stored, reported and hashed byte for byte as
     before the field existed.
+
+    ``foreign_stop`` is ``True`` when ``finish_reason`` is some provider's filter word that the
+    target's own provider does not document, or its target file does not declare (u00 and u04
+    A-79, the amendment to OD-42): ``refusal`` from an OpenAI-compatible endpoint, say. The
+    adapter that read the reply sets it (``shared.provider_filter.stop_provenance``); the stop is
+    kept as sent, as evidence, and read as an ordinary one, so the reply is the model's answer.
+    ``False`` is left out of a dump, so every other reply is stored, reported and hashed as before.
     """
 
     text: str
@@ -548,14 +652,18 @@ class ModelResponse(_Frozen):
     raw_ids: JsonDict = Field(default_factory=dict)
     usage: JsonDict | None = None
     filter_side: Literal["input", "output", "unknown"] | None = None
+    foreign_stop: bool = False
 
     @model_serializer(mode="wrap")
     def _without_unset_filter_side(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
-        """The dump as before OD-42 when no trace said which side a filter acted on."""
+        """The dump as before OD-42 when no trace said which side a filter acted on, and as
+        before A-79 when the stop is not another provider's filter word."""
 
         dumped: dict[str, Any] = handler(self)
         if dumped.get("filter_side") is None:
             dumped.pop("filter_side", None)
+        if not dumped.get("foreign_stop"):
+            dumped.pop("foreign_stop", None)
         return dumped
 
 

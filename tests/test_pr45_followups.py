@@ -137,8 +137,9 @@ def test_a_spec_path_that_does_not_exist_is_named_not_counted_as_a_broken_file(
 ) -> None:
     missing = tmp_path / "nowhere"
     result = CliRunner().invoke(app, ["registry", "ls", "--spec-path", str(missing)])
-    assert result.exit_code == 0
-    assert f"warning: spec path(s) not found: {missing}" in result.stderr
+    # Refused since u12 A-82 (CLI audit L7): it warned and exited 0, a listing of nothing.
+    assert result.exit_code == 3
+    assert f"error: a spec path gives nothing to list: path not found: {missing}" in result.stderr
     assert "load error(s)" not in result.stderr
 
 

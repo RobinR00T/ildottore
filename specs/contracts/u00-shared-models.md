@@ -108,7 +108,39 @@ must round-trip any schema-valid YAML and reject any schema-invalid one (schema 
   model echo) and a transport's record under its own key: the WebSocket adapter's frame transcript
   is `raw_ids["websocket"]["frames"]`, not a field of its own (OD-34, decided 2026-10-11 under the
   owner's delegation, revisable; reasoning in u04 §9). A reader of the scalars skips a nested value
-  (the fingerprint's envelope layer does).
+  (the fingerprint's envelope layer does). Since A-79 (u08, the amendment to OD-42, 2026-10-11)
+  `foreign_stop: bool = False`: `true` when `finish_reason` is some provider's filter word that
+  the target's own provider does not document, or its target file does not declare (never on a
+  reply with no text and no tool call that ends on the provider's own word, which is the filter's
+  withheld one whatever is declared: pre-merge audit of `10cb526b`, MEDIUM; no text is
+  `shared.provider_filter.blank_text`, whitespace and format characters only, since that of
+  `e1a8aacf`, LOW 1, and only those that show and carry nothing, the redactor's
+  `EMPTY_FORMAT_RANGES`, since that of `3f7b1254`: a tag character or one of the 13 format signs
+  a font draws is text); the adapter
+  that read the reply sets it (`shared.provider_filter.stop_provenance`, u04), the stop is kept as
+  sent, and every reader takes it for an ordinary stop. `false` is left out of a dump by the same
+  serializer, so every other reply is stored, reported and hashed as before.
+- `Target` gains `filter_stops: list[str] | None = None` (A-79, after the pre-merge audit of
+  `a55710e9`): an `openai` or `anthropic` target file's declaration, `[]` or the provider's own
+  word, validated by the model itself (a field validator applying
+  `shared.filter_stops.target_filter_stops`, stored trimmed, lower case, sorted, once) and by the
+  loader first, which names the file (u12); left out of a dump when `None`, so every existing file
+  dumps and digests as before. Until the pre-merge audit of `10cb526b` (LOW) only the loader
+  checked it, so `Target(provider="openai", filter_stops=["refusal", "guardrail_intervened"])`
+  built an adapter that read those two as OpenAI's filter. `Target`'s config sets
+  `hide_input_in_errors`, so a refusal, pydantic's own text included, never quotes a value (A-53).
+  A `provider` that failed is not in `info.data`, and the check is then left out, so its error is
+  the only one (pre-merge audit of `e1a8aacf`, LOW 3).
+- `WebSocketResponse` gains `filter_stops: list[str]` (A-79): the provider filter words the
+  endpoint writes at `final_path`, each one of `shared.filter_stops.FILTER_STOPS` (validated,
+  stored trimmed, lower case, sorted, once), none by default, refused beside a `final_value`; an
+  empty list is left out of a dump, so a target file without it digests as before.
+- `shared.filter_stops` (A-79) holds the stop vocabularies, each sourced: `OPENAI_FILTER_STOPS`,
+  `ANTHROPIC_FILTER_STOPS`, `GEMINI_FILTER_STOPS`, `BEDROCK_FILTER_STOPS`, their union
+  `FILTER_STOPS`, `normalized_stop` and `documented_stops`, and (after the pre-merge audit of
+  `10cb526b`) `PROVIDER_FILTER_STOPS`, `own_filter_stops_of` and `target_filter_stops`, the one
+  rule for a target's top-level declaration. Apart from `shared.provider_filter` so
+  that `shared.models` can validate a declaration without importing the module that reads replies.
 - `Verdict = {status: VerdictStatus, confidence: float[0,1], reasoning: str, matched: list[str],
   evaluator_type: str, inconclusive_reason: InconclusiveReason | None}` (`docs/04 §1-§3`).
 - `AttackSpec` = every field/constraint in `schemas/attack-spec.schema.json` (`docs/03 §2`),
@@ -167,6 +199,20 @@ must round-trip any schema-valid YAML and reject any schema-invalid one (schema 
   file's declaration. `shared/digest.target_digest` leaves `not_destructive` out of
   the seeded block when it is empty, so a target that declares none keeps the digest it had
   before the field existed (`tests/evaluators/test_operator_not_destructive.py`).
+
+**A-82 (u12's clause; this unit's half, added 2026-10-11) A sampling value is finite, and two
+helpers the CLI audit asked for.** `Sampling` refuses a value that is not finite however it is
+built (`allow_inf_nan=False`): a target file's `sampling_defaults` took `.nan` and `.inf`, which
+reached the JSON report as bare `NaN` and `Infinity` (CLI audit M6); a spec's schema check refused
+them first already (A-54). `WebSocketResponse` refuses a non-finite `timeout_seconds` and
+`final_value` built in code. `shared.credential_refs` says what an `env://` reference may name
+(`ENV_NAME`, `NO_CREDENTIAL`, and `unset_variable`, which looks in the environment its caller
+passes: only the CLI's wiring reads the process's), `shared.error_text` writes an exception as one
+line that is never an empty reason (`<Class> (no detail given)`), and `shared.files.read_failure`
+describes a file name too long to open by its length. `Sampling`'s docstring, the exported
+schema's description, is unchanged; the reason is a comment. Checked by
+`tests/cli/test_non_finite_values.py`, `tests/cli/test_credential_variables.py` and
+`tests/cli/test_cli_messages_read_right.py`.
 
 ## §8 Out of scope / forbidden
 - MUST NOT import any other `ildottore` package or any provider SDK / httpx / Jinja / Typer.

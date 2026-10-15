@@ -54,6 +54,7 @@ from dataclasses import dataclass, field
 from ildottore.core.budgets import DEFAULT_COMPLETION_TOKENS, BudgetExhausted, BudgetLedger
 from ildottore.core.pacing import RateLimiter
 from ildottore.shared.amounts import is_count
+from ildottore.shared.error_text import error_text
 from ildottore.shared.models import Attempt, JsonDict, ModelRequest, ModelResponse, Sampling
 from ildottore.shared.protocols import TargetAdapter
 from ildottore.shared.provider_filter import (
@@ -135,6 +136,13 @@ class AttemptResult:
     #: :data:`~ildottore.shared.unreadable.UNREADABLE_MARK`, and the runner records it
     #: ``inconclusive: unreadable_reply``, which keeps its spec from passing.
     unreadable: bool = False
+    #: A conversation a later send's environment error or unreadable reply ended after the model
+    #: had called a tool: its last reply with the whole trace so far (``core.conversation``),
+    #: which the runner's trace evaluators read, since a call already made can fail the attempt
+    #: (audit of the scoring, 2026-10-11, HIGH 2). Kept off ``attempt``, which still has no
+    #: reply, so an attempt the trace does not fail is stored as before and a resume sends it
+    #: again.
+    trace_so_far: ModelResponse | None = None
 
 
 class ReplyOverBudget(BudgetExhausted):
@@ -274,7 +282,7 @@ def _unreadable_result(
     its size and its advice, under ``request.metadata.unreadable_reply`` for review.
     """
 
-    errors.append(f"{type(reply).__name__}: {reply}{UNREADABLE_MARK}")
+    errors.append(f"{error_text(reply)}{UNREADABLE_MARK}")
     kept = {
         key: value
         for key, value in (
@@ -321,8 +329,12 @@ async def execute_attempt(
     sleep: Callable[[float], Awaitable[None]] | None = None,
     now: Callable[[], float] | None = None,
     pacer: RateLimiter | None = None,
+    opens_attempt: bool = False,
 ) -> AttemptResult:
     """Send one request with retry/backoff/timeout, debiting the budget per send.
+
+    ``opens_attempt``: this is the first request of an attack attempt, which its first send
+    counts against the attempts axis in the same debit (a retry never counts again, u08 A-80).
 
     Returns an :class:`AttemptResult`. Raises :class:`BudgetExhausted` (from the
     ledger) straight through - the runner converts that into a ``budget_exhausted``
@@ -363,7 +375,8 @@ async def execute_attempt(
             remaining = ledger.remaining_tokens()
             if ceiling is not None and estimate > ceiling and remaining:
                 reserved = remaining
-        ledger.debit_request(tokens=reserved)
+        ledger.debit_request(tokens=reserved, opens_attempt=opens_attempt)
+        opens_attempt = False  # counted with the first send; a retry is the same attempt
         started = clock()
         try:
             response = await _send_with_timeout(adapter, request, timeout_s, do_sleep)
@@ -374,7 +387,7 @@ async def execute_attempt(
                 # refused the same way. The request stays debited; no completion was billed.
                 if reserved:
                     ledger.refund_tokens(reserved)
-                errors.append(f"{type(exc).__name__}: {exc}{PROVIDER_FILTER_MARK}")
+                errors.append(f"{error_text(exc)}{PROVIDER_FILTER_MARK}")
                 return AttemptResult(
                     attempt=_attempt(
                         attempt_id,
@@ -424,9 +437,7 @@ async def execute_attempt(
             retryable = getattr(exc, "retryable", True) is not False
             # A failure that repeats identically is marked, so a resume does not send it again
             # either (it re-sends the other environment errors, F11).
-            errors.append(
-                f"{type(exc).__name__}: {exc}" + ("" if retryable else NOT_RETRYABLE_MARK)
-            )
+            errors.append(error_text(exc) + ("" if retryable else NOT_RETRYABLE_MARK))
             # ``retryable = False`` (the adapters' convention, read structurally like
             # ``is_env_error``): a failure that repeats identically, such as a reply over the
             # size cap, is recorded once instead of being sent three more times.
@@ -506,8 +517,17 @@ async def _send_with_timeout(
 
     if timeout_s is None:
         return await adapter.send(request)
-    async with asyncio.timeout(timeout_s):
-        return await adapter.send(request)
+    try:
+        async with asyncio.timeout(timeout_s) as deadline:
+            return await adapter.send(request)
+    except TimeoutError as exc:
+        # `asyncio.timeout` raises a TimeoutError with no message, which the attempt's error and
+        # the run's reason then ended on: `TimeoutError: ` (u12 A-82, CLI audit L8).
+        if deadline.expired():
+            raise TimeoutError(
+                f"no reply within the per-attempt timeout of {timeout_s:g} s"
+            ) from exc
+        raise
 
 
 #: Appended to an attempt's error when the failure would repeat identically (``retryable =

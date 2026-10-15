@@ -34,7 +34,7 @@ REPO = Path(__file__).resolve().parents[2]
 SPEC = REPO / "specs" / "attacks" / "PI-DIRECT-001.yaml"
 
 #: Shaped like a key pasted in the wrong place, as in ``test_target_file_validation``.
-PASTED = "797c48a81f494d0f3e8d13bd49459b6f" * 2
+PASTED = "Zq8LmPw3" * 8  # low entropy and no hex run, so the CLI redactor leaves it (A-78)
 
 #: (``capabilities`` block, the field path and reason the refusal must give).
 UNKNOWN_KEYS = {

@@ -43,9 +43,11 @@ from ildottore.adapters.base import (
     ResponseTooLarge,
     RetryConfig,
     read_capped,
+    refuse_short_credential,
 )
 from ildottore.policy import EndpointAllowlist
 from ildottore.redactor import Redactor
+from ildottore.shared.error_text import error_text
 from ildottore.shared.models import Capabilities, ModelRequest, ModelResponse
 from ildottore.shared.nesting import NestedTooDeeply, bounded_loads
 from ildottore.shared.wellformed import well_formed_json
@@ -151,6 +153,7 @@ class MCPAdapter:
             return self._cached
 
         self._check_allowlist()  # BEFORE any egress, unbypassable (S3).
+        refuse_short_credential(self.id, self.api_key, self.base_url)  # u04 A-78
         owns_client = self.client is None
         client = self.client or httpx.AsyncClient(timeout=self.retry.timeout_s)
         try:
@@ -298,7 +301,7 @@ class MCPAdapter:
                         # an advertised tool list larger than this is not metadata to evaluate.
                         raw = await read_capped(streamed, f"{self.id}: MCP response")
             except (httpx.TimeoutException, httpx.TransportError) as exc:
-                last = f"{type(exc).__name__}: {exc}"
+                last = error_text(exc)
                 await self._maybe_backoff(attempt, attempts)
                 continue
             if raw is None:

@@ -39,7 +39,7 @@ from ildottore.shared.config_errors import (
     yaml_problem,
 )
 from ildottore.shared.enums import FLAGGED_FAMILIES, Category
-from ildottore.shared.files import read_text_capped
+from ildottore.shared.files import read_failure, read_text_capped
 from ildottore.shared.models import AttackSpec
 
 __all__ = [
@@ -98,7 +98,7 @@ def load_pack(path: str | Path) -> PolicyPack:
     try:
         raw_text = read_text_capped(file_path)
     except OSError as exc:  # over the 1 MiB cap (A-43), or a filesystem error
-        raise PolicyPackError(f"cannot read policy pack {file_path}: {exc}") from exc
+        raise PolicyPackError(read_failure("policy pack", file_path, exc)) from exc
     try:
         data = safe_yaml.safe_load(raw_text)
     except yaml.YAMLError as exc:

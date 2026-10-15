@@ -5,7 +5,8 @@ u12 wires this into the Typer app later; this module only provides the pure func
 * :func:`lint` - load + lint search paths → :class:`~ildottore.registry.LintReport`.
 * :func:`render_text` / :func:`render_json` - the two renderings (contract §6).
 * :func:`run_lint` - the callable u12's command delegates to; returns a process exit code
-  (0 = clean, 1 = any error-severity finding) and the rendered output string.
+  (0 = clean, 1 = any error-severity finding, 3 = a path that does not exist or yields nothing
+  to lint, which wins over 1) and the rendered output string.
 
 No side effects beyond reading the given paths (no exec, no network).
 """
@@ -13,14 +14,19 @@ No side effects beyond reading the given paths (no exec, no network).
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from pathlib import Path
 
 from ildottore.redactor import log_safe_json, visible_controls
-from ildottore.registry import LintCode, LintError, LintReport, Severity
+from ildottore.registry import PATH_CODES, LintCode, LintError, LintReport, Severity
 from ildottore.registry import lint as _lint
 
 EXIT_OK = 0
 EXIT_LINT_FAILED = 1
+#: A path that does not exist or yields nothing to lint (``PATH_NOT_FOUND``, ``NO_SPECS``): the
+#: I/O code of every other command, and it wins over 1 (u12 A-82, CLI audit M9). ``lint
+#: nonexistent`` exited 1, and a path holding no spec printed ``lint OK`` and exited 0.
+EXIT_IO = 3
 
 
 def lint(paths: list[Path]) -> LintReport:
@@ -77,6 +83,29 @@ def render_text(report: LintReport) -> str:
     return "\n".join(lines)
 
 
+def _masked_paths(report: LintReport, mask: Callable[[str], str]) -> LintReport:
+    """``report`` with the findings that quote a search path passed through ``mask``."""
+
+    def masked(found: LintError) -> LintError:
+        if found.code not in _PATH_FINDINGS:
+            return found
+        update: dict[str, object] = {"message": mask(found.message)}
+        if found.path is not None:
+            update["path"] = mask(found.path)
+        return found.model_copy(update=update)
+
+    return report.model_copy(
+        update={
+            "errors": [masked(e) for e in report.errors],
+            "warnings": [masked(w) for w in report.warnings],
+        }
+    )
+
+
+#: The findings whose text is a search path the operator typed.
+_PATH_FINDINGS = PATH_CODES | {LintCode.FILES_NOT_READ}
+
+
 def _fmt_line(err: LintError, level: str) -> str:
     # A pack's file names and values, written out: a file named `x\n::error ...` printed a
     # line GitHub Actions reads as a workflow command (pre-merge audit of PR #49).
@@ -84,9 +113,21 @@ def _fmt_line(err: LintError, level: str) -> str:
     return f"[{level}] {err.code} ({loc}): {visible_controls(err.message)}"
 
 
-def run_lint(paths: list[Path], *, as_json: bool = False) -> tuple[int, str]:
-    """Lint ``paths`` and return ``(exit_code, rendered_output)``."""
+def run_lint(
+    paths: list[Path], *, as_json: bool = False, mask: Callable[[str], str] | None = None
+) -> tuple[int, str]:
+    """Lint ``paths`` and return ``(exit_code, rendered_output)``.
+
+    ``mask`` is applied to the findings that quote a search path as the operator typed it
+    (``PATH_NOT_FOUND``, ``NO_SPECS``, ``FILES_NOT_READ``): the CLI passes its redactor, so a key
+    given where a path belongs is not echoed (u12 A-82). The other findings quote a spec tree's
+    contents, which lint reports as they are.
+    """
     report = lint(paths)
+    if mask is not None:
+        report = _masked_paths(report, mask)
     output = render_json(report) if as_json else render_text(report)
+    if any(e.code in PATH_CODES for e in report.errors):
+        return EXIT_IO, output
     exit_code = EXIT_OK if report.ok else EXIT_LINT_FAILED
     return exit_code, output

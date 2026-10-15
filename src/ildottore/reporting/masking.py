@@ -15,13 +15,21 @@ process-wide redactor. Redaction preserves container shape and is idempotent
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from typing import Protocol, runtime_checkable
 
 from ildottore.redactor import Redactor as _DefaultRedactorImpl
-from ildottore.redactor import redact_evidence_ref
+from ildottore.redactor import mask_keys, redact_evidence_ref, redact_split, report_identity
 from ildottore.shared.models import Finding, TestRun
 
 _SHA256 = re.compile(r"[0-9a-f]{64}")
+
+#: An attempt's free-form fields, by part: what a target, a spec or the tool wrote, keys
+#: included. Every other key of an attempt is the model's own, kept so the dump validates.
+_FREE_FORM: dict[str, tuple[str, ...]] = {
+    "request": ("messages", "tools", "media", "metadata"),
+    "response": ("tool_calls", "raw_ids", "usage"),
+}
 
 __all__ = ["MaskingContext", "Redactor", "mask_findings", "mask_run", "mask_text"]
 
@@ -62,18 +70,62 @@ def mask_run(run: TestRun, redactor: Redactor) -> TestRun:
     """
 
     raw = run.model_dump(mode="json")
+    findings = raw.pop("findings", None) or []
     masked = redactor.redact(raw)
     if not isinstance(masked, dict):  # pragma: no cover - redact preserves shape
         raise TypeError("redactor changed the shape of a run dump")
     masked["findings"] = [
-        _restore_tool_fields(masked_finding, finding, redactor)
-        for masked_finding, finding in zip(masked.get("findings") or [], run.findings, strict=True)
+        _restore_tool_fields(_masked_finding(raw_finding, redactor), finding, redactor)
+        for raw_finding, finding in zip(findings, run.findings, strict=True)
     ]
+    # Each target is named as its findings name it (`report_identity`).
+    for masked_target, target in zip(masked.get("targets") or [], run.targets, strict=True):
+        masked_target["id"] = report_identity(target.id)
     # The scope digest is the tool's own SHA-256 of the authorization record; the entropy rule
     # cannot tell it from a key, and masked it says nothing. Kept only in the shape it has.
     if run.scope_sha256 is not None and _SHA256.fullmatch(run.scope_sha256):
         masked["scope_sha256"] = run.scope_sha256
     return TestRun.model_validate(masked)
+
+
+def _masked_finding(raw: dict[str, object], redactor: Redactor) -> dict[str, object]:
+    """A finding's dump masked: its attempts as :func:`_masked_attempt` masks one, the rest
+    string by string."""
+
+    attempts = raw.pop("attempts", None) or []
+    masked = redactor.redact(raw)
+    if not isinstance(masked, dict) or not isinstance(attempts, list):  # pragma: no cover
+        raise TypeError("redactor changed the shape of a finding dump")
+    masked["attempts"] = [_masked_attempt(attempt, redactor) for attempt in attempts]
+    return masked
+
+
+def _masked_attempt(raw: object, redactor: Redactor) -> dict[str, object]:
+    """An attempt's dump masked as the evidence store masks it (A-77, audit of main de122e26).
+
+    The keys of its free-form fields are masked (:data:`_FREE_FORM`; a tool call's argument
+    names, a usage field's, a WebSocket frame's, the report wrote them in clear: MEDIUM 2), two
+    that mask alike numbered apart, and its values as the store masks them
+    (:func:`ildottore.redactor.redact_split`): each string, and each stream's joined text, so a
+    reply kept in pieces (a logprob list's tokens, a transcript's deltas) is masked as the text
+    it makes, a masked token's alternatives with it (HIGH 1). The model's own keys stay as they
+    are, so the dump validates.
+    """
+
+    if not isinstance(raw, dict):  # pragma: no cover - an attempt dumps to a dict
+        raise TypeError("an attempt dump is not an object")
+    keyed = dict(raw)
+    for part_name, fields in _FREE_FORM.items():
+        part = keyed.get(part_name)
+        if isinstance(part, dict):
+            keyed[part_name] = {
+                name: mask_keys(redactor, value) if name in fields else value
+                for name, value in part.items()
+            }
+    masked = redact_split(redactor, keyed)
+    if not isinstance(masked, dict):  # pragma: no cover - redact preserves shape
+        raise TypeError("redactor changed the shape of an attempt dump")
+    return masked
 
 
 def _restore_tool_fields(masked: object, finding: Finding, redactor: Redactor) -> dict[str, object]:
@@ -83,18 +135,54 @@ def _restore_tool_fields(masked: object, finding: Finding, redactor: Redactor) -
     target text: masking a custom one (``ACME-SYSPROMPT2-DOS-003``) with the per-process salt
     gave it a different digest in every run, so ``dottore diff`` saw two unrelated specs and
     reported no regression, and the SARIF rule id changed between runs (review of PR #32).
+
+    The target id is the operator's and is masked, but as reports masked it before u01 A-78 and
+    with the fixed identity salt (:func:`~ildottore.redactor.report_identity`): masked with the
+    per-process salt, an id holding a UUID had another mask in every run, and ``dottore diff``
+    refused two reports of one target (pre-merge audit of A-78, H1).
     """
 
     if not isinstance(masked, dict):  # pragma: no cover - redact preserves shape
         raise TypeError("redactor changed the shape of a finding dump")
     masked["spec_id"] = finding.spec_id
+    masked["target_id"] = report_identity(finding.target_id)
     masked["evidence"] = [
-        redact_evidence_ref(redactor, ref.model_dump(mode="json")) for ref in finding.evidence
+        # The attempt a reference points at is named as the attempts below are, as written: a
+        # hex-shaped id is masked by the hex rule now (u01 A-78), and the reference would no
+        # longer name its attempt.
+        {**redact_evidence_ref(redactor, ref.model_dump(mode="json")), "attempt_id": ref.attempt_id}
+        for ref in finding.evidence
     ]
     for masked_attempt, attempt in zip(masked.get("attempts") or [], finding.attempts, strict=True):
         masked_attempt["attempt_id"] = attempt.attempt_id
         masked_attempt["spec_id"] = attempt.spec_id
+        _restore_media_digests(masked_attempt, attempt.request.metadata)
     return masked
+
+
+def _restore_media_digests(masked_attempt: dict[str, object], metadata: object) -> None:
+    """Put back the SHA-256 of each media part the runner recorded on a request (u01 A-78).
+
+    The chain-of-custody digest the evidence store already keeps as written (u10): in the JSON
+    report the entropy rule masked 24 of the 28 a multimodal battery records at ``--runs 2``,
+    and the hex rule would mask every one, so an auditor could not match a report's image to
+    its evidence. Kept only in the shape the tool writes, a list of 64 lowercase hex digits, as
+    the scope digest is.
+    """
+
+    if not isinstance(metadata, Mapping):
+        return
+    digests = metadata.get("media_sha256")
+    if not (
+        isinstance(digests, list)
+        and digests
+        and all(isinstance(d, str) and _SHA256.fullmatch(d) for d in digests)
+    ):
+        return
+    request = masked_attempt.get("request")
+    masked_metadata = request.get("metadata") if isinstance(request, dict) else None
+    if isinstance(masked_metadata, dict):
+        masked_metadata["media_sha256"] = list(digests)
 
 
 def mask_findings(findings: list[Finding], redactor: Redactor) -> list[Finding]:
@@ -111,7 +199,7 @@ def mask_findings(findings: list[Finding], redactor: Redactor) -> list[Finding]:
     return [
         Finding.model_validate(
             _restore_tool_fields(
-                redactor.redact(finding.model_dump(mode="json")), finding, redactor
+                _masked_finding(finding.model_dump(mode="json"), redactor), finding, redactor
             )
         )
         for finding in findings

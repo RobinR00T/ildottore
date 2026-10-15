@@ -50,6 +50,910 @@ neighbouring entries can interleave (an older branch merged later sits above a n
   coverage, a figure no entry recorded. Lines over 100 columns are rewrapped in the last commit,
   alone, so it can be redone after a rebase.
 
+## State, 2026-10-14 (evening): merged with `fix/no-secret-in-fragments` (`33782ad3`), which main now holds
+
+- `33782ad3` (#115, with #114 `7cdd91a2` and main `030b79e0`) merged in as `007e3c41`, a real
+  merge, as `scratch/fixcli3/MERGE-PLAN.md` decided; #114 and #115 have since landed, and main
+  `d526747e` has the tree of `33782ad3`. One root class, `_MaskedGroup(OperationalErrorGroup)`,
+  with Typer's public names only (`_click_classes` is gone); A-80's exit codes (`run_masked`: any
+  other click error and an abort exit 3); one missing-spec-path mechanism, A-80's wording when no
+  spec path was given (run, fleet --run, registry ls, describe, coverage; test added at
+  `d3e748e4`, 3 of 3 failing on both parents); strict `lint`; `allow_inf_nan=False` kept.
+- Found by the merge and resolved: A-80's `LoadResult.files` (a list) beside this branch's count,
+  now `spec_files_read`; A-78's UUID pattern left out of `credential_patterns()` and `key_shape`
+  reading the late key formats through `without_entropy()`, so a tenant UUID in a fleet endpoint
+  is kept; an Anthropic key is now "a credential format"; a credential variable that is not set or
+  holds only blanks is named by A-82's check rather than refused as shorter than 8 characters;
+  A-78's stdio test reads A-82's transport refusal. Each listed in u12 A-82's merge paragraph.
+- `make gates` green on the merged tree (`007e3c41`): 6,984 tests (6,983 passed, 1 skipped), 97.68% coverage,
+  75 specs lint OK, four contracts kept, self-scan, bandit and pip-audit clean; the same 6,984 with
+  `GITHUB_ACTIONS=true CI=true`, and the whole suite against Typer 0.27.3 (the extracted wheel
+  first on `PYTHONPATH`, nothing installed). The M7 fuzz (687 cases, `main()`, `app()` and the
+  click command), `m3probe.py` (32 of 32 legitimate endpoints kept, 35 of 35 hostile refused),
+  `m3c.py`, the family fuzz and the M4 live checks give the same results as before the merge; the
+  22 new CLI test files of both branches pass on Typer 0.27.3 (529, 1 skipped).
+
+## State, 2026-10-13 (night): the round-3 audit of `3321a786` (A-82), fixed; the merge prepared
+
+- `?<key>=1`, `#<key>=x` and `;<key>=x`, accepted again by the round-2 rework, are refused (a
+  parameter name shaped like a key); twenty more credential names; a masked usage error carries no
+  chained cause, so a group of the installed click prints no raw value. The residuals are stated as
+  their class (8 to 64 hex digits, optionally after a short prefix, and low-entropy values, under
+  names outside the list; `new-spec --family <hex>`), and embedding in a plain click group as
+  supported for usage errors only.
+- The merge with `fix/cli-store-budgets-paths` is decided and planned
+  (`_ildottore-tren/scratch/fixcli3/MERGE-PLAN.md`): one root class
+  `_MaskedGroup(OperationalErrorGroup)`; A-80's exit codes (`ClickException`, `FileError`, `Abort`
+  and a stray `SystemExit` exit 3); one missing-path mechanism with A-80's wording for the default
+  path; `allow_inf_nan=False` on `timeout_seconds`. Not merged yet.
+- `make gates` green on `68b7cc48`: 5793 tests (317 new, 245 of which fail on `de122e26`), 97.81%
+  coverage; the round-3 probe (`m3c.py`) and `m3probe.py` (32/32, 35/35) clean but for the
+  declared hex values under neutral names.
+
+## State, 2026-10-13 (evening): the round-2 audit of `e1824e99` (A-82, merge-ready), its LOWs fixed
+
+- LOW 1: the root command (`app._MaskedGroup`, Typer `cls=`) masks a usage error in place where
+  click raises it, so `typer.main.get_command(app)()`, a parent group and `python -m typer` print
+  it masked; `_MaskedTyper` is gone. LOWs 2 to 4: `cli.key_shape` (credential formats and entropy
+  outside hex ids and UUIDs, never PII; whole normalised credential names) for a fleet endpoint's
+  path, query and fragment and for `new-spec --family`. LOW 5: names printed as written, and a
+  long file name's wording for a write. LOW 6: `--spec-path` of a name no file system holds.
+- Reruns: the audit's fleet probe 32 of 32 legitimate endpoints accepted and 35 of 35 hostile ones
+  refused, nothing written or shown; its M7 fuzz through four entries (806 cases) leaks nothing but
+  `new-spec --family <32 hex>`, which is written as the family asked for (a hex id is no key, as in
+  a fleet endpoint); M4 live, query-key and family checks clean; `repro.sh` clean. `make gates`
+  green on `52fb9cce`: 5769 tests (293 new, 221 of which fail on `de122e26`), 97.82% coverage.
+- Merge plan (coordinator, 13-10): `fix/cli-store-budgets-paths` lands first; then `origin/main` is
+  merged here on the coordinator's word, keeping one missing-path mechanism
+  (`refuse_spec_paths_that_hold_nothing`, `PATH_NOT_FOUND`, exit 3, with fixcli1's wording for the
+  default fallback path), a strict `lint` with no path and no `specs/` (exit 3, no fallback to the
+  built-in battery), and `allow_inf_nan=False` on `timeout_seconds` in `shared/models.py`.
+
+## State, 2026-10-12 (late morning): the pre-merge audit of `f9dbed49` (A-82), fixed
+
+- Three MEDIUM and eight LOW, one commit each on `fix/cli-input-validation`. MEDIUM 1: the exported
+  `app` runs `main()` when called, so the console script an older install generated masks too
+  (the audit's fuzz: 60 leaking usage errors there, 0 now). MEDIUM 2: the CHANGELOG marks each
+  breaking change with its own `### Changed (breaking for ...)` heading. MEDIUM 3 (pre-existing):
+  a fleet endpoint whose query or fragment carries a credential, or that `urlsplit` reads with no
+  host, is refused before anything is written. LOWs: `lint`, `describe` and `schema export` mask
+  what they echo (a); the registry reads one file read twice as one declaration (b); docs/06's
+  provider sentence (c); the report schema and the manual say "since `f12ba833`" (d, a v0.1.0
+  report does not validate, as before); a name too long to open is described by its length,
+  `--scope` included (e); the version refusals reworded (f); the masking tests no longer depend on
+  the launcher's program name (g); `Sampling`'s exported description is as before (h). The
+  environment is read in the CLI wiring and passed to `unset_variable`.
+- The rerun of the audit's M7 fuzz found two more in `new-spec`, fixed: `--stdout` did not check
+  `--id`, and `--family <key>` printed the key into the scaffold.
+- Reruns: the audit's M7 fuzz (687 cases) 0 leaks through `main()` and `app()`, 63 on
+  `de122e26`; its M4 live checks send nothing on each refusal; its query-key check writes no key;
+  the original audit's `fuzz.py`, `fuzz2.py` and `fuzz3.py` flag only the run-store tracebacks
+  (fixcli1's H1); `scratch/fixcli3/repro.sh` exits 3 with the field named on every case. `make
+  gates` green on `ff6568ed` with `PYTHONPATH` set to the worktree's `src`: 5711 tests (5476 on
+  `main` at `de122e26`, 235 new, 182 of which fail there), 97.85% coverage, 75 specs lint OK, four
+  import contracts kept, self-scan, bandit and pip-audit clean. One gates run before that
+  (`253967d4`) failed `test_a_fifo_report_path_is_written_in_place` once, a timing test this
+  branch does not touch; it passed alone five times and in the next full run.
+
+## State, 2026-10-12 (morning): CLI input validation, from the full CLI audit of `de122e26` (u12 A-82)
+
+- On `fix/cli-input-validation` (worktree `wt/fixcli3`, from `main` at `de122e26`), one commit per
+  finding: the audit's M4 to M9, L2, L4, L5, L7, L8 and L10 (fixcli1 and fixcli2 hold the others).
+  Clause A-82 in u12, with halves in u01 (scope version, identity variable names), u02 (the path
+  codes, the loose-tree notes, collisions naming both files), u11 (the report schema) and u00
+  (finite `Sampling`, `shared.credential_refs`, `shared.error_text`); no new OD.
+- M7: the console scripts run `cli.main:main`, which prints a usage error through `_masked`
+  (exit 3); `--runs "$KEY"` printed the key. **An installed `dottore` keeps the old entry point
+  until it is reinstalled.** M4: a live run or `fingerprint` refuses an unset or blank credential
+  variable before any traffic, naming it; a dry run warns; `env://NONE` is never read. M8: an
+  `env://` name is `[A-Za-z_][A-Za-z0-9_]*` in target, scope and fleet files; a fleet endpoint with
+  user info is refused. M5: `provider` and `transport` take known values (A-53's open item). M6:
+  `Sampling` is finite. M9 and L7: `PATH_NOT_FOUND` and `NO_SPECS` (lint exit 3), `FILES_NOT_READ`,
+  and every spec-path consumer refuses a path that holds nothing; `registry ls --suite nope`;
+  scope and fleet `version`. L2: a collision refuses the run. L4 and L5: `diff` reads schema 1 and
+  knows a SARIF log; the report schema constrains run and findings, `schema export --name report`.
+  L8: separated figures, one unknown-suite wording, `--timeout` 1 to 86,400 with a timeout that
+  says so and no empty reason, `127.0.0.1` kept in a URL. L10: `new-spec --family`.
+- The self-review found one more: `--family yes` (or `null`, `123`) scaffolded a tag YAML reads as
+  a boolean, a null or a number; a plain word is now checked by reading it back.
+- Measured before and after with `scratch/fixcli3/repro.sh` (the audit's cases, on `de122e26`
+  through the old `app()` entry and on the branch through `main()`): every case the audit listed now
+  refuses with exit 3 and a line that names the field, or keeps its words; no key is printed.
+- Tests: 197 new in 8 files (`tests/cli/test_usage_errors_masked.py`,
+  `test_credential_variables.py`, `test_provider_transport_values.py`, `test_non_finite_values.py`,
+  `test_spec_paths_that_hold_nothing.py`, `test_spec_id_collisions.py`,
+  `test_report_and_file_versions.py`, `test_cli_messages_read_right.py`), 148 of which fail on
+  `de122e26` (three of the files need this branch's new modules to import there); two reports of
+  earlier builds kept as fixtures, and the audit's 89 reports validated through
+  `DOTTORE_REPORT_CORPUS`. `make gates` green on `669d9ec7` with `PYTHONPATH` set to the
+  worktree's `src` (only PROGRESS's figures and the clause's counts follow it): 5673 tests (5476 on
+  `main` at `de122e26`, 197 new), 97.85% coverage (`shared/credential_refs.py`,
+  `shared/error_text.py`, `cli/lint.py` and `cli/new_spec.py` 100%), 75 specs lint OK, four import
+  contracts kept, self-scan, bandit and pip-audit clean.
+- Expected conflicts with fixcli1 and fixcli2 in `cli/app.py`, `cli/run.py` and `cli/wiring.py`
+  (and with fixscore and fixstop in `core/runner.py`, one line here), and a doc conflict in the
+  MANUAL's troubleshooting table and the CHANGELOG head.
+
+## State, 2026-10-14 (afternoon): stacked on #114 (fix/cli-store-budgets-paths, `7cdd91a2`)
+
+- `git merge --no-ff 7cdd91a2` (`10d73aac`): #114 holds main `030b79e0` and lands first. The code
+  merged without a conflict (#114 touches cli/, store/ and the core's budgets: the attempt debit,
+  `debit_request(opens_attempt=True)`, in execute, conversation and reproduce, which the withheld
+  path does not read); docs keep both sides, this branch's on top, S6 with both sides' sentences.
+- The branch's code over #114 is its code over main: `git diff 7cdd91a2 10d73aac -- src tests` and
+  `git diff 030b79e0 c0ff4d36 -- src tests` change the same 20 files with the same added and
+  removed lines (3,485 and 83).
+- `make gates` green on `10d73aac` (`PYTHONPATH` set to the worktree's `src` and root, `TMPDIR` at
+  the system default): ruff and format clean (450 files), mypy strict (163), four import contracts
+  kept, 75 specs lint OK, 6664 tests (6547 on `7cdd91a2`), 97.70% coverage, self-scan 0 high or
+  critical, bandit and pip-audit clean; the coverage run once more with `GITHUB_ACTIONS=true` and
+  `CI=true`: 6664 passed, 97.70%. The withheld e2e test passes; `window_attacks.py` 36 of 36 clean.
+
+## State, 2026-10-14 (morning): merged with main `030b79e0` (#111, #112, #113)
+
+- `git merge --no-ff origin/main` (`f91bf617`), resolved as `scratch/fixfrag/MERGE-PLAN.md`
+  plans: the runner keeps main's `_failed_on_trace`, send numbers and "cite anew" with
+  `self._stored` (the withheld path) in place of `self._evidence.put`, `store_withholding` beside
+  them, this branch's `_one_line` and `_clipped`, and main's note on an identity left out of the
+  sweep wrapped in `_clipped` (a test in `tests/core/test_multi_identity.py` fails without it:
+  1,030 characters against 240); the adapters, the redactor and the report masking take both
+  sides' names; docs keep both, this branch's on top.
+- Checks on the merged tree: the withheld e2e test passes; `fuzz_rejoin.py` 3 x 1000 0 refusals
+  and 0 recoverable; `force_refusal.py` 3 x 1500 and `late_fuzz.py` 2 x 1500 stored every case;
+  `sse_variants.py` 2 / 1 rebuilt, `sse_min.py` 0 of 5; `window_attacks.py` 36 of 36 clean;
+  against main `030b79e0` `reach.py` 0 of 15 more (3 fewer), `kept_fields.py` 0 of 96,
+  `context_loss.py` 0 of 17 more (5 fewer). The fixkeys auditor's clean-grammar differential
+  fuzz with `030b79e0` as the baseline: 4 x 60,000 texts and 60,000 each without the entropy
+  rule, with registered credentials and through `redact_identity`, 0 regressions and 0 outputs
+  that differ. Cut into pieces of 1 to 4 characters, as logprob tokens and as WebSocket deltas
+  (120,000 texts), the joined pieces leave readable nothing `030b79e0` masks in the whole text:
+  188 flagged by the plain checker are cases where they show less (a literal between two merged
+  masks dropped, or a mask merged with its neighbour), and no masked token keeps its `bytes`.
+- Tests: 6514 on the merged tree, 6397 on `030b79e0` (117 new). `make gates` green on `f91bf617`
+  (`PYTHONPATH` set to the worktree's `src` and root, `TMPDIR` at the system default, nothing under
+  `/tmp`): ruff and format clean (441 files), mypy strict (163), four import contracts kept, 75
+  specs lint OK, 6514 tests, 97.92% coverage, self-scan 0 high or critical, bandit and pip-audit
+  clean.
+
+## State, 2026-10-13 (near midnight): the sixth pre-merge audit, of `31cf86bf` (A-77), fixed
+
+- `_main_reach` confirmed (`_quoted` AST-identical to `main`'s `reply_excerpt` tail; reach 0 of 15,
+  kept_fields 0 of 96, expand 12 of 12 equal). One narrow case against the parity bar: plain-text
+  data ending in a label (`password`, `password:`, `token=`), then the value on a line that is no
+  field of the format (a comment, after a blank line or not, a line starting with a space or
+  `=`): `main` masks it through the label, the cut excerpt emptied the label and showed it
+  (`r6/context_loss.py`, 5 of 17 forms).
+- Fixed (`ce8cd987`, the auditor's `patch-drop-nonfield-lines.diff`): a cut excerpt keeps only
+  blank lines, JSON lines and `data`, `event`, `id` and `retry` fields (`_a_field`). Now 0 of 17
+  forms show more than `main` (5 show less), reach 0 more of 15 (3 fewer), kept_fields 0 of 96,
+  window_attacks 36 of 36 clean, emptying check 0 mismatches, clean bodies that fit the window 0
+  of 1,498 differ, `cost3.py` 0.01 to 0.21 s.
+- The merge with main still waits for PR #113 (`scratch/fixfrag/MERGE-PLAN.md`).
+- Tests: 116 new against `main` (5476 there, 5592 here), 5 since `31cf86bf`. `make gates` green on
+  `ca458c4b` (`PYTHONPATH` set to the worktree's `src` and root, `TMPDIR` at the system default,
+  nothing under `/tmp`): ruff and format clean (423 files), mypy strict (161), four import
+  contracts kept, 75 specs lint OK, 5592 tests, 97.86% coverage, self-scan 0 high or critical,
+  bandit and pip-audit clean.
+
+## State, 2026-10-13 (late night): the fifth pre-merge audit, of `6d7d990e` (A-77), fixed
+
+- Merge-ready on `6d7d990e` but for the parity bar (window_attacks 36 of 36 clean, the long
+  password 0, unrecognised shapes as `main`, only the excerpt changes; trial merges with main
+  `0be0be71` 5,773 passed, with fixkeys 6,507). The finding: a cut excerpt reached further into
+  the body than `main`'s, since its emptied lines are short, and showed more of a secret placed
+  outside the streamed text (`r5/reach.py`: 11 of 11 pieces, `main` 8; `kept_fields.py` more in 3
+  of 96).
+- Fixed (`18ba093a`): only the lines `main`'s excerpt of the body shows whole are kept
+  (`_main_reach`, by redacting them as `main` does, with `_quoted`, `reply_excerpt`'s tail). The
+  auditor's fixed 4 KiB bound was not enough where `main`'s own masks lengthen its text (short
+  emails in every event: `main` none of 11 pieces, 4 KiB 8; `scratch/fixfrag/r8/expand.py`).
+  Now `reach.py` 0 of 15 and `kept_fields.py` 0 of 96 more than `main`, none fewer; `expand.py`
+  equal to `main` in 12 of 12; window_attacks 36 of 36 clean; `emptying_check.py` 0 mismatches;
+  clean bodies that fit the window 0 of 1,498 differ, past it 240 of 320 differ only by the
+  withheld text and the notice (20,308 checked); `cost3.py` 0.01 to 0.20 s.
+- Merge with main: planned in `scratch/fixfrag/MERGE-PLAN.md`, to run once PR #113 (fixkeys) has
+  landed (the coordinator says when), with the auditor's resolutions and the `_clipped` wrap of
+  main's new `filtered[...]` note.
+- Tests: 111 new against `main` (5476 there, 5587 here), 1 since `6d7d990e`. `make gates` green on
+  `bd699191` (`PYTHONPATH` set to the worktree's `src` and root, `TMPDIR` at the system default,
+  nothing under `/tmp`): ruff and format clean (423 files), mypy strict (161), four import
+  contracts kept, 75 specs lint OK, 5587 tests, 97.86% coverage, self-scan 0 high or critical,
+  bandit and pip-audit clean.
+
+## State, 2026-10-13 (night): a cut stream's excerpt fails closed (owner's decision)
+
+- The coordinator decided the case left open below, under the owner's delegation (best
+  practice): fail closed, an excerpt may show less than `main`, never more. A body streamed as
+  events or JSON lines in a known shape and longer than the window (36 KiB with no long
+  registered credential) keeps in its excerpt the lines before the window's midpoint, every
+  streamed text value emptied (content, text, `response`, tokens, alternatives, a `data:` line's
+  text; `bytes` and Ollama's `context` nulled), keys, structure, numbers, protocol fields, roles,
+  finish and stop reasons kept, under one notice (`adapters/base.py` `_withheld_units`,
+  `_without_text`, `_withheld_notice`). A body that fits the window is masked as before; other
+  shapes are quoted as before. `withhold_open_ends` and the open tail are gone, and so is the
+  test that pinned the tail's floor.
+- Figures (`scratch/fixfrag/r7`): `window_attacks.py` case A 0 of 36 rows, case B 0 of 36 (16 on
+  `5646b218`); the 600-character URL password of words 0 characters at all 8 starts (20 to 61);
+  long-span and glued probes 0 of 16; clean bodies that fit the window 0 of 1,498 differ from
+  `main`; clean bodies past it 240 of 320 differ (the six shapes that stream; JSON bodies with
+  logprobs and JSON Lines logs 0 of 80), and every event or line they show equals the body's with
+  its text emptied under an independent emptying (27,226 checked, 0 mismatches).
+  `clean_excerpts.py`: 0 of 217 clean texts per shape differ from `main`, but 60 OpenAI SSE bodies
+  longer than the window, now withheld. Unchanged against `5dd87b42`: `diff_main.py` 0 of 1,500
+  summaries differ (replay 1500/781), every earlier round's script but for the digests the salt
+  sets, `cost3.py` 0.01 to 0.20 s on 4 MiB (0.01 to 0.21 there). `e2e_bigsse.py`: inconclusive
+  `unreadable_reply`, bytes 376515, the notice first, no raw key or canary.
+- Tests: 110 new against `main` (5476 there, 5586 here): since `5646b218` two new and one removed
+  (the tail's floor). `make gates` green on `cad92051` (`PYTHONPATH` set to the worktree's `src` and
+  root, `TMPDIR` at the system default, nothing written under `/tmp`): ruff and format clean (423
+  files), mypy strict (161), four import contracts kept, 75 specs lint OK, 5586 tests, 97.85%
+  coverage, self-scan 0 high or critical, bandit and pip-audit clean.
+
+## State, 2026-10-13: the fourth pre-merge audit, of `5dd87b42` (A-77), fixed
+
+- Not merge-ready on `5dd87b42`: one MEDIUM, a regression against `main`. The work stopped twice
+  (a network error, then the org spend limit at about 05:50); the coordinator saved the first
+  stop's work as `e22a3cc2`, and new commits sit on top of it, no history rewritten.
+- MEDIUM: a cut stream's excerpt showed a secret's beginning. Masks shorten the window's text,
+  so its second half moved up into the 4 KiB the excerpt shows, and the open tail was a run of
+  key characters read after masking. `window_attacks.py` case A: 4 of 36 rows leaked on
+  `5dd87b42` (a URL password with symbols at 7 of 31 cuts in three shapes, a 300-character
+  registered credential at 70 of 111), now 0 of 36; case B (a pause past the window) 16 of 36 on
+  both, as on `main`, and in A-77's list. When the window cuts the body only the lines that
+  start in its first half are shown (the auditor's patch), and a body whose first half is as it
+  came is quoted as it came. The open tail is read on the raw stream: the run of characters other
+  than white space it ends with, 32 to 256 characters, or a registered credential's beginning.
+  Scratch probes `r6/longspan.py`, `r6/glued2.py`: 11 of 16 leaked on `5dd87b42`, 0 now. A last
+  256 characters rule, tried first (`453247f0`), emptied what the excerpt shows in heavy events
+  (3 of 6 clean streams with 5 or 20 alternatives quoted otherwise than by `main`), so the run
+  rule replaced it (`e7f1b5a3`).
+- Left open that afternoon, closed the same night (above): an unregistered secret no rule masks
+  in part, longer than 256 characters or holding white space and longer than 32, reaching from
+  the shown half past the cut (`r6/over256b.py`: a 600-character URL password of words showed 20
+  to 61 characters, 52 to 61 on `5dd87b42`, 0 to 3 on `main`).
+- Found while fixing, not by the audit: an event stream of OpenAI chunks with logprobs kept each
+  masked token's `bytes`, which spelled the key in the excerpt (`main` and `5dd87b42`), and joined
+  each rank of alternatives across the chunks (4 of 6 clean replies with alternatives quoted
+  otherwise than by `main`). A transcript's alternatives are no stream, and a transcript's token
+  in a logprob item masks its alternatives and drops its `bytes` (`df0cd422`): no rebuild, 0 of 6.
+- Unchanged: clean bodies past the window 0 of 320 differ from `main`, `clean_excerpts.py` 0 of
+  217 in every shape, `diff_main.py` 0 of 1,500 summaries differ from `5dd87b42` (replay 1500/781),
+  `cost3.py` 0.01 to 0.20 s on 4 MiB, every earlier round's script the same output as on
+  `5dd87b42` but for the digests, which follow the salt (with one salt, `fuzz_rejoin.py` seeds 1
+  to 3 give the same counts on both, 0 refusals), and `e2e_bigsse.py` inconclusive
+  `unreadable_reply`, bytes 376515, no raw key or canary, its excerpt 1,663 characters (4,092 on
+  `5dd87b42`: only the first half is shown).
+- Tests: 109 new against `main` (5476 there, 5585 here), 7 of them since `5dd87b42`. `make gates` green on `f435cdcc` (`PYTHONPATH` set to the worktree's `src` and root, `TMPDIR` at the system default, nothing written under `/tmp`): ruff and format clean (423 files), mypy strict (161), four import contracts kept, 75 specs lint OK, 5585 tests, 97.83% coverage, self-scan 0 high or critical, bandit and pip-audit clean.
+
+## State, 2026-10-12 (late morning): the third pre-merge audit, of `74ace451` (A-77), fixed
+
+- Merge-ready on `74ace451` (no HIGH or MEDIUM; reports 0 of 400 differ from `main`; a trial
+  merge with `fix/redactor-key-formats` passed 6,294 tests), with five LOWs, fixed as new commits.
+- LOW 1: the second audit's `sse_variants.py` figure is the key in 9 of 19 shapes and the
+  credential in 9 (the docs said 10), corrected from `scratch/fixfrag/r3-before/out.txt`.
+- LOW 2: only JSON lines in a shape known to stream (Ollama's, OpenAI's chunks) are a stream;
+  any other is records, as `main` quotes it: clean JSON Lines logs quoted otherwise than by `main`,
+  181 of 217 on `74ace451`, now 0 of 217 (`clean_excerpts.py`, 300 texts, every other shape 0
+  of 217 on both). A rewritten line keeps its compact form.
+- LOW 3: a block of `data:` lines with no blank line between them is read line by line in the
+  one reading (`reader_attacks.py` "masked event + a block": rebuilt, now masked), and a clean
+  stream is read once.
+- LOW 4: only four times the excerpt's read extent is read (36 KiB), and a stream reaching past
+  half of it has its open tail left out (`redactor.withhold_open_ends`). `cost3.py` on 4 MiB
+  bodies: 0.10 to 17.98 s on `74ace451` here, now 0.01 to 0.24 s; `scale3.py` flat (0.03 to
+  0.20 s from 0.5 to 4 MiB).
+- LOW 5: A-77's not-covered list names every excerpt shape the audit's `reader_attacks.py` still
+  rebuilds (10 of 26 on both trees; the set changed: the block case is masked now, and JSON lines
+  in another shape than Ollama's or OpenAI's chunks, the one with a raw U+2028, are records).
+- Tests: 102 new against `main` (5476 there, 5578 here), 4 of them since `74ace451`. `make gates` green on `06caf3c3` (`PYTHONPATH` set to the worktree's `src`, `TMPDIR` at the system default): ruff and format clean (423 files), mypy strict (161), four import contracts kept, 75 specs lint OK, 5578 tests, 97.81% coverage, self-scan 0 high or critical, bandit and pip-audit clean.
+
+## State, 2026-10-12 (morning): the second pre-merge audit, of `ea13562f` (A-77), fixed
+
+- Not merge-ready on `ea13562f`: two MEDIUMs (one a regression against `main`) and four LOWs;
+  every first-round figure re-ran as claimed. Fixed as new commits on
+  `fix/no-secret-in-fragments`, no history rewritten; the org spend limit stopped the work at
+  about 02:30 and it resumed at 09:23 on `c21879dd`.
+- MEDIUM 1 (regression): a rewritten excerpt went through `json.dumps` with ASCII escaping, so
+  text outside any stream reached the excerpt's redaction `\u00a0`-escaped and a phone or a card
+  grouped by U+00A0 or U+202F was shown where `main` masked it. Written with `ensure_ascii` off in
+  the JSON-body, event-stream and WebSocket paths (`reserialize_leak.py`: 3 of 3 visible in both
+  paths, now 0; `nbsp_realistic.py`: 3 of 3, now masked).
+- MEDIUM 2: an event stream is read as the format says (lines end at CRLF, LF or CR only, an
+  event's data lines join, data that is no object or array is text of one stream), a page of
+  `data:` lines is read line by line, and NDJSON is masked the same way (`sse_variants.py`: the key
+  rebuilt in 9 of 19 shapes and the credential in 9, now 2 and 1, both not events of the format;
+  `sse_min.py`: 4 of 5 rebuilt, now 0).
+- LOW 3: SARIF's result message and an `evidence_withheld` count, and an `Evidence withheld:`
+  terminal line (`e2e_withheld.py` forced: SARIF 0 mentions, now 2 results and a run count of 12;
+  terminal line now). LOW 4: recognition probes go through `store_withholding`. LOW 5 and LOW 6:
+  the join invariant stated as measured (never more than the redacted text, less in 8 of 1,500
+  realistic replies and 309 of 1,500 hostile ones), the rank figure as 6.9% of all the
+  alternatives of clean replies, the test counts, and the stale docstrings and docs.
+- Merge prep with `fix/redactor-key-formats`: the judge-note test's filler is ordinary words
+  (its 230 letters were a hex run to A-78).
+- Tests: 98 new against `main` (5476 there, 5574 here), 27 of them since `ea13562f`. `make gates` green on `3714473b` (with `PYTHONPATH` set to the worktree's `src` and `TMPDIR` at the system default): ruff and format clean (423 files), mypy strict (161), four import contracts kept, 75 specs lint OK, 5574 tests, 97.83% coverage, self-scan 0 high or critical, bandit and pip-audit clean.
+
+## State, 2026-10-12 (night, later): the pre-merge audit of `c4bd2012` (A-77), fixed
+
+- Not merge-ready on `c4bd2012`: one HIGH regression and two MEDIUMs, plus two LOWs; fixed as new
+  commits on `fix/no-secret-in-fragments` (no history rewritten).
+- HIGH: a mask shown in every piece it covered read, joined, as a run of masks behind `user:`,
+  which the URL rule masks again as one, so the store's guard refused a URL password the
+  redactor had masked and the run aborted (`aborted on RedactionLeakError`, exit 3; `main` exits
+  0). The first piece a mask covers now shows it and the others lose the text under it, so the
+  pieces joined show each mask once and never more than the redacted text. Measured: `url_tokens.py` 18 of 18 refused, now 18
+  stored; `ws_dsn.py` 2 of 2 refused, now stored; the auditor's DSN run exit 3, now 0;
+  `fuzz_rejoin.py` 110, 120 and 122 refusals per 1,000 cases (seeds 1 to 3), now 0. A refused
+  write no longer ends the campaign alone: the runner stores the attempt again with its
+  pieces withheld (`redactor.withhold_split`), `request.metadata.evidence_withheld` and the
+  finding's line saying so; a second refusal ends it as before. The A-77 property test now cuts
+  four URLs with a password too and checks every joined text is a fixed point (it fails on
+  `c4bd2012`).
+- MEDIUM 2: an item's alternatives are masked once its every edit is made (`clobber.py`: 10
+  characters of a labelled password in an alternative, now none). MEDIUM 3: a body streamed as
+  server-sent events is quoted with its events masked across the events (`sse_excerpt.py`: key
+  and credential rebuilt, now neither). LOW 4: the `bytes` of every masked token and alternative
+  are dropped. LOW 5: alternatives are no stream, neither a rank nor one token's; joining a rank
+  masked 6.9% of all the alternatives of clean replies (5,794 of 83,950 on the auditor's 898
+  clean replies), each beside a token that was kept, now none, and `fuzz_rejoin.py` rank leaks 19
+  to 25 per 1,000, now 0. Left, in A-77's
+  not-covered list: a secret the alternatives alone spell beside kept tokens (`excerpt_bytes.py`
+  case B), and evidence written before A-77 (a CHANGELOG line says so).
+- Tests: 71 new against `main` (5476 there, 5547 here), 31 of them since `c4bd2012`. `make gates` green on `78f94404` (with `PYTHONPATH` set to the worktree's `src`): ruff and format clean (422 files), mypy strict (160), four import contracts kept, 75 specs lint OK, 5547 tests, 97.81% coverage, self-scan 0 high or critical, bandit and pip-audit clean.
+
+## State, 2026-10-12 (night): a secret kept in pieces, the report's keys, judge notes (A-77)
+
+- On `fix/no-secret-in-fragments`, from `main` at `de122e26`: four findings of the security audit
+  of `de122e26` (HIGH 1, MEDIUM 2, LOW 5, LOW 7), one new clause, u01 A-77, with halves in u04,
+  u10 and u11 and u08 A-70's judge note amended; no new open decision.
+- HIGH 1: `response.text` was masked while the same text sat in 1 to 4 character pieces in
+  `response.logprobs[*].token`, each token's `top`, and a WebSocket transcript's deltas, and the
+  store's guard scanned one string at a time. A logprob list's tokens and each rank of their
+  alternatives, and a transcript's received content field by field, are now joined, redacted
+  once, and each piece a mask covers shows it (`redactor.redact_split`, the masks placed back on
+  the joined text by `_placed_masks`); a masked token's alternatives show its masks and its
+  OpenAI `bytes` are dropped; the guard redacts every joined text (`split_texts`). Kept, not
+  dropped: the alternatives, the figures' tokens and a transcript's other content are in no other
+  field. Joining every list was tried first and masked the type of every frame of every
+  transcript (`auth_oksessiondeltaping...` joined is one high-entropy token), so only streams are
+  joined, and the transcript names its protocol's fields (`raw_ids.websocket.protocol_paths`,
+  written by the adapter from the target file; one stored before them is read with `type`).
+  Auditor's reproductions: `e2e_logprobs.py` canary and key rebuilt from the tokens in 3 evidence
+  files and `r.json`, now in none; `ws_frames.py` 3 of 3 rebuilt, now 0; the excerpt of a turn
+  with its text off `text_path` 3 of 3, now 0; `fuzz_sinks.py` logprob and frame rebuilds, now
+  none.
+- MEDIUM 2: `r.json` wrote a tool call's argument names, `usage` and frame keys in clear. Each
+  attempt in a report is masked as the store masks it: the keys of its free-form fields through
+  `redactor.mask_keys` (moved from the store, numbering kept), its values through `redact_split`;
+  `keys_in_reports.py` json 3 of 3 leaked, now 0.
+- LOW 5: the judge's words are redacted, folded, redacted again and cut, never inside a mask or a
+  token; `judge_record.py` 61 of 305 placements leaked 6+ characters, now 0. LOW 7: `media_sha256`
+  is put back verbatim only as a list of SHA-256 hex digests.
+- Tests: 40 new (5476 on `main`, 5516 here), 33 failing on `de122e26` and 7 passing there (replay
+  and `logprob_membership` read the stored attempt alike, the shape, the model's keys, SARIF,
+  JUnit and HTML, a labelled secret across the judge cut). `make gates` green on `143c94ae` (with `PYTHONPATH` set to the worktree's `src`): ruff and format clean (421 files), mypy strict (160), four import contracts kept, 75 specs lint OK, 5516 tests, 97.84% coverage (`reporting/masking.py` 100%, `redactor.py` 98%), self-scan 0 high or critical, bandit and pip-audit clean.
+- Open: a secret a target splits over a list of its own JSON that is no stream, or encodes;
+  evidence written before this change keeps its pieces on disk.
+
+## State, 2026-10-14 (morning): CI of #114 on Typer 0.27.3, fixed
+
+- PR #114's CI (typer 0.27.3, click 8.5.0; this machine has typer 0.26.8) failed collecting
+  `tests/cli/test_guard_subclass.py`: `typer._click.exceptions` has no `Abort` in 0.27 (`Abort` and
+  `Exit` moved to `typer.exceptions`). Worse, the guard's lookup swallowed the `AttributeError`, so
+  on 0.27.3 `Aborted!` was quietly exit 1 again. Reproduced with the 0.27.3 wheel pip had already
+  cached on this machine, put first on `PYTHONPATH` (nothing downloaded or installed): 4 tests
+  failed on `ca2a0e41`.
+- The guard's classes come from Typer's public names now (`typer.Exit`, `typer.Abort`, the ancestry
+  of `typer.BadParameter`), a class that cannot be found fails the import, and no private module
+  of Typer is imported (`PacifyFlushWrapper` replaced by a small wrapper of its own, the counted
+  `-v` type read off a `TyperOption`). New tests raise through real Typer commands and assert the
+  class Typer raised is the one mapped. The whole suite passes on 0.26.8 and on 0.27.3.
+- Seen, not changed here: the dependencies are floors only (`typer>=0.12`), so CI resolves the
+  newest of each, and nothing tests the floors.
+
+## State, 2026-10-13 (night): the round-2 audit of `f51a7d07`, its four LOWs fixed
+
+- The round-2 audit found `f51a7d07` merge-ready (the merge reverts nothing, no send path escapes
+  the debit, the differentials against `0be0be71` show only the intended changes, Ctrl-C during a
+  migration leaves no half-built store) and four LOWs, fixed in new commits; `main` is not merged
+  again until #113 lands.
+- LOW 1: protecting every file under the spec path refused the rerun of `run --spec-path . -oJ
+  out.json`. The loader records the files it reads (`LoadResult.files`: pack.yaml, specs, suites,
+  media assets) and only those are protected, by device and inode; the MEDIUM 1 spelling, a hard
+  link and a media asset stay refused.
+- LOW 2: a separately installed click's `ClickException`, `Abort` or `Exit(1)` (a plugin's) exited
+  1 with a traceback. They are mapped to exit 3 where they arrive, read from `sys.modules`; the CLI
+  no longer imports that click itself.
+- LOW 3 and LOW 4: a lock that outlasts the wait names its store once, the note is said once per
+  run, and the store layer is silent by default: its caller passes a callback
+  (`connect(on_lock_wait=...)` or `lock_waits_reported(...)`), which `run`, `fleet --run` and
+  `replay` do.
+- The heads-up's subclass-friendly `OperationalErrorGroup`: no source change was needed;
+  `tests/cli/test_guard_subclass.py` pins the closure through a subclass.
+- 2026-10-14: `main` merged in again once #113 landed (`030b79e0`, merge `304d1dc3`), conflicts in
+  documentation only. Gates on that tree: green, 6,541 tests (6,397 on `030b79e0`, +144),
+  coverage 97.68 %, lint 0/0 over 75 specs, 14 suites, 1 pack, contracts 4 kept, self-scan 0
+  high/critical, bandit and pip-audit clean. Re-run there: 0 of 320 concurrent first opens failed
+  (8 x 10, 16 x 10), 0 of 30 concurrent CLI runs; `--budget-requests 100` 85 attempts for 100
+  requests and none more on a resume; `--runs 200` exit 2 with 20,600 attempts; 15 commands into
+  a closed reader, each exit 3. `git diff origin/main HEAD` holds this branch's changes only: no
+  line #111, #112 or #113 added is removed (the threat model's S6 row is #113's with this branch's
+  sentence added), and #113's `redactor.py`, `adapters/base.py` and `reporting/masking.py` are
+  main's byte for byte.
+
+## State, 2026-10-13 (evening): the pre-merge audit of `e6a1ab9b`, fixed, and `main` merged in
+
+- The pre-merge audit of `fix/cli-store-budgets-paths` at `e6a1ab9b` found three MEDIUMs and
+  eight LOWs; the core held (0 failures in 416 concurrent opens, the pre-send checks, the attempts
+  ceiling, the guard's masking). Fixed in new commits on the branch, then `main` (`0be0be71`, #111
+  and #112) merged in with a merge commit; the conflicts were documentation only.
+- MEDIUM 1: the spec-file protection compared resolved paths, which keep the case they are given,
+  so `-oJ SPECS/attacks/AC-BFLA-001.yaml` beside `--spec-path specs` overwrote the spec on the
+  macOS default volume (exit 2). Every file of the spec path is compared by device and inode now.
+- MEDIUM 2: a real broken pipe still exited 1: the close callback reconfigured stdout and flushed
+  into the closed pipe after the guard's exit 3, and rich answers a broken pipe with
+  `SystemExit(1)` (a live scan with findings piped into a closed reader sent 25 requests here, then
+  exited 1 with nothing said). The close callback, the guard and `OperationalErrorGroup.main` (help,
+  found re-running the audit's pipe checks) make it exit 3, and stdout is pointed at the null
+  device. Every command into a closed reader: exit 3 (`registry ls`, `lint`, `describe`,
+  `coverage`, `run --dry-run`, `run --estimate`, a mock run, a live run with findings, `schema
+  export`, `diff`, `calibrate`, `replay`, `fingerprint --offline`, `fleet`, `--help`).
+- MEDIUM 3: the default spec path made `lint` pass the built-in battery in a pack's own
+  repository ("lint OK ... across 75 spec(s)", exit 0). By the rule decided for this branch and
+  `fix/cli-input-validation`: `lint` with no path and no `specs/` is refused, exit 3, `spec path
+  not found: specs. Pass the spec path to lint ...`; the commands that fall back say on stderr which
+  tree they read.
+- LOWs: a lock wait is Python's loop over 0.1 s tries (Ctrl-C at 2 s during a held lock: exit 130
+  after 2.19 s, where it took about 32 s), said once on stderr, and named when it runs out (`the run
+  store at <path> stayed locked by another process for 30 s`); the store's siblings are taken beside
+  the file a symlinked `--run-db` names; a report inside a run directory of the evidence store is
+  refused; `ClickException`, `FileError`, `Abort` and a stray `SystemExit` of 1, 2 or a text are
+  exit 3; `replay --run-db <directory>` is refused; `migrate` no longer commits a caller's
+  transaction; `-v` reads as a flag in the help; the figures the audit found wrong are corrected
+  (the `--runs 200` command needs `--budget-tokens` and `--budget-wall` raised; the concurrency
+  figures are 5 of 6 in the first audit, 1 and 2 of 18 in two re-measurements; a wheel ships
+  neither the battery nor the schemas).
+- Gates on the merged tree (`PYTHONPATH=<wt>/src:<wt>`, TMPDIR at the system default), at
+  `c7be4ed8`: green, 5,775 tests (5,663 on `main` `0be0be71`, +112), coverage 97.63 %, `dottore
+  lint` 0/0 over 75 specs, 14 suites, 1 pack, import contracts 4 kept, self-scan 0 high/critical,
+  bandit and pip-audit clean.
+
+## State, 2026-10-12 (morning): the CLI audit of `de122e26`, fixed (u12 A-80)
+
+- Branch `fix/cli-store-budgets-paths` from `de122e26`, not pushed. Six findings of the full CLI
+  audit (H1, M2, M3, L1, L3, L9), each with tests that fail on `de122e26` (the new CLI tests run
+  against a `git archive` of it: 7 of 8 store-level tests, 24 of 29 CLI store and evidence tests,
+  11 of 14 attempts and `--estimate -q` tests, 17 of 18 report-path and fleet tests fail there;
+  the ones that pass there are guards (a good run still works, Ctrl-C still exits 130, the no-send
+  modes still create nothing, a second migration is a no-op) and the six-run CLI reproduction,
+  which raced clean on that attempt: the store-level test, with a start barrier, is the one that
+  fails reliably there). Clause A-80 in u12, with u10's and u08's halves; A-9 amended. No new
+  open decision.
+- H1: a run store that cannot be used exits 3 before any send (`cannot open the run store at
+  <path>: <reason>`), in every mode (read-only in the ones that send nothing); concurrent opens
+  wait 30 s and retry the WAL switch, and a migration runs under the write lock (18 of 80
+  concurrent first opens failed on `de122e26`, 0 of 160 here; through the CLI 1 of 18 runs died
+  there, 0 of 30 here; the original audit saw 5 of 6, the pre-merge audit 2 of 18). The root
+  command group maps any exception no
+  command handles to exit 3 with one masked line, the traceback under the new root `dottore -v`.
+  Against a loopback stub, `-sV --run-db <garbage>`: 18 requests then exit 1 before, 0 and exit 3
+  now.
+- M2: the attempts ceiling is the request ceiling, and an attempt counts with its first accepted
+  request. `--runs 200` over the battery (`--budget-requests 60000 --budget-tokens 30000000
+  --budget-wall 7200`): exit 3 at `max_attempts`
+  20,000 with 2 specs unfinished before, exit 2 with 20,600 attempts now. Under
+  `--budget-requests 100`: 128 attempts for 100 requests and +43 per resume before, 85 and +0 now.
+  `--estimate` prints the ceilings. M3: an `--evidence-root` that is a regular file is refused
+  before any send (5 requests then `NotADirectoryError` against the stub before, 0 now). L1:
+  `--estimate -q` prints one line. L3: a report path that is an input is refused (the auditor's
+  `-oJ scope.yaml -oH target.yaml` overwrote both, exit 2). L9: one default spec path for every
+  command (`specs/` here, else the battery beside the package), and `fleet` takes `--spec-path`,
+  `--evidence-root`, `--run-db` and `-o*`.
+- Gates (`PYTHONPATH=<wt>/src:<wt>`, TMPDIR at the system default): green, 5,547 tests (5,476 on
+  `de122e26`, +71), coverage 97.63 %, `dottore lint` 0/0 over 75 specs, 14 suites, 1 pack, import
+  contracts 4 kept, self-scan 0 high/critical, bandit and pip-audit clean.
+- Seen and left open: a wheel built from this repository ships neither `specs/` nor `schemas/`
+  (`registry/schema.py` finds `<repo>/schemas` from the source tree), so the CI example's
+  `pip install git+https://...` cannot load a spec outside a checkout (not measured here); a report
+  path inside the evidence root is not refused; `replay --run-db <directory>` warns and goes on
+  without the manifest check, as before.
+
+## State, 2026-10-13 (early morning): the second pre-merge audit of A-78 (`3a9a4dfa`), fixed
+
+- Round 2 found one HIGH and six LOW. R2-H1: the record of the A-78 masks the process had written
+  (two bounded generations) was overflowed by a campaign of 3.8 MiB replies; the first turn's
+  masks were forgotten, read as text when the evidence store checked the attempt again, changed,
+  and the write was refused (`RedactionLeakError`, exit 3, where main completes). Design chosen:
+  (c), a stateless rule. A mask of an A-78 type is kept as written, as the older types are; the
+  labelled rule alone reads one as text, as main did, so `password: «REDACTED:uuid»<secret>`
+  stays masked whole (L3 closed); the redactor writes none where that rule would take it (a
+  labelled value of 32 hex letters or more is masked as a labelled secret, `_plain_word`).
+  Chosen over (a) carrying the mask spans to the store and (b) a per-attempt record because only
+  a rule without state reads the same in a resume, a report or a replay in another process
+  (R2-L3), and it removes the forgeable record (R2-L1).
+- The auditor's 3.8 MiB scan (JB-CRESCENDO-001, loopback stub): exit 0 on the branch, on main and
+  on a trial merge with `fix/no-secret-in-fragments` at `06caf3c3`. Halt and resume in two
+  processes with the random salt: 0 broken masks in the resumed reports (8 of 20 before).
+- R2-L2: the Private Use Area block scan is one pass (all 137,468 characters: 0.025 s, was 2.2 s).
+  R2-L4: unreachable branches removed (a redactor without the entropy rule uses no stand-ins),
+  the guards tested. R2-L5: the public identity salt's linkability documented (MANUAL, S6, A-78).
+  R2-L6: the run row's `target_ids` use the identity mask; stale notes corrected.
+- The merge note in the entry below is stale: `fix/no-secret-in-fragments` changed its filler
+  itself (75ca00ac), and the trial merge passes without it.
+- `make gates` green on `1e9d8329` (`PYTHONPATH` at the worktree's `src`, `TMPDIR` the system's),
+  05:38 to 05:47 CEST: 6210 tests, 97.86% coverage (main 97.84%; `redactor.py` misses 4 statements,
+  as main does), mypy 160 files, 4 import contracts kept, 75 specs lint OK, self-scan, bandit and
+  pip-audit clean.
+- Round 3 (head `59349ba8`): merge-ready. The unused `SqliteRunStore._redact_json` removed
+  (`38aacbd5`); `origin/main` at `0be0be71` (#111, #112) merged in `0621f576`, conflicts in
+  CHANGELOG, PROGRESS, u04, u11 and `adapters/base.py` resolved keeping both sides. On the merged
+  tree: `make gates` green, 21:59 to 22:07 CEST, 6397 tests, 97.91% coverage, mypy 162 files; the
+  auditor's clean-grammar differential fuzz against `0be0be71`'s redactor, 8 x 60,000 texts, 0
+  regressions and no stand-in in any output; the 3.8 MiB flood scan exit 0, no token readable (148
+  on `0be0be71`, also exit 0).
+- CI of PR #113 (Gate 12, coverage on Python 3.11): a time-bound test of the evidence keys took
+  16.4 s against 15 s; a short text cost 1.7 times main's. A prefilter skips the late patterns and
+  the stand-ins where a text holds nothing they need (`d38580d2`, byte-identical output on 240,000
+  fuzz texts; 24,000 keys 0.74 s against main's 0.67 s, 1.12 s before), and that test and the
+  glued-UUID one assert the ratio of two sizes under 8 with a 120 s hang ceiling (`39fcf6f1`;
+  ratio 4.0 plain and under both of coverage's tracers, 2.5 s under the C tracer). Fuzz against
+  `de122e26`: clean 8 x 60,000 0, mixed 4 x 40,000 the same 52; against `0be0be71` clean 0.
+  `make gates` green on `5fb69556`, 23:09 to 23:16 CEST: 6397 tests, 97.91% coverage.
+
+## State, 2026-10-12 (morning): the pre-merge audit of A-78 (`0b4b1f14`), fixed
+
+- The audit found the branch NOT READY: H1, H2, M1, M2 and L1 to L5. Fixed on
+  `fix/redactor-key-formats`, one commit a finding, no amend; u01 A-78 revised in place, with its
+  halves in u04, u10, u11 and u12 and the index row; no new clause or OD.
+- H2, M1, L1: a number the card or phone rule reads inside a UUID is written in same-length
+  stand-ins from a free block of the Private Use Area (`redactor._Cuts`), which every later rule
+  reads as main's mask; the entropy rule judges main's pieces once each (`_cut_spans`), the late
+  patterns read the stand-ins back, and a stand-in no mask took becomes main's number mask. Glued
+  digit UUIDs: 160 KB 32.80 s on `0b4b1f14`, 0.11 s now (main 0.08 s); 4 MB 2.79 s (main 2.12 s).
+  A value glued between two cut UUIDs: 157 of 200,000 tokens readable on `0b4b1f14`, 0 now.
+- L2: the URL rule as written tells a URL its rule read with every mask one neutral character
+  (`_AsWritten.in_view`). L3: a mask of the nine A-78 types is kept only when this process wrote it
+  (`_LATE_MASK_TYPES`, `_EMITTED`). H1: reports name the target by the rules before A-78 with the
+  identity salt (`redactor.report_identity`); a baseline written by `de122e26` diffs against a run
+  of the branch (exit 0). L4: the pre-flight checks the sweep identities' credentials
+  (`check_identity_credentials`), and the stdio exemption needs `provider: mcp`. L5: the CLI runs the
+  late patterns only on what it does not keep, and the model-name twin drops the UUID pattern.
+- M2: the docs, the PR body and A-78 now say what the reruns show: no regression against main in
+  any text without U+0000 or U+0001 (the auditor's fuzzers and the author's, 1,100,000 and
+  1,500,000 texts), 19 in texts holding one (the `redact_text` retry, pre-existing); `diff --json`
+  does not exist; the two test files that stop at collection on `de122e26` are said to (the
+  adapter one: 19 of 39 fail with stand-ins for its two imports; the store one: 9 of 12 with the
+  compatibility code taken out, not 3).
+- Merge note for `fix/no-secret-in-fragments`: its
+  `tests/core/test_judge_note_redaction.py::test_a_cut_moves_before_a_token_rather_than_through_it`
+  needs `reasoning = "q" * (_JUDGE_NOTE_CHARS - 10) + " ZYNAP_CANARY_run-4c397602a2e0 end"`
+  (`"a"` is a hex digit, masked as `hex_token` here); checked on the auditor's union-merged tree.
+- Open, for the owner: the `redact_text` retry with U+0000/U+0001; a UUID in a CLI error that the
+  number rules read a number in is masked as before A-78; a mask of an A-78 type written by another
+  process is read as text (a URL user one gets a `url_password` mask on its tail in a later report).
+- Tests: 6196 (61 more than `0b4b1f14`); new files `test_redactor_number_cuts.py` (14),
+  `test_redactor_url_read_check.py` (4), `test_redactor_own_late_masks.py` (26),
+  `cli/test_report_target_id.py` (5), `cli/test_uuid_identifiers_readable.py` (4). `make gates`
+  green on `fe6b4672` (`PYTHONPATH` at the worktree's `src`, `TMPDIR` the system's): 6196 tests,
+  97.63% coverage, mypy 160 files, 4 import contracts kept, 75 specs lint OK, self-scan, bandit
+  and pip-audit clean.
+
+## State, 2026-10-12 (night): key formats, hex runs and UUIDs masked whatever their entropy; short credentials refused everywhere (u01 A-78)
+
+- Fixes MEDIUM 4 and LOW 6 of the pre-merge security audit of 2026-10-11, on
+  `fix/redactor-key-formats` from `de122e26`. New clause u01 A-78, with halves in u04, u10, u11
+  and u12 and the index row.
+- MEDIUM 4: the documented key formats of 11 providers (OpenAI, Anthropic, GitHub, GitLab, AWS,
+  Google, Hugging Face, Slack, Stripe, npm, PyPI), a JWT after `_` and the UUID shape are late
+  patterns (`redactor._late_patterns`, each sourced), started with `(?<![A-Za-z0-9])`, hashed,
+  run after the labelled rule, the entropy rule and the URL rule as written, so they only add
+  masks; a run of 32 hex digits or more is the entropy rule's (`hex_token`); a token masked whole
+  is typed by the format it holds; the number rules leave a UUID whole (`_number_mask`) and the
+  entropy rule masks with it the pieces it would have masked (`_uuid_spans`). A first version
+  ran them as ordinary patterns and the differential fuzz against main showed text main masks in
+  5,120 of 20,000 texts: it was redesigned before any review.
+- Figures, auditor's generators: 32-hex 74.7% to 0%, 40-hex 47.5% to 0%, 64-hex 5.5% to 0%, UUID
+  v4 46.8% to 0%; every prefix 0 of 200 after `_`, `=` and `-` padding. Differential fuzz, five
+  draws of 300,000 texts: 2 texts show 8 characters of a planted secret main hides and 24 a
+  stretch of glue, all holding U+0000 or U+0001 (the `redact_text` retry, pre-existing, flipped
+  more often); none without.
+- The tool's own values: the hex rule belongs to the entropy rule, so the CLI's carried digests,
+  evidence names, existing paths and model names keep out of it; the reports now restore
+  `media_sha256` (main masked 24 of 28) and each evidence reference's attempt id. A full offline
+  run of the battery with the salt and run id pinned writes every output byte for byte as main
+  but those 24 digests; no tool-own value masked anywhere.
+- A run halted before A-78 resumes against its own target (`redactor.identity_masks`), and the
+  store keeps one row a finding.
+- LOW 6: `refuse_short_credential` (`CredentialTooShort`, the WebSocket adapter's message) in
+  every adapter, `build_real_adapter`, the identity sweep and the pre-flight (`--dry-run`, `-sn`,
+  `--estimate` exit 3); the judge raises it; an offline mock and a stdio MCP server are not
+  checked.
+- Open, for the owner: the `redact_text` retry with U+0000/U+0001 (masks depend on whether
+  anything else in the text is masked, on main too); a key glued to a letter or a digit stays the
+  entropy rule's; the `secret_shape` evaluator still detects only `sk-`, `gh*_`, `AKIA`, `xox`,
+  JWT and PEM; a credential written as an endpoint URL's user is not registered.
+- Tests: `tests/test_redactor_key_formats.py` (589, 415 fail on `de122e26`),
+  `tests/reporting/test_own_values_readable.py` (9, 2), `tests/store/test_identity_masks_before_a78.py`
+  (12, 3 without the compatibility code), `tests/adapters/test_short_credentials.py` (39, 19),
+  `tests/cli/test_short_credential_cli.py` (10, 7). `make gates` green on `09b1b0a2` (with `PYTHONPATH` set to the worktree's `src`): 6135 tests (5476 on `main` at `de122e26`, 659 new), 97.83% coverage (`redactor.py` 99%), 75 specs lint OK, four import contracts kept, self-scan, bandit and pip-audit clean.
+- Corrected by the pre-merge audit of `0b4b1f14` (the entry above): "they only add masks" and
+  "none without U+0000/U+0001" did not hold (a value between two cut UUIDs, a line joined by a
+  phone mask, a URL password behind a mask's `:`, a target-written mask of a new type), the
+  identity masks file fails 9 of 12 without the compatibility code, not 3, and it and the adapter
+  file stop at collection on `de122e26`; `diff --json` is no option.
+
+## State, 2026-10-12 (morning): the pre-merge audit of `d07a1088`, fixed
+
+- On `fix/scoring-audit-2026-10-11`: the independent pre-merge audit of `d07a1088` closed the
+  eight original findings, gates green there (5,520 tests, 97.85%), and found two MEDIUM and three
+  LOW, fixed one commit each, every reproduction script of the auditor
+  (`_ildottore-tren/scratch/fixscore-audit/`) rerun before and after.
+- MEDIUM 1 (a regression of LOW 5): a guardrail reply with text was read on its trace only, and
+  `adapters.rest` files a masked reply (`ANONYMIZED`) under the output side with a blocked one,
+  so a planted canary beside a masked name went from a confirmed fail (`de122e26`) to a cut
+  needing review (`repro_masked.py`). Now `REPLACED_TEXT_EVALUATORS` (the trace evaluators plus
+  `secret_leakage`, `secret_shape`, `authz_leak`) through `_evaluators_for_filtered_reply`, the
+  name, set and helper of `fix/filter-stop-provenance` (A-79), which lands next: one rule at the
+  merge. After: fail confirmed.
+- MEDIUM 2: the sweep mapped an owner's canary only once its reply was read, so with the owner
+  not heard from tenant A's reply showing its canary was no crossing (`repro_sweep_owner_down.py`:
+  PASS on `de122e26`, inconclusive on `d07a1088`). Mapped before the send now, and `authz_leak`
+  reads the owner map on fewer than two replies too (u06's half of A-74), so the two-identity case
+  fails as well. After: fail confirmed.
+- LOW 1: what a resume keeps (`_completed_attempt_ids`) is read from each id's attempt
+  (`one_per_attempt_id`), not from any copy: an unreadable reply whose re-send was blocked was
+  kept for good (`repro_unread_then_block.py`: the third run kept 5, sent 0, inconclusive); now
+  it keeps 4, sends 1 and passes, and the summary's "a resume sends them again" holds.
+- LOW 2: `_combine_verdicts` takes the identities the sweep heard from (`swept`, a mapping, was a
+  bool; `fix/filter-stop-provenance`'s new `swept=identities is not None` calls fail mypy at the
+  merge, loudly), so with two or more answers beside one left out the note reads `authz_leak
+  kept: 2 identities answered the identity sweep, and it did not hear from every identity`
+  (`repro_corroborate_note.py`, `EMB-XTENANT-RETRIEVAL-001`, said "fewer than two").
+- LOW 3: the run's `--include-needs-review` reaches the reporters (`include_needs_review` on
+  `BaseReporter`, `get_reporter`, `wiring.build_reporter`); with it a SARIF fail that needs review
+  keeps its band's level (it exits 2), and the run's `properties` say so.
+- Wording: the resend tie-break never puts a cut reply over an environment error (a cut reply is
+  answered and judged, so it ranks first already); the docs now say an unreadable reply.
+- Nothing else moved: `rank_pairs.py` prints the same 28 pairs as on `d07a1088`, the
+  cross-version `cli_cross_version.py` matrix (phase 1 on `de122e26`, the resume here; env0 then
+  html, unread0 then env0, unread0 then ok, env0 then ok) the same lines with run ids masked, and
+  the auditor's four earlier scripts the same results.
+- Tests: 18 new, 15 failing on `d07a1088` (the 3 others are controls), 1 changed expectation (the
+  short-sweep test). Branch total against `main`: 62 new (44 failing on `de122e26`), 4 changed.
+  `make gates` green on `dd4f8648` (12/10/2026 10:12 to 10:20 CEST, `PYTHONPATH` set to the
+  worktree's `src`, `TMPDIR` the system default): 5538 tests (5520 on `d07a1088`), 97.86%
+  coverage (`evaluators/authz_leak.py`, `shared/provider_filter.py`, `shared/resend.py`,
+  `store/replay.py`, `reporting/base.py` and `reporting/sarif_reporter.py` 100%,
+  `core/runner.py` 97%), ruff, format, mypy strict on 161 files, four import contracts kept, 75
+  specs lint OK, self-scan 0 high/critical, bandit and pip-audit clean.
+- Merged with `fix/filter-stop-provenance` (PR #111, `ffec14ec`, which lands first), a real merge,
+  no history rewritten: both branches' `REPLACED_TEXT_EVALUATORS` and
+  `_evaluators_for_filtered_reply` are one rule; fixstop's `partial_reply`, `replaced_reply`
+  (`blank_text`) and A-79 judge rule (`weighed`) kept; its two new `_combine_verdicts` calls pass
+  `swept=identities`; `_trace_before_block`'s local reply renamed `reply` (it shadowed the
+  `stopped` parameter). `make gates` green on the merge, `c5460345` (12/10/2026 11:19 to
+  11:26 CEST): 5663 tests (5538 here, the rest fixstop's), 97.87% coverage (`core/runner.py`
+  98%), ruff, format, mypy strict on 162 files, four import contracts kept, 75 specs lint OK,
+  self-scan 0 high/critical, bandit and pip-audit clean. On the merged tree the auditor's four
+  repros print what they did on `38bc67b2`, and fixstop's `repro_declared.py` and `compat.py`
+  what they print on `ffec14ec`.
+
+## State, 2026-10-11 (night): the audit of the scoring, fixed
+
+- On `fix/scoring-audit-2026-10-11`, from `main` at `de122e26` (#110): every finding of the
+  correctness audit of the scoring, two HIGH, one MEDIUM and five LOW, fixed by best practice
+  under the owner's delegation, each reproduction script of the auditor
+  (`_ildottore-tren/scratch/audit-score/`) turned into a test. No OD opened; the clauses amended
+  are u08 A-69, A-70, A-73's half and A-74, their u10, u11 and u12 halves, and u06 A-73 (A-75 and
+  A-76 stay free).
+- HIGH 1: which artifact of a re-sent attempt id is the attempt is one rule in `shared.resend`,
+  read by the runner and the replay (each had a copy that kept the first artifact at a tie, the
+  runner's prior ones in content-hash order). Rank, then an unreadable reply over an environment
+  error or a block whichever came first (a cut reply is answered and judged, so it ranks first
+  already), then the later send by a
+  `send_number` stamped in `request.metadata` of every stored attempt, then the first. The fix the
+  audit proposed put the later send at the second step; the never-a-pass step comes first because
+  the later send alone turns an unreadable reply into a pass whenever the resume meets a network
+  failure (the same false pass, in the other order). Revisable: swap two fields of
+  `shared.resend._rank`. `cli_resume_unreadable.py`: PASS with 0 unreadable on `de122e26` (the
+  replay said 1), now `inconclusive` with 1 in the report and the replay; `repro_resume_reverse.py`:
+  replay 0 unreadable on `de122e26`, now 1, matching the report.
+- HIGH 2: a conversation (or an in-band scene's tool rounds) that a later send's environment error
+  or unreadable reply ended keeps the trace so far beside the attempt (`AttemptResult.trace_so_far`);
+  the trace evaluators read it first, a fail is stored as any fail with the error under
+  `request.metadata.conversation_error`, anything else as before. `repro_mt_env.py`: turn 2 env
+  PASS and unreadable inconclusive on `de122e26`, block fail; now all three fail, exit 2.
+- MEDIUM: the identity sweep names every identity it did not hear from (unreadable reply, failed
+  send, a prompt its filter refused), beside OD-42's filter stops, and `authz_leak` cannot pass
+  beside it. An environment error counts too (a gate fails closed); the cost, a transient failure
+  of one identity keeps the spec from passing, is in docs/12's F11 row. `repro_sweep_unreadable.py`:
+  pass on `de122e26`, now `inconclusive`, the identity named.
+- LOW 1 the resume note names each id once (was `-1 that ended in an environment error`); LOW 2
+  `setup_not_reached` is asked of a judge-only fail too; LOW 3 the `--include-needs-review` help;
+  LOW 4 a SARIF fail that needs review is at most `warning`; LOW 5 a Bedrock guardrail's
+  replacement is read by the trace evaluators plus `secret_leakage`, `secret_shape` and
+  `authz_leak` (the pre-merge audit's MEDIUM 1, in the entry above).
+- Tests: 44 new, 28 of them failing on `de122e26` (the tie test fails there in one of its two file
+  orders for each of its six cases), 3 changed expectations (two sweep verdicts that now name the
+  identity, one in-band metadata that now carries `send_number`).
+  `make gates` green on `b6fe3609` (with `PYTHONPATH` set to the worktree's `src`): 5520 tests
+  (5476 on `main` at `de122e26`, 44 new), 97.85% coverage (`shared/resend.py`, `store/replay.py`
+  and `reporting/sarif_reporter.py` 100%, `core/runner.py` 97%), ruff, format, mypy strict on 161
+  files, four import contracts kept, 75 specs lint OK, self-scan 0 high/critical, bandit and
+  pip-audit clean.
+
+## State, 2026-10-12 (late morning): the pre-merge audit of `3f7b1254` (A-79), fixed
+
+- Merge-ready per the audit, with one LOW fixed before it lands (new commits, no history
+  rewritten, under the owner's delegation, best practice, revisable). `blank_text` read every
+  format character as no text, the tag block too, so harmful text in tag characters (ASCII
+  smuggling) with `content_filter` was a cut with no text and the judge that says exploited was
+  never consulted: 0 judge requests, `filtered`, exit 3, where `e1a8aacf` and `main` read it (6).
+  Never a pass, but hidden text went unjudged. The 13 format signs a font draws (U+0600 to
+  U+0605, U+06DD, U+070F, U+0890, U+0891, U+08E2, U+110BD, U+110CD) were blank too.
+- One list: the redactor's pinned `_FORMAT_RANGES` (Unicode 16.0, the same 170 characters) is
+  now the union of `EMPTY_FORMAT_RANGES`, `FORMAT_SIGN_RANGES` and `TAG_RANGES`, and
+  `blank_text` reads whitespace and `EMPTY_FORMAT_RANGES` only (no longer `unicodedata`).
+  `shared.provider_filter` imports it from the redactor, a leaf of the shared band. After (my
+  `repro_tags.py`): tags undeclared and under `[]`, U+0600 under `[]` and U+06DD undeclared all
+  give 6 judge requests, a fail that needs review, exit 0, as on `e1a8aacf`; the zero-width
+  replies stay `filtered`, exit 3, and the WebSocket blank turns stay unreadable.
+- The nit: `fingerprint/layers/guardrail.py:185` keeps `.strip()`. Its `empty` is a probe reply
+  that says nothing to the guardrail profile, not the filter rule, and moving it would change
+  u09 outcomes (a zero-width probe reply from `unclear` or `answered` to `empty`) outside this
+  branch's rule; the claim "the one test of no text" is narrowed to the filter rule (here and in
+  `blank_text`'s docstring).
+- Tests, 13 new, all failing on `3f7b1254`: `tests/adapters/test_filter_stop_provenance.py`
+  now 54 (52 fail on `de122e26`, 25 on `10cb526b`, 19 on `e1a8aacf`, 11 on `3f7b1254`),
+  `tests/cli/test_filter_stop_provenance_campaign.py` now 44 (40, 15, 7 and 2).
+- Re-run: the auditor's `repro_declared.py` output is identical to round 3's, its `compat.py`
+  byte-identical to `main`. Gates on `d509befa` (`make gates`, worktree `src` first on
+  `PYTHONPATH`, `TMPDIR` at the system default, 10:24 to 10:33): all green, 5,601 tests passed
+  (5,588 on `3f7b1254`), coverage 97.86% (14,198 statements, 208 missed),
+  `shared/provider_filter.py` at 100%, `redactor.py` at 99%, lint OK across 75 specs, self-scan 0
+  high/critical, bandit and pip-audit clean.
+
+## State, 2026-10-12 (morning): the pre-merge audit of `e1a8aacf` (A-79), fixed
+
+- One MEDIUM and five LOWs, fixed as new commits on `fix/filter-stop-provenance` (no history
+  rewritten), under the owner's delegation (best practice, revisable). The auditor's raw outputs
+  are in `scratch/fixstop-audit3/`; the fix's notes and probe runs in `scratch/fixstop-fix2/`.
+- MEDIUM 1, on the one adapter the round-2 rule left out: a WebSocket file with no
+  `response.filter_stops` whose server sends a first delta of `""` (or `"  "`) and then
+  `finish_reason: content_filter`, what a relay of a streamed Azure reply looks like. The turn was
+  unreadable only with no text frame at all, so this one was the model's empty answer:
+  `PI-DIRECT-001` and `JB-ROLEPLAY-001` passed, exit 0 (a zero-width space: inconclusive, exit
+  0). Now a turn with no tool call whose joined text is blank and that ends on a documented
+  filter word the file does not declare is unreadable too, same advice: the auditor's
+  `ws_probe.py` gives exit 3, every attempt `unreadable_reply`, for `""`, `"  "` and U+200B; a
+  declared word stays the filter's cut, exit 3; text stays a fail, exit 2.
+- LOW 1: `str.strip` keeps format characters, so under `[]` an OpenAI reply of U+200B (or U+200D,
+  U+2060, U+FEFF) with `content_filter` passed, exit 0. `shared.provider_filter.blank_text`
+  (whitespace and Unicode Cf only) is now the filter rule's one test of "no text":
+  `stop_provenance`, `partial_reply`, `replaced_reply`, the runner's `_trace_before_block` and the
+  WebSocket turn.
+  `_refusal_side` keeps reading presence (any character is output, which decides Anthropic's side).
+  After: `filtered`, exit 3, as an empty reply.
+- LOW 2: the stale comment on `OpenAIAdapter.declared_filter_stops`. LOW 3: `Target(provider=5,
+  filter_stops=[...])` gave a second, misleading error; the check is left out when the provider
+  failed. LOW 4: "a reply with no text and no tool call" (and "with text or a tool call") in every
+  doc and in the plan line, and the plan line for an `anthropic` file no longer names an HTTP 400.
+  LOW 5: the round-2 report said 17 new tests failing on `10cb526b`; it was 17 new, 16 failing
+  there (6 adapter, 10 CLI, one of them the changed plan-line test), as the repo docs said.
+- Tests, 21 new: `tests/adapters/test_filter_stop_provenance.py` now 43 (41 fail on `de122e26`,
+  16 on `10cb526b`, 10 on `e1a8aacf`), `tests/cli/test_filter_stop_provenance_campaign.py` now 42
+  (38, 15 and 7: d1 with U+200B, the WebSocket turn through `execute_run` on 3 fragments, the
+  lone provider error, the Anthropic plan line, and the changed plan-line test), and
+  `tests/adapters/test_malformed_replies.py` now 42 (3 fail on `e1a8aacf`, and a control).
+- Re-run on the fix: the auditor's `repro_declared.py` gives d1 to d6 as in round 2 (d1 exit 3,
+  `filtered`), its `compat.py` is byte-identical to `main`. Gates on `2288de00` (`make gates`,
+  worktree `src` first on `PYTHONPATH`, `TMPDIR` at the system default, 09:36 to 09:45): all
+  green, 5,588 tests passed (5,567 on `e1a8aacf`), coverage 97.86% (14,194 statements, 208
+  missed), `shared/filter_stops.py`, `shared/provider_filter.py` and `shared/models.py` at 100%,
+  `adapters/websocket.py` at 99%, lint OK across 75 specs, self-scan 0 high/critical, bandit
+  and pip-audit clean.
+
+## State, 2026-10-12 (02:00): the pre-merge audit of `10cb526b` (A-79), fixed
+
+- One MEDIUM and one LOW, fixed as new commits on `fix/filter-stop-provenance` (no history
+  rewritten), under the owner's delegation (best practice, revisable). The auditor's probes are in
+  `scratch/fixstop-audit2/` (`repro_declared.py`); the fix's notes and repro runs in
+  `scratch/fixstop-fix2/`.
+- MEDIUM: `filter_stops: []` turned the filter's withheld reply into a pass. d1, `PI-DIRECT-001`
+  answered with `content_filter` and no text: with `[]` 3 passes, exit 0 (6 judge requests on
+  the empty replies); without it, cut, `filtered`, exit 3. The docs recommended `[]` for "a
+  gateway", and a gateway in front of Azure relays Azure's filter. Now each adapter says what its provider
+  documents whatever is declared (`own_filter_stops`: OpenAI `content_filter`, Anthropic
+  `refusal`, a REST template's `shape_filter_stops`), and `stop_provenance` never marks foreign a
+  reply with no text and no tool call that ends on one of them. It goes through the existing path
+  (`filter_side`, `_cut_verdict`, `_evaluators_for_filtered_reply`): no runner change. After: d1
+  exit 3, `filtered`, 3 cut, judge 0, as d1c; d2 (harmful text, `[]`) still a confirmed fail, exit
+  2; d3 (Azure's 400, `[]`) still an ordinary 4xx, exit 3. The `filters:` plan line for `[]` says
+  what still reads. The advice now limits `[]` to endpoints with no OpenAI, Azure or Anthropic
+  filter behind them and warns that a gateway in front of Azure relays Azure's filter (MANUAL
+  §4.2 and §9, FAQ, `examples/target.openai.yaml`, ADR-0011, CHANGELOG, USAGE, `dottore(1)`,
+  docs/05, docs/10, docs/12, the u00, u04, u08 and u12 contracts, the OD-42 row of 00-INDEX).
+- LOW: the Python API widened the list. `Target(provider="openai", filter_stops=["refusal",
+  "guardrail_intervened"])` built an `OpenAIAdapter` reading both. The rule moved to
+  `shared.filter_stops.target_filter_stops`, applied by a `Target` field validator on every path
+  and read first by the loader (same messages, which name the file); `Target` hides the input in
+  its errors, so no value is quoted; the OpenAI and Anthropic adapters intersect a declaration
+  with their own word (a `model_copy` or a hand-built adapter narrows, never widens).
+- Tests: `tests/adapters/test_filter_stop_provenance.py` now 33 (31 fail on `de122e26`, 6 on
+  `10cb526b`), `tests/cli/test_filter_stop_provenance_campaign.py` now 35 (31 fail on `de122e26`,
+  10 on `10cb526b`: d1 for `openai` and `anthropic` with the exit code, the plan line, the model's
+  6 refusals and its normalization). The auditor's `compat.py`: every example digests and dumps
+  as on `main`.
+- Gates on `572094b9` (`make gates`, worktree `src` first on `PYTHONPATH`, 02:01 to 02:08): all
+  green, 5,567 tests passed (5,550 on `10cb526b`), coverage 97.86% (14,188 statements, 208
+  missed), `shared/filter_stops.py` and `shared/provider_filter.py` at 100%, lint OK across 75
+  specs, self-scan 0 high/critical, bandit and pip-audit clean.
+
+## State, 2026-10-12 (night): the pre-merge audit of `a55710e9` (A-79), fixed
+
+- One MEDIUM, six LOWs and a nit, fixed as new commits on `fix/filter-stop-provenance` (no history
+  rewritten), under the owner's delegation (best practice, revisable). The auditor's probes are in
+  `scratch/fixstop-audit/`.
+- MEDIUM 1: the input-side reading ran every evaluator whose fail rests on something present on a
+  Bedrock guardrail's configured message, so `regex_absence` "never disclose" beside `refusal` was
+  a confirmed fail (`de122e26`: blocked; the output side had the same fail on `de122e26`, the
+  scoring audit's LOW 5). One helper, `_evaluators_for_filtered_reply`, now serves `_cut_verdict`
+  and `_trace_before_block`: replaced text (`replaced_reply`) is read only by
+  `REPLACED_TEXT_EVALUATORS` (`secret_leakage`, `secret_shape`, `authz_leak`, the trace). The
+  repro: input and output both inconclusive (blocked, cut); a canary in the message still fails.
+  When `fix/scoring-audit-2026-10-11` merges, its `replaced` line in `_cut_verdict` gives way to
+  the helper (one rule, a superset of its trace-only reading).
+- LOW 1: a filtered run's line adds the unreachable advice for the attempts that got no reply.
+  LOW 2: the WebSocket advice names `response.filter_stops`, and the CHANGELOG says a withheld
+  turn is unreadable until declared. LOW 3: the FAQ answer says "not with text that came back" and
+  what stays open (chosen attacks withheld with the provider's own word keep CI green; read
+  the summary keys), the MANUAL row fixed, and an `openai` or `anthropic` file may declare
+  `filter_stops: []` (validated, shown by `--dry-run`, `-v` and `-sn` as `filters:`; the example
+  `target.openai.yaml` carries it commented out; every example digests and dumps as on `main`, by
+  the auditor's `compat.py`). LOW 4: the stale runner comments. LOW 5: `dottore replay` prints
+  `run: filtered: ...`, by `shared.provider_filter.filtered_run`, the rule `run` uses. LOW 6: the
+  resume across the upgrade is stated in u10 and the CHANGELOG for `fix/resume-judging-rules`.
+- Tests added: 7 in `tests/core/test_filter_stop_scoring.py` (now 14, 6 fail on `de122e26`), 1 in
+  `tests/adapters/test_filter_stop_provenance.py` (now 25, 23 fail there), 13 in
+  `tests/cli/test_filter_stop_provenance_campaign.py` (now 26, 22 fail there).
+
+## State, 2026-10-12 (early hours): a forged filter stop, closed (A-79; security audit MEDIUM 3)
+
+- On `fix/filter-stop-provenance` from `de122e26`, under the owner's delegation of 2026-10-11
+  (best practice, revisable): the amendment to OD-41 and OD-42, clause u08 A-79 with its u00,
+  u04, u09, u10, u11 and u12 halves, ADR-0011's second amendment. Not pushed.
+- The finding, reproduced first with the auditor's stub (`scratch/audit-sec/e2e_logprobs.py`):
+  harmful text to `JB-ROLEPLAY-001` with `finish_reason: stop`, exit 2; with `content_filter`,
+  inconclusive 3/3, exit 0; Azure's 400 to every attack, 6 of 6 blocked, exit 0. On this branch:
+  2, 3 (all six cut, `filtered`) and 3 (`filtered`).
+- Rule 1, provenance: each adapter's `filter_stops` (OpenAI `content_filter`, Anthropic `refusal`,
+  a REST template's by shape or declaration, a WebSocket file's `response.filter_stops`, default
+  none) and `stop_provenance`, which marks any other filter word `ModelResponse.foreign_stop`;
+  Azure's 400 only from an adapter that reads `content_filter`. The vocabularies moved to
+  `shared.filter_stops`. No `core` reader changed: the provenance travels on the reply.
+- Rule 2, delivered text: the judge's fail on a partial reply joins `_combine_verdicts` in
+  `_cut_verdict` (a needs-review fail, OD-19), and `_trace_before_block` reads the text of an
+  input-side reply with `CUT_DECIDING_EVALUATORS`. Runner changes kept to those two methods and
+  one docstring, to ease the merge with `fix/scoring-audit-2026-10-11` (resume ranking, the
+  multi-turn trace on env errors, the identity sweep: none touched here).
+- Rule 3, every attempt filtered: `_filtered_reason` in `cli/run.py`, state `filtered`, exit 3.
+  Every attempt, not more than half: a share makes a filter that does its job a CI error and
+  still leaves a forger room under it.
+- Tests: 24 in `tests/adapters/test_filter_stop_provenance.py` (22 fail on `de122e26`), 7 in
+  `tests/core/test_filter_stop_scoring.py` (2), 13 in
+  `tests/cli/test_filter_stop_provenance_campaign.py` (9), the Azure 400 from `anthropic` and from
+  a plain REST template in `tests/adapters/test_provider_filter_block.py` (2; its `rest-azure`
+  cases fail there only because `RestTemplate` has no `filter_stops`) and the WebSocket cases in
+  `tests/adapters/test_malformed_replies.py` (2 fail there: the new one, and the one that now
+  declares its stop). The ones that pass on `de122e26` are the
+  controls: a genuine Azure 400 on some prompts, a genuine Anthropic refusal, the same text
+  without a filter word, and the WebSocket loader's refusal (`de122e26` refuses the key itself).
+  Four existing CLI tests whose every attempt was filtered now expect exit 3; one WebSocket test
+  and one REST trace test now declare their stop.
+- Open, said in the docs: a target that answers some attacks, not all, with its own provider's
+  filter word and no text hides those attempts (inconclusive, never a pass); a conversation cut
+  before its last turn is still read on its trace only.
+
 ## State, 2026-10-11 (evening): the pre-merge audit of `ed381359` (OD-43), fixed
 
 - No bypass found; one MEDIUM and seven LOWs, fixed one commit each on

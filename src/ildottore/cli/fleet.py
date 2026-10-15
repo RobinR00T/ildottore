@@ -45,22 +45,33 @@ Point the ``mcp`` suite at such a target for the metadata-poisoning checks.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Literal
-from urllib.parse import SplitResult, urlsplit
+from urllib.parse import SplitResult, unquote_plus, urlsplit
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
 from ildottore import safe_yaml
-from ildottore.cli.wiring import shown_auth_ref
+from ildottore.cli.key_shape import key_shape, names_a_credential
+from ildottore.cli.wiring import TARGET_PROVIDERS, shown_auth_ref
+from ildottore.policy.scope import SCOPE_VERSION
 from ildottore.shared.config_errors import (
     quoted,
     shown_endpoint,
     validation_problems,
     yaml_problem,
 )
+from ildottore.shared.credential_refs import ENV_NAME_RULE, is_env_name
 from ildottore.shared.files import MAX_FILE_BYTES, read_text_capped
 from ildottore.shared.models import Capabilities, Target
 
@@ -73,6 +84,132 @@ __all__ = [
     "load_fleet",
     "materialize_fleet",
 ]
+
+
+def _variable_name(value: str | None) -> str | None:
+    """``api_key_env`` names an environment variable, or the entry has none (u12 A-82, M8).
+
+    A key pasted there was written into the scope and the target file as ``env://<the key>``,
+    exit 0. Never quoted: pydantic's line carries this message and the field, not the input.
+    """
+
+    if value is not None and not is_env_name(value):
+        raise ValueError(
+            f"is not an environment variable's name ({ENV_NAME_RULE}; the value is not shown): "
+            "write the variable's name (api_key_env: OPENAI_API_KEY), never the key"
+        )
+    return value
+
+
+def _known_provider(value: str | None) -> str | None:
+    """``provider`` is one a target file may give, or left out to be inferred (u12 A-82, M5).
+
+    The target file ``fleet`` writes carries it as written, and ``run`` refuses an unknown one;
+    refused here, nothing is written. ``websocket`` passes, to the refusal of OD-37 that says why.
+    """
+
+    if value is not None and value.strip().lower() not in TARGET_PROVIDERS:
+        raise ValueError(
+            f"is not a provider this tool has; expected one of {', '.join(TARGET_PROVIDERS)}, or "
+            "leave it out to infer it from the endpoint"
+        )
+    return value
+
+
+#: Why a credential in the URL is refused, for every refusal below.
+_ON_DISK = (
+    "which fleet would copy into scope.yaml and the target file; drop it and name the "
+    "credential's environment variable with api_key_env"
+)
+
+
+def _parameter_credential(piece: str) -> str | None:
+    """What of one ``name=value`` parameter (or a bare component) carries a credential, or None.
+
+    A parameter name is not a secret and is printed as written (``'X-Amz-Credential'``,
+    ``'%2561pi_key'``); a value never is, and neither is a bare component, which is its own value.
+    """
+
+    name, has_value, value = piece.partition("=")
+    # A credential's name first: it is a word of the list, printed as written, and one of them
+    # (`X-Amz-Credential`) is high in entropy.
+    if has_value and names_a_credential(name):
+        return f"the parameter {quoted(name)}"
+    shape = key_shape(unquote_plus(name))
+    if shape is not None:
+        # A key put where a name belongs (`?<key>=1`, `#<key>=x`, `;<key>=x`) is a value, never
+        # quoted; the round-2 rework refused it only with no `=` (round-3 audit of A-82).
+        return f"a {'parameter name' if has_value else 'component'} shaped like a key ({shape})"
+    if not has_value:
+        return None
+    shape = key_shape(unquote_plus(value))
+    return f"the parameter {quoted(name)}, whose value is {shape}" if shape else None
+
+
+def _component_credential(component: str) -> str | None:
+    """What of a query string or a fragment carries a credential, said without its value."""
+
+    for piece in re.split(r"[&;]", component):
+        found = _parameter_credential(piece) if piece else None
+        if found is not None:
+            return found
+    return None
+
+
+def _path_credential(path: str) -> str | None:
+    """What of a URL's path carries a credential: a segment shaped like a key
+    (``/key/<key>/v1``) or a path parameter (``/v1;token=<key>``), never quoted."""
+
+    for segment in path.split("/"):
+        text, *parameters = segment.split(";")
+        shape = key_shape(unquote_plus(text)) if text else None
+        if shape is not None:
+            return f"a path segment shaped like a key ({shape})"
+        for parameter in parameters:
+            found = _parameter_credential(parameter) if parameter else None
+            if found is not None:
+                return f"a path parameter: {found}"
+    return None
+
+
+def _endpoint_holds_no_credential(value: str) -> str:
+    """An endpoint ``fleet`` can split, with no credential in it (u12 A-82, M8; pre-merge audits
+    of A-82, MEDIUM 3 and round-2 LOWs 2, 3 and 5).
+
+    Each of these was copied into ``base_url`` in ``scope.yaml`` and into the target file, a
+    credential on disk twice: ``https://user:<password>@host/...``; a path segment or a path
+    parameter shaped like a key, or a parameter named like a credential (``/key/<key>/v1``,
+    ``;token=<key>``); a query or fragment that carries one (``?api_key=<key>``,
+    ``?accessToken=...``, or a value shaped like a key); and a URL ``urlsplit`` reads with no
+    host, ``https:/ops:<key>@host/...`` or ``https:\\ops:<key>@...``, which the scope's host was
+    then built from. What a legitimate endpoint carries is kept: Azure OpenAI's
+    ``?api-version=2024-02-01``, a tenant's UUID, a trace or request id in hexadecimal, an email,
+    and names that only end like a credential's (``sort_key``, ``session``, ``max_token``). Nothing
+    of a value is printed (``cli.key_shape``).
+    """
+
+    try:
+        parts = urlsplit(value.strip())
+        host = parts.hostname
+    except ValueError as exc:
+        raise ValueError("is not a URL that can be read (its host)") from exc
+    if not parts.netloc or not host:
+        raise ValueError(
+            "has no host after its scheme (write scheme://host/path); a URL that cannot be split "
+            "into its host and path is refused rather than copied into scope.yaml"
+        )
+    if "@" in parts.netloc:
+        raise ValueError(
+            f"carries a user name or password before its host (user:password@host), {_ON_DISK}"
+        )
+    found = _path_credential(parts.path)
+    if found is not None:
+        raise ValueError(f"carries a credential in its path ({found}), {_ON_DISK}")
+    for where, component in (("query string", parts.query), ("fragment", parts.fragment)):
+        found = _component_credential(component)
+        if found is not None:
+            raise ValueError(f"carries a credential in its {where} ({found}), {_ON_DISK}")
+    return value
 
 
 class FleetTarget(BaseModel):
@@ -91,6 +228,10 @@ class FleetTarget(BaseModel):
     # The target file's own model, so a key it does not know is refused here, before anything is
     # written: as `dict[str, bool]` any text key was copied into the target file (A-50).
     capabilities: Capabilities = Field(default_factory=Capabilities)
+
+    _api_key_env_is_a_name = field_validator("api_key_env")(_variable_name)
+    _endpoint_holds_no_credential = field_validator("endpoint")(_endpoint_holds_no_credential)
+    _provider_is_known = field_validator("provider")(_known_provider)
 
     @model_validator(mode="after")
     def _mcp_is_the_kind(self) -> FleetTarget:
@@ -124,6 +265,10 @@ class FleetJudge(BaseModel):
     model: str | None = None
     api_key_env: str | None = None  # env var NAME (never the key value)
 
+    _api_key_env_is_a_name = field_validator("api_key_env")(_variable_name)
+    _endpoint_holds_no_credential = field_validator("endpoint")(_endpoint_holds_no_credential)
+    _provider_is_known = field_validator("provider")(_known_provider)
+
 
 class FleetConfig(BaseModel):
     """The whole fleet an operator wants to validate."""
@@ -133,6 +278,17 @@ class FleetConfig(BaseModel):
     version: str = "1"
     targets: list[FleetTarget] = Field(min_length=1)
     judge: FleetJudge | None = None
+
+    @field_validator("version")
+    @classmethod
+    def _version_is_one(cls, value: str) -> str:
+        """``1`` or ``1.<minor>``: any text was a version (u12 A-82, CLI audit L7)."""
+
+        if not SCOPE_VERSION.fullmatch(value):
+            raise ValueError(
+                'this build reads fleet version 1: write version: "1" ("1.<minor>" is read too)'
+            )
+        return value
 
 
 class MaterializedFleet(BaseModel):
@@ -198,9 +354,51 @@ def load_fleet(path: str | Path) -> FleetConfig:
     try:
         return FleetConfig.model_validate(raw)
     except ValidationError as exc:
-        raise ValueError(
-            f"fleet file {path} failed validation: {validation_problems(exc)}"
+        raise FleetFileError(
+            f"fleet file {path} failed validation: {validation_problems(exc)}",
+            kept_names=_credential_names(raw),
         ) from exc
+
+
+class FleetFileError(ValueError):
+    """A fleet file refused, with the parameter names its refusal may quote (u12 A-82).
+
+    A parameter name is not a secret, and the refusal names the one that carries a credential
+    (``'X-Amz-Credential'``), which the CLI's entropy rule masked: ``kept_names`` are the names
+    the CLI prints as written, as it prints a spec file's name (round-2 audit of A-82, LOW 5).
+    """
+
+    def __init__(self, message: str, *, kept_names: tuple[str, ...] = ()) -> None:
+        super().__init__(message)
+        self.kept_names = kept_names
+
+
+def _credential_names(raw: dict[object, object]) -> tuple[str, ...]:
+    """The parameter names in the fleet's endpoints that name a credential, as written."""
+
+    endpoints: list[object] = []
+    targets = raw.get("targets")
+    if isinstance(targets, list):
+        endpoints += [t.get("endpoint") for t in targets if isinstance(t, dict)]
+    judge = raw.get("judge")
+    if isinstance(judge, dict):
+        endpoints.append(judge.get("endpoint"))
+    names: set[str] = set()
+    for endpoint in endpoints:
+        if not isinstance(endpoint, str):
+            continue
+        try:
+            parts = urlsplit(endpoint.strip())
+        except ValueError:
+            continue
+        pieces = re.split(r"[&;]", parts.query) + re.split(r"[&;]", parts.fragment)
+        pieces += [p for segment in parts.path.split("/") for p in segment.split(";")[1:]]
+        names.update(
+            name
+            for name, has_value, _ in (piece.partition("=") for piece in pieces)
+            if has_value and names_a_credential(name)
+        )
+    return tuple(sorted(names))
 
 
 #: The allowlist's own defaults (``policy.allowlist``): ``wss`` as ``https`` and ``ws`` as

@@ -18,9 +18,11 @@ from ildottore.shared.provider_filter import (
     blocked_by_provider_filter,
     cut_by_output_filter,
     filter_side_unknown,
+    filtered_run,
 )
 from ildottore.shared.unreadable import unreadable_reply
 from ildottore.store import ReplayResult, SqliteRunStore, check_manifest, replay_run
+from ildottore.store.run_sqlite import check_store_path
 
 __all__ = ["render_replay", "replay", "replay_checked"]
 
@@ -46,6 +48,11 @@ def replay_checked(
     same tampered run exited 3 with its store and 0 without it (review of PR #32).
     """
 
+    if run_db is not None:
+        # A directory, a file that is not SQLite, or a path under a regular file, refused as
+        # `run` refuses it: a directory read as "no run store" and replayed without the
+        # manifest check (pre-merge audit of e6a1ab9b, LOW 7). A missing file is the warning.
+        check_store_path(run_db)
     result = replay_run(evidence_root, run_id)
     warning: str | None = None
     if run_db is None or not run_db.is_file():
@@ -149,6 +156,14 @@ def render_replay(result: ReplayResult) -> str:
             f"  {unsaid} of {result.n} attempt(s) the provider's filter stopped on a side it did "
             "not report (provider_filter_side_unknown): counted in N and never a success; "
             "review them"
+        )
+    # The run state is not stored, so the replay says it from the attempts, by the rule the CLI
+    # applies (u12 A-79; pre-merge audit of a55710e9, LOW 5).
+    if filtered_run(result.effective_attempts()):
+        lines.append(
+            "run: filtered: the provider's filter answered every attempt for the model (each "
+            "refused, cut or stopped by it, or with no reply that could be read, and none "
+            "exploited), so no reply the model wrote whole was evaluated; `dottore run` exited 3"
         )
     # The attempts whose stored verdict the operator's target file changed (OD-43, u06 A-72).
     declared = sum(1 for a in result.attempts if _declared(a))

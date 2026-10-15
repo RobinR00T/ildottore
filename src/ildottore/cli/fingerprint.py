@@ -76,6 +76,14 @@ def fingerprint_target(
     real_target = None if (offline or scenario is not None or loaded.uses_mock) else target
     if real_target is not None:
         wiring.check_target_credential(scope, real_target)
+        # The probes go out over the wire: a credential variable that is not set is refused
+        # first, naming it, as `run` refuses it (u12 A-82).
+        unset = wiring.unset_credentials(scope, [real_target])
+        if unset:
+            raise ValueError(
+                f"{'; '.join(unset)}, so every probe would go out without a credential; nothing "
+                f"was sent: {wiring.UNSET_CREDENTIAL_ADVICE}"
+            )
     # The target's own mock_scenario steers the offline mock, as it does under `run -sV`: the
     # comprehending scenario printed 0.0 for every carrier here because it was not passed on
     # (audit 2026-10-03, D-09).

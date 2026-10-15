@@ -6,7 +6,9 @@ spend across four independent axes (``docs/08 §1``, contract §4 KEEP):
 * **tokens** - provider token usage summed across attempts;
 * **requests** - number of ``TargetAdapter.send`` calls;
 * **wall-clock** - elapsed seconds since the ledger opened;
-* **attempts** - mutated-attack executions, incl. adaptive/escalation retries.
+* **attempts** - mutated-attack executions, incl. adaptive/escalation retries. An attempt is
+  counted with its first request, in the same atomic debit, so one the ledger refuses is not
+  counted, and attempts never exceed requests (u08 A-80).
 
 Every ceiling is a **hard cap**: a debit that would cross it is refused *before*
 the spend happens and the runner converts that refusal into a stop-&-escalate halt
@@ -244,12 +246,18 @@ class BudgetLedger:
 
     # --- discrete axes -------------------------------------------------------
 
-    def debit_request(self, tokens: int = 0) -> None:
+    def debit_request(self, tokens: int = 0, *, opens_attempt: bool = False) -> None:
         """Account one request (and optional tokens) atomically; refuse on breach.
 
         Checked-then-applied under the lock: if *either* the request axis or the
         token axis would breach, **nothing** is committed and the spend never
         happens (contract §2 - no masked partial mid-attempt).
+
+        ``opens_attempt`` marks the first send of an attack attempt: the attempt is counted in
+        the same debit, against the attempts axis too, and a refusal on any axis counts
+        neither. Counted before its request, an attempt refused at the request ceiling still
+        counted: 128 attempts for 100 requests, and every resume that met the ceiling added one
+        per spec it started (u08 A-80).
         """
 
         if tokens < 0:
@@ -258,15 +266,27 @@ class BudgetLedger:
             self._check_wall_locked()
             next_requests = self._requests + 1
             next_tokens = self._tokens + tokens
+            next_attempts = self._attempts + 1 if opens_attempt else self._attempts
             if self._max_requests is not None and next_requests > self._max_requests:
                 raise BudgetExhausted("max_requests", self._max_requests, next_requests)
             if self._max_tokens is not None and next_tokens > self._max_tokens:
                 raise BudgetExhausted("max_tokens", self._max_tokens, next_tokens)
+            if (
+                opens_attempt
+                and self._max_attempts is not None
+                and next_attempts > self._max_attempts
+            ):
+                raise BudgetExhausted("max_attempts", self._max_attempts, next_attempts)
             self._requests = next_requests
             self._tokens = next_tokens
+            self._attempts = next_attempts
 
     def debit_attempt(self) -> None:
-        """Account one mutated-attack attempt (adaptive retries count); refuse on breach."""
+        """Account one mutated-attack attempt on its own; refuse on breach.
+
+        The runner does not call this: it counts each attempt with its first request
+        (``debit_request(opens_attempt=True)``), so an attempt that sends nothing is not one.
+        """
 
         with self._lock:
             self._check_wall_locked()
