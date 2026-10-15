@@ -175,7 +175,9 @@ written and percent-decoded) is refused before anything is sent, with "<id>: the
 shorter than 8 characters, which the redactor cannot mask by value; nothing was sent" (exit 3),
 by every adapter and by --dry-run, -sn and --estimate too: the redactor masks a credential by its
 value only from 8 characters. A variable that is not set or holds only spaces is no credential,
-and is named as above rather than as a short one. A judge's key is named by the judge's id, a
+and is named as above rather than as a short one: under --dry-run, -sn and --estimate it is a
+warning and exit 0 (set but empty, it exited 3 as a credential shorter than 8 characters before
+A-82), and a live run refuses it. A judge's key is named by the judge's id, a
 scope identity's of the identity sweep by "<target id>, identity '<name>'". An empty password is
 no credential; an offline mock and a stdio MCP target (provider mcp, transport stdio), which are
 sent no key, are not checked.

@@ -95,7 +95,7 @@ the file, schema copy, build or pipeline it names.
   carries is kept (`?api-version=2024-02-01`, a tenant UUID, a hex trace or request id, an email,
   `?sort_key=`, `?session=`). A `provider` the tool does not have is refused too.
 
-### Changed (breaking for a live run with an unset credential variable: `run` and `fingerprint` refuse it, u12 A-82)
+### Changed (breaking for a live run with an unset credential variable, and for a pipeline that relied on that dry run failing: `run` and `fingerprint` refuse it, u12 A-82)
 
 - `auth_ref: env://TYPO` with `TYPO` unset (or set to spaces) sent every request without a
   credential and ended on a bare `non-retryable HTTP 401`; against a server that needs no key it ran.
@@ -103,6 +103,11 @@ the file, schema copy, build or pipeline it names.
   (the target's, the `--judge` model's, a swept identity's); `--dry-run`, `--estimate` and `-sn`
   warn and go on. `env://NONE` names no credential and is never read; a target that takes none
   leaves `auth_ref` out.
+- **Breaking for a pipeline that relied on that dry run failing** (added 2026-10-15, measured):
+  a credential variable that is set but empty, or holds only spaces, under `--dry-run`, `-sn` or
+  `--estimate` is that warning and exit 0, where #113 (`030b79e0`) exited 3 with `the credential
+  is shorter than 8 characters`. Nothing is sent either way, and a variable holding a short value
+  still exits 3.
 
 ### Changed (breaking for a run with `--timeout` under 1 second, u12 A-82)
 
