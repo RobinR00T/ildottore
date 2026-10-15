@@ -23,7 +23,8 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from ildottore import safe_yaml
 from ildottore.policy.errors import ScopeChecksumError, ScopeError
 from ildottore.shared.config_errors import quoted, validation_problems, yaml_problem
-from ildottore.shared.files import read_text_capped
+from ildottore.shared.credential_refs import ENV_NAME_RULE, env_name_of, is_env_name
+from ildottore.shared.files import read_failure, read_text_capped
 
 
 class Endpoint(BaseModel):
@@ -41,6 +42,9 @@ class Endpoint(BaseModel):
 #: fleet's ids are held to 64, as they name files; one written by hand gets twice that. The
 #: longest id in this repository's examples is 21 characters. Clause A-57.
 MAX_ID_CHARS: Final = 128
+
+#: The scope versions this build reads: ``1`` and ``1.<minor>`` (``"1.0"`` in every example).
+SCOPE_VERSION: Final = re.compile(r"1(?:\.[0-9]+)?")
 
 
 class Identity(BaseModel):
@@ -152,6 +156,26 @@ def _refuse_shared_identities(file_path: Path, entry: ScopeTarget) -> None:
             canaries.add(identity.canary)
 
 
+def _refuse_unnamed_variables(file_path: Path, entry: ScopeTarget) -> None:
+    """Refuse an identity whose ``env://`` reference names no environment variable (u12 A-82).
+
+    ``dottore fleet`` wrote ``auth_ref: env://<the key>`` for a key pasted as ``api_key_env``,
+    and this loader took it (CLI audit M8). Never quoted: what follows ``env://`` there is most
+    often the key. Another scheme (``vault://``) is a reference this loader keeps, refused
+    where it is read.
+    """
+
+    for identity in entry.identities:
+        name = env_name_of(identity.auth_ref)
+        if name is not None and not is_env_name(name):
+            raise ScopeError(
+                f"scope file {file_path} target {quoted(entry.id)} identity "
+                f"{quoted(identity.name)}: auth_ref names no environment variable after env:// "
+                f"(a name is {ENV_NAME_RULE}, not shown here); write env://NAME with the "
+                "variable's name, never the key"
+            )
+
+
 def _strip_checksum_line(raw_text: str) -> str:
     """Return the scope body with any top-level ``checksum:`` line removed.
 
@@ -207,7 +231,7 @@ def load_scope_with_digest(
     try:
         raw_text = read_text_capped(file_path)
     except OSError as exc:  # over the 1 MiB cap (A-43), or a filesystem error
-        raise ScopeError(f"cannot read scope file {file_path}: {exc}") from exc
+        raise ScopeError(read_failure("scope file", file_path, exc)) from exc
 
     try:
         data = safe_yaml.safe_load(raw_text)
@@ -228,6 +252,14 @@ def load_scope_with_digest(
     except Exception as exc:  # a validator that raised something pydantic did not wrap
         raise ScopeError(f"scope file {file_path} failed validation: {exc}") from exc
 
+    # Any text was a version, so a scope written for another major version of this format was
+    # read as this one (u12 A-82, CLI audit L7).
+    if not SCOPE_VERSION.fullmatch(scope.version):
+        raise ScopeError(
+            f"scope file {file_path} has version {quoted(scope.version)}; this build reads scope "
+            'version 1: write version: "1.0" ("1" and "1.<minor>" are read too)'
+        )
+
     # A duplicate id is refused, not resolved. ``Scope.target()`` returns the FIRST match,
     # so two entries for one id meant the first silently won: a permissive entry could
     # shadow a narrowing one (including its identity allowlist, so an ``auth_ref`` the second
@@ -243,6 +275,7 @@ def load_scope_with_digest(
             )
         seen.add(entry.id)
         _refuse_shared_identities(file_path, entry)
+        _refuse_unnamed_variables(file_path, entry)
 
     stripped = _strip_checksum_line(raw_text)
     if stripped != raw_text:

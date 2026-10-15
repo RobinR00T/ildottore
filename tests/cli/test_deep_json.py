@@ -133,7 +133,10 @@ def _halted_report(tmp_path: Path, status: str) -> Path:
     """A report whose run status says it did not complete, with ``status`` spliced in raw."""
 
     path = tmp_path / SHA_NAME
-    path.write_text('{"summary": {"status": ' + status + '}, "findings": []}', encoding="utf-8")
+    path.write_text(
+        '{"schema_version": "1.0", "summary": {"status": ' + status + '}, "findings": []}',
+        encoding="utf-8",
+    )
     return path
 
 

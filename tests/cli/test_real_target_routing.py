@@ -125,8 +125,10 @@ def test_build_real_adapter_routes_openai_anthropic_rest() -> None:
     anthropic_target = openai_target.model_copy(
         update={"provider": "anthropic", "endpoint": "https://api.anthropic.com/v1/messages"}
     )
+    # `rest` by name: an unknown provider (it was `acme-gateway` here) is refused since u12
+    # A-82 instead of falling back to REST (tests/cli/test_provider_transport_values.py).
     rest_target = openai_target.model_copy(
-        update={"provider": "acme-gateway", "endpoint": "https://llm.example.com/generate"}
+        update={"provider": "rest", "endpoint": "https://llm.example.com/generate"}
     )
 
     openai_adapter = wiring.build_real_adapter(openai_target, allowlist, api_key=None)

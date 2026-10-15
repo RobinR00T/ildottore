@@ -9,6 +9,7 @@ schema ``additionalProperties: false`` (contract §4 KEEP).
 
 from __future__ import annotations
 
+import math
 from typing import Annotated, Any, Literal
 
 from pydantic import (
@@ -204,6 +205,12 @@ MAX_SAMPLING_TOKENS = 200_000
 
 class Sampling(_SchemaMirror):
     """Pinned sampling params (``sampling``)."""
+
+    # The docstring is the exported schema's description, so the reason stays here: a value that
+    # is not finite is refused however the model is built (u12 A-82, CLI audit M6). A spec's
+    # schema check refused `.nan` and `.inf` first (A-54); a target file's `sampling_defaults`
+    # did not, and they reached the JSON report as bare `NaN` and `Infinity`, and the wire.
+    model_config = ConfigDict(allow_inf_nan=False)
 
     temperature: float | None = None
     top_p: float | None = None
@@ -424,13 +431,23 @@ class WebSocketResponse(_Frozen):
     usage_path: Annotated[str, Field(min_length=1)] | None = None
     model_path: Annotated[str, Field(min_length=1)] | None = None
     id_path: Annotated[str, Field(min_length=1)] | None = None
-    timeout_seconds: Annotated[float, Field(gt=0.0, le=600.0)] = 30.0
+    timeout_seconds: Annotated[float, Field(gt=0.0, le=600.0, allow_inf_nan=False)] = 30.0
     #: The stop reasons the endpoint writes at ``final_path`` when a provider's filter acted on
     #: the reply (u04 A-79, the amendment to OD-42): each one a provider documents for its own
     #: filter (``shared.filter_stops``), in the spelling the endpoint sends. None by default: a
     #: socket's final value is the operator's wire shape, and a filter word there is read as the
     #: filter's only when the file says the endpoint relays one.
     filter_stops: list[str] = Field(default_factory=list)
+
+    @field_validator("final_value", mode="before")
+    @classmethod
+    def _final_value_is_finite(cls, value: object) -> object:
+        """A NaN never equals a frame's value, so the turn would wait out its timeout; an
+        infinity is no JSON number a server writes (u12 A-82, CLI audit M6)."""
+
+        if isinstance(value, float) and not math.isfinite(value):
+            raise ValueError("final_value must be a finite number when it is a number")
+        return value
 
     @field_validator("filter_stops")
     @classmethod

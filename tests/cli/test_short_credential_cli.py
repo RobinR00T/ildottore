@@ -203,8 +203,10 @@ def test_only_an_mcp_target_is_launched_over_stdio(
     tmp_path: Path, stub: tuple[int, list[str]], monkeypatch: pytest.MonkeyPatch, extra: list[str]
 ) -> None:
     # `transport: stdio` routes only an MCP target to a local subprocess; an OpenAI target sends
-    # its key over the wire whatever the field says, so its length is checked, pre-flight too
-    # (pre-merge audit of A-78, L4: the pre-flight exempted it, and only the send refused).
+    # its key over the wire whatever the field says, so it was never exempt from the length
+    # check (pre-merge audit of A-78, L4: the pre-flight exempted it, and only the send refused).
+    # Since u12 A-82 the target file is refused first, in every mode: `transport: stdio` is for
+    # `provider: mcp` only (CLI audit M5), so nothing is sent and no key is read.
     port, seen = stub
     monkeypatch.setenv("SHORT", SHORT)
     args = _workspace(
@@ -214,7 +216,8 @@ def test_only_an_mcp_target_is_launched_over_stdio(
         app, ["run", *args, "--spec", "PI-DIRECT-001", "--runs", "1", *extra]
     )
     assert result.exit_code == 3, result.output
-    assert "live: " + MESSAGE in result.output, result.output
+    assert "transport stdio is for provider mcp" in result.output, result.output
+    assert MESSAGE not in result.output
     assert seen == []
 
 

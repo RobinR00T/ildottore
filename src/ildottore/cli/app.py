@@ -21,6 +21,7 @@ import re
 import sqlite3
 import sys
 import traceback
+from collections.abc import Callable, Sequence
 from functools import partial
 from itertools import chain
 from pathlib import Path
@@ -56,6 +57,7 @@ from ildottore.redactor import (
     log_safe_json,
     visible_controls,
 )
+from ildottore.reporting import report_schema
 from ildottore.shared.judging_rules import JUDGING_RULES_VERSION
 from ildottore.shared.schema_export import export_schemas
 from ildottore.store.replay import TamperError
@@ -284,12 +286,159 @@ def _counted() -> Any:
     return counted(min=0)
 
 
+def _message(exc: BaseException) -> str:
+    """A click exception's message, as click itself would print it."""
+
+    format_message = getattr(exc, "format_message", None)
+    return str(format_message()) if callable(format_message) else str(exc)
+
+
+def _mask_in_place(exc: BaseException) -> None:
+    """Make ``exc`` say its message through the CLI's mask, whoever prints it (u12 A-82).
+
+    A usage error quotes what the operator typed (a value, an option or a command name), and
+    click, Typer's standalone mode or a parent ``click.Group`` print it with
+    ``format_message()``. The masked text replaces that method and ``message`` on the instance,
+    so every printer shows it masked. A bare ``dottore``'s help (``NoArgsIsHelpError``) is left
+    as it is: it holds no value.
+    """
+
+    if type(exc).__name__ == "NoArgsIsHelpError" or getattr(exc, "_dottore_masked", False):
+        return
+    shown = _masked(ValueError(_message(exc)))
+    setattr(exc, "format_message", lambda: shown)  # noqa: B010 - an instance's method replaced
+    setattr(exc, "message", shown)  # noqa: B010
+    setattr(exc, "_dottore_masked", True)  # noqa: B010
+    # The conversion error click raised it from (`invalid literal for int(): '<key>'`) is chained
+    # to it: a group from the installed click does not catch Typer's copy's class and prints the
+    # traceback, chain included (round-3 audit of A-82). Neither the cause nor the context goes.
+    exc.__cause__ = None
+    exc.__suppress_context__ = True
+
+
+def _print_usage_error(exc: BaseException) -> None:
+    """Click's usage block for ``exc``, its message through the redactor (u12 A-82).
+
+    The usage line and the help hint are the command's own text; the message quotes what the
+    operator typed, so it goes through the mask, as every other ``error:`` line of this tool.
+    """
+
+    _mask_in_place(exc)
+    ctx = getattr(exc, "ctx", None)
+    if ctx is not None:
+        print(ctx.get_usage(), file=sys.stderr)
+        if ctx.command.get_help_option(ctx) is not None:
+            print(f"Try '{ctx.command_path} {ctx.help_option_names[0]}' for help.", file=sys.stderr)
+    print(f"error: {_message(exc)}", file=sys.stderr)
+
+
+#: A usage error: printed with the command's usage block, its message masked.
+_USAGE_ERRORS: tuple[type[BaseException], ...] = (_typer_error("UsageError"),)
+
+
+def run_masked(call: Callable[[], Any]) -> NoReturn:
+    """Run ``call`` (the command tree in click's non-standalone mode) and exit with its code.
+
+    A usage error (a bad value, an unknown option or command, an extra argument) is printed
+    masked and exits 3 (``ExitCode.ERROR``, A-9); a bare ``dottore``, which prints the help,
+    keeps its exit code. Any other error of the library (``FileError`` included) is printed
+    masked and exits 3, and an abort says ``error: aborted`` and exits 3, as the root group's
+    guard says one raised in a command (A-9's closure, u12 A-80). Ctrl-C keeps 130, which a
+    command returns as its code. The classes are Typer's public ones (``_typer_error``).
+    """
+
+    try:
+        code = call()
+    except _USAGE_ERRORS as exc:
+        # The help of a bare `dottore` (no_args_is_help) was printed when the error was built;
+        # Typer prints nothing more for it either.
+        if type(exc).__name__ != "NoArgsIsHelpError":
+            _print_usage_error(exc)
+        sys.exit(int(ExitCode.ERROR))
+    except _CLICK_ERRORS as exc:
+        _mask_in_place(exc)
+        _echo_err(f"error: {_message(exc)}")
+        sys.exit(int(ExitCode.ERROR))
+    except _ABORTS:
+        _echo_err("error: aborted")
+        sys.exit(int(ExitCode.ERROR))
+    # A command returns nothing or raises `typer.Exit(code)`, which non-standalone mode returns.
+    sys.exit(code if isinstance(code, int) and not isinstance(code, bool) else 0)
+
+
+class _MaskedGroup(OperationalErrorGroup):
+    """The root command, whose usage errors go through the CLI's mask on every path (u12 A-82).
+
+    Parsing the root's options (``make_context``) and resolving and parsing a sub-command
+    (``invoke``) is where click raises a usage error, so both mask it in place before it leaves:
+    a parent ``click.Group`` that holds this one, ``python -m typer``, and a caller that takes the
+    command (``typer.main.get_command(app)()``) print it masked. Run standalone (``main``), as the
+    console scripts, ``app()`` and a test runner do, it prints the plain usage block with an
+    ``error:`` line (:func:`run_masked`). The console script used to point at the Typer app, and
+    an install made then keeps calling it; with the masking only in ``cli.main.main``, three
+    paths printed the key (pre-merge audits of A-82, MEDIUM 1 and round 2, LOW 1).
+
+    It is the exit-code guard (:class:`OperationalErrorGroup`, u12 A-80) with the mask around it:
+    each override calls ``super()``, so an unexpected exception still exits 3 in one masked line,
+    and the library's own exits 1 around the root context (a broken pipe while printing help,
+    ``Aborted!``) are still made 3.
+    """
+
+    def make_context(
+        self,
+        info_name: str | None,
+        args: list[str],
+        parent: Any = None,
+        **extra: Any,
+    ) -> Any:
+        try:
+            return super().make_context(info_name, args, parent=parent, **extra)
+        except _CLICK_ERRORS as exc:
+            _mask_in_place(exc)
+            raise
+
+    def invoke(self, ctx: Any) -> Any:
+        try:
+            return super().invoke(ctx)  # the guard of OperationalErrorGroup runs inside
+        except _CLICK_ERRORS as exc:
+            _mask_in_place(exc)
+            raise
+
+    def main(
+        self,
+        args: Sequence[str] | None = None,
+        prog_name: str | None = None,
+        complete_var: str | None = None,
+        standalone_mode: bool = True,
+        windows_expand_args: bool = True,
+        **extra: Any,
+    ) -> Any:
+        parent_main = super().main
+
+        def call() -> Any:
+            return parent_main(
+                args,
+                prog_name,
+                complete_var,
+                standalone_mode=False,
+                windows_expand_args=windows_expand_args,
+                **extra,
+            )
+
+        if not standalone_mode:
+            return call()
+        run_masked(call)
+
+
 app = typer.Typer(
     name="dottore",
     help="Il Dottore, nmap-for-AI: a spec-driven security scanner for LLMs and AI apps.",
     no_args_is_help=True,
     add_completion=False,
-    cls=OperationalErrorGroup,
+    cls=_MaskedGroup,
+    # A traceback that reaches Typer's own hook (`app()` installs it) prints no locals: one of
+    # them can be a resolved credential.
+    pretty_exceptions_show_locals=False,
 )
 
 registry_app = typer.Typer(help="Inspect the attack-spec registry (read-only).")
@@ -416,13 +565,13 @@ _SHA256 = re.compile(r"[0-9a-f]{64}")
 # An absolute filesystem path in an error message (`/` not preceded by a word character, `:`,
 # `/`, `]`, `@` or the `»` that closes a mask, so a URL's path is not one, after an IPv6 host,
 # credentials or a masked host included).
-_ABS_PATH = re.compile(r"(?<![\w:/\]@»])/[^\s'\"()\[\],;]+")
+_ABS_PATH = re.compile(r"(?<![\w:/\]@»\ue000])/[^\s'\"()\[\],;]+")
 #: Longer tokens are not checked (PATH_MAX): each parent costs a filesystem lookup.
 _MAX_PATH_LEN = 4096
 # Where a WHOLE path can start (A-38): an absolute one as above, and not right after `+`, `=` or
 # `-`, which the entropy rule joins into a token, with a name after the `/`; a relative one as
 # a word, after a space, a quote, a bracket, a comma or a semicolon, not starting with `/` or `«`.
-_WHOLE_ABS_START = re.compile(r"(?<![\w:/\]@»+=-])/(?=[^\s'\"()\[\],;/])")
+_WHOLE_ABS_START = re.compile(r"(?<![\w:/\]@»+=\ue000-])/(?=[^\s'\"()\[\],;/])")
 _RELATIVE_WORD = re.compile(r"(?<![^\s'\"(\[,;`])[^\s'\"()\[\],;`/«][^\s'\"()\[\],;`]*")
 # What the entropy rule could mask: a word without such a run is not worth a lookup.
 _ENTROPY_RUN = re.compile(r"[A-Za-z0-9+/_=-]{16,}")
@@ -570,6 +719,31 @@ def _entropy_masked(entropy: Redactor, part: str) -> str:
     return "/" + shown if part.startswith("/") and not shown.startswith("/") else shown
 
 
+#: The allowlist's own loopback hosts (``policy.allowlist``: plain http goes to these only), in a
+#: URL's authority: kept readable, as they are no one's address (u12 A-82, CLI audit L8). The
+#: IPv4 rule masked ``http://127.0.0.1:9/...`` in every allowlist refusal.
+_LOOPBACK_IN_URL = re.compile(r"(?<=://)127\.0\.0\.1(?=[:/'\"\s)\]]|$)")
+#: Stands in for a kept loopback host while the rules run: no rule reads a private-use character,
+#: and the path rules above read a `/` after it as a URL's path, as after a mask's `»`.
+_LOOPBACK_MARK = "\ue000"
+
+
+def _os_error_text(exc: BaseException) -> str:
+    """``str(exc)``, a file name too long to open described by its length (u12 A-82).
+
+    ``[Errno 63] File name too long: '<5,000 digits>'`` printed the name, which the redactor
+    then masked as a phone number: the length is what the operator needs.
+    """
+
+    if isinstance(exc, OSError) and exc.errno == errno.ENAMETOOLONG and exc.filename:
+        # Neither "read" nor "write": the same error comes from `-t` and from `-oJ` (round-2
+        # audit of A-82, LOW 5).
+        return (
+            f"[Errno {exc.errno}] {exc.strerror}: a name of {len(str(exc.filename)):,} characters"
+        )
+    return str(exc)
+
+
 def _masked(exc: BaseException) -> str:
     """An error's text through the redactor before it reaches the terminal.
 
@@ -614,8 +788,11 @@ def _masked(exc: BaseException) -> str:
     # author), not a value of this run. It is kept only with no token character of the entropy
     # rule (`[\w+/=-]`) on either side: keeping the tail of a longer token would leave its head
     # on its own, short enough to pass the rule's length floor in clear.
+    # A fleet refusal's parameter names (`kept_names` on FleetFileError) are kept the same way:
+    # a name is not a secret, and `X-Amz-Credential` read as high entropy (u12 A-82).
+    readable = [*getattr(exc, "spec_files", ()), *getattr(exc, "kept_names", ())]
     names = sorted(
-        {re.escape(n) for n in getattr(exc, "spec_files", ()) if isinstance(n, str) and n},
+        {re.escape(n) for n in readable if isinstance(n, str) and n},
         key=len,
         reverse=True,
     )
@@ -625,7 +802,18 @@ def _masked(exc: BaseException) -> str:
     # it: `https://ops:P@ssw0rd!x@db.internal/v1` with `P@ssw0rd!x` registered printed
     # `ssw0rd!` (pre-merge audit of #96). The redactor's own URL rule runs after the registered
     # credentials are set aside.
-    text = plain.redact_text(str(exc))
+    raw = _os_error_text(exc)
+    parts = known_secret_parts()
+    # The loopback host stands aside while the rules run, unless a registered credential holds
+    # it (the rule below for a kept token), and comes back after the last of them.
+    loopback = (
+        "127.0.0.1"
+        if _LOOPBACK_MARK not in raw and not holds_known_secret_part("127.0.0.1", parts)
+        else None
+    )
+    if loopback is not None:
+        raw = _LOOPBACK_IN_URL.sub(_LOOPBACK_MARK, raw)
+    text = plain.redact_text(raw)
     paths = sorted({re.escape(p) for p in _existing_prefixes(text)}, key=len, reverse=True)
     keep = re.compile(
         r"(\b(?:"
@@ -645,7 +833,6 @@ def _masked(exc: BaseException) -> str:
     # kept is decided where the pattern matched, in context: re-matching each piece of a split
     # on its own let a piece equal to a name pass with the token it was glued to before it
     # (pre-commit audit of the spec file names).
-    parts = known_secret_parts()
     held: dict[str, bool] = {}
 
     def holds_secret(kept: str) -> bool:
@@ -672,7 +859,10 @@ def _masked(exc: BaseException) -> str:
         shown.append(CREDENTIAL_MASK if holds_secret(kept) else kept)
         done = end
     shown.append(late.redact_late(_entropy_masked(entropy, text[done:])))
-    return visible_controls("".join(shown))
+    joined = "".join(shown)
+    if loopback is not None:
+        joined = joined.replace(_LOOPBACK_MARK, loopback)
+    return visible_controls(joined)
 
 
 @app.command()
@@ -923,7 +1113,7 @@ def run(
         raise typer.Exit(ExitCode.ERROR)
 
     try:
-        outcome = run_mod.execute_run(opts, _spec_paths(spec_path))
+        outcome = run_mod.execute_run(opts, _spec_paths(spec_path), default_spec_path=not spec_path)
     except ScopeRequiredError as exc:
         typer.echo(f"error: {_masked(exc)}", err=True)
         raise typer.Exit(ExitCode.ERROR) from exc
@@ -1076,7 +1266,7 @@ def fleet(
         # The same default spec path as `run` (u12 A-80): it was `specs/` in the working
         # directory with no option to change it, so `fleet --run` worked from the repository
         # root only ("path not found: specs").
-        outcome = run_mod.execute_run(opts, _spec_paths(spec_path))
+        outcome = run_mod.execute_run(opts, _spec_paths(spec_path), default_spec_path=not spec_path)
     # AdapterError included for the same reason `run` includes it (see that handler): it
     # derives from Exception, so `fleet --run` used to turn an HTTP 401 or an off-allowlist
     # endpoint into a traceback and exit **1**, which in this tool means "findings below the
@@ -1197,7 +1387,9 @@ def coverage(
         )
         raise typer.Exit(ExitCode.ERROR)
     try:
-        result = coverage_mod.battery_coverage(_spec_paths(paths), suite=suite)
+        result = coverage_mod.battery_coverage(
+            _spec_paths(paths), suite=suite, default_spec_path=not paths
+        )
     except (OSError, ValueError) as exc:
         typer.echo(f"error: {_masked(exc)}", err=True)
         raise typer.Exit(ExitCode.ERROR) from exc
@@ -1231,7 +1423,9 @@ def lint(
         )
         raise typer.Exit(ExitCode.ERROR)
     search = list(paths) if paths else [Path("specs")]
-    code, output = run_lint(search, as_json=as_json)
+    # A path the operator typed is echoed by the path findings, through the CLI's mask as every
+    # other error line is: `lint <key>` printed the key (pre-merge audit of A-82, LOW a).
+    code, output = run_lint(search, as_json=as_json, mask=lambda text: _masked(ValueError(text)))
     typer.echo(output)
     raise typer.Exit(code)
 
@@ -1249,9 +1443,18 @@ def registry_ls(
 ) -> None:
     """List registered specs (filterable by category/owasp/tag/suite)."""
 
-    specs, unloaded = registry_mod.list_specs_and_unloaded(
-        _spec_paths(spec_path), category=category, owasp=owasp, tag=tag, suite=suite
-    )
+    try:
+        specs, unloaded = registry_mod.list_specs_and_unloaded(
+            _spec_paths(spec_path),
+            category=category,
+            owasp=owasp,
+            tag=tag,
+            suite=suite,
+            default_spec_path=not spec_path,
+        )
+    except ValueError as exc:  # an unknown suite, a spec path that holds nothing (A-82)
+        typer.echo(f"error: {_masked(exc)}", err=True)
+        raise typer.Exit(ExitCode.ERROR) from exc
     for row in registry_mod.render_spec_rows(specs):
         typer.echo(row)
     for note in registry_mod.unloaded_warnings(unloaded):
@@ -1266,9 +1469,14 @@ def describe(
     """Show one spec's detail card."""
 
     try:
-        spec = describe_mod.describe_spec(_spec_paths(spec_path), spec_id)
+        spec = describe_mod.describe_spec(
+            _spec_paths(spec_path), spec_id, default_spec_path=not spec_path
+        )
+    except ValueError as exc:  # a spec path that holds nothing (A-82)
+        typer.echo(f"error: {_masked(exc)}", err=True)
+        raise typer.Exit(ExitCode.ERROR) from exc
     except describe_mod.DescribeError as exc:
-        typer.echo(f"error: spec {spec_id!r} not found", err=True)
+        typer.echo(f"error: {_masked(ValueError(f'spec {spec_id!r} not found'))}", err=True)
         for note in registry_mod.unloaded_warnings(exc.unloaded):
             typer.echo(note, err=True)
         raise typer.Exit(ExitCode.ERROR) from exc
@@ -1434,18 +1642,19 @@ def calibrate(
 @schema_app.command("export")
 def schema_export(
     name: Annotated[
-        str | None, typer.Option("--name", help="One schema (suite|pack|test-plan|attack-spec).")
+        str | None,
+        typer.Option("--name", help="One schema (suite|pack|test-plan|attack-spec|report)."),
     ] = None,
 ) -> None:
-    """Export the generated JSON schemas to stdout."""
+    """Export the generated JSON schemas, and the JSON report's, to stdout."""
 
-    schemas = export_schemas()
+    # The report's schema is hand-authored and ships with the reporter (u11); it is printed
+    # beside the generated ones, which it could not be (u12 A-82, CLI audit L5).
+    schemas = {**export_schemas(), "report": report_schema()}
     if name is not None:
         if name not in schemas:
-            typer.echo(
-                f"error: unknown schema {name!r}; available: {', '.join(sorted(schemas))}",
-                err=True,
-            )
+            refusal = f"unknown schema {name!r}; available: {', '.join(sorted(schemas))}"
+            typer.echo(f"error: {_masked(ValueError(refusal))}", err=True)
             raise typer.Exit(ExitCode.ERROR)
         typer.echo(log_safe_json(json.dumps(schemas[name], indent=2, sort_keys=True)))
         return

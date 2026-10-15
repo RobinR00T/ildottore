@@ -10,6 +10,8 @@ and the aggregated :class:`~ildottore.reporting.summary.RunSummary`, under a sta
 from __future__ import annotations
 
 import json
+from functools import lru_cache
+from importlib import resources
 from typing import Any
 
 from ildottore.redactor import log_safe_json
@@ -20,9 +22,29 @@ from ildottore.shared.enums import ReportFormat
 from ildottore.shared.frameworks import ATLAS_MATRIX_RELEASE, OWASP_LLM_EDITION
 from ildottore.shared.iopc import IOPC_TAXONOMY_VERSION
 
-__all__ = ["JsonReporter", "summary_to_wire"]
+__all__ = ["JsonReporter", "report_schema", "summary_to_wire"]
 
 SCHEMA_VERSION = "1.0"
+
+
+@lru_cache(maxsize=1)
+def _report_schema_text() -> str:
+    return (
+        resources.files("ildottore.reporting.schemas")
+        .joinpath("report-1.0.schema.json")
+        .read_text(encoding="utf-8")
+    )
+
+
+def report_schema() -> dict[str, Any]:
+    """The JSON Schema a report this module writes validates against (report-1.0).
+
+    A fresh copy on each call, so a caller may change it. ``dottore schema export --name report``
+    prints it (u11 and u12 A-82, CLI audit L5: the command could print every schema but this one).
+    """
+
+    schema: dict[str, Any] = json.loads(_report_schema_text())
+    return schema
 
 
 def _comparison_to_wire(comparison: ModelComparison) -> dict[str, Any]:

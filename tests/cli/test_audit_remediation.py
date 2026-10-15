@@ -624,6 +624,7 @@ def test_diff_refuses_a_truncated_report(tmp_path: Path) -> None:
     truncated.write_text(
         json.dumps(
             {
+                "schema_version": "1.0",
                 "findings": [],
                 "summary": {
                     "status": {
@@ -639,12 +640,16 @@ def test_diff_refuses_a_truncated_report(tmp_path: Path) -> None:
     complete = tmp_path / "base.json"
     complete.write_text(
         json.dumps(
-            {"findings": [], "summary": {"status": {"state": "complete", "complete": True}}}
+            {
+                "schema_version": "1.0",
+                "findings": [],
+                "summary": {"status": {"state": "complete", "complete": True}},
+            }
         ),
         encoding="utf-8",
     )
     old_style = tmp_path / "old.json"  # report-1.0 without a status block
-    old_style.write_text(json.dumps({"findings": []}), encoding="utf-8")
+    old_style.write_text(json.dumps({"schema_version": "1.0", "findings": []}), encoding="utf-8")
 
     assert incomplete_reason(truncated) is not None
     assert incomplete_reason(complete) is None

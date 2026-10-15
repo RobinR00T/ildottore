@@ -200,6 +200,20 @@ must round-trip any schema-valid YAML and reject any schema-invalid one (schema 
   the seeded block when it is empty, so a target that declares none keeps the digest it had
   before the field existed (`tests/evaluators/test_operator_not_destructive.py`).
 
+**A-82 (u12's clause; this unit's half, added 2026-10-11) A sampling value is finite, and two
+helpers the CLI audit asked for.** `Sampling` refuses a value that is not finite however it is
+built (`allow_inf_nan=False`): a target file's `sampling_defaults` took `.nan` and `.inf`, which
+reached the JSON report as bare `NaN` and `Infinity` (CLI audit M6); a spec's schema check refused
+them first already (A-54). `WebSocketResponse` refuses a non-finite `timeout_seconds` and
+`final_value` built in code. `shared.credential_refs` says what an `env://` reference may name
+(`ENV_NAME`, `NO_CREDENTIAL`, and `unset_variable`, which looks in the environment its caller
+passes: only the CLI's wiring reads the process's), `shared.error_text` writes an exception as one
+line that is never an empty reason (`<Class> (no detail given)`), and `shared.files.read_failure`
+describes a file name too long to open by its length. `Sampling`'s docstring, the exported
+schema's description, is unchanged; the reason is a comment. Checked by
+`tests/cli/test_non_finite_values.py`, `tests/cli/test_credential_variables.py` and
+`tests/cli/test_cli_messages_read_right.py`.
+
 ## §8 Out of scope / forbidden
 - MUST NOT import any other `ildottore` package or any provider SDK / httpx / Jinja / Typer.
 - MUST NOT implement behavior: no scoring/banding math (u07), no evaluation (u06), no I/O,

@@ -55,7 +55,7 @@ def test_load_labels_rejects_bad_verdict(tmp_path: Path) -> None:
 def test_calibrate_reports_from_disk(tmp_path: Path) -> None:
     report = tmp_path / "report.json"
     report.write_text(
-        '{"findings": ['
+        '{"schema_version": "1.0", "findings": ['
         '{"spec_id": "PI-A-001", "target_id": "t", "status": "fail",'
         ' "risk": {"impact": 3, "exploitability": 3, "reproducibility": 1.0, "risk": 9.0,'
         ' "confidence": 0.9, "band": "high"}, "confirmed": true, "attempts": [], "evidence": [],'

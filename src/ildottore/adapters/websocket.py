@@ -81,6 +81,7 @@ from ildottore.redactor import (
     mask_split,
 )
 from ildottore.shared.config_errors import quoted
+from ildottore.shared.error_text import error_text
 from ildottore.shared.filter_stops import FILTER_STOPS, normalized_stop
 from ildottore.shared.models import (
     Capabilities,
@@ -553,7 +554,7 @@ class WebSocketAdapter:
                     await _close(connection)
                 if getattr(exc, "retryable", True) is False:
                     raise  # an overflow in the handshake phase repeats; not re-dialled
-                last = f"{type(exc).__name__}: {exc}"
+                last = error_text(exc)
                 if attempt < attempts - 1:
                     await asyncio.sleep(self.retry.backoff_for(attempt))
             except BaseException:

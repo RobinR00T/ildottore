@@ -863,8 +863,9 @@ URLS: dict[str, Callable[[Path], Case]] = {
             "    model: m\n",
         ),
         None,
-        "is not a URL that can be read",
-        cut_of(f"{NBSP}http://h{SOLIDUS}{LONG}"),
+        # Refused by the entry's own check since u12 A-82, which quotes nothing of the value: a
+        # URL urllib cannot split may hold a key past its host (pre-merge audit, MEDIUM 3).
+        "endpoint: Value error, is not a URL that can be read (its host)",
     ),
     "run-target-port": lambda t: _with(
         _live(t, BAD_PORT), None, "not on allowlist", cut_of(BAD_PORT)
@@ -890,8 +891,7 @@ URLS: dict[str, Callable[[Path], Case]] = {
             + '"\n    model: m\n',
         ),
         None,
-        "is not a URL that can be read",
-        cut_of(f"http://[{LONG}"),
+        "endpoint: Value error, is not a URL that can be read (its host)",
     ),
     "run-target-port-of-5000-digits": lambda t: _with(
         _live(t, "https://api.openai.com:" + "9" * 5_000 + "/v1/chat/completions"),

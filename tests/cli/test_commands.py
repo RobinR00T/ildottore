@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from ildottore.cli import describe as describe_mod
@@ -77,9 +78,13 @@ def test_render_spec_rows_empty() -> None:
     assert registry_mod.render_spec_rows([]) == ["(no specs match)"]
 
 
-def test_registry_ls_unknown_suite_returns_empty(tmp_path: Path) -> None:
+def test_registry_ls_unknown_suite_is_refused(tmp_path: Path) -> None:
+    """It returned an empty list, which `registry ls` printed as no match and exit 0 (u12 A-82,
+    CLI audit L7); it is refused as `run` and `coverage` refuse it."""
+
     specs = write_spec_tree(tmp_path, [make_spec("PI-DIRECT-001")])
-    assert registry_mod.list_specs([specs], suite="does-not-exist") == []
+    with pytest.raises(ValueError, match="suite 'does-not-exist' is not registered"):
+        registry_mod.list_specs([specs], suite="does-not-exist")
 
 
 def test_registry_ls_suite_filter(tmp_path: Path) -> None:

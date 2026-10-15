@@ -39,6 +39,21 @@ class LintCode(StrEnum):
     #: ``weighted``) or an evaluator ``weight``, which nothing reads (OD-19, u06 A-73). A warning:
     #: the spec loads and runs the rule ``deterministic_first`` names.
     DEPRECATED_COMBINATION = "DEPRECATED_COMBINATION"
+    #: A search path that does not exist. ``lint`` exits 3 on it, the I/O code (u12 A-82).
+    PATH_NOT_FOUND = "PATH_NOT_FOUND"
+    #: A search path that yields no attack spec and no suite file to read: ``lint`` exits 3 on
+    #: it, and ``run``, ``registry ls``, ``coverage`` and ``describe`` refuse it (u12 A-82).
+    NO_SPECS = "NO_SPECS"
+    #: A warning: YAML files in the subdirectories of a directory without a ``pack.yaml``,
+    #: which is read as loose specs, its own files only (u12 A-82).
+    FILES_NOT_READ = "FILES_NOT_READ"
+
+
+#: The codes that say a search path gave nothing to read: what ``lint`` exits 3 on and the other
+#: commands refuse, rather than a finding about a spec.
+PATH_CODES: frozenset[LintCode] = frozenset({LintCode.PATH_NOT_FOUND, LintCode.NO_SPECS})
+#: How a ``PATH_NOT_FOUND`` message starts; the path (as shown) follows it.
+PATH_NOT_FOUND_TEXT = "path not found: "
 
 
 class Severity(StrEnum):

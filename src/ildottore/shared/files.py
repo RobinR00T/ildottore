@@ -19,13 +19,26 @@ import stat
 from pathlib import Path
 from typing import Final
 
-__all__ = ["MAX_FILE_BYTES", "read_text_capped"]
+__all__ = ["MAX_FILE_BYTES", "read_failure", "read_text_capped"]
 
 #: The most of an operator's file that is read: 1 MiB, the spec loader's ``MAX_YAML_BYTES``. The
 #: largest file shipped that goes through here, the signature corpus, is 8.7 KB; 1 MiB holds about
 #: 22,000 labels, 2,000 scope targets with two identities each, or the scope ``dottore fleet``
 #: writes for about 3,800 fleet entries (it repeats each endpoint, and refuses to write past this).
 MAX_FILE_BYTES: Final = 1024 * 1024
+
+
+def read_failure(what: str, path: str | Path, exc: OSError) -> str:
+    """``cannot read <what> <path>: <reason>``, a name too long to open described by its length.
+
+    ``[Errno 63] File name too long: '<5,000 digits>'`` printed the name twice, which the CLI's
+    redactor then masked as a phone number (u12 A-82, pre-merge audit LOW e): the length is what
+    the operator needs, and the name is never written then.
+    """
+
+    if exc.errno == errno.ENAMETOOLONG:
+        return f"cannot read {what}, a name of {len(str(path)):,} characters: {exc.strerror}"
+    return f"cannot read {what} {path}: {exc}"
 
 
 def read_text_capped(path: str | Path, *, cap: int = MAX_FILE_BYTES) -> str:

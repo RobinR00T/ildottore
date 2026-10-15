@@ -664,12 +664,12 @@ def test_the_dry_run_prices_the_sweep(tmp_path: Path) -> None:
     target = tmp_path / "target.yaml"
     scope = tmp_path / "scope.yaml"
     one = (_REPO / "examples" / "scope.local.yaml").read_text()
+    line = (
+        '        auth_ref: "env://NONE"      # no credential: env://NONE is never read '
+        "(local Ollama needs no key)\n"
+    )
     two = one.replace(
-        '        auth_ref: "env://NONE"      # local Ollama needs no key\n',
-        '        auth_ref: "env://NONE"      # local Ollama needs no key\n'
-        "      - name: tenant-b\n"
-        '        auth_ref: "env://NONE"\n',
-        1,
+        line, line + "      - name: tenant-b\n" + '        auth_ref: "env://NONE"\n', 1
     )
     assert two != one
     args = ["run", "--dry-run", "--runs", "1", "--spec", "EMB-XTENANT-RETRIEVAL-001", "-t"]

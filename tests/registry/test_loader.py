@@ -46,7 +46,8 @@ def test_load_single_spec_file(valid_specs_dir: Path) -> None:
 def test_load_missing_path() -> None:
     result = load_path(Path("/nonexistent/does/not/exist"))
     assert result.errors
-    assert result.errors[0].code is LintCode.PARSE_ERROR
+    # Its own code since u12 A-82: `lint` exits 3 on it, the I/O code, where it exited 1.
+    assert result.errors[0].code is LintCode.PATH_NOT_FOUND
 
 
 def test_load_collision_dirs_two_packs(packs_root: Path) -> None:

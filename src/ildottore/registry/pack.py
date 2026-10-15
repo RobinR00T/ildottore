@@ -33,6 +33,15 @@ class LoadedPack(BaseModel):
     root: Path
     specs: list[AttackSpec] = Field(default_factory=list)
     suites: list[Suite] = Field(default_factory=list)
+    #: The file each of ``specs`` was read from, in the same order, as the search path reaches
+    #: it (``specs/attacks/PI-DIRECT-001.yaml``); empty for a pack built in code. An id
+    #: collision names both files from it (u12 A-82).
+    spec_files: list[str] = Field(default_factory=list)
+
+    def spec_file(self, index: int) -> str | None:
+        """The file ``specs[index]`` was read from, when the loader recorded it."""
+
+        return self.spec_files[index] if index < len(self.spec_files) else None
 
     @property
     def id(self) -> str:

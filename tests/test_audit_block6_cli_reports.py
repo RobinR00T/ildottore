@@ -163,7 +163,7 @@ def test_a_usage_error_exits_3(args: list[str]) -> None:
     ("extra", "message"),
     [
         (["--fail-on", "bogus"], "invalid --fail-on"),
-        (["--timeout", "0"], "--timeout must be greater than 0"),
+        (["--timeout", "0"], "--timeout must be at least 1 second"),  # u12 A-82
         (["--concurrency", "0"], "--concurrency must be at least 1"),
         (["--top-tests", "0"], "--top-tests must be at least 1"),
         (["-oA", "/nonexistent-dir-for-dottore/report"], "is not a directory"),

@@ -47,6 +47,7 @@ from ildottore.adapters.base import (
 )
 from ildottore.policy import EndpointAllowlist
 from ildottore.redactor import Redactor
+from ildottore.shared.error_text import error_text
 from ildottore.shared.models import Capabilities, ModelRequest, ModelResponse
 from ildottore.shared.nesting import NestedTooDeeply, bounded_loads
 from ildottore.shared.wellformed import well_formed_json
@@ -300,7 +301,7 @@ class MCPAdapter:
                         # an advertised tool list larger than this is not metadata to evaluate.
                         raw = await read_capped(streamed, f"{self.id}: MCP response")
             except (httpx.TimeoutException, httpx.TransportError) as exc:
-                last = f"{type(exc).__name__}: {exc}"
+                last = error_text(exc)
                 await self._maybe_backoff(attempt, attempts)
                 continue
             if raw is None:

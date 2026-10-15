@@ -2418,6 +2418,23 @@ def redact_identity(value: str) -> str:
     return _IDENTITY.redact_text(value)
 
 
+def credential_patterns() -> list[Pattern]:
+    """The built-in credential detectors (PEM keys, JWTs, provider key formats), without the PII
+    ones (an email, a card, an IP address, a phone number).
+
+    For a caller that asks whether a value is shaped like a key, not whether it is personal data:
+    a fleet file's endpoint and a scaffold's family (u12 A-82), where the phone rule read
+    `CVE-2021-44228` and the email rule `alice@example.com` as secrets. A UUID is left out: the
+    redactor masks one (u01 A-78), but it names a tenant or a record, and no key format is one.
+    """
+
+    return [
+        pattern
+        for pattern in _default_patterns()
+        if pattern.hashed and pattern is not _UUID_PATTERN
+    ]
+
+
 def report_identity(value: str) -> str:
     """How a report names a target: by the rules before u01 A-78, with the fixed identity salt.
 
