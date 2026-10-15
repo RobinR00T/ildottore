@@ -77,9 +77,21 @@ from ildottore.redactor import Redactor, visible_controls
 from ildottore.registry import uncompilable_patterns
 from ildottore.reporting import RunStatus
 from ildottore.shared.config_errors import cut, listed, quoted
-from ildottore.shared.digest import spec_digests, target_digest
+from ildottore.shared.digest import (
+    spec_digests,
+    spec_field_digests,
+    target_digest,
+    target_field_digests,
+)
 from ildottore.shared.enums import Category, EvaluatorType
 from ildottore.shared.filter_stops import OPENAI_FILTER_STOPS, PROVIDER_FILTER_STOPS
+from ildottore.shared.judging_rules import (
+    JUDGING_RULES_VERSION,
+    dependency_versions,
+    judging_digest,
+    judging_files,
+    python_build,
+)
 from ildottore.shared.models import (
     AttackSpec,
     Attempt,
@@ -2224,6 +2236,15 @@ def _execute_run(
     #: Whether a refusal of the -sV probe pass may not offer dropping -sV: a resume of a
     #: campaign that planned adaptively is refused without it (u12 A-48).
     adaptive_campaign = False
+    #: The selection flags, recorded when a run starts and named by a refused resume (M1).
+    selection = resume_mod.selection_record(
+        suite=opts.suite,
+        quick=opts.quick,
+        categories=opts.categories,
+        spec=opts.spec_globs,
+        exclude=opts.exclude_globs,
+        top_tests=opts.top_tests,
+    )
     if opts.resume is not None:
         # Same campaign first, then money. The ceiling refusals below used to run first and
         # advise "Raise --budget-requests, or drop -sV" to a resume this check then refused
@@ -2242,6 +2263,8 @@ def _execute_run(
             adaptive=adaptive,
             allow_unverified=opts.resume_unverified,
             adopt=False,
+            selection=selection,
+            hardened=opts.hardened,
         )
         adaptive_campaign = resume_mod.stored_adaptive(run_db, opts.resume) is True
         # A run started before the block was applied (2026-10-09) recorded nothing and sent none
@@ -2774,6 +2797,8 @@ def _execute_run(
             judge_takes_sampling=(
                 wiring.takes_sampling(judge_runtime)[0] if judge_runtime is not None else None
             ),
+            resumed=opts.resume is not None,
+            selection=selection,
         )
         _record_scope(run_db, run_ids[target.id], scope_sha256, resumed=opts.resume is not None)
         _record_order(
@@ -2782,6 +2807,7 @@ def _execute_run(
             with_fingerprint=adaptive and fingerprints.get(target.id) is not None,
             resumed=opts.resume is not None,
         )
+        _record_version(run_db, run_ids[target.id])
         result = _run_one_target(
             target=target,
             scope=scope,
@@ -3392,9 +3418,10 @@ def _record_scope(run_db: Path, run_id: str, scope_sha256: str, *, resumed: bool
     with SqliteRunStore(Path(run_db)) as store:
         before, _after = store.add_run_scope(run_id, scope_sha256, resumed=resumed)
     if before and before[-1] != scope_sha256:
-        # Read back from the run store, which keeps any string there: a restored or edited
+        # Read back from the run store, which kept any string there: a restored or edited
         # store printed `##[error]...` or a newline and `::error` (delta audit of the log
-        # commands block). Written out like every stored text (`visible_controls`).
+        # commands block). The store refuses an entry that is not a digest now (L6); written
+        # out like every stored text anyway (`visible_controls`).
         first = (
             "before scope digests were recorded"
             if before[0] == "unrecorded"
@@ -3408,6 +3435,19 @@ def _record_scope(run_db: Path, run_id: str, scope_sha256: str, *, resumed: bool
             "the run store records each scope in order",
             file=sys.stderr,
         )
+
+
+def _record_version(run_db: Path, run_id: str) -> None:
+    """Append this invocation's package version to the run's ``tool_versions`` (u12 A-81).
+
+    Every invocation, as ``mutator_orders``: ``tool_version`` names the release that started the
+    run, this list every release that sent traffic of it (pre-merge audit of 22269e0c, L-6).
+    """
+
+    from ildottore.store.run_sqlite import SqliteRunStore
+
+    with SqliteRunStore(Path(run_db)) as store:
+        store.add_run_version(run_id, resume_mod.recorded_version())
 
 
 def _record_order(run_db: Path, run_id: str, *, with_fingerprint: bool, resumed: bool) -> None:
@@ -3454,6 +3494,8 @@ def _persist_run_integrity(
     sampling_defaults_applied: bool = True,
     takes_sampling: bool | None = None,
     judge_takes_sampling: bool | None = None,
+    resumed: bool = False,
+    selection: dict[str, object] | None = None,
 ) -> None:
     """Record WHAT this campaign is about to run, before it sends anything.
 
@@ -3469,11 +3511,23 @@ def _persist_run_integrity(
     ``sampling_defaults_applied`` says whether its target files' ``sampling_defaults`` go out
     (OD-39): a run started before they were applied recorded nothing, and its resumes write
     false, so every later resume continues as it started (u12 A-66).
+
+    ``judging_rules`` names the rules that judge each stored attempt, and ``tool_version`` the
+    package that started the run (u12 A-81): a resume is refused under other rules. A resume
+    (``resumed``) is under the same rules by then, and keeps the start's ``tool_version`` and
+    ``selection``. ``spec_fields``, ``target_fields``, ``route`` and ``selection`` let a refused
+    resume name what changed and the flag that restores it (u12 A-24, M1 of the CLI audit).
     """
 
     from ildottore.store.run_sqlite import SqliteRunStore
 
     with SqliteRunStore(Path(run_db)) as store:
+        prior = (store.get_run_context(run_id) or {}) if resumed else {}
+        started = prior.get("tool_version")
+        started_by = (
+            started if isinstance(started, str) and started else resume_mod.recorded_version()
+        )
+        chosen = prior.get("selection") if isinstance(prior.get("selection"), dict) else selection
         store.save_run_context(
             run_id,
             target_id=target.id,
@@ -3492,6 +3546,29 @@ def _persist_run_integrity(
                 # A-72), as an operator declaration of this run: the target digest holds them
                 # too, and a resume after a change names them in its refusal.
                 "not_destructive_tools": resume_mod.declared_not_destructive(target),
+                # The rules that judged every attempt this run stores, and the package that
+                # started it (u12 A-81): a resume under other rules is refused.
+                "judging_rules": JUDGING_RULES_VERSION,
+                "tool_version": started_by,
+                # The evaluators plugins register, which judge from outside this package: a
+                # resume under others is refused as under other rules (u12 A-81).
+                "evaluator_plugins": resume_mod.evaluator_plugins(
+                    resume_mod.evaluator_types(specs)
+                ),
+                # The code that judges, computed from the installed package (deny by default):
+                # a resume under other code is refused even when nobody bumped the version.
+                "judging_digest": judging_digest(),
+                # Each covered file's short digest, so a refusal names what changed; the
+                # interpreter, compared too; the libraries a reply goes through, recorded only.
+                "judging_files": judging_files(),
+                "python": python_build(),
+                "dependencies": dependency_versions(),
+                # What a refused resume names (M1): the field of a spec or of the target that
+                # changed, the route, and the selection flags the run was made with.
+                "spec_fields": {spec.id: spec_field_digests(spec) for spec in specs},
+                "target_fields": target_field_digests(target, mock_scenario=mock_scenario),
+                "route": mock_scenario or "live",
+                **({"selection": chosen} if chosen is not None else {}),
             },
         )
 

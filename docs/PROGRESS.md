@@ -64,6 +64,202 @@ neighbouring entries can interleave (an older branch merged later sits above a n
   green both times, 7003 passed and 1 skipped, 97.68% coverage. The CI example's pin and the
   rewrap wait for the last sibling.
 
+## State, 2026-10-15 (landing): main (`a906cea9`) merged in, version 1 pinned at landing (u12 A-81)
+
+- #116 (fix/cli-input-validation) landed as `a906cea9`, whose tree is its head `8a8053a7`'s; merged
+  in as a real merge commit (`eaca1434`). The six conflicts (`CHANGELOG.md`, this file, `USAGE.md`,
+  `docs/MANUAL.md`, `u12-cli.md`, `cli/app.py`) were the trial merge's, replayed by `git rerere`
+  and checked: the merged tree equals the trial's. `cli/run.py`, `cli/wiring.py` and `00-INDEX.md`
+  merged cleanly.
+- Every module the six landed branches added is covered (`cli/key_shape.py`,
+  `shared/credential_refs.py`, `shared/error_text.py`, `shared/filter_stops.py`, `shared/resend.py`,
+  `shared/withheld.py`) and only `ildottore.testing` is exempt: 171 files, 165 of the 167 modules
+  and 6 data files. `JUDGING_RULES_SINCE` is 2026-10-15, the landing day, and the landing pin
+  `30831195` replaced the provisional `b644c56b` in `PIN_HISTORY` and in `judging_pins.frozen`, the
+  sixth line of each (`87ee30d3`). Digest cost at landing: 0.35 to 0.38 s on Python 3.12 and 3.14,
+  0.74 s on 3.9, the same digest on all three.
+- Every place the docs say which older runs a resume refuses names `JUDGING_RULES_SINCE`
+  (`44fa3520`: the CHANGELOG entry, the MANUAL, `docs/09`, the A-81 index row; USAGE, FAQ,
+  `dottore(1)` and u12 already did).
+- `make gates` green on `44fa3520` (`PYTHONPATH` set to the worktree's `src`, `TMPDIR` the system
+  default): 7091 tests (6987 on `main` at `a906cea9`), 97.70% coverage, 75 specs lint OK, four
+  import contracts kept, mypy strict on 167 files, self-scan, bandit and pip-audit clean; the suite
+  again under `GITHUB_ACTIONS=true CI=true`, green.
+- The halt-and-resume harness on the final tree (`scratch/fixcli2/merge/hf/`): the controls resume
+  (mock, REST, OpenAI, a comment-only edit, a `.DS_Store`); the auditor's mutation set (a to j, g2,
+  the two renderer side effects, `dyn-x`, `dyn-y`, the lazy import) and three more (a new module,
+  an edit of `shared/filter_stops.py`, one of #116's `cli/key_shape.py`), 19 in all, each changes
+  the digest and is refused by a resume before sending (exit 3, 0 requests, the changed module
+  named); a run halted on main `a906cea9` is refused as recording no rules. The L6 repro refuses
+  each corrupt field naming it.
+
+## State, 2026-10-15: main (`d526747e`) merged in, version 1 re-pinned provisionally (u12 A-81)
+
+- Main at `d526747e` (#111 to #115) merged into the branch as a real merge commit (`cef983ae`),
+  conflicts as `LANDING.md` foresaw: one import line of `cli/run.py` (both kept), `CHANGELOG.md`
+  and this file (both entries, the branch's on top), the `--resume` rows of `USAGE.md` and
+  `docs/MANUAL.md` (both sides' sentences as one text), `00-INDEX.md` (both sides' rows).
+- The exemption and coverage tests pass on the merged tree: main's three new modules
+  (`shared/filter_stops.py`, `shared/resend.py`, `shared/withheld.py`) are covered, only
+  `ildottore.testing` is exempt; 168 files, 162 of the 164 modules and 6 data files.
+  `JUDGING_RULES_SINCE` set to 2026-10-14 and version 1 re-pinned provisionally to `b644c56b`
+  (`06255814`); the landing pin replaces that line, in `PIN_HISTORY` and the frozen file, once
+  fix/cli-input-validation (#116) has landed.
+- `make gates` green on `06255814` (`PYTHONPATH` set to the worktree's `src`, `TMPDIR` the system
+  default): 6768 tests (6664 on `main` at `d526747e`), 97.71% coverage, 75 specs lint OK, four
+  import contracts kept, mypy strict on 164 files, self-scan, bandit and pip-audit clean; the suite
+  again under `GITHUB_ACTIONS=true CI=true`, green.
+- The halt-and-resume harness on the merged tree (`scratch/fixcli2/merge/h/`): the controls resume
+  (mock, REST, OpenAI, a comment-only edit, a `.DS_Store`); the auditor's mutations a, f, g2 and i,
+  a new module and an edit of main's new `shared/filter_stops.py` are refused before sending (exit
+  3, 0 requests, the module named); a run halted on main `d526747e` is refused as recording no
+  rules. The L6 repro refuses each corrupt field naming it. Same digest on Python 3.9, 3.12 and
+  3.14.
+- A trial merge of #116's head (`8a8053a7`) in a throwaway worktree conflicts in six files, all
+  resolved by rule (recorded by `git rerere` and scripted); there the exemption and coverage tests
+  pass (#116's `cli/key_shape.py`, `shared/credential_refs.py` and `shared/error_text.py` covered,
+  171 files) and only the pin fails, as it must.
+
+## State, 2026-10-13 (night): the third audit of `1d3d65c7` (merge-ready), applied
+
+- MEDIUM 1: an exempt renderer could change a verdict through an import-time side effect
+  (`cli/render.py` emptying `shared.provider_filter.FILTER_STOPS`; a resume mixed verdicts). A
+  module the `dottore` entry point loads runs at the top of every run, so the renderers, every
+  command, `cli.app` and `cli.main` are covered; only `ildottore.testing` stays exempt, checked to
+  be outside the import closure of `cli.main` and named by no `import_module` or `__import__` of
+  covered code. The cost, said in u12 A-81: a resume across a help-text edit is refused.
+- MEDIUM 2: data files are covered by suffix (`.yaml`, `.sql`, `.json`, `.j2`, all the package
+  reads, a test checks), dotfiles skipped: a `.DS_Store` no longer refuses a resume.
+- LOWs: a package with no readable source is refused at run start (exit 3); each covered file's
+  8-hex digest is recorded and the refusal names up to five that differ; the interpreter
+  (implementation and `major.minor`) is recorded and compared, pydantic, httpx and websockets
+  recorded; the figure is 165 files (159 of 161 modules and 6 data files); `LANDING.md` step 1
+  redone (conflicts now in `CHANGELOG.md`, `docs/PROGRESS.md`, `USAGE.md`, `docs/MANUAL.md`,
+  `00-INDEX.md` and one import line of `cli/run.py`; u12 merges cleanly).
+- Re-run with the auditor's harness on this branch (`scratch/fixcli2/r4/`): mutations a to i, g2,
+  the two renderer side effects, `dyn-x`, `dyn-y` and the lazy import refused on resume (exit 3, 0
+  requests, the changed file named), j refused on the landed preview; the comment-only edit, the
+  `.DS_Store` and the controls resume. An in-place re-pin of a mutated tree fails the frozen-pin
+  test. Digest cost 0.32 s on 3.12 and 3.14 (0.64 s on 3.9), same digest on all three.
+- `make gates` green on `45598e8e` (`PYTHONPATH` set to the worktree's `src`, `TMPDIR` the system
+  default): 5580 tests (5476 on `main` at `de122e26`), 97.85% coverage, 75 specs lint OK, four
+  import contracts kept, mypy strict on 161 files, self-scan, bandit and pip-audit clean. Tests:
+  `tests/shared/test_judging_rules.py` 24, `tests/cli/test_resume_judging_rules.py` 34.
+
+## State, 2026-10-13: the second audit of `6de5780b`, fixed: deny by default (u12 A-81)
+
+- The audit (`_ildottore-tren/scratch/fixcli2-audit/r2/`) reproduced H2 twice with the tripwire
+  green: a default of the REST template no target file carries (`finish_path`), and a subclass's
+  `filter_stops` override on the landed tree, each a resume that mixed verdicts; with more verdict
+  code the allow-list missed (`canary_binding`, the `in_band` tag, `needs_seeding`, the offline
+  judge, decorators), an in-place re-pin that passed, a plugin check that refused over a plugin no
+  spec used and missed a code change under the same version, and two exemption reasons that
+  claimed too much.
+- Decided under the owner's delegation (best practice): invert the default. `judging_digest` (in
+  `shared.judging_rules`) covers every file of the package but 17 presentation and input modules,
+  each exemption checked by the import graph (14 commands outside the run's import closure, 3
+  renderers only `cli.run` and `cli.wiring` import); the allow-list and its walk are removed. A run
+  records the digest, computed from the installed package (0.3 s, once per process), and a resume
+  under another one is refused with no flag, naming both digests in clear. The pins are frozen in
+  `tests/shared/judging_pins.frozen`, so an in-place re-pin fails. Plugins are recorded only when
+  a selected spec names their type, with their source digest (none can today).
+- Re-run: the auditor's mutations a to j each change the digest, fail the pin and are refused by
+  a resume (exit 3, 0 requests sent; controls resume as before); the unrelated-plugin case resumes;
+  the digest is the same on Python 3.9.6, 3.12.13 and 3.14.7; a dry run on `main` at `0be0be71`
+  (#111 and #112 landed) merged with this branch fails only the pin, as it must, with one import
+  line of `cli/run.py` to resolve (`scratch/fixcli2/LANDING.md`).
+- Tests: `tests/shared/test_judging_rules.py` 19, `tests/cli/test_resume_judging_rules.py` 31.
+  `make gates` green on `0186bb44` (`PYTHONPATH` set to the worktree's `src`, `TMPDIR` the system
+  default): 5572 tests (5476 on `main` at `de122e26`), 97.86% coverage (`shared/judging_rules.py`
+  100%, `cli/resume.py` 94%), 75 specs lint OK, four import contracts kept, mypy strict on 161
+  files, self-scan, bandit and pip-audit clean.
+
+## State, 2026-10-12 (later): the pre-merge audit of `22269e0c`, fixed (H-1, M-1, M-2, L-1 to L-8)
+
+- The audit (`_ildottore-tren/scratch/fixcli2-audit/`) confirmed H2, M1 and L6, and found the
+  tripwire blind to verdict code (H-1): four one-line edits each changed a verdict under an
+  unchanged digest (`runner.CUT_DECIDING_EVALUATORS`, the `filter_cut` line of `execute_attempt`,
+  `setup_delivery.TRACE_EVALUATORS`, the redactor's `is_date_stamp`).
+- H-1: an entry of `JUDGING_SOURCES` may name a module-level assignment, and the list now holds
+  what the auditor named (the runner's constants and `_tagged_seeded`, `execute_attempt`,
+  `_unreadable_result`, the conversation executor, `canonical_tool_calls`, `tool_name_map`,
+  `is_seeded`, `shared.nesting`, `shared.wellformed`, `shared.amounts.is_count`, the redactor's
+  detectors, each adapter's mapping of a reply to a stop reason, its side and an unreadable reply).
+  A closure test walks every `ildottore` name each entry refers to (imports, module names,
+  `self.<method>`): it must be listed or exempted in `JUDGING_EXEMPT` with its reason. The list
+  went from 29 entries to 163, with 75 exemptions, and the walk finds none uncovered; it follows
+  `self.<member>` to a class attribute a base class sets, and, after the scoring branch's audit
+  named them, `_run_spec`, `_sweep_identities` and the reproduction functions are listed. Plugin evaluators are recorded
+  (`evaluator_plugins`) and a resume under others is refused. The auditor's mut-a to mut-d, applied
+  as patches to this tree, each fail the pin now; the digest is equal on Python 3.9, 3.12 and 3.14.
+- M-1: version 1 is "the rules as of the merge that introduced the version"; every run that
+  records no version is refused, whatever halted it; the docs name `JUDGING_RULES_SINCE` instead of
+  the date. `scratch/fixcli2/LANDING.md` lists what the final rebase updates.
+- M-2: `PIN_HISTORY`, append-only; a re-pin is a new line that says `re-pin` and why. Version 1 is
+  re-pinned on the new list (one line), being unreleased.
+- L-1 `its capabilities field changed`; L-2 the MANUAL sentence; L-3 the quotes copied from the
+  real output and the three commits named; L-4 a record whose rules differ is refused for them
+  before its other fields are checked; L-5 versions written `v<version>`, stored ones PEP 440
+  shaped, `judging_rules` at most 1,000,000; L-6 `tool_versions`, every invocation's; L-7 tests for
+  the selection flags, the changed-field paths, an unrecorded selection, a live route and a run
+  with no target fields; L-8 `in severity (2)` from a real run instead of `in evaluator_logic (75)`.
+- Tests: `tests/shared/test_judging_rules.py` 14, `tests/cli/test_resume_judging_rules.py` 26,
+  `tests/cli/test_resume_refusal_advice.py` 15, `tests/cli/test_resume_corrupt_context.py` 31.
+  `make gates` green on `1a0b1b7a` (`PYTHONPATH` set to the worktree's `src`, `TMPDIR` the
+  system default): 5562 tests (5476 on `main` at `de122e26`, 86 new), 97.90% coverage
+  (`cli/resume.py` 95%, `shared/judging_rules.py` 100%), 75 specs lint OK, four import contracts
+  kept, mypy strict on 161 files, self-scan and bandit clean; pip-audit failed on a DNS error for
+  pypi.org in that run and was clean when run again (2026-10-13). A dry run of the closure on
+  `main` at `44a0ffb9` (fixstop landed) merged with this branch names the 13 names fixstop added,
+  each one the landing step lists (`scratch/fixcli2/LANDING.md`).
+
+## State, 2026-10-12: a resume is bound to the rules that judged it (u12 A-81); its refusals say what changed; a corrupt context value is refused
+
+- On `fix/resume-judging-rules`, from `main` at `de122e26`: three findings of the CLI audit of
+  2026-10-11 (harness and logs in `_ildottore-tren/scratch/audit-cli/`), one commit or more each.
+- H2: a run halted on `f12ba83` (`--spec PI-DIRECT-001 --spec SP-LEAK-001 --runs 2 --concurrency 1
+  --budget-requests 14 --judge ...`, a stub answering every request with `finish_reason:
+  content_filter` and a refusal, a secure judge) and resumed on `de122e26` with `--spec-path` at
+  `f12ba83`'s specs kept 4 attempts judged `pass` beside 2 judged `cut_by_provider_output_filter`;
+  the summary and `replay` said "6 of 10 attempt(s) ... cut" where all 10 were cut, exit 0.
+  Reproduced here on the same commits. Re-judging the kept replies was checked first and is not
+  possible: the evidence is redacted at rest (DL2; `SP-LEAK-001`'s failing reply against the
+  vulnerable mock is stored as `«REDACTED:canary:…»`), no logprob is kept, the judge would have to
+  be asked again. So: `shared.judging_rules.JUDGING_RULES_VERSION` (`1`), recorded with
+  `tool_version` in `context_json` when a run starts, and a resume under other rules, or of a run
+  that records none, refused before it sends, with no flag. `--version` prints `dottore 0.1.0
+  (judging rules 1)`. The bump is forced by `tests/shared/test_judging_rules.py`, which pins a
+  digest of `JUDGING_SOURCES` (comments, docstrings, blank lines left out; equal on 3.12 and 3.14)
+  to each version. After: the same `f12ba83` halt, resumed on this branch, `--spec-path` or not,
+  `--resume-unverified` or not: exit 3, 0 requests sent; halted and resumed on this branch: 10 of 10
+  attempts cut, as the summary says.
+- M1: the run context records `selection`, `spec_fields`, `target_fields` and `route`, and the
+  refusals name the field (`1 changed (PI-DIRECT-001), in attack`), the selection flags the run was
+  made with (`Resume with --spec PI-DIRECT-001 --spec SP-LEAK-001`), the target field (`its
+  capabilities field changed`), or the route and its flag (`... resolves the offline 'hardened' replay
+  (--hardened forces it). The target file is otherwise unchanged ... Resume without --hardened`).
+- L6: `run_sqlite._check_context` checks every field of `context_json` where it is read (and the
+  appends refuse rather than overwrite); `runs.started_at` is checked by the resume. On
+  `de122e26`: `adaptive: "x"` refused as "adaptive planning on", `scope_sha256s: 7` and a
+  non-list `mutator_orders` overwritten (exit 2), `started_at: not-a-date` in the report; here each
+  is exit 3 naming the field, the stored value untouched. A null `target_digest` still reads as
+  absent (the unwaivable target refusal).
+- Breaking for a halted run: every run halted before this branch is refused by its resume, one
+  halted on `de122e26` included. CHANGELOG says it, and corrects the OD-44 note that recommended
+  the `--spec-path` route (ADR-0007's copy too).
+- Merge note: `fix/scoring-audit-2026-10-11` changes the ranking of an attempt's copies in
+  `core/runner.py` and `store/replay.py`. Those functions (`_answer_rank`, `_one_per_attempt_id`)
+  are scoring-time and not in `JUDGING_SOURCES`; if that branch touches a listed function, the
+  tripwire fails after the merge and the merger bumps the version (to 2) and pins the new digest.
+- Tests: `tests/shared/test_judging_rules.py` (7), `tests/cli/test_resume_judging_rules.py` (8, all
+  failing before), `tests/cli/test_resume_refusal_advice.py` (9, all failing before),
+  `tests/cli/test_resume_corrupt_context.py` (31, 28 failing before); six tests updated for the
+  changed messages or the stricter store. `make gates` green on `880acb89` (with `PYTHONPATH` set to
+  the worktree's `src`, `TMPDIR` the system default): 5531 tests (5476 on `main` at `de122e26`, 55
+  new), 97.81% coverage (97.84% on `main`; `shared/judging_rules.py` and `shared/digest.py`
+  100%, `cli/resume.py` 90%), 75 specs lint OK, four import contracts kept, mypy strict on 161
+  files, self-scan, bandit and pip-audit clean. The commits after it touch documentation only.
+
 ## State, 2026-10-14 (evening): merged with `fix/no-secret-in-fragments` (`33782ad3`), which main now holds
 
 - `33782ad3` (#115, with #114 `7cdd91a2` and main `030b79e0`) merged in as `007e3c41`, a real

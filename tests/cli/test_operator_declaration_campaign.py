@@ -549,9 +549,10 @@ def test_the_worked_example_prints_its_declaration() -> None:
     assert f"  operator: {line}\n" in (repo / "examples" / "README.md").read_text(encoding="utf-8")
 
 
-def test_a_corrupt_declaration_record_falls_back_to_the_target_refusal(tmp_path: Path) -> None:
-    """A record that is not a list of names says nothing of the declaration, so the refusal is
-    the target digest's own, which still refuses the resume."""
+def test_a_corrupt_declaration_record_is_refused_naming_it(tmp_path: Path) -> None:
+    """A record that is not a list of names is a corrupt record, refused naming its field: it
+    used to say nothing of the declaration and fall back to the target digest's refusal, which
+    read a corrupt record as a changed file (CLI audit 2026-10-11, L6)."""
 
     run_id, spec_dir = _halted(tmp_path, _DECLARED)
     with closing(sqlite3.connect(tmp_path / "runs.sqlite")) as db:
@@ -561,6 +562,6 @@ def test_a_corrupt_declaration_record_falls_back_to_the_target_refusal(tmp_path:
         db.execute("UPDATE runs SET context_json = ?", (json.dumps(context),))
         db.commit()
 
-    with pytest.raises(ValueError, match="seeded_setup differ") as refused:
+    with pytest.raises(ValueError, match="holds a not_destructive_tools value") as refused:
         _resume(tmp_path, spec_dir, run_id, _PLAIN)
-    assert "operator declaration" not in str(refused.value)
+    assert "transfer_to_billing_agent" not in str(refused.value), "the value is not quoted"

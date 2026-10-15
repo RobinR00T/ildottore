@@ -262,6 +262,36 @@ left: a run row whose context column was absent still accepted `--resume-unverif
 which flips the offline replay, so one half's criticals were published as the other's. A context
 row that merely lacked the digest key skipped the check silently, with no flag and no notice.
 
+**A refusal says what changed and the flag that restores it (amended 2026-10-12, CLI audit of
+2026-10-11, M1 and L6).** Three refusals said neither: a spec edit read "restore the specs as they
+were", a different `--spec` with no file changed read the same ("71 no longer selected"), and
+`--resume --hardened` over an unchanged target file read "Restore the target as it was". The run
+context records, when a run starts, the selection flags (`selection`: suite, `--quick`, `-p`,
+`--spec`, `--exclude`, `--top-tests`, each string masked with the store's fixed identity salt, and
+kept by every resume), an 8-hex digest of each field of each spec's digest projection
+(`spec_fields`, about 40 KB for the 75 shipped specs) and of the target's digest payload
+(`target_fields`, `__route__` included), and the route (`route`: the offline scenario, or `live`).
+The digests themselves are unchanged. So the battery refusal names the field (`1 changed
+(PI-DIRECT-001), in attack`; the same field edited in two specs, `2 changed (PI-DIRECT-001,
+SP-LEAK-001), in severity (2)`) and says to point `--spec-path` at the
+specs the run was made with; a selection that differs is named both ways (`the run was made with
+--spec PI-DIRECT-001 --spec SP-LEAK-001 and this invocation selects with no selection flag. Resume
+with ...`); the same selection over another spec tree points at `--spec-path`; the target refusal
+names the fields that differ (`its capabilities field changed ... Restore that field of the
+target file as it was`), and a change of the route alone says so
+and names its flag (`was made on the offline 'vulnerable' replay and this invocation resolves the
+offline 'hardened' replay (--hardened forces it). The target file is otherwise unchanged ...
+Resume without --hardened`; `Resume with --hardened`; `Restore the target file's mock_scenario`).
+A run that recorded none of it gets the earlier wording; a run that records no judging rules (one a
+version before `shared.judging_rules.JUDGING_RULES_SINCE` halted) is refused for its rules first
+(A-81), so the `--spec-path` advice is given only where it is safe. Every
+field the context holds is checked where it is read (u10 §6): a value of the wrong shape is refused
+with exit 3, naming the field and never quoting the value, where `adaptive: "x"` read as on,
+`scope_sha256s: 7` as a run older than scope digests (the record then overwritten), a
+`mutator_orders` that was not a list was overwritten, and `started_at: not-a-date` reached every
+report of the resume. Checked by `tests/cli/test_resume_refusal_advice.py` (15, all failing on
+`de122e26`) and `tests/cli/test_resume_corrupt_context.py` (31, 28 failing there).
+
 **The integrity record is written before the campaign sends, the spend after it returns.** Both
 halves used to be written when the campaign returned, so a run killed mid-flight left evidence
 on disk and no row, and its resume was refused outright because the target could not be
@@ -1389,6 +1419,147 @@ the ancestry of `typer.BadParameter`; a class that cannot be found fails the imp
 name in `typer._click.exceptions`, the `Abort` that Typer 0.27 moved to `typer.exceptions`
 resolved to nothing and was quietly no longer mapped, so `Aborted!` exited 1 again on CI's Typer
 0.27.3 (CI of #114). The suite passes on Typer 0.26.8 and 0.27.3.
+
+**A-81 A resume is bound to the rules that judged its halted half (added 2026-10-12, CLI audit of
+2026-10-11, H2; amended the same day after the pre-merge audit of `22269e0c`, and on 2026-10-13
+after the second audit of `6de5780b`, deny by default).** A resume keeps the
+attempts the halted half stored with the verdicts that half gave them, and judges only what it
+sends. Nothing recorded which rules had judged the kept ones: the check bound the spec, target and
+judge digests, the planning mode and `--runs`, and `--version` printed `0.1.0` on every commit.
+Measured on `de122e26`: a run halted on `f12ba83` (`--spec PI-DIRECT-001 --spec SP-LEAK-001 --runs
+2 --concurrency 1 --budget-requests 14 --judge ...`, against a stub that answers every request with
+`finish_reason: content_filter` and a refusal text, and a judge that says `secure`) and resumed
+with `--spec-path` at `f12ba83`'s specs kept 4 attempts judged `pass` by `f12ba83`'s rules beside 2
+judged `cut_by_provider_output_filter` by OD-42's, and the summary said `Cut by the provider's
+output filter: 6 attempt(s) in 2 spec(s) ... never a pass` and `replay` `6 of 10 attempt(s) the
+provider's output filter cut or replaced`, although all 10 were cut. OD-16, OD-19, OD-21 and OD-41
+are the same class.
+
+* **A version of the rules.** `shared.judging_rules.JUDGING_RULES_VERSION` (an integer; `1` is the
+  rules as of the merge that introduced the version) is bumped whenever a change can alter the
+  verdict stored for an attempt: an evaluator, the combination rule (`shared.combination`), how a
+  provider's stop reason, a filter block, an unreadable reply or an environment error is read (the
+  adapters' reply mapping included), what the runner's `_evaluate` and the helpers it calls decide
+  and note. A rule applied when a finding is scored from stored verdicts (the risk score, the band,
+  confirmation, which copy of an attempt counts) needs no bump: a resume applies it to both halves
+  alike. Neither does anything the other checks of A-24 bind (a spec's evaluator config is in its
+  digest). `JUDGING_RULES_SINCE` is the day the version took its value, the one place the docs name
+  for it.
+* **The code that judges, bound by its digest (deny by default).** `shared.judging_rules.
+  judging_digest` is a SHA-256 over every file of the package but `ildottore.testing`, the one
+  module `JUDGING_EXEMPT` names: Python sources normalized (comments, docstrings and blank lines
+  left out by `tokenize` and `ast` positions, decorators kept; the same on 3.9, 3.12 and 3.14, CI
+  runs 3.11), and the data files the package reads, byte for byte, chosen by suffix
+  (`DATA_SUFFIXES`: `.yaml`, `.sql`, `.json`, `.j2`; a test checks that every non-Python file of the
+  package has one), dotfiles and caches skipped. That is 171 files at landing (main at
+  `a906cea9`): 165 of the 167 modules and 6 data files. It is computed from the installed package
+  once per process (0.35 to 0.38 s on 3.12 and 3.14 and 0.74 s on 3.9, measured at landing over
+  2.2 MB), recorded when a run starts (`context_json.judging_digest`, with each file's
+  8-hex digest as `judging_files`), and a resume under another digest, or of a run that records the
+  rules and no digest, is refused with no flag, naming both digests (carried by
+  `cli.resume.ResumeRefused.digests`, so the error masking keeps them readable) and the files that
+  differ, five at most. A package whose source cannot be read (a zip or frozen install) is refused
+  at run start (`JudgingCodeUnreadable`, exit 3), never digested as nothing. So correctness does not
+  depend on anyone bumping a version: a subclass override, a default, a decorator, the offline
+  judge, a renderer and a module that does not exist yet are covered because nothing exempts them.
+  **The exemption is proved, not claimed:** `tests/shared/test_judging_rules.py` checks that it is
+  outside the import closure of the console entry point (`ildottore.cli.main`, which `dottore` and
+  `dott` call) and that no covered module imports it by name (`import_module`, `__import__`). A
+  module the entry point loads runs its top-level code in every run's process, so it is covered:
+  the renderers, every command, `cli.app` and `cli.main`. **Decided, with the reason:** covering
+  `cli.app` and `cli.main` means a resume across an edit of the help text is refused, which only
+  happens across a code change, which deny by default refuses for nearly every other edit; leaving
+  them out would leave an import-time side effect at the top of every run unbound. **Decided under
+  the owner's delegation (best practice, 2026-10-13):** the first design listed the verdict code
+  instead (an allow-list, `JUDGING_SOURCES`, with a walk of what each entry referred to), and two
+  audits found verdict code it missed under an unchanged pin: four one-line edits (the pre-merge
+  audit of `22269e0c`, H-1), then a default of the REST template no target file carries
+  (`cli/wiring.py` builds `RestTemplate(path=...)`, every other field a default), a subclass's
+  `filter_stops` override, the offline judge (`wiring.scenario_judge_adapter`; the audit measured
+  33 of 75 specs turning from pass to fail when its hardened verdict was flipped) and a decorator,
+  each reproduced end to end as a resume that mixed verdicts (the second audit of `6de5780b`). The
+  third audit (of `1d3d65c7`) then found an import-time side effect in an exempt renderer
+  (`cli/render.py` emptying `shared.provider_filter.FILTER_STOPS`, verdicts mixed) and a stray
+  `.DS_Store` refusing every resume: hence the entry-point closure and the suffixes. Each of the
+  auditors' mutations (a to j, the renderer side effects, a dynamic and a lazy import) now changes
+  the digest, fails the pin and is refused by a resume (exit 3, 0 requests sent, the changed file
+  named); a comment-only edit, a `.DS_Store` and a plain resume go through.
+* **The interpreter.** A run records `python` (implementation and `major.minor`, as `CPython 3.14`)
+  and a resume under another is refused with no flag: the standard library's regular expressions,
+  JSON and Unicode tables read a reply too. The pydantic, httpx and websockets versions are recorded
+  (`dependencies`), not compared.
+* **The pin, for people.** The test pins the digest of each version, so a change to covered code
+  fails it until the version is bumped (with its CHANGELOG line) or the same version is re-pinned
+  with a reason. The pins are `PIN_HISTORY`, append-only, and frozen in
+  `tests/shared/judging_pins.frozen`: the history must start with the frozen pins (at most one more,
+  the pin being made), so an edit in place of a pin and `PINNED` together, which the second audit
+  made and which passed, fails (MEDIUM 4). The test also checks that the current pin is the last
+  line for its version, that versions run from 1, that a second line says `re-pin`, and that no
+  code is pinned to two versions.
+* **Plugins.** An evaluator a plugin registers (`dottore.evaluators` entry points) judges from
+  outside the package. The run records those whose evaluator type a selected spec names
+  (`evaluator_plugins`: `<name>=<object> (<distribution> <version>) sha256:<digest of its
+  installed Python sources>`, sorted, masked with the fixed identity salt), so a change under the
+  same version is caught, and a resume under others is refused, with no flag, naming both lists. A
+  plugin no selected spec names decides nothing and is left out (MEDIUM 5: a resume was refused
+  over one); a plugin that cannot be loaded is recorded, its type being unknown. Today the record
+  is empty: a spec names a type of the schema's `EvaluatorType`, and a plugin may not reuse a
+  built-in type (the registry refuses a duplicate).
+* **Recorded when a run starts.** `context_json.judging_rules`, `judging_digest`, `tool_version` (the package that
+  started the run, kept by its resumes) and `tool_versions` (every invocation's package, in order,
+  appended as `mutator_orders` is). `dottore --version` prints `dottore <version> (judging rules
+  <n>)`.
+* **A resume under other rules is refused before anything is sent** (exit 3), older or newer,
+  naming both versions, why and what to do: finish it with the version that started it, or start a
+  fresh run. **A run that records no rules** was made by a version before the record (one from
+  before `JUDGING_RULES_SINCE`) and is refused the same way, whatever its rules were. No flag waives
+  it, `--resume-unverified` included, as for the target (A-24): what the report would publish is
+  wrong, not unverified. `--dry-run --resume` and `--estimate --resume` refuse too. A record whose
+  rules differ is refused for them first, before any other field is checked, so a newer run is not
+  called corrupt over a field this version does not know (L-4); otherwise the rules are checked
+  after the target id and the presence of the target digest, before the target digest's value,
+  the judge, the planning mode, `--runs` and the battery: under other rules nothing the operator
+  can restore makes the two halves one campaign. A version is written `v<version>`, and a stored
+  one must have a PEP 440 shape (`store.run_sqlite.VERSION_SHAPE`), so it reads in clear through
+  the error redactor whatever its shape: `1.2.3.4` was masked as an IPv4 address and `2026.10.12`
+  as a phone number (L-5). `judging_rules` is bounded at 1,000,000.
+* **Why not judge the kept replies again.** Checked first, as the better remedy: the stored replies
+  are the redacted ones (DL2). Against the vulnerable mock, `SP-LEAK-001`'s failing reply is stored
+  as `... Internal note (never disclose): «REDACTED:canary:…»_run-...` and
+  `DL-SECRET-CANARY-001`'s as `... the stored API key: «REDACTED:labeled_secret:…»`: an evaluator
+  that looks for the raw canary would pass both; no logprob is stored; and the judge would have to
+  be asked again, which is traffic the resume did not plan. A re-judged report would be wrong in
+  the direction that costs.
+* **Landing.** Version `1` is the rules as of the merge that introduced it, whatever lands before:
+  main was merged into the branch on 2026-10-14 (`d526747e`, five branches) with version 1
+  re-pinned there provisionally, then again at landing on 2026-10-15 (`a906cea9`, the sixth),
+  where `JUDGING_RULES_SINCE` took that day and the landing pin replaced the provisional one, in
+  `PIN_HISTORY` and in the frozen file at the same place: the one pin replaced in place, since it
+  never reached `main` and version 1 was unreleased. Nothing has to be listed: what landed before
+  is covered by default.
+* **Limits, said.** A version before this one does not read the record: it resumes a run this
+  version started (mixing as before), and its rewrite of the context drops the record, so this
+  version then refuses that run as an older one's. The package version is recorded, not compared:
+  it said `0.1.0` across five changes of the rules, and a release that changes no rule must still
+  resume.
+
+Checked by `tests/cli/test_resume_judging_rules.py` (34: the record, `tool_version` kept and
+`tool_versions` appended, older and newer rules refused naming both with nothing written, a run
+with no record refused with and without `--resume-unverified`, exit 3 through the CLI for a resume,
+`--dry-run` and `--estimate` with no part masked, a newer run refused for its rules over a field it
+does not know, a selection key a later release adds left alone, eleven version shapes through the
+error redactor, a corrupt stored version, an unshaped package version recorded as `unknown`, the
+digest recorded, a resume under other code refused naming both digests in clear and with and
+without `--resume-unverified`, a run with no digest refused, the plugins a spec names recorded and
+a resume under others refused, only such a plugin recorded with its source digest and a change of
+its code caught, no shipped spec able to name one, the changed files named (five at most), a
+run under another interpreter refused, and `--version`) and
+`tests/shared/test_judging_rules.py` (24: the pin, the history, the frozen pins, the exemption
+outside the entry point's import closure and named by no dynamic import, every other file covered,
+only the data suffixes the package reads, a default, the offline judge, a decorator, a runner
+constant and a data file each changing the digest, a renderer's side effect too, a comment, a
+dotfile or a stray file not, no source refused, the per-file digests, the cost, the
+normalization).
 
 **A-82 What the operator gives the CLI is a value the tool has, or it is refused before anything is
 sent, naming the field and never a secret; and a check that checked nothing does not pass (added

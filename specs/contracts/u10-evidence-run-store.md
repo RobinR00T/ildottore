@@ -86,6 +86,34 @@ the u00 protocols:
   makes F11 (a resume re-sending errored attempts) safe. No `run.json` is written:
   `store.paths.run_doc_path()` exists and has no caller, so a run directory holds `attempts/` (and
   `probes/` after `-sV`) only, and the run record is the SQLite row.
+- **`context_json` since 2026-10-12 (u12 A-81, A-24 amended):** beside the fields above it holds
+  `judging_rules` (the version of the rules that judge a stored attempt, an integer from 1 to
+  1,000,000), `judging_digest` (the SHA-256 of the code that judges, computed from the installed
+  package, 64 hex digits), `judging_files` (each covered file's 8-hex digest), `python` (the
+  interpreter's implementation and `major.minor`) and `dependencies` (pydantic, httpx and
+  websockets versions, recorded only), `tool_version` (the package that started the run, PEP 440 shaped,
+  `VERSION_SHAPE`), `tool_versions` (every invocation's package, appended by `add_run_version` in
+  an immediate transaction that a context rewrite preserves, as `mutator_orders`),
+  `evaluator_plugins` (the `dottore.evaluators` entry points whose evaluator type a selected spec
+  names, each with its distribution, version and source digest), `selection` (the
+  selection flags, each string masked with the fixed identity salt; a key a later release adds is
+  left alone), `spec_fields` and `target_fields` (an 8-hex digest of each field of the spec and
+  target digest projections, so a refusal names the field) and `route`.
+  **Every field is checked where it is read** (`run_sqlite._check_context`, called by
+  `get_run_context` and by the appends' read in their transaction): the two target and judge
+  digests are `sha256:v<n>:` and 64 hex digits (the judge's may be null), `adaptive` and the three
+  sampling booleans true or false (the sampling ones may be null), `not_destructive_tools` a list
+  of names, `scope_sha256s` a non-empty list of 64-hex digests or `"unrecorded"`, `mutator_orders`
+  a list of `fingerprint`, `declared` or `unrecorded`, and each new field its shape; `runs` and
+  `spend_json` as before. A value of the wrong shape raises `CorruptRunContext` naming the field,
+  never quoting the value, and the appends (`add_run_scope`, `add_run_order`, `add_run_version`)
+  refuse rather than overwrite a list they cannot read (CLI audit 2026-10-11, L6: `adaptive: "x"` read as on,
+  `scope_sha256s: 7` read as unrecorded and overwritten, a non-list `mutator_orders` overwritten).
+  A key this version does not know is left alone. `get_run_context(run_id, checked=False)` returns
+  the record unchecked: the resume reads the rules first with it, so a run a newer version made is
+  refused for its rules rather than called corrupt (pre-merge audit of `22269e0c`, L-4); every
+  other reader checks. `runs.started_at` is checked by the resume that reads it
+  (`YYYY-MM-DDTHH:MM:SSZ`).
 - Detector-hit fields carry **masked/hashed** values only (`docs/11 §5` DL2); no raw logprob
   secrets, no canary plaintext.
 
