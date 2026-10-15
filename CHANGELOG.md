@@ -27,7 +27,9 @@ the file, schema copy, build or pipeline it names.
   that is not JSON (it fails only its probe, exit 0), the Bedrock guardrail item (closed by OD-42)
   in the OD-41 rows, a duplicate OD-41 row in `docs/12`; the scope checksum is "an integrity
   check, not a signature (OD-2)" in `specs/scope.example.yaml`.
-- **The ledger.** 17 CHANGELOG headings whose body states a break say "breaking for <whom>",
+- **The ledger.** CHANGELOG headings whose body states a break say "breaking for <whom>" (28 with
+  main merged in: 17 labelled by this branch, 7 by #116, and 4 of the merged siblings' brought to
+  the rule),
   and the file's header says when; `00-INDEX.md` gains the A-37 row, records A-62 and A-64 as
   reserved and unused (A-75 stays the next free number), reads OD-1 to OD-47 in order, and names
   each unit's files (u04's `mcp.py`, `websocket.py`, `comprehending.py`; u01's `safe_yaml.py`;
@@ -44,6 +46,12 @@ the file, schema copy, build or pipeline it names.
   wording, ADR-0007's amendment, RELEASING's script path, the 72-spec date in `docs/12`, Scenario
   B's left-out stderr warning; `docs/PROGRESS.md` says its entries are in merge order. Lines over
   100 columns are rewrapped, with the rest of their paragraph reflowed, in a commit of their own.
+- **With main merged in (2026-10-15, #111 to #116):** `dottore(1)` documents the root `-v`,
+  fleet's `--spec-path`, `--evidence-root`, `--run-db` and report options, `schema export
+  --name report` and the spec path's fallback to the battery beside the package; the root `-v`
+  help loses its backticks; a credential variable set but empty under `--dry-run`, `-sn` or
+  `--estimate` is a warning and exit 0, where #113 exited 3, now said in the A-82 entry and in
+  `dottore-scope(5)`.
 
 ### Changed (breaking for a pipeline that lints or lists a path holding nothing: `lint`, `registry ls`, `coverage`, `describe` and `run` refuse it, u12 A-82)
 

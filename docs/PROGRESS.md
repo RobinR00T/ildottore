@@ -49,6 +49,20 @@ neighbouring entries can interleave (an older branch merged later sits above a n
   2026-10-11, measured in a clean copy of `de122e26` (`git archive`): 5476 passed, 97.84%
   coverage, a figure no entry recorded. Lines over 100 columns are rewrapped in the last commit,
   alone, so it can be redone after a rebase.
+- Landing, 2026-10-15: the rewrap reverted (`88c75b8b`), `origin/main` at `a906cea9` (#111 to
+  #116) merged with `--no-ff` (`ba9d5fc8`, conflict resolution only), then one commit each: the
+  wheel and editable installs re-measured (lint and run exit 3 on a missing spec path and on the
+  wheel's missing schema; an editable install's run falls back to the checkout's battery); the
+  root `-v` help without backticks (#114's, which the help test refused); `dottore(1)` with the
+  root `-v`, fleet's new options, `schema export --name report`, the spec path's new default and
+  lint's exit 3; a blank credential variable's dry run (exit 0 with a warning, 3 on #113); the
+  siblings' headings to the label and tense conventions. Re-measured on the merged tree and
+  unchanged: 33 specs and 545 requests (no flag, `--deep`, `-A`), the `docs/16` §3 rows and
+  two-identity rows, replay 140 and 350, the HTML-stub transcript (9 requests, 8 attempts, 0
+  tokens, byte-identical), the mixed-stub fingerprint warning, Scenario B. `make
+  --no-print-directory gates` on the merged tree, plain and with `GITHUB_ACTIONS=true CI=true`:
+  green both times, 7003 passed and 1 skipped, 97.68% coverage. The CI example's pin and the
+  rewrap wait for the last sibling.
 
 ## State, 2026-10-14 (evening): merged with `fix/no-secret-in-fragments` (`33782ad3`), which main now holds
 
