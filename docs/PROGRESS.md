@@ -3,6 +3,35 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-15 (landing): main (`a906cea9`) merged in, version 1 pinned at landing (u12 A-81)
+
+- #116 (fix/cli-input-validation) landed as `a906cea9`, whose tree is its head `8a8053a7`'s; merged
+  in as a real merge commit (`eaca1434`). The six conflicts (`CHANGELOG.md`, this file, `USAGE.md`,
+  `docs/MANUAL.md`, `u12-cli.md`, `cli/app.py`) were the trial merge's, replayed by `git rerere`
+  and checked: the merged tree equals the trial's. `cli/run.py`, `cli/wiring.py` and `00-INDEX.md`
+  merged cleanly.
+- Every module the six landed branches added is covered (`cli/key_shape.py`,
+  `shared/credential_refs.py`, `shared/error_text.py`, `shared/filter_stops.py`, `shared/resend.py`,
+  `shared/withheld.py`) and only `ildottore.testing` is exempt: 171 files, 165 of the 167 modules
+  and 6 data files. `JUDGING_RULES_SINCE` is 2026-10-15, the landing day, and the landing pin
+  `30831195` replaced the provisional `b644c56b` in `PIN_HISTORY` and in `judging_pins.frozen`, the
+  sixth line of each (`87ee30d3`). Digest cost at landing: 0.35 to 0.38 s on Python 3.12 and 3.14,
+  0.74 s on 3.9, the same digest on all three.
+- Every place the docs say which older runs a resume refuses names `JUDGING_RULES_SINCE`
+  (`44fa3520`: the CHANGELOG entry, the MANUAL, `docs/09`, the A-81 index row; USAGE, FAQ,
+  `dottore(1)` and u12 already did).
+- `make gates` green on `44fa3520` (`PYTHONPATH` set to the worktree's `src`, `TMPDIR` the system
+  default): 7091 tests (6987 on `main` at `a906cea9`), 97.70% coverage, 75 specs lint OK, four
+  import contracts kept, mypy strict on 167 files, self-scan, bandit and pip-audit clean; the suite
+  again under `GITHUB_ACTIONS=true CI=true`, green.
+- The halt-and-resume harness on the final tree (`scratch/fixcli2/merge/hf/`): the controls resume
+  (mock, REST, OpenAI, a comment-only edit, a `.DS_Store`); the auditor's mutation set (a to j, g2,
+  the two renderer side effects, `dyn-x`, `dyn-y`, the lazy import) and three more (a new module,
+  an edit of `shared/filter_stops.py`, one of #116's `cli/key_shape.py`), 19 in all, each changes
+  the digest and is refused by a resume before sending (exit 3, 0 requests, the changed module
+  named); a run halted on main `a906cea9` is refused as recording no rules. The L6 repro refuses
+  each corrupt field naming it.
+
 ## State, 2026-10-15: main (`d526747e`) merged in, version 1 re-pinned provisionally (u12 A-81)
 
 - Main at `d526747e` (#111 to #115) merged into the branch as a real merge commit (`cef983ae`),
