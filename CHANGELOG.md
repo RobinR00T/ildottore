@@ -151,7 +151,7 @@ the file, schema copy, build or pipeline it names.
   version started; its rewrite of the context drops the record, and this version then refuses that
   run as an older one's.
 
-### Fixed (a refused resume says what changed and the flag that restores it; a corrupt run-context value is refused, naming it)
+### Fixed (breaking for a resume from a corrupt run context: a refused resume says what changed and the flag that restores it; a corrupt run-context value is refused, naming it)
 
 - **Three refusals said neither why nor what to do** (CLI audit of 2026-10-11, M1). A spec edit
   read `1 changed (PI-DIRECT-001) ... restore the specs as they were`; a different `--spec`, with no
