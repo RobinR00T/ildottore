@@ -52,7 +52,11 @@ the file, schema copy, build or pipeline it names.
   the root `-v` help loses its backticks; a credential variable set but empty under `--dry-run`, `-sn` or
   `--estimate` is a warning and exit 0, where #113 exited 3, now said in the A-82 entry and in
   `dottore-scope(5)`. With #117 merged, judging rules version 1 is re-pinned by an appended line
-  for this branch's help and docstring text, which cannot change a verdict.
+  for this branch's help and docstring text, which cannot change a verdict. With #117 landed
+  (main at `3740b387`, recorded as merged), the CI example pins that commit's full SHA and its
+  v0.1.0 caveat adds A-79, the scoring audit, the SARIF level of a fail that needs review, A-80,
+  A-78, A-82 and A-81; MANUAL §5 and `dottore(1)` quote `--version` as it prints now,
+  `dottore 0.1.0 (judging rules 1)`.
 ### Changed (breaking for a halted run: a resume is bound to the rules that judged it, u12 A-81)
 
 - **A run halted on an older version resumed into a report that contradicted itself.** A resume

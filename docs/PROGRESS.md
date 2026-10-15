@@ -73,8 +73,20 @@ neighbouring entries can interleave (an older branch merged later sits above a n
   exits 0 under `--dry-run`, `-sn` and `--estimate`, a five-character one exits 3), 33/545, the
   `docs/16` rows, replay 140 and 350, the HTML-stub line, the fingerprint warning, Scenario B.
   `make --no-print-directory gates`, plain and with `GITHUB_ACTIONS=true CI=true`: green both
-  times, 7107 passed and 1 skipped, 97.70% coverage. The CI example's pin and the rewrap wait for
-  #117 to land.
+  times, 7107 passed and 1 skipped, 97.70% coverage.
+- #117 landed (main at `3740b387`, tree equal to `e92a7541`'s), recorded here with
+  `git merge -s ours` (`f87541a6`, tree unchanged). The CI example pins
+  `3740b3874642dbec711e82918e477060d4a39ea1` and its v0.1.0 caveat gains A-79, the scoring audit,
+  the SARIF level of a fail that needs review, A-80, A-78, A-82 and A-81 (actionlint passes; the
+  scan command dry-runs, exit 0, against an editable install of a clean copy of `3740b387`). The
+  appended judging pin `dbfbedd7` is the digest of the final tree (the pin test's 24 pass).
+  `--version` prints `dottore 0.1.0 (judging rules 1)` since #117, so MANUAL §5 and `dottore(1)`
+  quote it. Re-measured on the final tree and unchanged: 33/545 (no flag, `--deep`, `-A`), the
+  `docs/16` rows and two-identity rows, replay 140 and 350, the HTML-stub line, the fingerprint
+  warning, Scenario B, the `-v` operator line, item 11, the wheel install's four exits.
+  `make --no-print-directory gates` before the rewrap, plain and with
+  `GITHUB_ACTIONS=true CI=true`: green both times, 7107 passed and 1 skipped, 97.70%
+  coverage. The rewrap is the last commit.
 
 ## State, 2026-10-15 (landing): main (`a906cea9`) merged in, version 1 pinned at landing (u12 A-81)
 
