@@ -15,7 +15,8 @@
   reproduces IDs, levels and section headings and never the requirement text.
 
 ## Tools (design references)
-- NVIDIA garak (LLM vuln scanner; 50+ probe modules, run-all default, "buffs"=mutators): https://github.com/NVIDIA/garak · https://garak.ai/
+- NVIDIA garak (LLM vuln scanner; 50+ probe modules, run-all default,
+  "buffs"=mutators): https://github.com/NVIDIA/garak · https://garak.ai/
 - Microsoft PyRIT (automated red team; multi-turn Crescendo/TAP/Skeleton-Key, XPIA orchestrator): https://github.com/Azure/PyRIT · https://www.microsoft.com/en-us/security/blog/2024/02/22/announcing-microsofts-open-automation-framework-to-red-team-generative-ai-systems/
 - promptfoo (157 plugins; framework presets owasp:llm/mitre:atlas/nist/eu:ai-act/gdpr/iso:42001): https://www.promptfoo.dev/docs/red-team/plugins/
 - Giskard LLM scan (traditional + LLM-assisted detectors): https://docs.giskard.ai/en/latest/knowledge/llm_vulnerabilities/index.html
@@ -49,10 +50,12 @@ six-stage method, PITV harness, contract anatomy and operating discipline in `AG
 - AWS Kiro (spec-driven IDE): https://kiro.dev
 - OpenAI: Practical guide to building agents: https://openai.com/business/guides-and-resources
 - Sean Grove (OpenAI): The New Code: https://youtube.com/watch?v=8rABwKRsec4
-- Karpathy: Software Is Changing (Again); Simon Willison: vibe coding / lethal trifecta (https://simonwillison.net)
+- Karpathy: Software Is Changing (Again); Simon Willison: vibe coding
+  / lethal trifecta (https://simonwillison.net)
 - Cognition: Don't Build Multi-Agents: https://cognition.com/blog/dont-build-multi-agents
 - Thoughtworks: Exploring Generative AI: https://martinfowler.com/articles/exploring-gen-ai.html
-- Addy Osmani: The 70% Problem (https://addyo.substack.com) · Chip Huyen: AI Engineering / EDD (https://huyenchip.com)
+- Addy Osmani: The 70% Problem (https://addyo.substack.com) · Chip Huyen: AI
+  Engineering / EDD (https://huyenchip.com)
 
 ## Agent-harness attacks (a different target class, out of scope for this tool)
 - Adversa AI: Claude Code vulnerabilities, 10 attacks, CVEs and defenses (2026-09-23):

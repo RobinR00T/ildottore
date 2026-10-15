@@ -36,9 +36,9 @@ the u00 protocols:
 ## §4 Known constraints: KEEP / DECIDE
 - KEEP: evidence artifacts are **immutable + content-addressed** (SHA-256); a rewrite with the
   same content is a no-op, differing content is a new ref (never overwrites).
-- KEEP: SQLite opened with `PRAGMA journal_mode=WAL`, `foreign_keys=ON`, a 30 s interruptible lock wait;
-  all writes in a transaction, a migration in one under the write lock; schema version tracked in
-  a `schema_version` table (forward-only migrations) (A-80).
+- KEEP: SQLite opened with `PRAGMA journal_mode=WAL`, `foreign_keys=ON`, a 30 s interruptible lock
+  wait; all writes in a transaction, a migration in one under the write lock; schema version tracked
+  in a `schema_version` table (forward-only migrations) (A-80).
 - KEEP: redaction is **fail-closed**: if the redactor errors or a raw-secret pattern survives,
   refuse the write and raise, never persist unredacted.
 - KEEP: paths-with-spaces safe; store root from config, never hardcoded; no writes outside root.
@@ -91,11 +91,11 @@ the u00 protocols:
   1,000,000), `judging_digest` (the SHA-256 of the code that judges, computed from the installed
   package, 64 hex digits), `judging_files` (each covered file's 8-hex digest), `python` (the
   interpreter's implementation and `major.minor`) and `dependencies` (pydantic, httpx and
-  websockets versions, recorded only), `tool_version` (the package that started the run, PEP 440 shaped,
-  `VERSION_SHAPE`), `tool_versions` (every invocation's package, appended by `add_run_version` in
-  an immediate transaction that a context rewrite preserves, as `mutator_orders`),
-  `evaluator_plugins` (the `dottore.evaluators` entry points whose evaluator type a selected spec
-  names, each with its distribution, version and source digest), `selection` (the
+  websockets versions, recorded only), `tool_version` (the package that started the run, PEP 440
+  shaped, `VERSION_SHAPE`), `tool_versions` (every invocation's package, appended by
+  `add_run_version` in an immediate transaction that a context rewrite preserves, as
+  `mutator_orders`), `evaluator_plugins` (the `dottore.evaluators` entry points whose evaluator type
+  a selected spec names, each with its distribution, version and source digest), `selection` (the
   selection flags, each string masked with the fixed identity salt; a key a later release adds is
   left alone), `spec_fields` and `target_fields` (an 8-hex digest of each field of the spec and
   target digest projections, so a refusal names the field) and `route`.
@@ -107,13 +107,13 @@ the u00 protocols:
   a list of `fingerprint`, `declared` or `unrecorded`, and each new field its shape; `runs` and
   `spend_json` as before. A value of the wrong shape raises `CorruptRunContext` naming the field,
   never quoting the value, and the appends (`add_run_scope`, `add_run_order`, `add_run_version`)
-  refuse rather than overwrite a list they cannot read (CLI audit 2026-10-11, L6: `adaptive: "x"` read as on,
-  `scope_sha256s: 7` read as unrecorded and overwritten, a non-list `mutator_orders` overwritten).
-  A key this version does not know is left alone. `get_run_context(run_id, checked=False)` returns
-  the record unchecked: the resume reads the rules first with it, so a run a newer version made is
-  refused for its rules rather than called corrupt (pre-merge audit of `22269e0c`, L-4); every
-  other reader checks. `runs.started_at` is checked by the resume that reads it
-  (`YYYY-MM-DDTHH:MM:SSZ`).
+  refuse rather than overwrite a list they cannot read (CLI audit 2026-10-11, L6: `adaptive: "x"`
+  read as on, `scope_sha256s: 7` read as unrecorded and overwritten, a non-list `mutator_orders`
+  overwritten). A key this version does not know is left alone.
+  `get_run_context(run_id, checked=False)` returns the record unchecked: the resume reads the rules
+  first with it, so a run a newer version made is refused for its rules rather than called corrupt
+  (pre-merge audit of `22269e0c`, L-4); every other reader checks. `runs.started_at` is checked by
+  the resume that reads it (`YYYY-MM-DDTHH:MM:SSZ`).
 - Detector-hit fields carry **masked/hashed** values only (`docs/11 §5` DL2); no raw logprob
   secrets, no canary plaintext.
 
@@ -186,14 +186,15 @@ reply keeps the reply and an error ending in ` [blocked_by_provider_filter]` (A-
 a filter stop is stored byte for byte as before (`filter_side` is left out of a dump when unset, so
 content hashes do not move). Since A-79 (u08) a reply whose stop is another provider's filter word
 is stored with `foreign_stop: true` (left out when false, so no other hash moves) and read back as
-a reply with an ordinary stop; a target file's `websocket.response.filter_stops` (and an `openai` or `anthropic` file's
-`filter_stops`) is in the target digest only when declared, so a run stored before it resumes.
-**Open, for the judging-rules version (`fix/resume-judging-rules`):** a resume across this upgrade
-keeps the verdicts its stored attempts were judged with under the earlier rules: a reply stored
-before A-79 carries no `foreign_stop`, which is not recomputed, so an attempt another provider's
-filter word made a cut stays a cut, a judge's fail recorded beside a cut stays inconclusive, and a
-guardrail message's deterministic fail stays a fail. Nothing here bumps a version; that branch's
-re-judge-or-refuse rule is where it is settled (pre-merge audit of `a55710e9`, LOW 6). `ReplayResult.cut_by_provider_output_filter()` and
+a reply with an ordinary stop; a target file's `websocket.response.filter_stops` (and an `openai` or
+`anthropic` file's `filter_stops`) is in the target digest only when declared, so a run stored
+before it resumes. **Open, for the judging-rules version (`fix/resume-judging-rules`):** a resume
+across this upgrade keeps the verdicts its stored attempts were judged with under the earlier rules:
+a reply stored before A-79 carries no `foreign_stop`, which is not recomputed, so an attempt another
+provider's filter word made a cut stays a cut, a judge's fail recorded beside a cut stays
+inconclusive, and a guardrail message's deterministic fail stays a fail. Nothing here bumps a
+version; that branch's re-judge-or-refuse rule is where it is settled (pre-merge audit of
+`a55710e9`, LOW 6). `ReplayResult.cut_by_provider_output_filter()` and
 `provider_filter_side_unknown()` count them, one per attempt id, by the verdict's reason or, on a
 reply stored without a verdict, by its stop reason (`shared.provider_filter`); they stay in `N` and
 are never a success. `dottore replay` writes `inconclusive (cut_by_provider_output_filter)` or
@@ -253,9 +254,9 @@ scope digests stay unredacted, and the evidence store keeps `request.metadata.me
 written, as before: the hex rule reads none of them. The reports name a target by the rules
 before A-78 (u11), while the store keeps its identity mask by the current ones, which the resume
 checks read, in the run row's `target_id` and, since the round-2 audit (R2-L6), in its
-`meta_json.target_ids`, which took the store's per-process salt. Checked by `tests/store/test_identity_masks_before_a78.py` (12 tests; on `de122e26` the
-file stops at collection, which has no `identity_masks`, and 9 fail with the compatibility code
-taken out).
+`meta_json.target_ids`, which took the store's per-process salt. Checked by
+`tests/store/test_identity_masks_before_a78.py` (12 tests; on `de122e26` the file stops at
+collection, which has no `identity_masks`, and 9 fail with the compatibility code taken out).
 
 **A-80 (u12's clause; this unit's half, added 2026-10-12) The stores open under contention, say
 which path failed, and prove themselves before a send.** `migrations.connect` returns a

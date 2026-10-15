@@ -16,7 +16,8 @@ noted, over the wire.
   combination (deterministic-first, LLM judge as a hardened secondary), risk scoring, evidence
   store with redaction-at-rest, `replay`, `diff`, coverage reporting.
 - ✅ **Adapters**: OpenAI-compatible, Anthropic, generic REST, a template-driven WebSocket chat
-  client (`provider: websocket`), and MCP (read-only discovery over Streamable HTTP and stdio). `--judge` wires an LLM-as-judge for live scans.
+  client (`provider: websocket`), and MCP (read-only discovery over Streamable HTTP and stdio).
+  `--judge` wires an LLM-as-judge for live scans.
 - ✅ **Attack families**: prompt injection (direct / indirect-RAG / indirect-tool), jailbreak,
   system-prompt & data leakage (canary-proven), insecure output handling, excessive agency,
   unbounded consumption, multi-turn (Crescendo / Linear / Sequential / Bad-Likert / Tree),

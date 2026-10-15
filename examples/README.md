@@ -140,9 +140,9 @@ A Claude model is scanned the same way with `provider: anthropic`, an
 and later, Sonnet 5 and Sonnet 5.5, and the Fable and Mythos 5 families take no `temperature` or
 `top_p` (Anthropic's API reference, not tested live by this project), so the scanner sends them
 neither, from the list in `adapters.anthropic.MODELS_WITHOUT_SAMPLING`, and the run and
-`--dry-run` say that their replies are not temperature-0 deterministic. A model the list does not name and that
-refuses them is declared with `sampling: false` under `capabilities`; `sampling: true` sends them
-to a listed one.
+`--dry-run` say that their replies are not temperature-0 deterministic. A model the list does not
+name and that refuses them is declared with `sampling: false` under `capabilities`; `sampling: true`
+sends them to a listed one.
 
 A hosted deployment may run its own input filter before the model. Azure OpenAI's content filter
 answers an attack prompt it blocks with HTTP 400 and the error code `content_filter`; the run
@@ -309,8 +309,8 @@ the tool's judgement, so the `operator:` line shows it before anything is sent, 
 the terminal summary state it, and each attempt it changed says so in its verdict (OD-43,
 [`../docs/MANUAL.md`](../docs/MANUAL.md) §4.2). It clears that check only: `send_email` off the
 allowlist or an injected argument still fails. The host is `example.test`, so a run without
-`--dry-run` has nowhere to go: point both files at your deployment first. What a seeded spec tests is only as good as what you
-seeded, which the tool cannot check.
+`--dry-run` has nowhere to go: point both files at your deployment first. What a seeded spec tests
+is only as good as what you seeded, which the tool cannot check.
 
 ## Scenario H, scan a chat endpoint that only speaks WebSocket
 
