@@ -22,14 +22,16 @@ versioning: [SemVer](https://semver.org/).
   `de122e26` alike.
 - **The code that judges is bound to the run, deny by default.** `shared.judging_rules.
   judging_digest` is a SHA-256 over every file of the package but `ildottore.testing` (the golden
-  harness of the test suite): 159 of the 161 modules, with their comments, docstrings and blank
-  lines left out (decorators kept), and the 6 data files the package reads, byte for byte, by
-  suffix (`.yaml`, `.sql`, `.json`, `.j2`: the fingerprint signatures, the run store schema, the
-  report schemas and the HTML template); dotfiles and any other suffix are not the package's source,
-  so a stray `.DS_Store` changes nothing. A run records it when it starts (`judging_digest`, with a
-  short digest of each file as `judging_files`), computed from the installed package once per
-  process (0.32 s on Python 3.12 and 3.14, 0.64 s on 3.9), and a resume under another digest is
-  refused, with no flag, naming both and the files that differ (five at most): `run '<id>' was
+  harness of the test suite): 162 of the 164 modules on the tree merged with main at `d526747e`
+  (159 of 161 before), with their comments, docstrings and blank lines left out (decorators kept),
+  and the 6 data files the package reads, byte for byte, by suffix (`.yaml`, `.sql`, `.json`,
+  `.j2`: the fingerprint signatures, the run store schema, the report schemas and the HTML
+  template); dotfiles and any other suffix are not the package's source, so a stray `.DS_Store`
+  changes nothing. A run records it when it starts (`judging_digest`, with a short digest of each
+  file as `judging_files`), computed from the installed package once per process (0.32 s on Python
+  3.12 and 3.14 and 0.64 s on 3.9, measured on 2026-10-13 over 1.9 MB of source; the merged tree
+  is 2.1 MB), and a resume under another digest is refused, with no flag, naming both and the
+  files that differ (five at most): `run '<id>' was
   judged under the same judging rules (1) by other code: its judging digest is <64 hex> and this
   installation's is <64 hex> (Il Dottore's code changed since the halt: an upgrade, a reinstall or
   a local edit; the files that differ: ildottore.cli.render; ...)`. A run that records the rules

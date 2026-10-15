@@ -33,9 +33,10 @@ audits found verdict code it did not reach (a default of the REST template, a su
 the offline judge, a decorator), so the default was inverted under the owner's delegation (best
 practice, 2026-10-13).
 
-**Landing.** Version ``1`` is the rules as of the merge that introduced the version. At the merge
-the pin is re-pinned on the final tree and :data:`JUDGING_RULES_SINCE` set to the merge day, the
-one place the docs name for that date.
+**Landing.** Version ``1`` is the rules as of the merge that introduced the version. Main was
+merged in on 2026-10-14 (:data:`JUDGING_RULES_SINCE` set to that day, the one place the docs name
+for it) and the pin re-pinned there provisionally; at the landing merge the landing pin replaces
+the provisional one, and the date moves to the landing day if it differs.
 """
 
 from __future__ import annotations
@@ -219,7 +220,8 @@ def judging_digest(package: Path = _PACKAGE) -> str:
     """The SHA-256 of the code that judges, computed from the installed package (deny by default).
 
     Taken once per process (the files do not change under a running scan): 0.32 s for the 165
-    files of the package on Python 3.12 and 3.14, the parse and the tokenizer being most of it.
+    files of the package on Python 3.12 and 3.14 (2026-10-13; 168 files, 2.1 MB, since main was
+    merged in), the parse and the tokenizer being most of it.
     """
 
     return _scanned(package)[0]

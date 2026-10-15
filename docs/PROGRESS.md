@@ -3,6 +3,33 @@
 The carryover ledger. Every agent session updates this so context survives even a cold start
 (the method's observability/resume + "own the context" discipline). Newest on top.
 
+## State, 2026-10-15: main (`d526747e`) merged in, version 1 re-pinned provisionally (u12 A-81)
+
+- Main at `d526747e` (#111 to #115) merged into the branch as a real merge commit (`cef983ae`),
+  conflicts as `LANDING.md` foresaw: one import line of `cli/run.py` (both kept), `CHANGELOG.md`
+  and this file (both entries, the branch's on top), the `--resume` rows of `USAGE.md` and
+  `docs/MANUAL.md` (both sides' sentences as one text), `00-INDEX.md` (both sides' rows).
+- The exemption and coverage tests pass on the merged tree: main's three new modules
+  (`shared/filter_stops.py`, `shared/resend.py`, `shared/withheld.py`) are covered, only
+  `ildottore.testing` is exempt; 168 files, 162 of the 164 modules and 6 data files.
+  `JUDGING_RULES_SINCE` set to 2026-10-14 and version 1 re-pinned provisionally to `b644c56b`
+  (`06255814`); the landing pin replaces that line, in `PIN_HISTORY` and the frozen file, once
+  fix/cli-input-validation (#116) has landed.
+- `make gates` green on `06255814` (`PYTHONPATH` set to the worktree's `src`, `TMPDIR` the system
+  default): 6768 tests (6664 on `main` at `d526747e`), 97.71% coverage, 75 specs lint OK, four
+  import contracts kept, mypy strict on 164 files, self-scan, bandit and pip-audit clean; the suite
+  again under `GITHUB_ACTIONS=true CI=true`, green.
+- The halt-and-resume harness on the merged tree (`scratch/fixcli2/merge/h/`): the controls resume
+  (mock, REST, OpenAI, a comment-only edit, a `.DS_Store`); the auditor's mutations a, f, g2 and i,
+  a new module and an edit of main's new `shared/filter_stops.py` are refused before sending (exit
+  3, 0 requests, the module named); a run halted on main `d526747e` is refused as recording no
+  rules. The L6 repro refuses each corrupt field naming it. Same digest on Python 3.9, 3.12 and
+  3.14.
+- A trial merge of #116's head (`8a8053a7`) in a throwaway worktree conflicts in six files, all
+  resolved by rule (recorded by `git rerere` and scripted); there the exemption and coverage tests
+  pass (#116's `cli/key_shape.py`, `shared/credential_refs.py` and `shared/error_text.py` covered,
+  171 files) and only the pin fails, as it must.
+
 ## State, 2026-10-13 (night): the third audit of `1d3d65c7` (merge-ready), applied
 
 - MEDIUM 1: an exempt renderer could change a verdict through an import-time side effect

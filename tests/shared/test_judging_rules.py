@@ -39,7 +39,10 @@ from ildottore.shared.judging_rules import (
 #: Every pin ever made, in order: ``(version, digest, reason)``. Append-only: a line is never edited
 #: or removed, which ``judging_pins.frozen`` beside this file enforces. A new version is a new
 #: line; a version is re-pinned only by a new line whose reason says ``re-pin`` and why (the
-#: landing re-pin on the final tree, or a change that cannot alter a stored verdict).
+#: landing re-pin on the final tree, or a change that cannot alter a stored verdict). One line is
+#: replaced instead, once: the provisional pin of 2026-10-14 (the tree merged with main before the
+#: last branch landed), which never reached ``main``, by the landing pin, in this tuple and in the
+#: frozen file at the same place, while version 1 is unreleased.
 PIN_HISTORY: tuple[tuple[int, str, str], ...] = (
     (
         1,
@@ -419,7 +422,8 @@ def test_each_covered_file_has_a_short_digest_for_the_refusal(tmp_path: Path) ->
 
 
 def test_the_digest_costs_well_under_a_second() -> None:
-    """Taken once per process, at run start and by a resume: 0.32 s measured for 165 files."""
+    """Taken once per process, at run start and by a resume: 0.32 s measured for 165 files
+    (2026-10-13), 168 on the tree merged with main at d526747e."""
 
     started = time.perf_counter()
     judging_rules._digest(Path(judging_rules.__file__).resolve().parents[1])
