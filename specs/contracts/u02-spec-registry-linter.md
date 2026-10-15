@@ -111,8 +111,8 @@ evaluators). Later packs may extend but never silently override earlier ids. Ful
 - **Registry API:** property test (Hypothesis): `get(id)` round-trips every listed spec;
   `resolve(suite)` returns specs in suite order; `list(filter=...)` is a correct subset.
 - `dottore lint specs/` exits 0 on the shipped good tree, non-zero with itemized errors on `bad/`.
-- `ruff check`, `ruff format --check`, `mypy src/ildottore/registry`,
-  `mypy src/ildottore/cli/lint.py` clean; `lint-imports` green (registry imports `shared` only).
+- `ruff check`, `ruff format --check`, `mypy src/ildottore/registry`, `mypy src/ildottore/cli/lint.py`
+  clean; `lint-imports` green (registry imports `shared` only).
 
 **A-17 Every framework field is validated against something (added 2026-09-22).** `owasp` and
 `mitre_atlas.tactic` must be in their pinned universes (or in the declared companion sets),
@@ -451,9 +451,8 @@ spec schema error that opens with an integer writes it with thousands separators
 read as a phone number (L8). After the pre-merge audit: the registry skips a second declaration of
 an id from the same resolved file (`lint sp sp` reported 75 collisions naming one file twice), and
 `cli.lint.run_lint` takes the CLI's mask for the findings that quote a search path
-(`PATH_NOT_FOUND`, `NO_SPECS`, `FILES_NOT_READ`). Checked by
-`tests/cli/test_spec_paths_that_hold_nothing.py`, `tests/cli/test_spec_id_collisions.py` and
-`tests/cli/test_cli_messages_read_right.py`.
+(`PATH_NOT_FOUND`, `NO_SPECS`, `FILES_NOT_READ`). Checked by `tests/cli/test_spec_paths_that_hold_nothing.py`,
+`tests/cli/test_spec_id_collisions.py` and `tests/cli/test_cli_messages_read_right.py`.
 
 ## §8 Out of scope / forbidden
 - MUST NOT execute spec/plugin code or open any socket at load (parse + validate + register only).

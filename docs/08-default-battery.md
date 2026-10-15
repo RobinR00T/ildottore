@@ -5,8 +5,8 @@ This is the **minimum battery** shipped by default, distilled from the ecosystem
 (OWASP LLM Top 10 2025, MITRE ATLAS, NIST AI RMF and its GenAI Profile, NIST AI 600-1).
 Sources: see `docs/REFERENCES.md`. NIST is a design reference, not a mapping the code checks:
 each spec's `nist_ai_rmf` field carries an AI RMF function/subcategory token (`MEASURE 2.7`,
-`MANAGE 2.2`, `MEASURE 2.11`, `GOVERN 1.1`, `MEASURE 2.3`), validated by shape only; no spec names
-an AI 600-1 risk category, and `dottore coverage` has no NIST axis.
+`MANAGE 2.2`, `MEASURE 2.11`, `GOVERN 1.1`, `MEASURE 2.3`), validated by shape only; no spec names an AI 600-1
+risk category, and `dottore coverage` has no NIST axis.
 
 Status key for this document: items marked **(not built)** are design that has no spec field,
 mechanism or suite behind it today. In §4 and §5 every technique is marked: either it names
@@ -59,12 +59,13 @@ Measured, not designed: `owasp-llm-top10` and `quick` list the same 18 spec ids,
 are one battery today (T1's design size was ~60). Neither is the default: a `run` with no
 `--suite` selects the full battery, every spec the target can run. The whole battery covers 8
 of the 10 OWASP LLM codes (`dottore coverage --framework owasp`). `--quick` selects the `quick`
-suite at `-T0`. `--deep` changes the timing template to `-T2` and not the selection: with no
-`--suite` it runs the full battery, as no flag does; adaptive ordering needs a fingerprint, so it
-applies only with `-sV` (or `-A`, which adds it): `docs/09 §2`. `--suite agentic` is not T2: it
-resolves to `agentic-extortion`, 7 specs. The "150+" in the original design table was a target, not
-a measurement: the battery ships 75 specs. (Until 2026-09-21 both flags only moved the timing
-template and changed no battery at all.)
+suite at `-T0`. `--deep` changes the timing template to `-T2` and not the selection: with no `--suite` it
+runs the full battery, as no flag does;
+adaptive ordering needs a fingerprint, so it applies only with `-sV` (or `-A`, which adds it):
+`docs/09 §2`. `--suite agentic` is not T2: it resolves to `agentic-extortion`, 7 specs. The
+"150+" in the original design table was a target, not a measurement: the battery ships 75
+specs. (Until 2026-09-21 both flags only moved the timing template and changed no battery at
+all.)
 
 ## 3. The minimum battery (T0 "Quick"): mapped to OWASP LLM Top 10 2025
 

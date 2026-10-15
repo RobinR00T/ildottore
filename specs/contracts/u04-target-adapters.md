@@ -39,16 +39,14 @@ reads as U+FFFD, since httpx decodes the stream as text.
 - Calls providers via **`httpx`** only (no vendor SDKs: ADR-0002). Reads endpoint allowlist and
   auth-identity resolution from u01's policy engine; secrets sourced from env/vault, never logged.
 - `Capabilities` MUST report all eight flags: `tools, rag, memory, streaming, seed, logprobs,
-  multi_identity, multimodal`. A target may expose ≥2
-  auth identities (`multi_identity`, `docs/01 §6`).
+  multi_identity, multimodal`. A target may expose ≥2 auth identities (`multi_identity`, `docs/01 §6`).
 
 ## §4 Known constraints: KEEP / DECIDE
 - KEEP: allowlist check happens **in `base.py` before the httpx call**: unbypassable by subclasses.
 - KEEP: `logprobs` absent ⇒ `ModelResponse.logprobs = None` (not `[]`) so `logprob_membership`
   returns `inconclusive: capability_unavailable` (ADR-0005). `seed` unsupported ⇒ record best-effort
   determinism, do not fake a seed.
-- KEEP: NO live keys in CI: every provider path is contract-tested
-  with recorded **respx** cassettes.
+- KEEP: NO live keys in CI: every provider path is contract-tested with recorded **respx** cassettes.
 - KEEP (as built, SEC-07 and 2026-10-04): every body read over the wire goes through
   `base.read_capped`: 4 MiB (`MAX_RESPONSE_BYTES`), checked per chunk. The body is read raw and
   `gzip`/`deflate` are decoded there with a bounded `zlib` call, so a compression bomb never
@@ -109,9 +107,8 @@ reads as U+FFFD, since httpx decodes the stream as text.
 ## §5 Implementation plan (each step its own commit, green before next)
 1. `base.py`: allowlist gate (host+path-prefix, default-deny), retry/timeout/backoff, env-vs-product
    error classification, `_map_logprobs` helper, redactor hookup, `Capabilities` scaffolding.
-2. `openai.py`: chat/completions over httpx; `seed`+`logprobs`+`top_logprobs`; map to
-   `TokenLogprob`; capabilities (tools/json/vision/streaming/seed/logprobs =
-   true, subject to config).
+2. `openai.py`: chat/completions over httpx; `seed`+`logprobs`+`top_logprobs`; map to `TokenLogprob`;
+   capabilities (tools/json/vision/streaming/seed/logprobs = true, subject to config).
 3. `anthropic.py`: messages API; role/system-block placement verbatim; logprob mapping (per provider
    support); `stop_reason` vocab preserved; capabilities. (Since 2026-10-09, u12 A-66: its
    `sent_sampling` is what of a request's sampling goes out, no `seed` and no `top_p` beside a
@@ -129,9 +126,8 @@ reads as U+FFFD, since httpx decodes the stream as text.
 
 ## §6 Data/wire shapes
 - `TokenLogprob = {token: str, logprob: float, top: list[tuple[str,float]] | None}` (ADR-0005).
-- `ModelResponse` carries: `text`, `raw` (provider raw, redacted),
-  `logprobs: list[TokenLogprob]|None`, `finish_reason`/`stop_reason`, provider request/response
-  ids, echoed sampling config.
+- `ModelResponse` carries: `text`, `raw` (provider raw, redacted), `logprobs: list[TokenLogprob]|None`,
+  `finish_reason`/`stop_reason`, provider request/response ids, echoed sampling config.
 - `Capabilities = {tools, rag, memory, streaming, seed, logprobs, multi_identity, multimodal,
   audio: bool}` (as built, `shared/models.py`: nine flags, `audio` added with the audio carrier,
   and no `max_context_tokens` field), and since 2026-10-09 `sampling: bool | None` (u12 A-68:
@@ -142,9 +138,8 @@ reads as U+FFFD, since httpx decodes the stream as text.
   in requests masked via u01 redactor before any log/evidence write.
 
 ## §7 Acceptance criteria (machine-checkable)
-- `pytest tests/adapters -q` green; coverage ≥ 90% for `src/ildottore/adapters/`. **Zero live
-  network calls** in the suite (respx asserts all httpx traffic
-  is mocked; `pytest --forked`/no-net gate).
+- `pytest tests/adapters -q` green; coverage ≥ 90% for `src/ildottore/adapters/`. **Zero live network
+  calls** in the suite (respx asserts all httpx traffic is mocked; `pytest --forked`/no-net gate).
 - **Allowlist gate:** table-test proves an off-allowlist host AND off-prefix path each raise
   `EndpointNotAllowed` **before** any httpx request is issued (respx registers 0 calls on refusal).
 - **Logprob mapping (golden):** OpenAI + Anthropic cassettes → assert exact `TokenLogprob` lists vs
@@ -195,8 +190,7 @@ reads as U+FFFD, since httpx decodes the stream as text.
   CLI: `fingerprint`, `run`, `run -sV` and the membership spec, both directions, the text still
   judged), `tests/adapters/test_base.py`, `tests/evaluators/test_data_leak.py`,
   `tests/shared/test_logprobs.py`.
-- **Capabilities:** each adapter reports every bool flag (nine as built);
-  parametrized snapshot per provider.
+- **Capabilities:** each adapter reports every bool flag (nine as built); parametrized snapshot per provider.
 - **Error classification:** 429/503/timeout cassettes ⇒ retry-then-skip (env); a malformed-schema
   200 ⇒ `ResponseMalformed` (env, sent once, since OD-21: see below); a non-retryable 4xx ⇒ raise
   (product defect). No defect masked as flake. A 200 whose brackets balance and nest
@@ -330,10 +324,10 @@ reads as U+FFFD, since httpx decodes the stream as text.
   filter's stop at `final_path` (the conversation is dropped, as on every error, and a frame in
   the handshake phase is not re-dialled; a turn with a tool call or a filter's stop and no text is
   a reply with empty text, read after them: raised first, an agent's destructive call was never
-  evaluated and a filter's cut was not OD-42's, pre-merge audit of `598f0858`, HIGH 2); an MCP body
-  or SSE event that is not JSON, an SSE stream with no `data:` event, and an `initialize` with no
-  result object, over HTTP or stdio. What stays a product error: a non-retryable 4xx
-  (`AdapterStatusError`, `SamplingRefused`; a `ProviderFilterBlock` is OD-41's blocked attempt), a
+  evaluated and a filter's cut was not OD-42's, pre-merge audit of `598f0858`, HIGH 2); an MCP body or SSE event that is not JSON, an SSE stream with no `data:` event, and
+  an `initialize` with no result object, over HTTP or stdio. What stays a product error: a
+  non-retryable 4xx (`AdapterStatusError`, `SamplingRefused`; a `ProviderFilterBlock` is OD-41's
+  blocked attempt), a
   JSON-RPC `error` an MCP server answers, a WebSocket handshake reply that does not satisfy
   `expect`, a refused upgrade, and configuration the adapter cannot send. Since the `-sV` probe
   pass isolates every refused reply by the same marker (u09 A-35), such a probe fails alone, as
@@ -343,14 +337,14 @@ reads as U+FFFD, since httpx decodes the stream as text.
   that crosses that cut (`redactor.registered_secrets`) and before a key-shaped token that does
   when its part before the cut is 256 characters or fewer (read in part, neither is recognised:
   up to 15 leading characters of a registered credential survived, verification of `07aa0b3a`,
-  LOW 1), redacted, then cut to 4 KiB (`reply_excerpt`, `_clean_cut`); `size`, the body's bytes;
-  `advice`, the adapter's `unreadable_advice`, worded for it (openai: an OpenAI chat completions URL
-  and `provider: openai`; anthropic: the Messages API; websocket: the block's `text_path`,
-  `tool_calls_path` and `final_path`; mcp: an MCP server; a REST template built in Python: its
-  `text_path`; a target file's `provider: rest` target, built by `cli.wiring`, the generic
-  template's `text` and that a template is the Python API's, never "check the response template",
-  which a target file cannot declare: LOW 2). A shape error raised inside `_parse_response` gets the
-  body in `_handle_final_response`. A REST template whose `text_path` starts at an index
+  LOW 1), redacted, then cut to 4 KiB (`reply_excerpt`, `_clean_cut`); `size`, the body's bytes; `advice`, the adapter's
+  `unreadable_advice`, worded for it (openai: an OpenAI chat completions URL and `provider: openai`;
+  anthropic: the Messages API; websocket: the block's `text_path`, `tool_calls_path` and
+  `final_path`; mcp: an MCP server; a REST template built in Python: its `text_path`; a target
+  file's `provider: rest` target, built by `cli.wiring`, the generic template's `text` and that a
+  template is the Python API's, never "check the response template", which a target file cannot
+  declare: LOW 2). A shape error raised inside `_parse_response` gets the body in
+  `_handle_final_response`. A REST template whose `text_path` starts at an index
   (`reads_array_body`, Hugging Face's `0.generated_text`) reads a body that is a JSON array; every
   other adapter and template still refuses one as not an object (LOW 2). Checked by
   `tests/adapters/test_malformed_replies.py` (it does not collect on `6d5f7ae`),
@@ -368,8 +362,8 @@ reads as U+FFFD, since httpx decodes the stream as text.
   reply's content, which the redactor joins across the frames field by field (`redact_split`, u01
   A-77), in memory where `redact_ids` builds the record and again at rest and in the reports, which
   read the paths from the transcript without the target file (a transcript stored before them is
-  read with the frame type at `type`, the default `type_path`). A secret the server streams in
-  deltas was redacted delta by delta and rebuilt from the evidence (an `sk-proj-` key, a registered
+  read with the frame type at `type`, the default `type_path`). A secret the server streams in deltas
+  was redacted delta by delta and rebuilt from the evidence (an `sk-proj-` key, a registered
   credential and an email in three deltas, measured with the loopback fake chat server). A turn
   with no text quotes its frames received in the excerpt with that content masked as one text
   (`mask_split` over the transcript): the frames were `json.dumps`ed and redacted as one string, so
@@ -498,8 +492,8 @@ reads as U+FFFD, since httpx decodes the stream as text.
   `MIN_CREDENTIAL_LEN` is `redactor.KNOWN_SECRET_MIN_LEN`, re-exported by the WebSocket module. The
   CLI refuses it earlier too (u12). Checked by `tests/adapters/test_short_credentials.py` (39 tests;
   on `de122e26` the file stops at collection, which lacks `MIN_CREDENTIAL_LEN` and
-  `refuse_short_credential`, and 19 fail with the two given stand-ins in a copy of the file; the
-  test adapters that used the key `k` use one of 10). The no-entropy twin a model name goes through
+  `refuse_short_credential`, and 19 fail with the two given stand-ins in a copy of the file; the test
+  adapters that used the key `k` use one of 10). The no-entropy twin a model name goes through
   (`redact_ids`, `Redactor.without_entropy`) drops the UUID pattern with the entropy rule, so a
   deployment's model name holding one reads as before A-78 for the fingerprint's metadata layer
   (u01's clause, L5).
@@ -513,12 +507,12 @@ reads as U+FFFD, since httpx decodes the stream as text.
   `content_filter` as a block (security audit of 2026-10-11, MEDIUM 3). The criterion:
   - every adapter says which stops it honours, `filter_stops` (a `frozenset` of trimmed,
     lower-case words): `BaseAdapter` none; `OpenAIAdapter` `content_filter`; `AnthropicAdapter`
-    `refusal`; `RestAdapter` its template's `reads_filter_stops`, which is
-    `RestTemplate.filter_stops` when set and otherwise the template's shape: Bedrock's
-    (`guardrail_intervened`, `content_filtered`) for a `finish_path` of `stopReason`, Gemini's and
-    Vertex AI's (`safety`, `blocklist`, `prohibited_content`, `spii`, `model_armor`, `recitation`)
-    for a `text_path` under `candidates.`, none otherwise (a target file's `provider: rest` target
-    has the generic template, with no `finish_path`, and reads none); `WebSocketAdapter` its file's
+    `refusal`; `RestAdapter` its template's `reads_filter_stops`, which is `RestTemplate.filter_stops`
+    when set and otherwise the template's shape: Bedrock's (`guardrail_intervened`,
+    `content_filtered`) for a `finish_path` of `stopReason`, Gemini's and Vertex AI's (`safety`,
+    `blocklist`, `prohibited_content`, `spii`, `model_armor`, `recitation`) for a `text_path`
+    under `candidates.`, none otherwise (a target file's `provider: rest` target has the generic
+    template, with no `finish_path`, and reads none); `WebSocketAdapter` its file's
     `response.filter_stops` (u00), none by default. The vocabularies, each sourced, are in
     `shared.filter_stops`; a declaration must name values from them (`documented_stops`), refused
     otherwise, and a WebSocket declaration beside a `final_value` is refused (every turn ends on

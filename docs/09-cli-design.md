@@ -140,13 +140,13 @@ not read by the runner: every mutation variant of every spec is sent `--runs` ti
 
 **Options are validated before the campaign.** `run` refuses, with exit 3 and before the scope
 is loaded or anything is sent: a `--rate` that is not greater than 0; an unknown `--fail-on`
-band; `--timeout` below 1 second or above 86,400 (a day; NaN and infinity included, A-82);
-`--concurrency`, `--top-tests` or `--runs` below 1; a negative `--budget-tokens`,
-`--budget-requests` or `--budget-wall` (the dry run printed it and exited 0, the run refused it);
-any of those six past `2**53` (9,007,199,254,740,992, where the run of whole numbers a float holds
-exactly ends: `--runs` of a few hundred digits crashed the plan's float arithmetic with exit 1,
-A-55); a report path whose directory does not exist; and two report formats that would write the
-same file (paths compared after resolving, Unicode-normalized and case-folded, because a
+band; `--timeout` below 1 second or above 86,400 (a day; NaN and infinity included, A-82); `--concurrency`, `--top-tests` or `--runs` below 1; a
+negative `--budget-tokens`, `--budget-requests` or `--budget-wall` (the dry run printed it and
+exited 0, the run refused it); any of those six past `2**53` (9,007,199,254,740,992, where the
+run of whole numbers a float holds exactly ends: `--runs` of a few hundred digits crashed the
+plan's float arithmetic with exit 1, A-55); a report path whose directory does not exist; and two
+report formats that would write the same
+file (paths compared after resolving, Unicode-normalized and case-folded, because a
 case-insensitive volume treats `R.json` and `r.json` as one file), or a report path that is an
 input of the run (the scope, a target, the judge, the fleet file, the run store and SQLite's
 files beside it, a spec file: compared as files, so a symlink or a hard link is caught, A-80).
@@ -190,16 +190,16 @@ already), then the later send by the `send_number`
 every stored attempt carries; each kept the first at a tie in file-name order, so an unreadable
 re-send could be dropped and its spec published as a pass. The resume message names each id it
 sends again once, by that attempt, and what a resume keeps is read from that attempt too, so an
-unreadable reply whose re-send was blocked is sent again by the next resume. A resume halted by a
-ceiling while re-sending keeps the finding a spec already had when that finding held every planned
-attempt. The resume message says how many attempts are kept and how many will be sent again, and
-`--estimate --resume` subtracts the requests already done (one per turn of each). What made this
-safe: the run store journals every attempt artifact as it is written (schema v4, `pending` before
-the write and `written` after), so a resume interrupted mid-spec leaves no artifact the manifest
-does not know, and the next resume is not refused as tampered (it was, which is why the first
-attempt was withdrawn). A resume adopts into the journal the artifacts already on disk once they
-pass the check, so a run started by an older version kept resuming (until the judging-rules record:
-such a run is now refused for the rules that judged it, below).
+unreadable reply whose re-send was blocked is sent again by the next resume. A resume halted by a ceiling while re-sending keeps the finding a spec already had when
+that finding held every planned attempt. The resume message says how many attempts are kept and
+how many will be sent again, and `--estimate --resume` subtracts the requests already done (one
+per turn of each). What made this safe: the run store journals every attempt artifact as it is
+written (schema v4, `pending` before the write and `written` after), so a resume interrupted
+mid-spec leaves no artifact the manifest does not know, and the next resume is not refused as
+tampered (it was, which is why the first attempt was withdrawn). A resume adopts into the
+journal the artifacts already on disk once they pass the check, so a run started by an older
+version kept resuming (until the judging-rules record: such a run is now refused for the rules
+that judged it, below).
 
 **A resume is bound to the rules that judged it (2026-10-12, u12 A-81).** The attempts a resume
 keeps carry the verdicts the version that judged them gave, and a resume judges only what it
@@ -298,8 +298,7 @@ battery tests, use `dottore coverage --framework atlas` (OWASP, ATLAS, IoPC and 
 Each of these was in the design and is **not** on the CLI today. Every flag in the list was
 tried on `run --quick --dry-run` and answered "No such option" (exit 3):
 
-- `--seed <int>` (determinism is pinned per spec in its `sampling`, not by a run flag; a field a
-  spec leaves unset is filled from the target file's `sampling_defaults`, OD-39).
+- `--seed <int>` (determinism is pinned per spec in its `sampling`, not by a run flag; a field a spec leaves unset is filled from the target file's `sampling_defaults`, OD-39).
 - `--allow-endpoint <host/prefix>` (extend the allowlist, audited). The scope file is the only
   way to authorize an endpoint.
 - `--unsafe-render` (render raw dangerous payloads in the report). `config.SafetyFlags` and the

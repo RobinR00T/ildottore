@@ -14,13 +14,12 @@ the file, schema copy, build or pipeline it names.
   `pyproject.toml` selects ships neither `specs/` nor `schemas/`. Measured from a directory
   outside the repo (re-measured on 2026-10-15, on `main` merged in): `dottore lint` and
   `dottore run --dry-run` exit 3, without a spec path on `spec path not found: specs`, and with a
-  checkout's `specs/` on the missing `schemas/attack-spec.schema.json`. The example now checks Il
-  Dottore out at a pinned full SHA of `main` (`# pin: update to the commit you have reviewed`,
-  `v0.1.0` as the commented alternative), installs that checkout with `pip install -e` and passes
-  `--spec-path`; its caveat lists how v0.1.0 gates differently (exit codes, OD-19, the 2026-10-03
-  scoring fixes, OD-38, OD-41, OD-42, OD-21, OD-44, OD-18, OD-29, OD-31). INSTALL.md says a
-  non-editable install cannot load the battery, and the defect is a `docs/12` P1 row and a ROADMAP
-  line. Packaging is not changed.
+  checkout's `specs/` on the missing `schemas/attack-spec.schema.json`. The example now checks Il Dottore out at a pinned full SHA of `main`
+  (`# pin: update to the commit you have reviewed`, `v0.1.0` as the commented alternative),
+  installs that checkout with `pip install -e` and passes `--spec-path`; its caveat lists how
+  v0.1.0 gates differently (exit codes, OD-19, the 2026-10-03 scoring fixes, OD-38, OD-41,
+  OD-42, OD-21, OD-44, OD-18, OD-29, OD-31). INSTALL.md says a non-editable install cannot load
+  the battery, and the defect is a `docs/12` P1 row and a ROADMAP line. Packaging is not changed.
 - **Figures OD-44 moved, re-measured:** 33 specs and 545 requests on `examples/target.local.yaml`
   (USAGE, MANUAL, `docs/09`), "34 of 75 specs never ran" in the unreadable-replies transcript
   (`examples/README.md`), the `docs/16` §3 cost table and its prose, 140 and 350 replay attempts
@@ -50,9 +49,9 @@ the file, schema copy, build or pipeline it names.
 - **With main merged in (2026-10-15, #111 to #116):** `dottore(1)` documents the root `-v`,
   fleet's `--spec-path`, `--evidence-root`, `--run-db` and report options,
   `schema export --name report` and the spec path's fallback to the battery beside the package;
-  the root `-v` help loses its backticks; a credential variable set but empty under `--dry-run`,
-  `-sn` or `--estimate` is a warning and exit 0, where #113 exited 3, now said in the A-82 entry and
-  in `dottore-scope(5)`. With #117 merged, judging rules version 1 is re-pinned by an appended line
+  the root `-v` help loses its backticks; a credential variable set but empty under `--dry-run`, `-sn` or
+  `--estimate` is a warning and exit 0, where #113 exited 3, now said in the A-82 entry and in
+  `dottore-scope(5)`. With #117 merged, judging rules version 1 is re-pinned by an appended line
   for this branch's help and docstring text, which cannot change a verdict. With #117 landed
   (main at `3740b387`, recorded as merged), the CI example pins that commit's full SHA and its
   v0.1.0 caveat adds A-79, the scoring audit, the SARIF level of a fail that needs review, A-80,
@@ -131,26 +130,25 @@ the file, schema copy, build or pipeline it names.
   and is not recorded (the second audit: a resume was refused over one). Today the record is empty:
   a spec names a type of the schema's `EvaluatorType`, and a plugin may not reuse a built-in type.
 - **Recorded when a run starts, and checked before a resume sends anything.** `context_json`
-  holds `judging_rules`, `judging_digest`, `tool_version` (the package that started the run) and
-  `tool_versions` (every invocation's, in order; a package version with no PEP 440 shape is recorded
-  as `unknown`). A resume under other rules, older or newer, is refused (exit 3) with both versions
-  named, why, and what to do: `run '<id>' was judged by the rules of an older Il Dottore (judging
-  rules 1, started by Il Dottore v0.1.0), and this is Il Dottore v0.1.0, judging rules 2. ... the
-  stored replies are redacted, so they cannot be judged again. There is no flag for this: finish it
-  with the version that started it (`dottore
-  --version` names its judging rules), or start a fresh run.` A version is written `v<version>`, so
-  one of any PEP 440 shape reads in clear (`1.2.3.4` read as an IPv4 address and `2026.10.12` as a
-  phone number to the error redactor, L-5). A run that records no rules was made by a version before
-  the record (one from before `JUDGING_RULES_SINCE`) and is refused the same way (`records no
-  judging rules (the record exists since <JUDGING_RULES_SINCE>), so it was made by an Il Dottore
-  older than this one ...`). A run whose rules differ is refused for them before its other fields
-  are checked, so a newer run is not called corrupt over a field this version does not know (L-4).
-  Judging the kept replies again was checked first and is not possible: the evidence is redacted at
-  rest (DL2), so a leaked canary is stored as `«REDACTED:canary:…»` (`SP-LEAK-001` against the
-  vulnerable mock) and a secret as its mask, where the evaluators look for the raw value, no logprob
-  is kept, and the judge would have to be asked again. No flag waives the refusal
-  (`--resume-unverified` included), and `--dry-run` and `--estimate` refuse too. Against the H2 run
-  above: exit 3, 0 requests sent, nothing written.
+  holds `judging_rules`, `judging_digest`, `tool_version` (the package that started the run) and `tool_versions`
+  (every invocation's, in order; a package version with no PEP 440 shape is recorded as
+  `unknown`). A resume under other rules, older or newer, is refused (exit 3)
+  with both versions named, why, and what to do: `run '<id>' was judged by the rules of an older Il
+  Dottore (judging rules 1, started by Il Dottore v0.1.0), and this is Il Dottore v0.1.0, judging
+  rules 2. ... the stored replies are redacted, so they cannot be judged again. There is no flag
+  for this: finish it with the version that started it (`dottore --version` names its judging
+  rules), or start a fresh run.` A version is written `v<version>`, so one of any PEP 440 shape
+  reads in clear (`1.2.3.4` read as an IPv4 address and `2026.10.12` as a phone number to the
+  error redactor, L-5). A run that records no rules was made by a version before the record (one
+  from before `JUDGING_RULES_SINCE`) and is refused the same way (`records no judging rules (the record exists since <JUDGING_RULES_SINCE>),
+  so it was made by an Il Dottore older than this one ...`). A run whose rules differ is refused for
+  them before its other fields are checked, so a newer run is not called corrupt over a field this
+  version does not know (L-4). Judging the kept replies again was checked first and is not
+  possible: the evidence is redacted at rest (DL2), so a leaked canary is stored as
+  `«REDACTED:canary:…»` (`SP-LEAK-001` against the vulnerable mock) and a secret as its mask, where
+  the evaluators look for the raw value, no logprob is kept, and the judge would have to be asked
+  again. No flag waives the refusal (`--resume-unverified` included), and `--dry-run` and
+  `--estimate` refuse too. Against the H2 run above: exit 3, 0 requests sent, nothing written.
 - **Breaking.** Every run that records no judging rules, which is every run a version from before
   `shared.judging_rules.JUDGING_RULES_SINCE` halted, is refused by its resume, whatever its rules
   were: finish it with the version that started it, or start a
@@ -198,9 +196,8 @@ the file, schema copy, build or pipeline it names.
   are named apart (the message named both); a corrupt `not_destructive_tools` is refused as corrupt
   where it fell back to the target refusal.
 - **Compatibility.** The context of a run of the whole battery grows to about 48 KB (the spec
-  field digests, 40 KB at 8 hex digits per field, and the per-file judging digests, 7 KB). An older
-  version ignores the new keys and drops them on its rewrite. The spec and target digests are
-  unchanged, byte for byte.
+  field digests, 40 KB at 8 hex digits per field, and the per-file judging digests, 7 KB). An older version ignores the new keys and drops them on its
+  rewrite. The spec and target digests are unchanged, byte for byte.
 - Docs: MANUAL (the `--resume` row and resume prose of `dottore run`, the `dottore replay` note,
   five troubleshooting rows), FAQ, USAGE, `dottore(1)`, `docs/02` §3, `docs/09`, ADR-0007's OD-44
   note (corrected as below), PROGRESS; contracts u12 §7 A-81 (new) and A-24 (amended), u10 §6, the
@@ -210,8 +207,8 @@ the file, schema copy, build or pipeline it names.
   `tests/cli/test_resume_corrupt_context.py` (31). On `de122e26` the first two do not import (the
   module is new), all 15 of the third fail and 28 of the 31 (the three that pass are the
   `sampling_defaults_applied` refusal, which existed, an unknown key and a well-formed start); on
-  `1d3d65c7`, the head the third audit read, 8 of the 24 and 3 of the 34 fail. Six tests updated for
-  the messages named above or the stricter store (`--version`, the route refusal, the per-field
+  `1d3d65c7`, the head the third audit read, 8 of the 24 and 3 of the 34 fail. Six tests updated for the
+  messages named above or the stricter store (`--version`, the route refusal, the per-field
   sampling message, the corrupt declaration record, a scope test's fake target digest, and the
   scope-note test, whose hostile entries are now refused unquoted).
 
@@ -259,20 +256,19 @@ the file, schema copy, build or pipeline it names.
   query or fragment parameter whose normalised name is a credential's (`?api_key=`,
   `?accessToken=`, `;token=`, `#token=`, `?jwt=`, `?k=`, `?api_key[]=`, `?oauth_token=`,
   `?X-Goog-Signature=`, `?passcode=` and the like), whose name is itself shaped like a key
-  (`?<key>=1`), or whose value is shaped like a key (a credential format, or a high-entropy token
-  that is not a hexadecimal id or a UUID), and a URL with no host after its scheme
-  (`https:/ops:<key>@host`, `https:\\ops:<key>@host`), each of which was copied into both files.
-  What a legitimate endpoint carries is kept (`?api-version=2024-02-01`, a tenant UUID, a hex trace
-  or request id, an email, `?sort_key=`, `?session=`). A `provider` the tool does not
-  have is refused too.
+  (`?<key>=1`), or whose value is shaped like a key (a credential format, or a high-entropy token that is not a hexadecimal id or a
+  UUID), and a URL with no host after its scheme (`https:/ops:<key>@host`,
+  `https:\\ops:<key>@host`), each of which was copied into both files. What a legitimate endpoint
+  carries is kept (`?api-version=2024-02-01`, a tenant UUID, a hex trace or request id, an email,
+  `?sort_key=`, `?session=`). A `provider` the tool does not have is refused too.
 
 ### Changed (breaking for a live run with an unset credential variable, and for a pipeline that relied on that dry run failing: `run` and `fingerprint` refuse it, u12 A-82)
 
 - `auth_ref: env://TYPO` with `TYPO` unset (or set to spaces) sent every request without a
-  credential and ended on a bare `non-retryable HTTP 401`; against a server that needs no key it
-  ran. A live `run` or `fingerprint` now refuses it before anything is sent (exit 3), naming the
-  variable (the target's, the `--judge` model's, a swept identity's); `--dry-run`, `--estimate` and
-  `-sn` warn and go on. `env://NONE` names no credential and is never read; a target that takes none
+  credential and ended on a bare `non-retryable HTTP 401`; against a server that needs no key it ran.
+  A live `run` or `fingerprint` now refuses it before anything is sent (exit 3), naming the variable
+  (the target's, the `--judge` model's, a swept identity's); `--dry-run`, `--estimate` and `-sn`
+  warn and go on. `env://NONE` names no credential and is never read; a target that takes none
   leaves `auth_ref` out.
 - **Breaking for a pipeline that relied on that dry run failing** (added 2026-10-15, measured):
   a credential variable that is set but empty, or holds only spaces, under `--dry-run`, `-sn` or
@@ -315,8 +311,8 @@ the file, schema copy, build or pipeline it names.
   its length; `--suite ../../etc/passwd` keeps its words; a per-attempt timeout says so, and an
   error with no message reads `<Class> (no detail given)`; `127.0.0.1` stays readable in an
   allowlist refusal's URL. `new-spec --family` refuses a control or format character and a value
-  shaped like a key (`CVE-2021-44228` is a family), and writes any other text as a YAML string that
-  reads back as written (`yes` as `"yes"`, not a boolean); `--id` is checked with `--stdout` too.
+  shaped like a key (`CVE-2021-44228` is a family), and writes any other text as a YAML string that reads back as written
+  (`yes` as `"yes"`, not a boolean); `--id` is checked with `--stdout` too.
 - **With the store, budget and path fixes (u12 A-80) and the key formats (u01 A-78) merged in:**
   a click error that is not a usage error, and an abort, exit 3 through the masked root command too
   (`error: aborted`, where they exited with their own code and 1); a default spec path that is not
@@ -452,16 +448,16 @@ the file, schema copy, build or pipeline it names.
 - **A URL password masked in pieces no longer makes the guard refuse the reply and end the run
   (HIGH).** Each piece a mask covered showed the mask, so the pieces joined read
   `user:«REDACTED:url_password»«REDACTED:url_password»...@host`, which the URL rule masks again as
-  one, and the guard refused a reply masked correctly:
-  `postgresql://user:password@localhost:5432/mydb` in 3-character tokens aborted the campaign
-  (`aborted on RedactionLeakError ... 1 of 1 specs never ran`, exit 3, where `main` exits 0), and so
-  did 18 of 18 connection strings at token sizes 1 to 8 and two in WebSocket deltas. The first piece
-  a mask covers now shows it and the others lose the text under it, so the pieces joined show each
-  mask once: 18 of 18 stored, the run exits 0, and the auditor's fuzz counts 0 refusals in 3,000
-  cases (110 to 122 per 1,000 before). A refused write no longer ends the campaign alone: the
-  attempt is stored with the pieces of its reply withheld, its text, figures and verdict kept and
-  `request.metadata.evidence_withheld` saying why, and the finding's line says
-  `stored with the pieces of the reply withheld`; a second refusal ends the run as before.
+  one, and the guard refused a reply masked correctly: `postgresql://user:password@localhost:5432/mydb`
+  in 3-character tokens aborted the campaign (`aborted on RedactionLeakError ... 1 of 1 specs never
+  ran`, exit 3, where `main` exits 0), and so did 18 of 18 connection strings at token sizes 1 to
+  8 and two in WebSocket deltas. The first piece a mask covers now shows it and the others lose
+  the text under it, so the pieces joined show each mask once: 18 of 18 stored, the run
+  exits 0, and the auditor's fuzz counts 0 refusals in 3,000 cases (110 to 122 per 1,000 before).
+  A refused write no longer ends the campaign alone: the attempt is stored with the pieces of its
+  reply withheld, its text, figures and verdict kept and `request.metadata.evidence_withheld`
+  saying why, and the finding's line says `stored with the pieces of the reply withheld`; a second
+  refusal ends the run as before.
 - **An alternative keeps nothing of a masked token (MEDIUM).** A rank's own edit landed after the
   alternatives were masked and left 10 characters of a labelled password in one. They are masked
   once the item's every edit is made, an alternative written as the token showing what the token
@@ -605,10 +601,10 @@ the file, schema copy, build or pipeline it names.
   sent (exit 3); an existing output is compared with each of them by device and inode, so a
   symlink, a hard link or another spelling on a case-insensitive volume is caught (`-oJ
   SPECS/attacks/<spec>.yaml` beside `--spec-path specs`), while a report beside them, such as the
-  previous run's `out.json` under `--spec-path .`, is not refused. So is a report inside a run
-  directory of the evidence store (`<evidence-root>/<run-id>/`): one written over an artifact made
-  the next resume refuse the run as tampered. `replay --run-db <directory>` is refused as `run`
-  refuses it; it warned and replayed without the manifest check.
+  previous run's `out.json` under `--spec-path .`, is not refused. So is a report inside a run directory of the evidence store
+  (`<evidence-root>/<run-id>/`): one written over an artifact made the next resume refuse the run
+  as tampered. `replay --run-db <directory>` is refused as `run` refuses it; it warned and replayed
+  without the manifest check.
 - **One default spec path, and `fleet --run` from anywhere.** `fleet --run` read `specs/` in the
   working directory with no option to change it (`path not found: specs` outside the repository
   root). `run`, `fleet --run`, `registry ls`, `describe`, `coverage` and `render-media` now read
@@ -668,12 +664,10 @@ Found by the pre-merge security audit of 2026-10-11 (MEDIUM 4 and LOW 6).
   rule read with every mask one neutral character. A mask of a new type is kept as written
   elsewhere, as the older ones are, in every pass and every process: a second version kept one
   only while the process remembered writing it, so a long campaign of large replies forgot the
-  first turn's, the evidence store's re-check failed and the scan stopped (exit 3; second audit).
-  Differential fuzz against the redactor before A-78, five draws of 300,000 texts and the auditor's
-  1,100,000 texts and 300,000 tokens: what it hid and this one shows appears only in texts holding
-  U+0000 or U+0001 (19 of the 1,500,000, 3 of them with 8 characters of a planted secret), whose
-  redaction depends on whether anything else in them is masked, before A-78 too; none
-  in any other text.
+  first turn's, the evidence store's re-check failed and the scan stopped (exit 3; second audit). Differential fuzz against the redactor before A-78, five draws
+  of 300,000 texts and the auditor's 1,100,000 texts and 300,000 tokens: what it hid and this one
+  shows appears only in texts holding U+0000 or U+0001 (19 of the 1,500,000, 3 of them with 8 characters of a planted secret), whose redaction
+  depends on whether anything else in them is masked, before A-78 too; none in any other text.
 - **What the tool computes stays readable.** The hex rule belongs to the entropy rule, so the
   CLI's carried digests and evidence file names, an existing path and a model name keep out of it
   as before; the reports now restore the SHA-256 of each media part a request records (the JSON
@@ -842,20 +836,20 @@ declaration keeps its shape's word on a reply with no text the same way). `--dry
 `-sn` print a `filters:` line for it (and for a WebSocket file's declaration). The declaration is
 checked by the `Target` model, so a `Target` built in Python is held to the same rule as the file
 (it took any provider's words), and the adapters only narrow their own words by it. A filtered
-run's error line adds what to check for the attempts that got no reply at all (the endpoint for a
-transport failure, the adapter's advice for an unreadable reply), and `dottore replay` of a filtered
-run prints `run: filtered: ...`. The fingerprint's `guardrails.output_filter` does not believe a
-foreign stop. Still possible, and said: an endpoint that uses its own provider's word can withhold
-chosen attacks (an empty `content_filter`, Azure's 400) and keep CI green, since `--fail-on` does
-not gate an inconclusive attempt; read `summary.blocked_by_provider_filter` and
+run's error line adds what to check for the attempts that got no reply at all (the endpoint for a transport failure, the
+adapter's advice for an unreadable reply), and `dottore replay` of a filtered run prints `run:
+filtered: ...`. The fingerprint's `guardrails.output_filter` does not believe a foreign stop.
+Still possible, and said: an endpoint that uses its own provider's word can withhold chosen
+attacks (an empty `content_filter`, Azure's 400) and keep CI green, since `--fail-on` does not gate
+an inconclusive attempt; read `summary.blocked_by_provider_filter` and
 `summary.cut_by_provider_output_filter` to stop on them. **A resume across this upgrade keeps the
 verdicts its stored attempts were judged with under the earlier rules** (`foreign_stop` is not
 recomputed for a stored reply), left for the judging-rules version that
-`fix/resume-judging-rules` adds. The stop vocabularies, each sourced, move to `shared.filter_stops`.
-Stored replies, reports and target digests without the new fields are byte for byte as before.
-Controls kept: a genuine Azure 400 on some prompts of an `openai` target and a genuine Anthropic
-refusal (a block before any output, a cut after some) score as OD-41 and OD-42 built them. ADR-0011
-has a second amendment; clause u08 A-79 (and its u00, u04, u09, u10, u11 and u12 halves).
+`fix/resume-judging-rules` adds. The stop vocabularies, each sourced, move to `shared.filter_stops`. Stored replies, reports
+and target digests without the new fields are byte for byte as before. Controls kept: a genuine
+Azure 400 on some prompts of an `openai` target and a genuine Anthropic refusal (a block before
+any output, a cut after some) score as OD-41 and OD-42 built them. ADR-0011 has a second
+amendment; clause u08 A-79 (and its u00, u04, u09, u10, u11 and u12 halves).
 
 ### Added (breaking for an older copy of the report schema and an older build reading the run: a target file may declare one of its own granted tools not destructive, OD-43)
 
@@ -963,11 +957,10 @@ has a second amendment; clause u08 A-79 (and its u00, u04, u09, u10, u11 and u12
   already sending stops at its own next unreadable reply, and every reply sent is stored. Measured
   against a stub answering every request with an HTML page: 9 requests at the default
   `--concurrency 4` (6 at 1), 27 with `-sV` (18 probes, then 9), 24 at 1; on `6d5f7ae`, 4 and 1;
-  two readable replies and then that page: 26 to 27 requests (the replies in flight vary), exit 3; a
-  filter answering attack prompts with a 200 block page: the default battery finishes, 160 of 550
-  attacks blocked, exit 0. A shorter run that read nothing is `unreachable`, and its reason says the
-  replies could not be read and what to check (it said "failed on transport"). The report schema's
-  `status` description names `aborted` and the wider `unreachable`.
+  two readable replies and then that page: 26 to 27 requests (the replies in flight vary), exit 3; a filter answering attack prompts
+  with a 200 block page: the default battery finishes, 160 of 550 attacks blocked, exit 0. A shorter run that read nothing is `unreachable`, and its reason
+  says the replies could not be read and what to check (it said "failed on transport"). The report
+  schema's `status` description names `aborted` and the wider `unreachable`.
 - A REST template whose `text_path` starts at an index (Hugging Face's `0.generated_text`) reads a
   body that is a JSON array; it was refused as not an object.
 - **Schema note** (added 2026-10-12): `summary.unreadable_reply` is a new optional property of a
@@ -988,11 +981,11 @@ has a second amendment; clause u08 A-79 (and its u00, u04, u09, u10, u11 and u12
   `tests/adapters/test_malformed_replies.py` (37), `tests/adapters/test_rest_array_body.py` (1),
   `tests/core/test_unreadable_replies.py` (15), `tests/cli/test_malformed_reply_campaign.py` (11);
   the tests that pinned the old rule assert this one (`tests/adapters/test_base.py`,
-  `test_openai.py`, `test_anthropic.py`, `test_rest.py`, `test_deep_replies.py`,
-  `test_websocket.py`, `test_websocket_premerge.py`, `test_provider_filter_block.py`,
-  `test_provider_output_filter.py`, `tests/cli/test_probe_pass_spend.py`,
-  `tests/fingerprint/test_probe_failures.py`, `tests/cli/test_input_filter_probe.py`), and the
-  golden JSON report snapshot gains `summary.unreadable_reply`.
+  `test_openai.py`, `test_anthropic.py`, `test_rest.py`, `test_deep_replies.py`, `test_websocket.py`,
+  `test_websocket_premerge.py`, `test_provider_filter_block.py`, `test_provider_output_filter.py`,
+  `tests/cli/test_probe_pass_spend.py`, `tests/fingerprint/test_probe_failures.py`,
+  `tests/cli/test_input_filter_probe.py`), and the golden JSON report snapshot gains
+  `summary.unreadable_reply`.
 
 ### Fixed (what the verification of `07aa0b3a` found in OD-21, before it landed)
 
@@ -1037,8 +1030,8 @@ has a second amendment; clause u08 A-79 (and its u00, u04, u09, u10, u11 and u12
   stop now carries each one's result, refunded and stored, as a reply that crossed a token ceiling
   is.
 - MEDIUM 2: after one readable reply nothing stopped a target that broke mid-run (2 readable, then
-  HTML: 355 requests, 353 unreadable, exit 0). The watch counts unreadable replies in a row, 20
-  after the endpoint was proven.
+  HTML: 355 requests, 353 unreadable, exit 0). The watch counts unreadable replies in a row, 20 after
+  the endpoint was proven.
 - LOW 1, a resume sends unreadable attempts again; LOW 2, a template rooted at an index reads an
   array, and a target file's `provider: rest` target is not told to check a template it cannot
   declare; LOW 3, the CLI recognises an unreadable attempt by its verdict's reason or its error's
@@ -1065,8 +1058,8 @@ has a second amendment; clause u08 A-79 (and its u00, u04, u09, u10, u11 and u12
   00-INDEX row, the MANUAL and `docs/02-threat-model.md` S6; `tests/test_json_log_commands.py`
   (20 tests: the rewrite, a 400-example property that the parsed data and its re-serialization are
   byte for byte the plain serializer's, each JSON output and the JUnit report through the CLI, and
-  the fast path; it does not collect on `6d5f7ae`), and `tests/test_terminal_log_commands.py`'s JSON
-  test now asserts the escape (it pinned the raw prefix as an open decision).
+  the fast path; it does not collect on `6d5f7ae`), and `tests/test_terminal_log_commands.py`'s JSON test now asserts the escape (it
+  pinned the raw prefix as an open decision).
 
 ### Decided (five open decisions closed under the owner's delegation, 2026-10-11)
 
@@ -1114,11 +1107,11 @@ where to reverse it.
   planner skips the spec as `capability_unavailable: target does not declare mcp`: nothing is sent
   and the run does not count it as covered. Against the same stub: no attempt.
 - **Figures.** The dry run of `examples/target.local.yaml` plans 33 specs, all 33 with a judge
-  (on `0685f2c`: 34 specs, 33 with a judge). A hardened mock run on a chat-like target (tools, rag
-  and memory declared) credits 26/30 IoPC techniques (27/30 before: `IOPC-T2.004` is this spec's
-  alone); its other coverage figures are unchanged. The battery coverage `dottore coverage` prints
-  reads the specs, not a target, and is unchanged (8/10 OWASP, 13/16 ATLAS, 27/30 and 23/23 IoPC,
-  5/51, 12/95 and 0/45 AISVS).
+  (on `0685f2c`: 34 specs, 33 with a judge). A hardened mock run on a chat-like target (tools, rag and memory declared)
+  credits 26/30 IoPC techniques (27/30 before: `IOPC-T2.004` is this spec's alone); its other
+  coverage figures are unchanged. The battery coverage `dottore coverage` prints reads the specs,
+  not a target, and is unchanged (8/10 OWASP, 13/16 ATLAS, 27/30 and 23/23 IoPC, 5/51, 12/95 and
+  0/45 AISVS).
 - **Compatibility.** A spec that writes `requires: [mcp]` fails validation against an older copy of
   `attack-spec.schema.json`. The target digest leaves `capabilities.mcp` out when it is false or
   set by the provider, so it is unchanged. (Corrected 2026-10-12, CLI audit H2: this note said a
@@ -1226,12 +1219,11 @@ where to reverse it.
   the OD-19 row and the A-73 row of `00-INDEX`, `docs/01`, `docs/03`, `docs/04` §1-§2, `docs/05`,
   `docs/07`, `docs/12`, `docs/14`, the playbook's lesson 7, the MANUAL (§8, §9, the
   `--include-needs-review` row), the FAQ, the README, USAGE and `dottore(1)`. Tests:
-  `tests/evaluators/test_one_combination_rule.py` and
-  `tests/registry/test_deprecated_combination.py` (48 tests: on `feb148f` the first does not import,
-  `shared.combination` being new, and 6 of the second's 7 fail; with that module alone added, 17 of
-  the 48 fail); `tests/evaluators/test_combine.py` rewritten for the one rule; the two helper tests
-  moved to `shared.combination`; three test fixtures and the `requires_policy` test
-  of `tests/test_terminal_log_commands.py` write `deterministic_first`.
+  `tests/evaluators/test_one_combination_rule.py` and `tests/registry/test_deprecated_combination.py`
+  (48 tests: on `feb148f` the first does not import, `shared.combination` being new, and 6 of the
+  second's 7 fail; with that module alone added, 17 of the 48 fail); `tests/evaluators/test_combine.py` rewritten for the one
+  rule; the two helper tests moved to `shared.combination`; three test fixtures and the
+  `requires_policy` test of `tests/test_terminal_log_commands.py` write `deterministic_first`.
 
 ### Changed (a reply that answers nothing decides no spec: OD-16)
 
@@ -1267,10 +1259,9 @@ where to reverse it.
 - ADR-0007 accepted (with the re-check against OD-41 and OD-42, and its reversal), the OD-16 row
   of `00-INDEX`, u06 §9, u13 §7, a note in u09 §7, `docs/04` §1, the MANUAL (§8 and the
   `mock_scenario` table's note) and the FAQ's MCP entry. Tests:
-  `tests/battery/test_irrelevant_reply.py` (5, all failing on `6d5f7ae` and on `ee202bf`); the two
-  pins that held the old pair (`tests/cli/test_scenario_mode.py`,
-  `tests/fingerprint/test_carrier_measured_offline.py`) pin an empty set, and the resume test that
-  needed a spec without a judge derives one.
+  `tests/battery/test_irrelevant_reply.py` (5, all failing on `6d5f7ae` and on `ee202bf`); the two pins that held
+  the old pair (`tests/cli/test_scenario_mode.py`, `tests/fingerprint/test_carrier_measured_offline.py`)
+  pin an empty set, and the resume test that needed a spec without a judge derives one.
 
 ### Decided (eight open decisions, closed on 2026-10-11 under the owner's delegation)
 
@@ -3131,26 +3122,27 @@ the alternative not taken and how to reverse it, in its `00-INDEX` row and its u
   figure) of about 400 digits went into the spend, and persisting it through `float()` raised
   `OverflowError`: a traceback and exit 1, the code CI reads as "findings below `--fail-on`", and no
   report. A smaller figure past 2^53 was believed and halted the campaign on the token ceiling after
-  the first reply, so every other spec never ran. A figure is now read only when it is a JSON
-  integer from 0 to 2^53, past which a float no longer holds every integer (the spend is persisted
-  as a float), far beyond any one bill (a number written with a fraction or an exponent, such as
-  `12.0`, is not one, as before). One that is not is skipped like an absent one and the next shape
-  is read (`total_tokens`, `tokens`, input plus output, prompt plus completion), as a negative
-  figure always was; a sum past 2^53 is no usage; and with no readable shape the send keeps its
-  reservation. A prompt-cache figure is summed only into a pair. One that is there and unreadable
-  now makes that pair a floor: the reservation is trued up to it, never down. Before, one that was
-  not a non-negative integer (a negative, a float such as `12.0`, a NaN or an infinity, a bool, a
-  string) was read as 0, which trued the reservation down past cache tokens the reply says it
-  billed, and an integer past 2^53 was believed or crashed. Up to 2^53 a figure is still believed,
-  as a bill is, so a target can report more than it used and halt the campaign on the token ceiling,
-  or report less and free its reservation. A campaign's total can pass 2^53; the store then rounds
-  it (by 2 tokens in 5.4e16, measured before #89), it does not fail. Merge note (#89, A-55): every
-  token ceiling is now at most 2^53, so the total passes it only by what replies sent together add
-  once it is crossed (two replies of 2^53 - 1 at `--concurrency 6`, measured after the merge), not
-  after many replies, and one reply of 2^53 fills the largest ceiling. Reproduced on Python 3.14
+  the first reply, so every other spec never ran. A figure is now read only when it is a JSON integer
+  from 0 to 2^53, past which a float no longer holds every integer (the spend is persisted as a
+  float), far
+  beyond any one bill (a number written with a fraction or an exponent, such as `12.0`, is not one,
+  as before). One that is not is skipped like an absent one and the next shape is read
+  (`total_tokens`, `tokens`, input plus output, prompt plus completion), as a negative figure always
+  was; a sum past 2^53 is no usage; and with no readable shape the send keeps its reservation. A
+  prompt-cache figure is summed only into a pair. One that is there and unreadable now makes that
+  pair a floor: the reservation is trued up to it, never down. Before, one that was not a
+  non-negative integer (a negative, a float such as `12.0`, a NaN or an infinity, a bool, a string)
+  was read as 0, which trued the reservation down past cache tokens the reply says it billed, and an
+  integer past 2^53 was believed or crashed. Up to 2^53 a figure is still believed, as a bill
+  is, so a target can report more than it used and halt the campaign on the token ceiling, or report
+  less and free its reservation. A campaign's total can pass 2^53; the store then rounds it (by 2
+  tokens in 5.4e16, measured before #89), it does not fail. Merge note (#89, A-55): every token
+  ceiling is now at most 2^53, so the total passes it only by what replies sent together add once
+  it is crossed (two replies of 2^53 - 1 at `--concurrency 6`, measured after the merge), not after
+  many replies, and one reply of 2^53 fills the largest ceiling. Reproduced on Python 3.14
   against a local OpenAI-compatible stub, on `main` (`0f936b6`) and on #61; found by the pre-commit
-  audit of `fix/target-deep-json`. An integer longer than 4,300 digits is refused earlier by the
-  JSON parser itself, a separate question left open on that branch.
+  audit of `fix/target-deep-json`. An integer longer than 4,300 digits is refused earlier by the JSON
+  parser itself, a separate question left open on that branch.
 - **The same reply crashed `-sV`.** The guardrail probe reads `usage.moderation_latency_ms`, and
   `float()` of a 400-digit integer made `dottore fingerprint` and `run -sV` exit 1 the same way; an
   infinity (`1e400` parses as one), a NaN or a negative figure was recorded as a latency, and the
@@ -3158,17 +3150,16 @@ the alternative not taken and how to reverse it, in its `00-INDEX` row and its u
   JSON. It is now read only when it is a finite, non-negative number a float can hold, and is `null`
   otherwise.
 - **One predicate, not two.** The check #61 wrote for the stored spend (`_is_amount` in the run
-  store) moved to `ildottore.shared.amounts` as `is_amount`, next to `is_count`, so the store and
-  the `-sV` layer read figures with the same rule. The ledger has no check of its own: nothing a
-  reply or this tool hands it can grow past what `float()` converts (clause A-36 in
+  store) moved to `ildottore.shared.amounts` as `is_amount`, next to `is_count`, so the store and the
+  `-sV` layer read figures with the same rule. The ledger has no check of its own: nothing a reply or
+  this tool hands it can grow past what `float()` converts (clause A-36 in
   `specs/contracts/u08-execution-engine.md`). A run store edited by hand to an integer just under
   2^1024 could, on a resume under a token ceiling above 1.8e308 (exit 1, as on `main`). Merge
   note (#89, A-55): `run` now refuses such a ceiling, and a resume from that store under 2^53
   halts on the ceiling with exit 3 and sends nothing (measured after the merge), so it is no
   longer open. Found by its audit and fixed by PR #74 (u04 A-39): a `logprob` in a reply that no
-  float holds made `fingerprint` and `run -sV` exit 1 (it is read in the adapter). Tests:
-  `tests/cli/test_usage_figures.py` (through the CLI,
-  both directions), `tests/core/test_usage_figures.py`, `tests/fingerprint/test_latency_figure.py`,
+  float holds made `fingerprint` and `run -sV` exit 1 (it is read in the adapter). Tests: `tests/cli/test_usage_figures.py` (through the CLI, both
+  directions), `tests/core/test_usage_figures.py`, `tests/fingerprint/test_latency_figure.py`,
   `tests/shared/test_amounts.py`.
 
 ### Fixed (a key on a finding's path, printed as written)
@@ -4073,11 +4064,11 @@ the alternative not taken and how to reverse it, in its `00-INDEX` row and its u
   send attempted: a refused connection counts, as for the attack traffic, and so does a send in
   flight when a signal arrives. When an error or a signal ends the pass before its record is
   complete, stderr says how many requests it sent and what the run now records (or that they could
-  not be added; a signal during that write cuts the line), under `-q` too: `resume: the -sV probe
-  pass on 'api' stopped after 3 request(s), retries included; run-<id> now records 23 request(s)
-  spent` (the ceiling's refusal gives its own count). A fresh run stopped by its pass (no run row,
-  nothing to resume) and a `--resume-unverified` run whose spend was never recorded record nothing,
-  as before. Found by the delta audit of PR #68, reproduced on main `0501752`. Contract u12 A-46.
+  not be added; a signal during that write cuts the line), under `-q` too: `resume: the -sV probe pass on 'api' stopped after 3 request(s),
+  retries included; run-<id> now records 23 request(s) spent` (the ceiling's refusal gives its own
+  count). A fresh run stopped by its pass (no run row, nothing to resume) and a
+  `--resume-unverified` run whose spend was never recorded record nothing, as before. Found by the
+  delta audit of PR #68, reproduced on main `0501752`. Contract u12 A-46.
 - **Signals, found by three audit rounds on this fix.** The first version wrote after a successful
   pass outside the handlers, and a real SIGINT a few milliseconds after the last probe lost all 17
   in 2 of 16 tries; the write is inside them now. A handler's own write has nothing after it: one
@@ -4154,8 +4145,7 @@ the alternative not taken and how to reverse it, in its `00-INDEX` row and its u
   43 s) and integer keys that share one hash make a mapping quadratic (27 s); `run` loads the target
   file four times; a 4,000-digit integer in a typed spec field crashed `lint` with a traceback
   (fixed since by #81); and the operator's files are read whole with no byte limit, their validation
-  errors listed with no limit (both fixed since by #76). An undefined alias or an unknown tag is
-  still named in the refusal,
+  errors listed with no limit (both fixed since by #76). An undefined alias or an unknown tag is still named in the refusal,
 
   base-60 integer (`1:59:59:...`) built in time quadratic in its length and integer keys that share
   one hash made a mapping quadratic, and `run` parsed the target file four times (all three fixed in

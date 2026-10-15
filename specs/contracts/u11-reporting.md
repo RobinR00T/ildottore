@@ -177,17 +177,17 @@ fail that needs review is no `error` in SARIF.** A fail only the judge reported 
 without `--include-needs-review`. SARIF gave such a fail its band's level, so a judge-only critical
 fail was an `error`, which GitHub code scanning fails a pull request's check on by default
 ("Triaging code scanning alerts in pull requests": a result "with a severity of `error`,
-`critical`, or `high`" fails the check, read 2026-10-12), while `dottore` exited 0 for it. A `fail`
-result whose `properties.state` is `needs_review` is now at most `warning` (`error` becomes
-`warning`; `warning` and `note` stay), its band unchanged in `properties.band`; a confirmed fail
-keeps its band's level, and every other kind keeps `none`. The golden SARIF snapshot does not move
-(its fail is confirmed). Checked by `tests/reporting/test_sarif_reporter.py` (6 cases; the critical
-and high ones fail on `de122e26`). **Amended 2026-10-12 after the pre-merge audit of `d07a1088` (LOW
-3):** the cap holds only without `--include-needs-review`. With it such a fail trips `--fail-on`,
-and capped at `warning` it let code scanning pass the check `dottore` exited 2 on. The flag reaches
-the writer as `include_needs_review` (`BaseReporter`, `get_reporter`, `cli.wiring.build_reporter`,
-from `RunOptions` in `cli.run._write_reports`); with it a needs-review fail keeps its band's level
-and the SARIF run's `properties` carry `"include_needs_review": true` (absent without it, so the
+`critical`, or `high`" fails the check, read 2026-10-12), while `dottore` exited 0 for it. A `fail` result whose `properties.state` is `needs_review` is now at most
+`warning` (`error` becomes `warning`; `warning` and `note` stay), its band unchanged in
+`properties.band`; a confirmed fail keeps its band's level, and every other kind keeps `none`.
+The golden SARIF snapshot does not move (its fail is confirmed). Checked by
+`tests/reporting/test_sarif_reporter.py` (6 cases; the critical and high ones fail on `de122e26`).
+**Amended 2026-10-12 after the pre-merge audit of `d07a1088` (LOW 3):** the cap holds only
+without `--include-needs-review`. With it such a fail trips `--fail-on`, and capped at `warning`
+it let code scanning pass the check `dottore` exited 2 on. The flag reaches the writer as
+`include_needs_review` (`BaseReporter`, `get_reporter`, `cli.wiring.build_reporter`, from
+`RunOptions` in `cli.run._write_reports`); with it a needs-review fail keeps its band's level and
+the SARIF run's `properties` carry `"include_needs_review": true` (absent without it, so the
 golden snapshot does not move). The other formats take the flag and do not read it. Checked by
 `tests/reporting/test_sarif_reporter.py` (5 more cases, the 4 with the flag failing on
 `d07a1088`) and `tests/cli/test_flags.py` (2 cases through `_write_reports` beside
@@ -288,9 +288,9 @@ SARIF, JUnit and HTML carried none of those values there either) and through the
 the attempt each evidence reference names.** The hex rule masks every run of 32 hex digits or more,
 so what the tool computed in that shape is put back after the masking pass, as the evidence
 references and the scope digest already were (R1, F12): `_restore_tool_fields` puts back each
-attempt's `request.metadata.media_sha256` when it is a list of 64 lowercase hex digits, the shape
-the runner writes (anything else is masked as any value), and each evidence reference's `attempt_id`
-as written, as the attempts' own ids are, in both copies of a finding the JSON report carries. On
+attempt's `request.metadata.media_sha256` when it is a list of 64 lowercase hex digits, the shape the
+runner writes (anything else is masked as any value), and each evidence reference's `attempt_id` as
+written, as the attempts' own ids are, in both copies of a finding the JSON report carries. On
 `de122e26` the JSON report of a multimodal battery at `--runs 2` masked 24 of its 28 media digests
 (`high_entropy`). Every report names the target as reports named it before A-78, with the fixed
 identity salt: `_restore_tool_fields` sets each finding's `target_id`, and `mask_run` each
@@ -329,8 +329,8 @@ checked) validates against a newer copy, and a newer report may need the newer c
 report does not validate, here as against the copy before (it has no `summary.coverage.iopc`).
 Each of the 89 JSON reports the CLI audit wrote with `f12ba833`, `6d5f7ae3` and `de122e26`
 validates, and the pre-merge audit's 184. `reporting.report_schema()` returns it, which
-`dottore schema export --name report` prints. Checked by
-`tests/cli/test_report_and_file_versions.py` and `tests/reporting/test_json_reporter.py`.
+`dottore schema export --name report` prints. Checked by `tests/cli/test_report_and_file_versions.py`
+and `tests/reporting/test_json_reporter.py`.
 
 ## §8 Out of scope / forbidden
 - MUST NOT compute risk scores, bands, or confirmed/needs-review state (that is u07): only read.
