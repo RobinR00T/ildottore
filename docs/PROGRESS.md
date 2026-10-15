@@ -59,8 +59,8 @@ neighbouring entries can interleave (an older branch merged later sits above a n
   siblings' headings to the label and tense conventions. Re-measured on the merged tree and
   unchanged: 33 specs and 545 requests (no flag, `--deep`, `-A`), the `docs/16` §3 rows and
   two-identity rows, replay 140 and 350, the HTML-stub transcript (9 requests, 8 attempts, 0
-  tokens, byte-identical), the mixed-stub fingerprint warning, Scenario B. `make
-  --no-print-directory gates` on the merged tree, plain and with `GITHUB_ACTIONS=true CI=true`:
+  tokens, byte-identical), the mixed-stub fingerprint warning, Scenario B.
+  `make --no-print-directory gates` on the merged tree, plain and with `GITHUB_ACTIONS=true CI=true`:
   green both times, 7003 passed and 1 skipped, 97.68% coverage. The CI example's pin and the
   rewrap wait for the last sibling.
 

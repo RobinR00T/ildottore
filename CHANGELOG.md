@@ -47,9 +47,9 @@ the file, schema copy, build or pipeline it names.
   B's left-out stderr warning; `docs/PROGRESS.md` says its entries are in merge order. Lines over
   100 columns are rewrapped, with the rest of their paragraph reflowed, in a commit of their own.
 - **With main merged in (2026-10-15, #111 to #116):** `dottore(1)` documents the root `-v`,
-  fleet's `--spec-path`, `--evidence-root`, `--run-db` and report options, `schema export
-  --name report` and the spec path's fallback to the battery beside the package; the root `-v`
-  help loses its backticks; a credential variable set but empty under `--dry-run`, `-sn` or
+  fleet's `--spec-path`, `--evidence-root`, `--run-db` and report options,
+  `schema export --name report` and the spec path's fallback to the battery beside the package;
+  the root `-v` help loses its backticks; a credential variable set but empty under `--dry-run`, `-sn` or
   `--estimate` is a warning and exit 0, where #113 exited 3, now said in the A-82 entry and in
   `dottore-scope(5)`.
 
