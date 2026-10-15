@@ -338,16 +338,19 @@ def test_the_run_plan_writes_a_requires_policy_value_s_log_command_out(
     assert _commands(result.output) == [], result.output
 
 
-def test_the_resume_note_writes_a_stored_scope_entry_out(
+def test_a_stored_scope_entry_that_is_not_a_digest_is_refused_and_not_written_out(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The run store keeps any string in its scope list, and a resume quotes its first and last
-    entries (delta audit of this block: an edited or restored store)."""
+    """An edited or restored store's scope list (delta audit of this block) reached the resume
+    note, which quoted its first and last entries, written out. The store refuses an entry that is
+    not a digest now, naming the field and quoting nothing (CLI audit 2026-10-11, L6), so no log
+    command reaches the terminal either way."""
 
     import sqlite3
     from contextlib import closing
 
     from ildottore.cli.run import _record_scope
+    from ildottore.store.run_sqlite import CorruptRunContext
 
     db, run_id = tmp_path / "runs.sqlite", "run-abc123def456"
     _record_scope(db, run_id, "a" * 64, resumed=False)
@@ -359,12 +362,11 @@ def test_the_resume_note_writes_a_stored_scope_entry_out(
         conn.execute(
             "UPDATE runs SET context_json = ? WHERE run_id = ?", (json.dumps(stored), run_id)
         )
-    _record_scope(db, run_id, "b" * 64, resumed=True)
-    err = capsys.readouterr().err
-    assert len(err.splitlines()) == 1, err
-    assert "under scope sha256 #\\x23[error]pwn..." in err
-    assert "last ran under x\u240a::error::p..." in err
-    assert _commands(err) == []
+    with pytest.raises(CorruptRunContext, match="scope_sha256s") as refused:
+        _record_scope(db, run_id, "b" * 64, resumed=True)
+    assert "error" not in str(refused.value).replace("refusing", "")
+    assert _commands(str(refused.value)) == []
+    assert capsys.readouterr().err == ""
 
 
 # --- what this does not change -------------------------------------------------------------

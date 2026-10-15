@@ -21,6 +21,7 @@ from ildottore.cli.calibrate import calibrate, render_calibration
 from ildottore.cli.diff import DriftClass, compare_runs
 from ildottore.reporting import get_reporter
 from ildottore.shared.enums import ReportFormat, ScanBand, VerdictStatus
+from ildottore.shared.judging_rules import JUDGING_RULES_VERSION
 from tests.reporting.conftest import make_finding, make_run
 
 REPO = Path(__file__).resolve().parents[1]
@@ -221,7 +222,9 @@ def test_sarif_kinds_follow_the_standard() -> None:
 
 
 def test_the_version_is_the_package_version() -> None:
-    assert _invoke("--version").output.strip() == f"dottore {__version__}"
+    assert _invoke("--version").output.strip() == (
+        f"dottore {__version__} (judging rules {JUDGING_RULES_VERSION})"
+    )
 
 
 def test_the_html_report_is_a_full_document_with_a_charset() -> None:

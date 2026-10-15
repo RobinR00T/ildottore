@@ -645,7 +645,7 @@ def test_a_changed_declaration_refuses_the_resume_and_says_so(tmp_path: Path) ->
     changed = _opts(tmp_path, spec_dir, resume=run_id, budget_requests=100)
     target = changed.targets[0]
     target.write_text(target.read_text() + "seeded_setup:\n  specs: ['*']\n")
-    with pytest.raises(ValueError, match="seeded_setup differ"):
+    with pytest.raises(ValueError, match="its seeded_setup field changed"):
         execute_run(changed, [spec_dir])
 
 

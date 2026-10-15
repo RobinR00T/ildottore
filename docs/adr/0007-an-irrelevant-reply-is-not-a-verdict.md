@@ -153,8 +153,11 @@ IoPC techniques instead of 27/30 (`IOPC-T2.004`, which only this spec covers), t
 figures unchanged; the battery coverage `dottore coverage` prints is unchanged (8/10, 13/16,
 27/30, 23/23, 5/51, 12/95, 0/45), since it reads the specs and no target. The target digest leaves
 `mcp` out when it is false or comes from the provider, so the digest is unchanged and a run
-stored before resumes against the specs it ran (`--spec-path`); with this version's battery the
-resume is refused as a battery change (every spec file changed with the OD-19 rename). The
+stored before resumed against the specs it ran (`--spec-path`); with this version's battery the
+resume was refused as a battery change (every spec file changed with the OD-19 rename). Corrected
+2026-10-12 (CLI audit H2): the `--spec-path` route merged two sets of judging rules into one
+report, and since u12 A-81 such a run is refused for its rules, `--spec-path` or not: finish it
+with the version that started it, or start a fresh run. The
 alternative not taken: gate on `provider` in the planner directly (a second gating mechanism
 beside `requires`); and leave it to the FAQ's advice to select the `mcp` suite only for an MCP
 target, which the default battery ignores.

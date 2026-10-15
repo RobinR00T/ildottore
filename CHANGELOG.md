@@ -5,6 +5,161 @@ versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed (breaking for a halted run: a resume is bound to the rules that judged it, u12 A-81)
+
+- **A run halted on an older version resumed into a report that contradicted itself.** A resume
+  keeps the attempts its halted half stored, with the verdicts that half gave them, and judges
+  only what it sends; nothing recorded which rules had judged the kept ones. Measured on
+  `de122e26` (CLI audit of 2026-10-11, H2): halted on `f12ba83` with `--spec PI-DIRECT-001 --spec
+  SP-LEAK-001 --runs 2 --concurrency 1 --budget-requests 14 --judge <judge>` against a stub that
+  answers every request with `finish_reason: content_filter` and a refusal, then resumed with
+  `--spec-path` at `f12ba83`'s specs (the route the OD-44 note below recommended): `PI-DIRECT-001`
+  kept 4 attempts `f12ba83` had judged `pass` beside 2 judged `cut_by_provider_output_filter`, the
+  summary said `Cut by the provider's output filter: 6 attempt(s) in 2 spec(s) came back cut or
+  replaced ... never a pass` and `dottore replay` `6 of 10 attempt(s) the provider's output filter
+  cut or replaced`, although all 10 were cut, exit 0. OD-16, OD-19, OD-21 and OD-41 changed
+  verdicts the same way the same week, and `--version` printed `0.1.0` on `f12ba83`, `6d5f7ae` and
+  `de122e26` alike.
+- **The code that judges is bound to the run, deny by default.** `shared.judging_rules.
+  judging_digest` is a SHA-256 over every file of the package but `ildottore.testing` (the golden
+  harness of the test suite): 165 of the 167 modules at landing (main at `a906cea9`), with their
+  comments, docstrings and blank lines left out (decorators kept), and the 6 data files the package
+  reads, byte for byte, by suffix (`.yaml`, `.sql`, `.json`,
+  `.j2`: the fingerprint signatures, the run store schema, the report schemas and the HTML
+  template); dotfiles and any other suffix are not the package's source, so a stray `.DS_Store`
+  changes nothing. A run records it when it starts (`judging_digest`, with a short digest of each
+  file as `judging_files`), computed from the installed package once per process (0.35 to 0.38 s
+  on Python 3.12 and 3.14 and 0.74 s on 3.9, measured at landing over the 2.2 MB of the 171 files),
+  and a resume under another digest is refused, with no flag, naming both and the
+  files that differ (five at most): `run '<id>' was
+  judged under the same judging rules (1) by other code: its judging digest is <64 hex> and this
+  installation's is <64 hex> (Il Dottore's code changed since the halt: an upgrade, a reinstall or
+  a local edit; the files that differ: ildottore.cli.render; ...)`. A run that records the rules
+  and no digest is refused the same way. A package whose source cannot be read (a zip or frozen
+  install) is refused at run start, exit 3, rather than digested as nothing. What is not exempted
+  is covered: a subclass override, a default, a decorator, the offline judge, the renderers and a
+  module that does not exist yet. The one exemption is checked to be outside the import closure of
+  the console entry point (`cli.main`) and named by no dynamic import of covered code: a module the
+  entry point loads runs its top-level code in every run's process, so an edit to an exempt
+  renderer could change a verdict as a side effect (third audit: `cli/render.py` emptying
+  `shared.provider_filter.FILTER_STOPS`). `cli.app` and `cli.main` are covered for the same
+  reason; the cost is that a resume across an edit of the help text is refused, as across any other
+  edit.
+- **The interpreter is part of what judges.** A run records `python` (the implementation and
+  `major.minor`, as `CPython 3.14`), and a resume under another one is refused (the standard
+  library's regular expressions, JSON and Unicode tables read a reply too). The pydantic, httpx and
+  websockets versions are recorded (`dependencies`), not compared.
+- **Why deny by default.** The first design listed the verdict code (an allow-list with a walk of
+  what each entry referred to), and two audits found verdict code it missed under an unchanged pin:
+  four one-line edits (pre-merge audit of `22269e0c`: the runner's `CUT_DECIDING_EVALUATORS`, a
+  line of `execute_attempt`, `setup_delivery.TRACE_EVALUATORS`, the redactor's `is_date_stamp`),
+  then a default of the REST template no target file carries, a subclass's `filter_stops`
+  override, the offline judge and a decorator (second audit of `6de5780b`, each reproduced end to
+  end: a resume that mixed verdicts, exit 0). Decided under the owner's delegation (best practice,
+  2026-10-13): invert the default, and bind the run to the computed digest, so correctness no
+  longer depends on anyone bumping a version. The third audit (of `1d3d65c7`) then found an
+  import-time side effect in an exempt renderer and a stray `.DS_Store` refusing every resume: the
+  renderers and every module the entry point loads are covered, and data files go by suffix. Each
+  of the auditors' mutations (a to j, the renderer side effects, the dynamic and lazy imports) now
+  changes the digest, fails the pin and is refused by a resume (exit 3, 0 requests sent, the
+  changed file named), while a comment, a `.DS_Store` and a plain resume go through.
+- **The rules keep a version, for people.** `shared.judging_rules.JUDGING_RULES_VERSION` (`1`: the
+  rules as of the merge that introduced the version) names them; `dottore --version` prints
+  `dottore 0.1.0 (judging rules 1)` and a refusal quotes it. `tests/shared/test_judging_rules.py`
+  pins the digest of each version, so a change to covered code fails until the version is bumped
+  (with its CHANGELOG line) or the same version is re-pinned with a reason. The pins are an
+  append-only history (`PIN_HISTORY`), frozen in `tests/shared/judging_pins.frozen`: the history
+  must start with the frozen pins, so an edit in place of a pin and `PINNED` together (as the second
+  audit made) fails. The digest is the same on Python 3.9, 3.12 and 3.14.
+- **Evaluator plugins** (`dottore.evaluators` entry points) judge from outside the package: a run
+  records those whose evaluator type a selected spec names (`evaluator_plugins`, with distribution,
+  version and a SHA-256 of their installed Python sources, so a change under the same version is
+  caught), and a resume under others is refused. A plugin no selected spec names decides nothing
+  and is not recorded (the second audit: a resume was refused over one). Today the record is empty:
+  a spec names a type of the schema's `EvaluatorType`, and a plugin may not reuse a built-in type.
+- **Recorded when a run starts, and checked before a resume sends anything.** `context_json`
+  holds `judging_rules`, `judging_digest`, `tool_version` (the package that started the run) and `tool_versions`
+  (every invocation's, in order; a package version with no PEP 440 shape is recorded as
+  `unknown`). A resume under other rules, older or newer, is refused (exit 3)
+  with both versions named, why, and what to do: `run '<id>' was judged by the rules of an older Il
+  Dottore (judging rules 1, started by Il Dottore v0.1.0), and this is Il Dottore v0.1.0, judging
+  rules 2. ... the stored replies are redacted, so they cannot be judged again. There is no flag
+  for this: finish it with the version that started it (`dottore --version` names its judging
+  rules), or start a fresh run.` A version is written `v<version>`, so one of any PEP 440 shape
+  reads in clear (`1.2.3.4` read as an IPv4 address and `2026.10.12` as a phone number to the
+  error redactor, L-5). A run that records no rules was made by a version before the record (one
+  from before `JUDGING_RULES_SINCE`) and is refused the same way (`records no judging rules (the record exists since <JUDGING_RULES_SINCE>),
+  so it was made by an Il Dottore older than this one ...`). A run whose rules differ is refused for
+  them before its other fields are checked, so a newer run is not called corrupt over a field this
+  version does not know (L-4). Judging the kept replies again was checked first and is not
+  possible: the evidence is redacted at rest (DL2), so a leaked canary is stored as
+  `«REDACTED:canary:…»` (`SP-LEAK-001` against the vulnerable mock) and a secret as its mask, where
+  the evaluators look for the raw value, no logprob is kept, and the judge would have to be asked
+  again. No flag waives the refusal (`--resume-unverified` included), and `--dry-run` and
+  `--estimate` refuse too. Against the H2 run above: exit 3, 0 requests sent, nothing written.
+- **Breaking.** Every run that records no judging rules, which is every run a version from before
+  `shared.judging_rules.JUDGING_RULES_SINCE` halted, is refused by its resume, whatever its rules
+  were: finish it with the version that started it, or start a
+  fresh run. A version before this one does not read the record, so it can resume a run this
+  version started; its rewrite of the context drops the record, and this version then refuses that
+  run as an older one's.
+
+### Fixed (a refused resume says what changed and the flag that restores it; a corrupt run-context value is refused, naming it)
+
+- **Three refusals said neither why nor what to do** (CLI audit of 2026-10-11, M1). A spec edit
+  read `1 changed (PI-DIRECT-001) ... restore the specs as they were`; a different `--spec`, with no
+  file changed, `73 new (...) ... restore the specs as they were`; `--resume --hardened`, over an
+  unchanged target file, `Restore the target as it was`. The run context now records the
+  selection flags (`selection`, each string masked with the store's fixed identity salt), a short
+  digest of each field of each spec (`spec_fields`) and of the target (`target_fields`), and the
+  route (`route`). Measured against the vulnerable mock with the shipped specs:
+  `1 changed (PI-DIRECT-001), in attack. ... Point --spec-path at the specs the run was made with
+  (a copy of them, or the specs/ of the version that started it), or start a fresh run.`; the same
+  field edited in two specs, `2 changed (PI-DIRECT-001, SP-LEAK-001), in severity (2)`; `73 new
+  (...). ... The selection differs and no spec it ran changed: the run was made with --spec
+  PI-DIRECT-001 --spec SP-LEAK-001 and this invocation selects with no selection flag. Resume with
+  --spec PI-DIRECT-001 --spec SP-LEAK-001, or start a fresh run.`; the same selection over another
+  spec tree points at `--spec-path`; `run '<id>' was made on the offline 'vulnerable' replay and
+  this invocation resolves the offline 'hardened' replay (--hardened forces it). The target file is
+  otherwise unchanged ... Resume without --hardened, or start a fresh run.`; a run made with
+  `--hardened` is told to resume with it, an edited `mock_scenario` is named, and a changed field
+  of the target file is named (`its capabilities field changed ... Restore that field of the
+  target file as it was`). A run halted by a version from before `JUDGING_RULES_SINCE` is refused
+  for its rules first
+  (above), so the `--spec-path` advice is only given where it is safe.
+- **A corrupt run-context value was read as something else** (L6, on `de122e26`): `adaptive: "x"`
+  as adaptive planning on, and the resume refused for a mode the run never recorded;
+  `scope_sha256s: 7` as a run older than scope digests, and the record overwritten; a
+  `mutator_orders` that was not a list overwritten, the record lost; `started_at: not-a-date`
+  published as the run's start in every report of the resume. Every field the context holds is
+  now checked where the store reads it (`run_sqlite._check_context`: the two digests, `adaptive`,
+  the three sampling booleans, `not_destructive_tools`, `scope_sha256s`, `mutator_orders` and the
+  eight new fields; `runs` and `spend_json` were already), and `runs.started_at` where the resume
+  reads it (`YYYY-MM-DDTHH:MM:SSZ`, as the tool writes it since 2026-10-04). A value of the wrong
+  shape is refused with exit 3 before anything is sent or written, naming the field and never
+  quoting the value (`context_json holds an adaptive value that is not true or false ...
+  refusing rather than continuing.`), and the appends (`add_run_scope`, `add_run_order`,
+  `add_run_version`) refuse rather than overwrite. A key this version does not know, and a
+  selection key a later release adds, is left alone. `takes_sampling` and `judge_takes_sampling`
+  are named apart (the message named both); a corrupt `not_destructive_tools` is refused as corrupt
+  where it fell back to the target refusal.
+- **Compatibility.** The context of a run of the whole battery grows to about 48 KB (the spec
+  field digests, 40 KB at 8 hex digits per field, and the per-file judging digests, 7 KB). An older version ignores the new keys and drops them on its
+  rewrite. The spec and target digests are unchanged, byte for byte.
+- Docs: MANUAL (the `--resume` row and resume prose of `dottore run`, the `dottore replay` note,
+  five troubleshooting rows), FAQ, USAGE, `dottore(1)`, `docs/02` §3, `docs/09`, ADR-0007's OD-44
+  note (corrected as below), PROGRESS; contracts u12 §7 A-81 (new) and A-24 (amended), u10 §6, the
+  index rows. Where the docs say which runs are refused, they name `JUDGING_RULES_SINCE` rather
+  than a date, set once when the version lands. Tests: `tests/shared/test_judging_rules.py` (24),
+  `tests/cli/test_resume_judging_rules.py` (34), `tests/cli/test_resume_refusal_advice.py` (15) and
+  `tests/cli/test_resume_corrupt_context.py` (31). On `de122e26` the first two do not import (the
+  module is new), all 15 of the third fail and 28 of the 31 (the three that pass are the
+  `sampling_defaults_applied` refusal, which existed, an unknown key and a well-formed start); on
+  `1d3d65c7`, the head the third audit read, 8 of the 24 and 3 of the 34 fail. Six tests updated for the
+  messages named above or the stricter store (`--version`, the route refusal, the per-field
+  sampling message, the corrupt declaration record, a scope test's fake target digest, and the
+  scope-note test, whose hostile entries are now refused unquoted).
+
 ### Changed (breaking for a pipeline that lints or lists a path holding nothing: `lint`, `registry ls`, `coverage`, `describe` and `run` refuse it, u12 A-82)
 
 - `lint` exits 3 on a path that does not exist (`PATH_NOT_FOUND`, it exited 1) or yields no spec and
@@ -893,9 +1048,13 @@ where to reverse it.
   0/45 AISVS).
 - **Compatibility.** A spec that writes `requires: [mcp]` fails validation against an older copy of
   `attack-spec.schema.json`. The target digest leaves `capabilities.mcp` out when it is false or
-  set by the provider, so it is unchanged: a run halted before this version resumes against the
-  specs it ran (`--spec-path`); with this version's battery the resume is refused as a battery
-  change, since every spec file changed with the OD-19 rename.
+  set by the provider, so it is unchanged. (Corrected 2026-10-12, CLI audit H2: this note said a
+  run halted before this version resumes against the specs it ran, with `--spec-path`. It did, and
+  the report then judged one kind of reply two ways, since OD-16, OD-19, OD-21, OD-41 and OD-42
+  changed the rules between the two halves. Such a run is refused now, `--spec-path` or not
+  (u12 A-81, the entry above): finish it with the version that started it, or start a fresh run.
+  With this version's battery it was refused as a battery change, since every spec file changed
+  with the OD-19 rename; it is now refused for its rules first.)
 - ADR-0007's amendment and reversal, the OD-44 and OD-16 rows of `00-INDEX`, u00, u08, u12 and
   u13, `docs/03`, the MANUAL's `capabilities` paragraph, the FAQ's MCP entry and
   `examples/target.mcp.yaml`. Tests: `tests/cli/test_mcp_specs_need_an_mcp_target.py` (10, 8

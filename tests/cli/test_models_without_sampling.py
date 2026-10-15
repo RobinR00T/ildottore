@@ -652,7 +652,6 @@ def test_a_takes_sampling_record_that_is_not_a_boolean_is_refused(
     seen.clear()
     resumed = CliRunner().invoke(app, _run(tmp_path, "--resume", run_id))
     assert resumed.exit_code == 3, resumed.output
-    assert "takes_sampling or judge_takes_sampling value that is not true or false" in " ".join(
-        resumed.output.split()
-    )
+    # Each field named on its own since the run context is checked field by field (L6).
+    assert f"holds a {key} value that is not true or false" in " ".join(resumed.output.split())
     assert seen == []
