@@ -155,7 +155,7 @@ the file, schema copy, build or pipeline it names.
   credential format" (a UUID is still an identifier); and a credential variable that is not set or
   holds only blanks is named as such, not as a credential shorter than 8 characters.
 
-### Fixed (what the sixth pre-merge audit, of `31cf86bf`, found in A-77, before it lands)
+### Fixed (what the sixth pre-merge audit, of `31cf86bf`, found in A-77, before it landed)
 
 - **A cut excerpt keeps no line whose mask came from the text it withholds (parity).** A line
   that is no field of an event stream (a comment, a line starting with a space or `=`) can take
@@ -169,7 +169,7 @@ the file, schema copy, build or pipeline it names.
   96, `window_attacks.py` 36 of 36 clean, clean bodies that fit the window 0 of 1,498 differ from
   `main`; `cost3.py` 0.01 to 0.21 s on 4 MiB bodies.
 
-### Fixed (what the fifth pre-merge audit, of `6d7d990e`, found in A-77, before it lands)
+### Fixed (what the fifth pre-merge audit, of `6d7d990e`, found in A-77, before it landed)
 
 - **A cut stream's excerpt reaches no further into the body than `main`'s (parity).** Its lines,
   emptied of their streamed text, are short, so the 4 KiB excerpt reached lines `main`'s never
@@ -184,7 +184,7 @@ the file, schema copy, build or pipeline it names.
   clean; clean bodies past the window 240 of 320 differ from `main` only by the withheld text and
   the notice (20,308 events and lines checked); `cost3.py` 0.01 to 0.20 s on 4 MiB bodies.
 
-### Fixed (what the fourth pre-merge audit, of `5dd87b42`, found in A-77, before it lands)
+### Fixed (what the fourth pre-merge audit, of `5dd87b42`, found in A-77, before it landed)
 
 - **A cut stream's excerpt shows no streamed text (MEDIUM, a regression against `main`).** The
   window read only a long stream's head, but masks shorten a text, so what lay near the window's cut
@@ -216,7 +216,7 @@ the file, schema copy, build or pipeline it names.
   a list's token has; a one-item list has the `bytes` of a token masked on its own dropped. Now
   no rebuild, and 0 of 6 differ from `main`.
 
-### Fixed (what the third pre-merge audit, of `74ace451`, found in A-77, before it lands)
+### Fixed (what the third pre-merge audit, of `74ace451`, found in A-77, before it landed)
 
 - **A log of JSON lines is quoted as main quotes it (LOW).** Any body whose lines were all JSON
   objects was read as a stream, so a log's fields were joined across its records and masked
@@ -241,7 +241,7 @@ the file, schema copy, build or pipeline it names.
 - **Figures (LOW).** The second audit's `sse_variants.py` figure was the key in 9 of 19 shapes
   and the credential in 9, not 10. A-77's not-covered list is made exact.
 
-### Fixed (what the second pre-merge audit, of `ea13562f`, found in A-77, before it lands)
+### Fixed (what the second pre-merge audit, of `ea13562f`, found in A-77, before it landed)
 
 - **A rewritten excerpt keeps a grouped phone or card masked (MEDIUM, a regression against
   `main`).** The excerpt of a reply the adapters could not read is rewritten when it holds a reply
@@ -276,7 +276,7 @@ the file, schema copy, build or pipeline it names.
   6.9% of all the alternatives of clean replies (5,794 of 83,950), each beside a token that was
   kept.
 
-### Fixed (what the pre-merge audit of `c4bd2012` found in A-77, before it lands)
+### Fixed (what the pre-merge audit of `c4bd2012` found in A-77, before it landed)
 
 - **A URL password masked in pieces no longer makes the guard refuse the reply and end the run
   (HIGH).** Each piece a mask covered showed the mask, so the pieces joined read
@@ -360,7 +360,7 @@ the file, schema copy, build or pipeline it names.
   exempted the value by its key name; anything but a list of 64-hex digests is now redacted like
   any value.
 
-### Fixed (the CLI audit of `de122e26`: crashes that exited 1, a ceiling no flag raised, reports over inputs, u12 A-80)
+### Fixed (breaking for a CI gate: the CLI audit of `de122e26`, crashes that exited 1, a ceiling no flag raised, reports over inputs, u12 A-80)
 
 - **Nothing but findings exits 1.** Exit 1 means "findings below `--fail-on`", so a CI gate that
   lets 1 through read a crashed scan as a pass. A `--run-db` naming a directory or a file that is
@@ -459,7 +459,7 @@ the file, schema copy, build or pipeline it names.
   too, beside printing the plan). Both read as counted flags in the help (`INTEGER [default: 0]`
   before).
 
-### Fixed (key formats, hex runs and UUIDs masked whatever their entropy; a credential under 8 characters refused by every adapter, u01 A-78)
+### Fixed (breaking for a target with a credential under 8 characters: key formats, hex runs and UUIDs masked whatever their entropy; such a credential refused by every adapter, u01 A-78)
 
 Found by the pre-merge security audit of 2026-10-11 (MEDIUM 4 and LOW 6).
 
@@ -535,7 +535,7 @@ Found by the pre-merge security audit of 2026-10-11 (MEDIUM 4 and LOW 6).
   letter or a digit, a random token with no prefix the entropy rule passes, and a UUID in a CLI
   error that the number rules read a number in, masked as before.
 
-### Fixed (an audit of the scoring and its pre-merge audit: three false passes, a silent sweep and five lows, 2026-10-11 and 2026-10-12)
+### Fixed (breaking for a CI gate: an audit of the scoring and its pre-merge audit, three false passes, a silent sweep and five lows, 2026-10-11 and 2026-10-12)
 
 - **A resume's re-send is scored as the attempt it replaces, by one rule the report and `dottore
   replay` share (HIGH 1, u08 A-74).** The runner and the replay each kept the first artifact of an
@@ -605,7 +605,7 @@ Found by the pre-merge security audit of 2026-10-11 (MEDIUM 4 and LOW 6).
   (44 failing on `de122e26`; 18 of them from the pre-merge audit of `d07a1088`, 15 failing
   there), 4 changed expectations.
 
-### Changed, breaking: a target can no longer forge a filter stop to hide an exploit (A-79, the amendment to OD-41 and OD-42)
+### Changed (breaking for a CI gate: a target can no longer forge a filter stop to hide an exploit, A-79, the amendment to OD-41 and OD-42)
 
 Decided 2026-10-11 under the owner's delegation (best practice), revisable; found by the security
 audit of 2026-10-11 (MEDIUM 3), and its pre-merge audit. **A CI result changes in five cases**,
