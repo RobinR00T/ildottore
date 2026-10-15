@@ -8,4 +8,5 @@ targets:
         path_prefixes: ["/mcp"]
     identities:
       - name: default
-        auth_ref: "env://NONE"      # no credential: env://NONE is never read (a local MCP server usually needs none)
+        # no credential: env://NONE is never read (a local MCP server usually needs none)
+        auth_ref: "env://NONE"
