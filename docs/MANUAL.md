@@ -1157,7 +1157,8 @@ required there) and no `auth_ref` in its target file: no credential is sent.
 
 `dottore` is the command; `dott` is a shorter alias. There is no default subcommand: always
 type it (`dottore run ...`). `dottore target.yaml --scope scope.yaml` is a usage error (exit 3).
-`dottore --version` prints the version (`dottore 0.1.0`) and exits; `--help` after `dottore` or
+`dottore --version` prints the version and the judging rules (`dottore 0.1.0 (judging rules 1)`)
+and exits; `--help` after `dottore` or
 after any command prints its options, the list `dottore(1)` gives per command.
 
 ### `dottore run`, run a campaign
