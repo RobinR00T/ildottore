@@ -13,9 +13,9 @@ neighbouring entries can interleave (an older branch merged later sits above a n
   practice) are recorded as such in each commit.
 - HIGH: `examples/ci-github-actions.yml` installed `@v0.1.0` by `pip install "git+https://..."`.
   A wheel built with the selection `pyproject.toml` declares ships neither `specs/` nor
-  `schemas/` (measured with that selection assembled offline, hatchling being absent: a bare
-  `dottore lint` says `path not found: specs`, `lint <checkout>/specs` exits 1 with a traceback
-  on `schemas/attack-spec.schema.json`, `run --dry-run` exits 3, with or without `--spec-path`),
+  `schemas/` (measured with that selection assembled offline, hatchling being absent, again on
+  2026-10-15 with `main` merged in: `lint` and `run --dry-run` exit 3, without a spec path on
+  `spec path not found: specs`, with a checkout's `specs/` on `schemas/attack-spec.schema.json`),
   so the example now checks out a pinned SHA of `main` and installs it editable, with
   `--spec-path`; the v0.1.0 gate differences are listed beside the pin. Packaging is left for its
   own change, recorded in `docs/12` P1 and ROADMAP.

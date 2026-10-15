@@ -12,10 +12,9 @@ the file, schema copy, build or pipeline it names.
 - **The CI example installed v0.1.0, and a wheel.** `examples/ci-github-actions.yml` installed
   `@v0.1.0` with `pip install "git+https://..."`, which builds a wheel, and the wheel
   `pyproject.toml` selects ships neither `specs/` nor `schemas/`. Measured from a directory
-  outside the repo: a bare `dottore lint` exits 1 with `path not found: specs`,
-  `dottore lint <checkout>/specs` exits 1 with a traceback on a missing
-  `schemas/attack-spec.schema.json`, and `dottore run --dry-run` exits 3, with or without
-  `--spec-path`. The example now checks Il Dottore out at a pinned full SHA of `main`
+  outside the repo (re-measured on 2026-10-15, on `main` merged in): `dottore lint` and
+  `dottore run --dry-run` exit 3, without a spec path on `spec path not found: specs`, and with a
+  checkout's `specs/` on the missing `schemas/attack-spec.schema.json`. The example now checks Il Dottore out at a pinned full SHA of `main`
   (`# pin: update to the commit you have reviewed`, `v0.1.0` as the commented alternative),
   installs that checkout with `pip install -e` and passes `--spec-path`; its caveat lists how
   v0.1.0 gates differently (exit codes, OD-19, the 2026-10-03 scoring fixes, OD-38, OD-41,

@@ -27,13 +27,15 @@ venv to run the whole wall:
 
 For a runtime-only install, drop `[dev]`, but keep `-e` and the checkout: a non-editable
 install (`pip install .`, `pip install "git+https://..."`, a built wheel) ships neither `specs/`
-nor `schemas/`, so it cannot load the battery. Measured on 2026-10-12 with the wheel
-`pyproject.toml` selects, from a directory outside the repo: a bare `dottore lint` exits 1 with
-`path not found: specs`, and `dottore lint <checkout>/specs` exits 1 with a traceback
-(`FileNotFoundError` on `schemas/attack-spec.schema.json`, looked up beside `site-packages`);
-`dottore run --dry-run` exits 3, without `--spec-path` on the missing `specs` and with it on the
-missing schema. With an editable install of the checkout, pass `--spec-path <checkout>/specs`
-from outside it, as `examples/ci-github-actions.yml` does. The defect is in `docs/12` (P1).
+nor `schemas/`, so it cannot load the battery. Measured on 2026-10-15 with the wheel
+`pyproject.toml` selects, from a directory outside the repo: `dottore lint` and `dottore run
+--dry-run` without a spec path exit 3 with `spec path not found: specs`; with a checkout's
+`specs/`, `lint` exits 3 with `unexpected FileNotFoundError` and `run --dry-run` exits 3 with
+`[Errno 2]`, both on `schemas/attack-spec.schema.json`, looked up beside `site-packages`. With an
+editable install of the checkout, `run` from outside it reads the checkout's battery and says so
+on stderr, and `lint` needs its path (`dottore lint <checkout>/specs`, exit 0);
+`examples/ci-github-actions.yml` passes `--spec-path` all the same, to say which battery gates.
+The defect is in `docs/12` (P1).
 
 Two console scripts are installed: `dottore` and its short alias `dott`.
 
