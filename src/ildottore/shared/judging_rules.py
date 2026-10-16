@@ -224,7 +224,8 @@ def judging_digest(package: Path = _PACKAGE) -> str:
 
     Taken once per process (the files do not change under a running scan): 0.35 to 0.38 s for the
     171 files of the package at landing on Python 3.12 and 3.14 (0.74 s on 3.9), the parse and the
-    tokenizer being most of it.
+    tokenizer being most of it; 0.355 s for the 264 files since u12 A-84 put the battery and the
+    attack-spec schema in the package (3.14, best of five), data files being read, not parsed.
     """
 
     return _scanned(package)[0]

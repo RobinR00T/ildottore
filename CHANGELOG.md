@@ -7,6 +7,92 @@ the file, schema copy, build or pipeline it names.
 
 ## [Unreleased]
 
+### Changed (breaking for a pipeline, a checkout or a doc link that names a path of the old layout: the built-in battery, the attack-spec schema and three example files moved, u12 A-84)
+
+- **Every old path and its new one.** The battery and the schema moved into the package, so a
+  wheel carries them (ADR-0013); `specs/` keeps the unit contracts only. Each move is a git rename,
+  so `git log --follow` reads the history across it.
+
+  | Old path | New path |
+  |---|---|
+  | `specs/pack.yaml` | `src/ildottore/battery/pack.yaml` |
+  | `specs/attacks/` (with `assets/`) | `src/ildottore/battery/attacks/` |
+  | `specs/suites/` | `src/ildottore/battery/suites/` |
+  | `schemas/attack-spec.schema.json` | `src/ildottore/registry/schemas/attack-spec.schema.json` |
+  | `specs/scope.example.yaml` | `examples/scope.example.yaml` |
+  | `specs/fleet.example.yaml` | `examples/fleet.example.yaml` |
+  | `specs/targets/example-openai.yaml` | `examples/target.example-openai.yaml` |
+  | `--spec-path <checkout>/specs` (the CI example of #118: `--spec-path .ildottore/specs`) | no `--spec-path` (the built-in battery), or `--spec-path <checkout>/src/ildottore/battery` |
+  | `dottore lint specs/` (CI Gate 1, `make spec-lint`, CONTRIBUTING) | `dottore lint src/ildottore/battery` |
+  | `dottore lint specs/attacks` (`audit.yml`) | `dottore lint src/ildottore/battery/attacks` |
+
+- **What a pipeline that names an old path gets.** The same refusal as before, exit 3, and nothing
+  sent; when the new path exists in the same checkout the refusal names it. Measured on a
+  checkout of this change: `dottore lint <ck>/specs/attacks` prints `[ERROR] PATH_NOT_FOUND (-):
+  path not found: <ck>/specs/attacks; it is now <ck>/src/ildottore/battery/attacks (CHANGELOG,
+  Unreleased)`; `registry ls --spec-path <ck>/specs` (and `run`, `describe`, `coverage`) prints
+  `error: a spec path gives nothing to list: spec path <ck>/specs holds no attack spec or suite to
+  read: ... and it has none; the built-in battery it held is now <ck>/src/ildottore/battery
+  (CHANGELOG, Unreleased)`; `run -t <ck>/specs/targets/example-openai.yaml`, `--scope
+  <ck>/specs/scope.example.yaml` and `fleet <ck>/specs/fleet.example.yaml` end with `; it is now
+  <ck>/examples/target.example-openai.yaml` (and the two others) `(CHANGELOG, Unreleased)`. A
+  checkout pinned to an earlier commit is unchanged: the example of #118, pinned to `3740b387`,
+  still installs and gates as it did.
+- **The CI example** (`examples/ci-github-actions.yml`) installs the wheel pip builds from a
+  pinned commit (`pip install "git+https://github.com/RobinR00T/ildottore@<commit>"`) and scans
+  with the built-in battery: no checkout of Il Dottore, no `--spec-path`. Its pin is a placeholder
+  until a commit of `main` carries this change; `v0.1.0` cannot be installed that way (its wheel
+  has no battery).
+
+### Changed (breaking for a working directory whose `specs/` holds no YAML file: a command with no `--spec-path` reads the built-in battery there instead of refusing it, u12 A-84)
+
+- `run`, `fleet --run`, `registry ls`, `describe`, `coverage` and `render-media` read `specs/` in
+  the working directory only when it holds a `*.yaml` or `*.yml` file, in it or below it; else the
+  built-in battery inside the installed package, said on stderr: `note: specs/ here holds no YAML
+  file, so this reads the built-in battery inside the installed package: <path> (pass --spec-path
+  to read another)` (or `there is no specs/ directory here`). A `specs/` with no YAML file was
+  refused (`NO_SPECS`, exit 3); a `specs/` with YAML is read, and refused when it holds no spec,
+  as before. This is how the repository root, whose `specs/` holds the contracts, reads the
+  battery. A tree past 1,000 entries, or one with a directory that cannot be listed, is read as a
+  spec path, as before. `dottore lint` is unchanged: with no path it reads `specs/` here only.
+
+### Changed (breaking for a halted run: a resume across this change is refused, and so is one after any edit of a built-in spec, u12 A-84)
+
+- The judging digest covers every data file of the package, and the battery and the schema are
+  data files of it now (`.wav` joins `DATA_SUFFIXES` for the audio asset): 264 files where it was
+  171, 0.355 s against 0.378 s (Python 3.14, best of five). A run halted before this change is
+  refused by a resume after it, as after any change of the code, naming the files that differ. A
+  resume after an edit of a built-in spec, its description included, is refused naming the file,
+  where the per-spec battery digest forgives a description; a `--spec-path` pack is bound by the
+  spec digests alone, as before. No verdict changes: `JUDGING_RULES_VERSION` stays 1, re-pinned
+  with that reason.
+
+### Fixed (a wheel carries the built-in battery and the attack-spec schema, u12 A-84)
+
+- A wheel built from this repository carried neither (`docs/12` P1, found 2026-10-12), so outside a
+  checkout `registry ls` and `run --dry-run` exited 3 (`spec path not found: specs`) and `lint
+  <checkout>/specs` exited 3 on the missing schema (`unexpected FileNotFoundError`), measured on
+  `7d01521f` with a wheel built by the selection `pyproject.toml` declares. Both live inside the
+  package now, found through `importlib.resources` (`shared/package_data.py`) the same way for a
+  source checkout, an editable install and a wheel; the hatch configuration does not change.
+  Measured with a wheel built offline by that selection (hatchling is not installed on the
+  machine that measured it) and installed with `pip install --no-index --no-deps --target`, from a
+  directory outside the checkout: `--version`, `registry ls` (75 specs), `schema export`, `lint` of
+  the installed battery (75 specs, 14 suites, 1 pack) and `run --dry-run` print what the checkout
+  prints, the judging digest is the same, and a quick run on an offline mock judges the same (10
+  fail, 8 inconclusive, exit 2); an sdist built the same way builds a wheel that carries the same
+  92 data files. INSTALL.md documents the runtime install. Not released: no tag carries it.
+
+### Added (CI runs the suite on the declared dependency floors, and builds and runs the wheel, u12 A-84)
+
+- Two jobs in `.github/workflows/ci.yml`; `static` and `validate` are unchanged but for Gate 1's
+  path. `floors` pins every direct dependency to the version after its `>=`
+  (`scripts/dependency_floors.py`), installs on Python 3.11 and runs the suite; no job installed a
+  lower bound until now. `package` installs hatchling and runs `tests/test_packaging.py` against a
+  real wheel and sdist. Neither has run on GitHub yet. A run on the newest releases on a schedule
+  is not added (every job already installs them, ci.yml weekly too); pinning what the PR jobs
+  install is OD-49, open.
+
 ### Documentation (the docs and contracts audit of 2026-10-12: re-measured figures, a CI example that gated on v0.1.0, the ledger in order)
 
 - **The CI example installed v0.1.0, and a wheel.** `examples/ci-github-actions.yml` installed
