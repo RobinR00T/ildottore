@@ -97,12 +97,19 @@ PIN_HISTORY: tuple[tuple[int, str, str], ...] = (
         "identity sweep's request carries is needs-review, a sweep's crossing counts once, "
         "secret_shape reads the redactor's key formats; the stacked landing re-pins it",
     ),
+    (
+        2,
+        "4c5168fd528e31dc7cd65a59bdd094bf60bad1360ad9887d794e4f9a05a9d204",
+        "re-pin 2026-10-16: the sweep's stamp, numbering and notes moved from core.runner to "
+        "shared.identity_sweep after the first pin; no verdict changes; version 2 is not "
+        "released",
+    ),
 )
 
 #: The digest each version is pinned to now: the last line of :data:`PIN_HISTORY` for it.
 PINNED: dict[int, str] = {
     1: "dbfbedd793b731ab385a0c2bae7e9bc9e85c795a1230eeaf0814c83038335d0c",
-    2: "69d8b855dc421934ba2d003d32f28900e837700ce6eca9379804425f48bd268e",
+    2: "4c5168fd528e31dc7cd65a59bdd094bf60bad1360ad9887d794e4f9a05a9d204",
 }
 
 #: One ``<version> <digest>`` line per pin, appended to and never edited: the history must start
