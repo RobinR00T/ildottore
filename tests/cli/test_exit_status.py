@@ -29,6 +29,9 @@ from ildottore.cli import registry as registry_mod
 from ildottore.cli.app import app
 from ildottore.redactor import register_known_secret
 
+#: Registered credentials are process-wide: none from an earlier test changes a mask here.
+pytestmark = pytest.mark.usefixtures("no_known_secrets")
+
 REPO = Path(__file__).resolve().parents[2]
 #: A credential the process registers, and a key it masks by its shape only.
 REGISTERED = "Qm7vX2pL9kR4tN8w"
@@ -61,9 +64,6 @@ import typer
 from ildottore.cli import registry as registry_mod
 from ildottore.cli.main import main
 from ildottore.redactor import register_known_secret
-
-#: Registered credentials are process-wide: none from an earlier test changes a mask here.
-pytestmark = pytest.mark.usefixtures("no_known_secrets")
 REGISTERED, KEY, raised, specs = sys.argv[1:5]
 TEXT = f"stopped with {REGISTERED} and {KEY}"
 register_known_secret(REGISTERED)
