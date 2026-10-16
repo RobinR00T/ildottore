@@ -549,15 +549,21 @@ def _spec_paths(spec: list[Path] | None) -> list[Path]:
     paths = wiring.default_spec_paths()
     if paths == [wiring.PACKAGED_SPEC_PATH]:
         here = (
-            "specs/ here holds no YAML file"
-            if Path("specs").is_dir()
+            "this is Il Dottore's own checkout, whose specs/ holds the unit contracts"
+            if wiring.is_own_checkout()
             else "there is no specs/ directory here"
         )
-        _echo_err(
-            f"note: {here}, so this reads the built-in battery inside the installed package: "
+        note = (
+            f"{here}, so this reads the built-in battery inside the installed package: "
             f"{visible_controls(str(wiring.PACKAGED_SPEC_PATH))} (pass --spec-path to read "
             "another)"
         )
+        _echo_err(f"note: {note}")
+        if os.environ.get("GITHUB_ACTIONS") == "true":
+            # A pipeline that gates on the default battery sees which in its annotations (u12
+            # A-84). The workflow command is this tool's own line; its text escapes `%` and the
+            # path holds no line break (visible_controls), so it cannot end the command early.
+            _echo_err(f"::warning title=dottore spec path::{note.replace('%', '%25')}")
     return paths
 
 
@@ -1030,10 +1036,7 @@ def run(
         list[Path] | None,
         typer.Option(
             "--spec-path",
-            help=(
-                "Spec search path (default specs/ here if it holds YAML, else the built-in "
-                "battery)."
-            ),
+            help="Spec search path (default specs/ here, else the built-in battery).",
         ),
     ] = None,
     no_color: Annotated[bool, typer.Option("--no-color", help="Disable colour output.")] = False,
@@ -1209,10 +1212,7 @@ def fleet(
         list[Path] | None,
         typer.Option(
             "--spec-path",
-            help=(
-                "Spec search path (default specs/ here if it holds YAML, else the built-in "
-                "battery)."
-            ),
+            help="Spec search path (default specs/ here, else the built-in battery).",
         ),
     ] = None,
     no_color: Annotated[bool, typer.Option("--no-color", help="Disable colour output.")] = False,

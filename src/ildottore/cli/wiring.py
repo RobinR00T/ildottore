@@ -250,45 +250,38 @@ def build_registry(spec_paths: list[Path]) -> Registry:
 #: three directories above this file, which a wheel does not have.
 PACKAGED_SPEC_PATH = BATTERY
 
-#: How many entries below ``specs/`` :func:`holds_yaml` looks at before it takes the directory for
-#: a spec path, as it was before A-84: a large tree is read and judged by the loader, not walked.
-_MAX_SPECS_SCAN = 1000
 
+def is_own_checkout() -> bool:
+    """Whether the working directory is the root of the source checkout this package runs from.
 
-def holds_yaml(directory: Path) -> bool:
-    """Whether ``directory`` holds a ``*.yaml`` or ``*.yml`` file, in it or below it (u12 A-84).
-
-    ``os.walk`` without following links, at most :data:`_MAX_SPECS_SCAN` entries. It answers yes
-    past them, and when a directory of the tree cannot be listed: such a tree is read as a spec
-    path, as before, and the loader says what it cannot read, rather than the built-in battery
-    being scanned in place of specs the operator cannot see are unreadable.
+    Its ``specs/`` holds the unit contracts, not attack specs, since the battery moved into the
+    package (u12 A-84), so with no spec path the commands read the built-in battery there. The
+    one exception to reading ``specs/`` whenever it is here, and a deterministic one: the
+    working directory resolves to the directory three above the battery (``<root>/src/ildottore/
+    battery``), which no installed wheel is beside.
     """
 
-    unlisted: list[OSError] = []
-    seen = 0
-    for _current, subdirs, names in os.walk(directory, onerror=unlisted.append, followlinks=False):
-        subdirs.sort()
-        if any(name.endswith((".yaml", ".yml")) for name in names):
-            return True
-        seen += len(subdirs) + len(names)
-        if seen >= _MAX_SPECS_SCAN:
-            return True
-    return bool(unlisted)
+    try:
+        return Path.cwd().resolve() == PACKAGED_SPEC_PATH.resolve().parents[2]
+    except (OSError, RuntimeError):  # the working directory was removed, or a link loop
+        return False
 
 
 def default_spec_paths() -> list[Path]:
     """Where every command reads specs when it is given no spec path (u12 A-80, A-84).
 
-    ``specs/`` in the working directory when it is a directory that holds a YAML file (a project
-    that keeps its own pack or specs there, as before), else the built-in battery inside the
-    installed package, else ``specs/`` (whose absence the commands report). A ``specs/`` with no
-    YAML file in it cannot be a spec path: the repository's own holds the unit contracts since the
-    battery moved into the package, and a project's may hold anything else. ``fleet --run`` had
-    no ``--spec-path`` and read ``specs/`` only, so it worked from the repository root only.
+    ``specs/`` in the working directory when it is a directory (a project that keeps its own pack
+    or specs there, as before), else the built-in battery inside the installed package, else
+    ``specs/`` (whose absence the commands report). A ``specs/`` here that holds nothing to read
+    is read all the same and refused, exit 3, as before: it is never replaced by the battery, so
+    a pack that lost its files, or one ``specs/`` reaches only through a link, fails a pipeline
+    instead of passing it on another battery (pre-merge audit of A-84, HIGH 2). The root of this
+    package's own checkout (:func:`is_own_checkout`) reads the battery. ``fleet --run`` had no
+    ``--spec-path`` and read ``specs/`` only, so it worked from the repository root only.
     """
 
     local = Path("specs")
-    if local.is_dir() and holds_yaml(local):
+    if local.is_dir() and not is_own_checkout():
         return [local]
     if PACKAGED_SPEC_PATH.is_dir():
         return [PACKAGED_SPEC_PATH]
@@ -384,8 +377,8 @@ def refuse_spec_paths_that_hold_nothing(
         names = ", ".join(e.message.removeprefix(PATH_NOT_FOUND_TEXT) for e in found)
         raise ValueError(
             f"spec path not found: {names}. Pass {flag}; without it {reader} reads specs/ in the "
-            "working directory when it holds a YAML file, else the built-in battery inside the "
-            "installed package, which this installation lacks."
+            "working directory when there is one, else the built-in battery inside the installed "
+            "package, which this installation lacks."
         )
     raise ValueError(f"a spec path gives nothing to {to}: {'; '.join(e.message for e in found)}")
 

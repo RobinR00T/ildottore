@@ -220,8 +220,8 @@ def test_a_default_spec_path_that_is_not_there_says_how_to_pass_one(
     assert result.exit_code == 3, result.output
     assert (
         f"error: spec path not found: specs. Pass {how}; without it {who} reads specs/ in the "
-        "working directory when it holds a YAML file, else the built-in battery inside the "
-        "installed package, which this installation lacks."
+        "working directory when there is one, else the built-in battery inside the installed "
+        "package, which this installation lacks."
     ) in result.output
     given = ["coverage", "nope"] if args == ["coverage"] else [*args, "--spec-path", "nope"]
     result = runner.invoke(app, given)

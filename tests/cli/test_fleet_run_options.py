@@ -4,8 +4,7 @@ It read `specs/` in the working directory and had no option to change it, so it 
 repository root only ("path not found: specs"), and it had no `--evidence-root`, `--run-db` or
 `-o*`: its stores went to `.dottore/` wherever it was started and it wrote no report. `run` and
 every other command share one default spec path now: `specs/` in the working directory when
-there is one that holds a YAML file, else the built-in battery inside the installed package
-(u12 A-84).
+there is one, else the built-in battery inside the installed package (u12 A-84).
 """
 
 from __future__ import annotations
@@ -34,8 +33,6 @@ def test_the_default_spec_path_outside_the_repository_is_the_packaged_battery(
     monkeypatch.chdir(tmp_path)
     assert wiring.default_spec_paths() == [BATTERY]
     (tmp_path / "specs").mkdir()
-    assert wiring.default_spec_paths() == [BATTERY]  # no YAML file in it: no spec path (A-84)
-    (tmp_path / "specs" / "mine.yaml").write_text("id: MINE-001\n")
     assert wiring.default_spec_paths() == [Path("specs")]  # a local pack still comes first
 
 
@@ -269,9 +266,6 @@ def test_run_says_which_tree_it_read_when_it_falls_back(
 
 def test_no_note_when_specs_is_here(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     (tmp_path / "specs").mkdir()
-    (tmp_path / "specs" / "PI-DIRECT-001.yaml").write_bytes(
-        (BATTERY / "attacks" / "PI-DIRECT-001.yaml").read_bytes()
-    )
     monkeypatch.chdir(tmp_path)
     result = CliRunner().invoke(app, ["registry", "ls"])
     assert "note:" not in result.stderr
