@@ -14,7 +14,7 @@ Two distinct threat layers: the scanner tests both, but scores and gates them di
 
 ## 1. Techniques → specs
 
-Status checked against `specs/attacks/`: five of the techniques ship as specs; the rest are
+Status checked against the battery's `attacks/` (`src/ildottore/battery/attacks/`): five of the techniques ship as specs; the rest are
 design, with no spec yet. The design ids of the unbuilt rows are placeholders, not registry ids.
 
 | id | Layer | What it asks / does | Status |

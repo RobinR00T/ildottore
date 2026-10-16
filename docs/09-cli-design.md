@@ -105,7 +105,7 @@ OTHER COMMANDS
   dottore coverage [--framework all|owasp|atlas|iopc|aisvs] [--suite ..] [--gaps] [--json]
   dottore registry ls [--category ..] [--owasp ..] [--tag ..] [--suite ..]
   dottore describe <spec-id>
-  dottore lint specs/ [--json]              schema + policy + fixtures-prove-detection
+  dottore lint <path> [--json]              schema + policy + fixtures-prove-detection
   dottore new-spec --family <f> --id <ID>   scaffold a spec + empty fixtures
   dottore render-media <spec-id> --out <dir>
   dottore replay <run-id>                   re-read a run from stored evidence; sends nothing
@@ -271,8 +271,8 @@ dottore run --suite owasp:llm --compare -t gpt.yaml -t claude.yaml -t mistral.ya
 ```
 
 A regulatory preset (`--suite eu:ai-act`, `dora`, `nist:ai`, `mitre:atlas`, `iso:42001`) is
-not built: the alias table in `cli/flags.py` maps each to a suite id no file in `specs/suites/`
-has, so the run exits 3 with "suite ... is not registered". For a framework view of what the
+not built: the alias table in `cli/flags.py` maps each to a suite id no file in the battery's
+`suites/` has, so the run exits 3 with "suite ... is not registered". For a framework view of what the
 battery tests, use `dottore coverage --framework atlas` (OWASP, ATLAS, IoPC and AISVS axes).
 
 ## 4. Output ergonomics

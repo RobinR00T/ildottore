@@ -108,7 +108,7 @@ Full method: `docs/00-ai-build-playbook.md`.
   period or parentheses. Scan the added diff lines, not whole files (pre-existing repo dashes
   are not ours to rewrite).
 - **Validate every example/config against the REAL loader, not by eye.** `specs/scope.example.yaml`
-  documented a fictional `engagement/allow_targets/endpoint_allowlist/policy` schema that no
+  (`examples/scope.example.yaml` since u12 A-84) documented a fictional `engagement/allow_targets/endpoint_allowlist/policy` schema that no
   loader accepts; `dottore lint` skips loose example YAMLs, so it went uncaught and leaked into
   the docs. Load examples through `load_scope`/`load_target` (or a test) before trusting them.
 - **GPG signing can strand the branch.** `git rebase --exec 'git commit --amend --no-edit -S'
@@ -157,7 +157,7 @@ Full method: `docs/00-ai-build-playbook.md`.
     self-scan, a weekly static, test and coverage sweep). `make fix` autofixes format+lint. Do
     not hand-run a subset.
   - Individually: `ruff check . && ruff format --check . && mypy src` · `pytest -q` (coverage
-    gate ≥85% aggregate, OD-13) · `dottore lint specs/`
+    gate ≥85% aggregate, OD-13) · `dottore lint src/ildottore/battery`
     · `lint-imports` · `python -m tests.selfscan.run`
   - **In a git worktree,** reuse the main checkout's venv (`ln -s <main checkout>/.venv .venv`)
     and run the wall as `PYTHONPATH=<worktree>/src make gates`. The venv's editable install

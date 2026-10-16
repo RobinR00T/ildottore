@@ -1,7 +1,8 @@
 # 03: Attack Spec format
 
 An **attack spec** is a declarative, versioned, machine-validated test. It is the unit of
-reproducibility. Every spec validates against `schemas/attack-spec.schema.json`.
+reproducibility. Every spec validates against `src/ildottore/registry/schemas/attack-spec.schema.json`
+(inside the package since u12 A-84, so a wheel carries it; it was `schemas/`).
 
 ## 1. Design principles
 
@@ -57,7 +58,7 @@ reproducibility. Every spec validates against `schemas/attack-spec.schema.json`.
 
 ## 3. Canonical example (improved from v0.1)
 
-See `specs/attacks/PI-INDIRECT-RAG-001.yaml`. Key improvements over the v0.1 draft:
+See `src/ildottore/battery/attacks/PI-INDIRECT-RAG-001.yaml`. Key improvements over the v0.1 draft:
 
 - Added `spec_version`, `requires`, `nist_ai_rmf`, `runs`, `sampling`, `budget`, `fixtures`.
 - Data-leakage detection uses a **planted canary** (`{{canary}}`) instead of real secrets (S2).
@@ -106,9 +107,9 @@ changes the *carrier/obfuscation*, so the same `expected_secure_behavior` still 
 
 ## 5. Suites
 
-A suite (`specs/suites/*.yaml`) is an **ordered, versioned reference list** of spec ids
+A suite (`src/ildottore/battery/suites/*.yaml` for the built-in battery) is an **ordered, versioned reference list** of spec ids
 (`id`, `name`, `description`, `suite_version`, `specs`, `default_runs`, `tags`). Suite-level
 sampling, budget and `fail_on` defaults are not modeled (the suite files keep them as comments),
 and `default_runs` is not read by the runner (§2, `runs`). Suites are
 how you ship "the OWASP LLM Top 10 pack" or "the customer-agent baseline". Adding a technique =
-add a spec + reference it in a suite (no code). See `specs/suites/owasp-llm-top10.yaml`.
+add a spec + reference it in a suite (no code). See `src/ildottore/battery/suites/owasp-llm-top10.yaml`.
