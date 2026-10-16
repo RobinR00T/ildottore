@@ -104,12 +104,19 @@ PIN_HISTORY: tuple[tuple[int, str, str], ...] = (
         "shared.identity_sweep after the first pin; no verdict changes; version 2 is not "
         "released",
     ),
+    (
+        2,
+        "fbbeaeb07e7ef5a8c5c8e46559308705495a68acc544185de9458464bf258442",
+        "re-pin 2026-10-16: a crossing of a canary the request carries is a fail that needs "
+        "review (echo_only, never confirmed) rather than inconclusive, amended by the "
+        "coordinator before the audit; version 2 is not released",
+    ),
 )
 
 #: The digest each version is pinned to now: the last line of :data:`PIN_HISTORY` for it.
 PINNED: dict[int, str] = {
     1: "dbfbedd793b731ab385a0c2bae7e9bc9e85c795a1230eeaf0814c83038335d0c",
-    2: "4c5168fd528e31dc7cd65a59bdd094bf60bad1360ad9887d794e4f9a05a9d204",
+    2: "fbbeaeb07e7ef5a8c5c8e46559308705495a68acc544185de9458464bf258442",
 }
 
 #: One ``<version> <digest>`` line per pin, appended to and never edited: the history must start
