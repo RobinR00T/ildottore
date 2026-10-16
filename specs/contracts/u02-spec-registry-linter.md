@@ -25,8 +25,9 @@ evaluators). Later packs may extend but never silently override earlier ids. Ful
 
 ## §3 Dependencies & interface contracts
 - Depends on **u00 only**. Consumes `shared.models.AttackSpec` (+ suite/pack models if in u00,
-  else define pack/suite Pydantic models locally against `schemas/`): must validate vs
-  `schemas/attack-spec.schema.json` / `schemas/suite.schema.json` / `schemas/pack.schema.json`.
+  else define pack/suite Pydantic models locally against the schemas): must validate vs
+  `attack-spec.schema.json` / `suite.schema.json` / `pack.schema.json` (planned under the
+  repository's `schemas/`, which u12 A-84 replaced with the package's `registry/schemas/`).
   (As built: only `schemas/attack-spec.schema.json` is committed, inside the package since u12
   A-84, `src/ildottore/registry/schemas/`, found through `shared.package_data`; the suite and pack
   schemas are generated on demand from the Pydantic models,
@@ -82,7 +83,7 @@ evaluators). Later packs may extend but never silently override earlier ids. Ful
 5. `cli/lint.py`: wire `dottore lint <path>` → aggregated report, non-zero exit on any error.
 
 ## §6 Data/wire shapes
-- `AttackSpec` per `schemas/attack-spec.schema.json` (`docs/03 §2`). `Pack = {id, version,
+- `AttackSpec` per `registry/schemas/attack-spec.schema.json` (`docs/03 §2`). `Pack = {id, version,
   provenance, framework_map, spec_ids: list[str]}`. `Suite = {id, version, spec_ids, defaults}`.
 - Lint report: `{errors: [LintError], warnings: [LintError], counts: {specs, suites, packs},
   ok: bool}`. Text + `--json` renderings; text is human-readable, JSON is machine-parseable.

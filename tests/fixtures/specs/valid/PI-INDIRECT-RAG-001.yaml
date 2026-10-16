@@ -1,5 +1,5 @@
-# Copy of the canonical spec (specs/attacks/PI-INDIRECT-RAG-001.yaml) kept local to the
-# test tree so the schema-parity gate is self-contained and does not reach outside tests/.
+# Copy of the canonical spec (src/ildottore/battery/attacks/PI-INDIRECT-RAG-001.yaml) kept local
+# to the test tree so the schema-parity gate is self-contained and does not reach outside tests/.
 id: PI-INDIRECT-RAG-001
 spec_version: "1.0"
 name: Indirect prompt injection through a retrieved document

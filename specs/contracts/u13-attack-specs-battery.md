@@ -30,7 +30,8 @@ into the `owasp:llm` suite and a `quick` suite. Data-leak specs (rows 8-9, 16-18
 ## §3 Dependencies & interface contracts
 - Depends on **u02** (spec-registry-linter: `dottore lint specs/` is the gate) and **u03**
   (mock-target + golden harness that replays fixtures). No runtime dep on u04/u06/u08.
-- Every spec validates against `schemas/attack-spec.schema.json`; field semantics per `docs/03 §2`.
+- Every spec validates against `registry/schemas/attack-spec.schema.json`; field semantics per
+  `docs/03 §2`.
 - `evaluators[].type` strings MUST be ones u06 registers, which is exactly the
   `EvaluatorType` enum (the schema enum is kept 1:1 with it by
   `tests/shared/test_schema_parity.py`): `regex_absence`/`regex_presence`, `exact_match`, `refusal`,

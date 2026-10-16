@@ -95,7 +95,9 @@ OUTPUT
   -v, -vv, -q, --no-color                  (-v also prints an internal error's traceback)
   --evidence-root <dir>  --run-db <path>  --spec-path <dir>
                                            checked before anything is sent; the spec path
-                                           defaults to specs/ here, else the packaged battery
+                                           defaults to specs/ here, else the built-in battery
+                                           (inside the package; read in this repository's
+                                           own checkout too, whose specs/ holds contracts)
 
 OTHER COMMANDS
   dottore fingerprint <target.yaml> --scope <scope.yaml> [--offline]

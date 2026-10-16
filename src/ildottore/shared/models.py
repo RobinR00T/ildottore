@@ -1,6 +1,6 @@
 """Dependency-free Pydantic v2 models for Il Dottore.
 
-These mirror ``schemas/attack-spec.schema.json`` (author-facing spec format) and the
+These mirror ``registry/schemas/attack-spec.schema.json`` (author-facing spec format) and the
 runtime wire/persistence shapes in ``docs/01 §3``, ``docs/04-05``, ``docs/10`` and
 ADR-0005/0006. Models are frozen and JSON-serializable; they carry **no behavior** -
 no scoring math (u07), no evaluation (u06), no I/O. ``extra="forbid"`` mirrors the
@@ -61,7 +61,7 @@ class _Frozen(BaseModel):
 
 
 class _SchemaMirror(_Frozen):
-    """Base for models that mirror ``schemas/attack-spec.schema.json`` 1:1.
+    """Base for models that mirror ``registry/schemas/attack-spec.schema.json`` 1:1.
 
     The hand-authored JSON Schema types every optional field with its bare type and
     **no null union** (e.g. ``test_only: boolean``, ``attack.carrier: string``). A plain
@@ -84,7 +84,7 @@ class _SchemaMirror(_Frozen):
 
 
 # =============================================================================
-# AttackSpec + nested models - 1:1 with schemas/attack-spec.schema.json
+# AttackSpec + nested models - 1:1 with registry/schemas/attack-spec.schema.json
 # =============================================================================
 
 
@@ -95,7 +95,7 @@ class MitreAtlas(_SchemaMirror):
     technique: str | None = None
 
 
-# The IoPC code shapes, mirrored from ``schemas/attack-spec.schema.json``.
+# The IoPC code shapes, mirrored from ``registry/schemas/attack-spec.schema.json``.
 # ANCHOR NOTE, do not "fix" this to match the JSON file: pydantic validates with rust-regex,
 # where ``$`` already means end-of-haystack, while the JSON schema is validated by Python
 # ``jsonschema`` (``re``), where ``$`` also matches BEFORE a trailing newline and therefore

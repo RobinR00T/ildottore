@@ -78,11 +78,19 @@ jobs:
           #   not refused;
           # - resume (A-81): there is no `--resume`; here a resume is refused when the code that
           #   judged the halted half differs.
-        run: pip install "git+https://github.com/RobinR00T/ildottore@${ILDOTTORE_COMMIT}"
+        # The placeholder fails here, before anything is installed or scanned, with an annotation
+        # that says what to set; so does a tag, a branch or a short SHA, which can move.
+        run: |
+          if ! printf '%s' "$ILDOTTORE_COMMIT" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "::error title=Il Dottore pin::set ILDOTTORE_COMMIT to a full 40-hex commit SHA"
+            exit 1
+          fi
+          pip install "git+https://github.com/RobinR00T/ildottore@${ILDOTTORE_COMMIT}"
 
       # With no --spec-path the scan reads the built-in battery and says so on stderr, with its
-      # path. A specs/ directory of your repository that holds a YAML file is read instead: pass
-      # --spec-path to name the pack you mean if you keep one there.
+      # path, and as a ::warning:: annotation under GitHub Actions. A specs/ directory at the root
+      # of your repository is read instead, and the scan exits 3 when it holds no attack spec (an
+      # OpenAPI file there, say): run the scan from a directory without one, or pass --spec-path.
       - name: Scan (fail the build on confirmed high/critical)
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}   # matches target auth_ref
