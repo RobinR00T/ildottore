@@ -155,30 +155,27 @@ class OperationalErrorGroup(TyperGroup):
             raise typer.Exit(int(ExitCode.ERROR)) from exc
         except SystemExit as exc:
             # A stray exit: rich's answer to a broken pipe is SystemExit(1) (pre-merge audit of
-            # e6a1ab9b, MEDIUM 2 and LOW 5). 1 and 2 are the findings' codes here, and a text
-            # code exits 1, so those are exit 3; 0 and a code from 3 up keep their meaning.
-            if exc.code is None or (isinstance(exc.code, int) and exc.code not in (1, 2)):
+            # e6a1ab9b, MEDIUM 2 and LOW 5). 1 and 2 are the findings' codes here, and a code
+            # that is no exit status (a text, a bool, a number past 255) is an internal error
+            # (`_exit_status`), so those are exit 3; 0 and a code from 3 to 255 keep their meaning.
+            status = _exit_status(exc.code)
+            if status is not None and status not in (1, 2):
                 raise
             context = exc.__context__
             if isinstance(context, OSError) and context.errno == errno.EPIPE:
                 _say_broken_pipe()
             else:
-                _echo_err(
-                    f"error: unexpected exit with status {exc.code!r} (an internal error, not a "
-                    "scan result; rerun as `dottore -v ...` for the traceback)"
-                )
+                _say_unexpected_exit(exc.code)
             raise typer.Exit(int(ExitCode.ERROR)) from exc
         except Exception as exc:
             kind = _installed_click_kind(exc)
             if kind == "exit":
                 # As a stray SystemExit: 1 and 2 are the findings' codes here.
                 code = getattr(exc, "exit_code", 0)
-                if code not in (1, 2):
-                    raise typer.Exit(code) from exc
-                _echo_err(
-                    f"error: unexpected exit with status {code!r} (an internal error, not a "
-                    "scan result; rerun as `dottore -v ...` for the traceback)"
-                )
+                status = _exit_status(code)
+                if status is not None and status not in (1, 2):
+                    raise typer.Exit(status) from exc
+                _say_unexpected_exit(code)
             elif kind == "abort":
                 _echo_err("error: aborted")
             elif kind == "error":
@@ -188,6 +185,47 @@ class OperationalErrorGroup(TyperGroup):
             else:
                 _report_unexpected(exc, verbose=int(ctx.meta.get(_VERBOSE_KEY, 0) or 0))
             raise typer.Exit(int(ExitCode.ERROR)) from exc
+
+
+#: The largest exit status a process can report: POSIX keeps the low 8 bits of what it is given,
+#: so ``sys.exit(256)`` ends the process with 0, a clean scan to a CI gate.
+_MAX_EXIT_STATUS = 255
+
+
+def _exit_status(code: object) -> int | None:
+    """The status an exit asked for with ``code`` ends the process with, or None for a code that
+    is no exit status (u12 A-83).
+
+    ``None`` is 0, as ``sys.exit(None)`` is; an integer from 0 to 255 is itself (an ``ExitCode``
+    included). Anything else is what no command of this tool raises: a text, which Python prints
+    and exits 1 on, a bool, which it reads as 0 or 1, and a number it would cut to its low 8 bits.
+    Each would read as a scan result to a CI gate (1, findings below ``--fail-on``; 0, clean), so
+    the caller says it is an internal error and exits 3 (A-9).
+    """
+
+    if code is None:
+        return 0
+    if isinstance(code, int) and not isinstance(code, bool) and 0 <= code <= _MAX_EXIT_STATUS:
+        return int(code)
+    return None
+
+
+def _say_unexpected_exit(code: object) -> None:
+    """Say on stderr that the command exited with ``code`` where it had no business to.
+
+    The code is quoted through the CLI's mask, as every other error is (u12 A-83): a text code is
+    any message at all, and ``SystemExit("<text>")`` printed a registered credential in clear on
+    this line since #114 (A-80).
+    """
+
+    try:
+        said = _masked(RuntimeError(repr(code)))
+    except Exception:  # a code whose repr cannot even be read
+        said = "<unprintable status>"
+    _echo_err(
+        f"error: unexpected exit with status {said} (an internal error, not a scan result; rerun "
+        "as `dottore -v ...` for the traceback)"
+    )
 
 
 def _report_unexpected(exc: Exception, *, verbose: int) -> None:
@@ -345,6 +383,12 @@ def run_masked(call: Callable[[], Any]) -> NoReturn:
     masked and exits 3, and an abort says ``error: aborted`` and exits 3, as the root group's
     guard says one raised in a command (A-9's closure, u12 A-80). Ctrl-C keeps 130, which a
     command returns as its code. The classes are Typer's public ones (``_typer_error``).
+
+    A command ends with nothing, or with the code of the ``typer.Exit`` it raises, which
+    non-standalone mode returns. A code that is no exit status (``_exit_status``: a text, a bool,
+    a number past 255) is said, masked, on the line a stray ``SystemExit`` gets, and exits 3:
+    ``typer.Exit("<text>")`` exited 0 here, with nothing said, and 1 with the text in clear before
+    A-82, which is how Python's own ``sys.exit`` reads a text (u12 A-83).
     """
 
     try:
@@ -363,7 +407,11 @@ def run_masked(call: Callable[[], Any]) -> NoReturn:
         _echo_err("error: aborted")
         sys.exit(int(ExitCode.ERROR))
     # A command returns nothing or raises `typer.Exit(code)`, which non-standalone mode returns.
-    sys.exit(code if isinstance(code, int) and not isinstance(code, bool) else 0)
+    status = _exit_status(code)
+    if status is None:
+        _say_unexpected_exit(code)
+        status = int(ExitCode.ERROR)
+    sys.exit(status)
 
 
 class _MaskedGroup(OperationalErrorGroup):
