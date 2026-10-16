@@ -5,6 +5,45 @@ The carryover ledger. Every agent session updates this so context survives even 
 newest merge on top: a branch's entries land together when it merges, so the dates of
 neighbouring entries can interleave (an older branch merged later sits above a newer one).
 
+## State, 2026-10-16: the package carries what it reads, CI on the declared floors (`fix/packaging-dependency-floors`, u12 A-84)
+
+- From `main` at `7d01521f`, one of three follow-up branches of the audit train (landing order:
+  `fix/masking-followups`, this one, `fix/scoring-followups`). Decisions under the owner's
+  delegation (best practice, revisable) are in u12 A-84 and ADR-0013.
+- The built-in battery moved to `src/ildottore/battery/` and the attack-spec schema to
+  `src/ildottore/registry/schemas/`, as git renames; the three example files beside the battery
+  to `examples/`; `specs/` holds the unit contracts only. `shared/package_data.py` finds both
+  through `importlib.resources`. Measured on `7d01521f` with a wheel assembled offline by the
+  selection `pyproject.toml` declares (hatchling is not installed here, and nothing may be
+  downloaded): from outside a checkout `registry ls` and `run --dry-run` exit 3 and `lint
+  <checkout>/specs` exits 3 on the schema. On this branch, the same kind of wheel, installed with
+  `pip install --no-index --no-deps --target` and run from outside the checkout, prints what the
+  checkout prints for `--version`, `registry ls`, `schema export`, `lint` of its battery and `run
+  --dry-run`, with the same judging digest (`a5133e82`, 264 files), and judges a quick offline
+  run the same (10 fail, 8 inconclusive, exit 2). The real hatchling build is first proven by the
+  new `package` CI job.
+- With no `--spec-path`, `specs/` here is read only when it holds a YAML file (the repository
+  root reads the battery and says so on stderr); a path of the old layout is refused naming the
+  new one (`; it is now <path> (CHANGELOG, Unreleased)`). CHANGELOG lists every old path as
+  breaking. The judging digest covers the battery (`.wav` added): a resume across the change, or
+  after any edit of a built-in spec, is refused; version 1 re-pinned (no verdict changes).
+- CI: `floors` (every direct dependency at its declared floor, Python 3.11, the suite) and
+  `package` (hatchling wheel and sdist, the wheel run from outside the checkout); actionlint
+  clean, not yet run on GitHub. The existing workflows pin actions by major tag (Dependabot), so
+  the new jobs do too. OD-49 (pin the PR jobs' dependency set, the newest releases on a schedule)
+  is open for the owner. OD-45 to OD-47 hold no packaging fact and are unchanged.
+- Docs: INSTALL (a runtime install from a commit), the CI example (the wheel of a pinned commit,
+  a placeholder until `main` carries this change), README, USAGE, MANUAL, FAQ, `dottore(1)`,
+  `dottore-scope(5)`, examples, CONTRIBUTING, AGENTS, RELEASING, ROADMAP, `docs/03`, `06`, `07`,
+  `08`, `09`, `11`, `12`, ADR-0004, 0006, 0007 and 0013, the unit contracts and the index.
+- Gates on this branch (`make gates`, `PYTHONPATH` at the worktree): 7,133 tests, 7,130 passed and
+  3 skipped (the two hatchling tests, which run in the `package` job, and one of before), 97.69%
+  coverage, 75 specs, 14 suites and 1 pack lint OK, four import contracts kept, mypy and ruff
+  clean, self-scan 0 high/critical, bandit and pip-audit clean; the same with
+  `GITHUB_ACTIONS=true CI=true`; the CLI suite and the touched tests (2,350) green on typer 0.27.3,
+  plain and with those variables. `7d01521f` collects 7,108 tests (25 new here).
+
+
 ## State, 2026-10-12: the docs and contracts audit, fixed (`docs/audit-2026-10-12`)
 
 - From `main` at `de122e26`, one commit per finding group of the audit report
