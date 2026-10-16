@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from enum import StrEnum
 
-from ildottore.shared.combination import decided_by_judge_alone
+from ildottore.shared.combination import never_confirms
 from ildottore.shared.enums import InconclusiveReason, VerdictStatus
 from ildottore.shared.models import Verdict
 
@@ -93,7 +93,8 @@ def gate_state(
     Returns :attr:`FindingState.CONFIRMED` only when confidence meets the threshold **and**
     there is neither judge disagreement nor a capability gap, **and** not every verdict is a fail
     the judge alone reported (OD-19, u06 A-73: the judge is the one evaluator a target can
-    prompt-inject, so its word alone never confirms); otherwise
+    prompt-inject, so its word alone never confirms) or one resting only on a canary the request
+    carries (u08 A-85), the two read through ``shared.combination.never_confirms``; otherwise
     :attr:`FindingState.NEEDS_REVIEW`. Confidence gates state - it never touches risk.
 
     No production path calls it: the runner decides ``Finding.confirmed`` per mutation variant
@@ -102,7 +103,7 @@ def gate_state(
     """
     if confidence < threshold:
         return FindingState.NEEDS_REVIEW
-    if verdicts and all(decided_by_judge_alone(v) for v in verdicts):
+    if verdicts and all(never_confirms(v) for v in verdicts):
         return FindingState.NEEDS_REVIEW
     if has_judge_disagreement(verdicts):
         return FindingState.NEEDS_REVIEW

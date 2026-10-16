@@ -684,6 +684,13 @@ class Verdict(_Frozen):
     once per sweep (``shared.identity_sweep``), not once per attempt. Set on ``authz_leak``'s own
     fail by the runner and kept on the aggregate only when no other verdict would fail the attempt
     (``shared.combination``). ``None`` is left out of a dump, as an empty ``operator_cleared`` is.
+
+    ``echo_only`` marks a fail that rests only on a canary the identity sweep's request carries
+    (u08 A-85): the reply may only quote the request, or may hold the other identity's data, so
+    the fail is reported, counted and gated with ``--include-needs-review``, and never confirms a
+    finding on its own, as a fail the judge alone reported (u08 A-79). ``authz_leak`` sets it,
+    the aggregate keeps it when every deterministic fail it combined has it. ``False`` is left
+    out of a dump.
     """
 
     status: VerdictStatus
@@ -694,6 +701,7 @@ class Verdict(_Frozen):
     inconclusive_reason: InconclusiveReason | None = None
     operator_cleared: list[str] = Field(default_factory=list)
     identity_sweep: Annotated[int, Field(ge=1)] | None = None
+    echo_only: bool = False
 
     @model_serializer(mode="wrap")
     def _without_an_empty_clearing(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
@@ -704,6 +712,8 @@ class Verdict(_Frozen):
             dumped.pop("operator_cleared", None)
         if dumped.get("identity_sweep") is None:
             dumped.pop("identity_sweep", None)
+        if not dumped.get("echo_only"):
+            dumped.pop("echo_only", None)
         return dumped
 
     def model_post_init(self, _context: object) -> None:

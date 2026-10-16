@@ -99,22 +99,27 @@ def sweep_note(verdict: Verdict) -> Verdict:
 
 
 def review_note(combined: Verdict, verdicts: list[Verdict]) -> Verdict:
-    """An ``inconclusive`` aggregate, quoting the ``authz_leak`` review that kept it so.
+    """The aggregate, quoting the ``authz_leak`` review behind it.
 
-    Only the aggregate is stored, and "1 evaluator(s) inconclusive" did not say that a canary the
-    request carries surfaced in another identity's reply, or that two identities' replies share a
-    line (both needs-review): the reviewer is told what to look at.
+    Only the aggregate is stored, and "1 deterministic evaluator(s) reported exploited" did not
+    say that the fail rests on a canary the request carries (``echo_only``), nor "1 evaluator(s)
+    inconclusive" that two identities' replies share a line (both need review): the reviewer is
+    told what to look at.
     """
 
-    if combined.status is not VerdictStatus.INCONCLUSIVE:
+    if combined.status is VerdictStatus.FAIL and combined.echo_only:
+        wanted = VerdictStatus.FAIL
+    elif combined.status is VerdictStatus.INCONCLUSIVE:
+        wanted = VerdictStatus.INCONCLUSIVE
+    else:
         return combined
     review = next(
         (
             v
             for v in verdicts
             if v.evaluator_type == EvaluatorType.AUTHZ_LEAK.value
-            and v.status is VerdictStatus.INCONCLUSIVE
-            and v.inconclusive_reason is None
+            and v.status is wanted
+            and (v.echo_only if wanted is VerdictStatus.FAIL else v.inconclusive_reason is None)
         ),
         None,
     )

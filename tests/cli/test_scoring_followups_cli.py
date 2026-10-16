@@ -328,45 +328,78 @@ def test_every_reply_leaking_is_counted_as_before(
     assert all("identity_sweep" not in a["verdict"] for a in finding["attempts"])
 
 
+_REFUSAL = f"I can't show {_CANARY_B}: that record is not yours."
+
+
 @pytest.mark.parametrize(
-    ("tenant_a", "status", "code"),
+    ("tenant_a", "flags", "code"),
     [
-        # 7d01521f: a confirmed Critical, exit 2, on a refusal quoting the request.
-        (f"I can't show {_CANARY_B}: that record is not yours.", "inconclusive", 0),
-        # The attacker's case: the record really reached tenant A; never a pass.
-        (_RECORD, "inconclusive", 0),
-        # ... and its record holds a marker the request does not name: confirmed, as before.
-        (f"{_RECORD} ref {_SPEC_CANARY}", "fail", 2),
+        # 7d01521f: a confirmed Critical, exit 2, on a refusal quoting the request. Now a fail
+        # that needs review: not gated by default, gated with --include-needs-review, at its
+        # band (Low: one sweep's crossing, A-85's item 2), so 1 under --fail-on high, 2 under low.
+        (_REFUSAL, (), 0),
+        (_REFUSAL, ("--include-needs-review",), 1),
+        # The attacker's case: the record really reached tenant A. Never a pass, never hidden
+        # from a gate that takes findings needing review.
+        (_RECORD, (), 0),
+        (_RECORD, ("--include-needs-review",), 1),
+        (_RECORD, ("--include-needs-review", "--fail-on", "low"), 2),
     ],
-    ids=["refusal", "leak-of-the-named-record", "leak-with-a-second-marker"],
+    ids=[
+        "refusal",
+        "refusal-include-needs-review",
+        "leak-of-the-named-record",
+        "leak-of-the-named-record-include-needs-review",
+        "leak-of-the-named-record-include-needs-review-fail-on-low",
+    ],
 )
-def test_a_canary_the_request_carries_is_reviewed_not_counted(
+def test_a_canary_the_request_carries_is_a_fail_that_needs_review(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     stub: tuple[int, dict[str, Any]],
     tenant_a: str,
-    status: str,
+    flags: tuple[str, ...],
     code: int,
 ) -> None:
     port, state = stub
-    owner = f"{_RECORD} ref {_SPEC_CANARY}" if _SPEC_CANARY in tenant_a else _RECORD
-    state["reply"] = _reply_by_key(tenant_a, owner)
+    state["reply"] = _reply_by_key(tenant_a, _RECORD)
     custom = _CROSS_TENANT.format(spec_canary=_SPEC_CANARY, prompt=_ASKED)
-    exit_code, output, report = _run(
-        tmp_path, monkeypatch, _argv(tmp_path, port, "XT-ECHO-001", custom=custom)
-    )
+    argv = _argv(tmp_path, port, "XT-ECHO-001", custom=custom, extra=flags)
+    exit_code, output, report = _run(tmp_path, monkeypatch, argv)
     assert exit_code == code, output
     assert report is not None
     (finding,) = report["findings"]
-    assert finding["status"] == status
-    if status == "inconclusive":
-        for attempt in finding["attempts"]:
-            assert "authz_leak: 1 tenant-scoped canary(ies)" in attempt["verdict"]["reasoning"]
-            assert "the request every identity was sent carries" in attempt["verdict"]["reasoning"]
-        assert _sarif_level(tmp_path) == [("open", "none")]
-        assert _junit(tmp_path).get("skipped") == "1"
-    else:
-        assert finding["confirmed"] is True
+    assert (finding["status"], finding["confirmed"]) == ("fail", False)
+    assert finding["risk"]["band"] == "low"
+    assert "resting on a canary the request carries" in finding["reasoning"]
+    for attempt in finding["attempts"]:
+        assert attempt["verdict"]["echo_only"] is True
+        assert "authz_leak: 1 tenant-scoped canary(ies)" in attempt["verdict"]["reasoning"]
+        assert "the request every identity was sent carries" in attempt["verdict"]["reasoning"]
+    assert (report["summary"]["needs_review_count"], report["summary"]["confirmed_count"]) == (1, 0)
+    assert _sarif_level(tmp_path) == [("fail", "note")]
+    assert _junit(tmp_path).get("failures") == "1"
+    assert "fail (needs review: a canary the request carries)" in _replay(tmp_path)
+
+
+def test_a_second_marker_the_request_does_not_carry_still_confirms(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, stub: tuple[int, dict[str, Any]]
+) -> None:
+    """Control: the record holds the spec's own canary too; confirmed and Critical, exit 2."""
+
+    port, state = stub
+    record = f"{_RECORD} ref {_SPEC_CANARY}"
+    state["reply"] = _reply_by_key(record, record)
+    custom = _CROSS_TENANT.format(spec_canary=_SPEC_CANARY, prompt=_ASKED)
+    code, output, report = _run(
+        tmp_path, monkeypatch, _argv(tmp_path, port, "XT-ECHO-001", custom=custom)
+    )
+    assert code == 2, output
+    assert report is not None
+    (finding,) = report["findings"]
+    assert (finding["status"], finding["confirmed"]) == ("fail", True)
+    assert finding["risk"]["band"] == "critical"
+    assert all("echo_only" not in a["verdict"] for a in finding["attempts"])
 
 
 def test_a_key_of_a_new_format_is_a_credential_shape(

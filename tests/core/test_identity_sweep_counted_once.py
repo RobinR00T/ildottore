@@ -33,6 +33,7 @@ from ildottore.shared.enums import (
 )
 from ildottore.shared.identity_sweep import count_successes
 from ildottore.shared.models import (
+    AttackSpec,
     Attempt,
     EvaluatorConfig,
     Finding,
@@ -72,8 +73,9 @@ def _campaign(
     budgets: PlanBudgets | None = None,
     resume_from: TestRun | None = None,
     n: int = 5,
+    spec: AttackSpec | None = None,
 ) -> CampaignResult:
-    spec = _xtenant_spec()
+    spec = spec if spec is not None else _xtenant_spec()
     if spec_canary_ref:
         spec = spec.model_copy(
             update={

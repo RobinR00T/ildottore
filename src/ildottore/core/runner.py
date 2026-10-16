@@ -84,7 +84,7 @@ from ildottore.core.setup_delivery import (
     trace_gap,
 )
 from ildottore.redactor import Redactor, withhold_split
-from ildottore.shared.combination import combine_verdicts, decided_by_judge_alone
+from ildottore.shared.combination import combine_verdicts, decided_by_judge_alone, never_confirms
 from ildottore.shared.combination import union_matched as _union_matched
 from ildottore.shared.enums import (
     MIN_VARIANT_ATTEMPTS,
@@ -2754,8 +2754,10 @@ def _is_confirmed(status: VerdictStatus, attempts: list[Attempt], spec: AttackSp
     amendment, decided 2026-10-11 under the owner's delegation, u06 A-73): a fail the judge alone
     reported (:func:`~ildottore.shared.combination.decided_by_judge_alone`) is reported and
     counted, never confirmed on its own, since the judge is the one evaluator a target can
-    prompt-inject. It was confirmed, and gated ``--fail-on``, whenever the judge said fail on
-    every attempt of a variant.
+    prompt-inject. Nor is a fail resting only on a canary the identity sweep's request carries
+    (``Verdict.echo_only``, u08 A-85: the reply may only quote the request), both read through
+    :func:`~ildottore.shared.combination.never_confirms`. A judge-only fail was confirmed, and
+    gated ``--fail-on``, whenever the judge said fail on every attempt of a variant.
     """
 
     if status is not VerdictStatus.FAIL:
@@ -2771,7 +2773,7 @@ def _is_confirmed(status: VerdictStatus, attempts: list[Attempt], spec: AttackSp
     for verdicts in groups:
         if verdicts and all(v.status is VerdictStatus.FAIL for v in verdicts):
             mean_conf = sum(v.confidence for v in verdicts) / len(verdicts)
-            corroborated = not all(decided_by_judge_alone(v) for v in verdicts)
+            corroborated = not all(never_confirms(v) for v in verdicts)
             if mean_conf >= threshold and corroborated:
                 return True
     return False
@@ -2877,6 +2879,12 @@ def _finding_reasoning(
         line += (
             f"; {judged}/{fails} decided by the judge alone, which never confirms a finding on "
             "its own"
+        )
+    echoed = sum(1 for v in verdicts if v.status is VerdictStatus.FAIL and v.echo_only)
+    if echoed:
+        line += (
+            f"; {echoed}/{fails} resting on a canary the request carries, which never confirms "
+            "a finding on its own (u08 A-85)"
         )
     if blocked:
         line += (

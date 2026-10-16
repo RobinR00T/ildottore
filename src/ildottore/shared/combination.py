@@ -42,6 +42,7 @@ __all__ = [
     "JUDGE_ONLY_FAIL",
     "combine_verdicts",
     "decided_by_judge_alone",
+    "never_confirms",
     "shared_inconclusive_reason",
     "union_matched",
 ]
@@ -87,6 +88,17 @@ def decided_by_judge_alone(verdict: Verdict) -> bool:
     """True if ``verdict`` is an aggregate fail that only the judge reported (rule step 5)."""
 
     return verdict.status is VerdictStatus.FAIL and verdict.reasoning.startswith(JUDGE_ONLY_FAIL)
+
+
+def never_confirms(verdict: Verdict) -> bool:
+    """True for a fail that is reported, counted and gated with ``--include-needs-review``, and
+    never confirms a finding on its own: one the judge alone reported (rule step 5), or one that
+    rests only on a canary the identity sweep's request carries (``Verdict.echo_only``, u08 A-85).
+    """
+
+    return decided_by_judge_alone(verdict) or (
+        verdict.status is VerdictStatus.FAIL and verdict.echo_only
+    )
 
 
 def combine_verdicts(verdicts: list[Verdict]) -> Verdict:
@@ -140,12 +152,15 @@ def _combine(verdicts: list[Verdict]) -> Verdict:
     fails = [v for v in effective if v.status is VerdictStatus.FAIL]
     deterministic_fails = [v for v in fails if v.evaluator_type != _JUDGE]
     if deterministic_fails:
+        # Every deterministic fail resting on a canary the request carries: the aggregate is a
+        # fail that never confirms (u08 A-85); one other deterministic fail confirms it.
         return Verdict(
             status=VerdictStatus.FAIL,
             confidence=max(v.confidence for v in deterministic_fails),
             reasoning=f"{len(deterministic_fails)} {DETERMINISTIC_FAIL}",
             matched=matched,
             evaluator_type=AGGREGATE_TYPE,
+            echo_only=all(v.echo_only for v in deterministic_fails),
         )
     inconclusive = [v for v in effective if v.status is VerdictStatus.INCONCLUSIVE]
     if inconclusive:
