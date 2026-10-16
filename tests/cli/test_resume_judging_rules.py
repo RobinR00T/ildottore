@@ -464,9 +464,38 @@ def test_the_digest_refusal_names_the_files_that_changed(
 def test_the_changed_files_are_capped_at_five() -> None:
     stored = {f"m{i}": "0" * 8 for i in range(8)}
     current = {f"m{i}": "1" * 8 for i in range(8)}
-    text = resume_mod._changed_files(stored, current)
+    text, kept = resume_mod._changed_files(stored, current)
     assert text == "; the files that differ: m0, m1, m2, m3, m4 and 3 more"
-    assert resume_mod._changed_files(None, current) == ""
+    assert kept == ("m0", "m1", "m2", "m3", "m4")
+    assert resume_mod._changed_files(None, current) == ("", ())
+
+
+def test_a_changed_battery_file_is_named_in_clear_through_the_cli(tmp_path: Path) -> None:
+    """Pre-merge audit of u12 A-84, MEDIUM 1: an edited built-in spec was named
+    `«REDACTED:high_entropy:...».yaml`, the redactor reading its label as a secret. The labels
+    the refusal names are kept readable; a value of the record with no label's shape is not."""
+
+    run_id, spec_dir = _halted(tmp_path)
+    files = _context(tmp_path)["judging_files"]
+    assert isinstance(files, dict) and "battery/attacks/SP-LEAK-001.yaml" in files
+    secret = "sk-ant-api03-" + "Zq8xW2vB7nK4pL9s" * 3
+    _rewrite(
+        tmp_path,
+        judging_digest="f" * 64,
+        judging_files={**files, "battery/attacks/SP-LEAK-001.yaml": "0" * 8, secret: "1" * 8},
+    )
+    result = CliRunner().invoke(
+        app,
+        [
+            *["run", "-t", str(tmp_path / "target.yaml"), "--scope", str(tmp_path / "scope.yaml")],
+            *["--spec-path", str(spec_dir), "--evidence-root", str(tmp_path / "ev")],
+            *["--run-db", str(tmp_path / "runs.sqlite"), "--resume", run_id],
+        ],
+    )
+    assert result.exit_code == ExitCode.ERROR, result.output
+    assert "the files that differ: battery/attacks/SP-LEAK-001.yaml, " in result.output
+    assert secret not in result.output
+    assert "REDACTED" in result.output  # the value of the record that is no label
 
 
 def test_a_run_judged_under_another_interpreter_is_refused(

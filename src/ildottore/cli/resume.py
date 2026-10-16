@@ -14,6 +14,7 @@ findings are a redacted projection, not the attempts themselves.
 
 from __future__ import annotations
 
+import re
 import shlex
 import sys
 from collections import Counter, defaultdict
@@ -834,30 +835,54 @@ def _assert_same_rules(run_id: str, context: dict[str, object]) -> None:
 
 
 class ResumeRefused(ValueError):
-    """A resume refused with the digests it names, which the CLI's error masking keeps readable.
+    """A resume refused with the digests and file names it gives, which the CLI's error masking
+    keeps readable.
 
     A bare SHA-256 reads as a high-entropy secret to the redactor every error goes through: an
     exception that carries the digests it computed in ``digests`` has them kept (as a tampered
-    artifact's are, ``store.replay.TamperError``).
+    artifact's are, ``store.replay.TamperError``). A covered file's label can read so too: a spec
+    of the built-in battery, ``battery/attacks/SP-LEAK-001.yaml``, printed
+    ``«REDACTED:high_entropy:...».yaml`` (pre-merge audit of u12 A-84, MEDIUM 1), so the labels
+    the refusal names are carried in ``kept_names``, as a fleet refusal's parameter names are.
     """
 
-    def __init__(self, message: str, *, digests: tuple[str, ...] = ()) -> None:
+    def __init__(
+        self, message: str, *, digests: tuple[str, ...] = (), kept_names: tuple[str, ...] = ()
+    ) -> None:
         super().__init__(message)
         self.digests = digests
+        self.kept_names = kept_names
 
 
-def _changed_files(stored: object, current: dict[str, str]) -> str:
-    """The covered files whose digest differs between the record and now, at most five named."""
+#: The shape of a label the judging digest gives a covered file: a module of the package, or a
+#: data file's path under it. A label of the run record that has another shape is not kept
+#: readable: the record is a file, and a value written into it is no name this tool gave.
+_LABEL = re.compile(
+    r"ildottore(\.[A-Za-z_][A-Za-z0-9_]*)+"
+    r"|[A-Za-z0-9_][A-Za-z0-9_.-]*(/[A-Za-z0-9_][A-Za-z0-9_.-]*)*\.(yaml|sql|json|j2|wav)"
+)
+
+
+def _changed_files(stored: object, current: dict[str, str]) -> tuple[str, tuple[str, ...]]:
+    """The covered files whose digest differs between the record and now, at most five named,
+    and the names a refusal keeps readable: those this installation covers, and those of the
+    record that have a label's shape (a file removed since the halt)."""
 
     if not isinstance(stored, dict):
-        return ""
+        return "", ()
     names = sorted(
         label for label in stored.keys() | current.keys() if stored.get(label) != current.get(label)
     )
     if not names:
-        return ""
-    shown = ", ".join(names[:5]) + (f" and {len(names) - 5} more" if len(names) > 5 else "")
-    return f"; the files that differ: {shown}"
+        return "", ()
+    named = names[:5]
+    shown = ", ".join(named) + (f" and {len(names) - 5} more" if len(names) > 5 else "")
+    kept = tuple(
+        name
+        for name in named
+        if name in current or (len(name) <= 200 and _LABEL.fullmatch(name) is not None)
+    )
+    return f"; the files that differ: {shown}", kept
 
 
 def _assert_same_code(run_id: str, context: dict[str, object]) -> None:
@@ -890,13 +915,14 @@ def _assert_same_code(run_id: str, context: dict[str, object]) -> None:
             f"so the code that judged it cannot be told from this one ({this}). {advice}"
         )
     if stored != current:
-        files = _changed_files(context.get("judging_files"), judging_files())
+        files, kept = _changed_files(context.get("judging_files"), judging_files())
         raise ResumeRefused(
             f"run {run_id!r} was judged under the same judging rules ({JUDGING_RULES_VERSION}) by "
             f"other code: its judging digest is {stored} and this installation's is {current} (Il "
             f"Dottore's code changed since the halt: an upgrade, a reinstall or a local edit"
             f"{files}; {this}). {advice}",
             digests=(str(stored), current),
+            kept_names=kept,
         )
     then, now = context.get("python"), python_build()
     if then != now:
