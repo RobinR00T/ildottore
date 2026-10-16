@@ -621,6 +621,8 @@ _ABS_PATH_STOP = re.compile(r"[\s'\"()\[\],;]")
 #: A run of the characters the entropy rule joins into a token.
 _TOKEN_RUN = re.compile(r"[A-Za-z0-9+/_=-]+")
 #: Names that are no directory's own: past one, main's rule keeps nothing (`Path` drops them).
+#: A `//` or a `/./` inside a path, which `Path` drops.
+_DROPPED_STEP = re.compile(r"/\.?/")
 _NOT_A_NAME = frozenset({"", ".", ".."})
 #: Longer tokens are not checked (PATH_MAX): each parent costs a filesystem lookup.
 _MAX_PATH_LEN = 4096
@@ -789,7 +791,12 @@ def _whole_path_spans(text: str, lookup: _Lookups) -> list[tuple[int, int, int]]
             # of the directories as one token with the missing name (u12 A-83). What follows is
             # judged from its `/` on, as main judges the rest of a path whose directories it
             # reads; the token there is checked with the kept text for a registered credential's
-            # part (as the pre-merge audit of A-38 found one, judged alone, printed).
+            # part (as the pre-merge audit of A-38 found one, judged alone, printed). A `//` or a
+            # `/./` in what main's rule would have read of the path keeps nothing, as main's rule
+            # keeps nothing of such a path (`Path` drops them, and no parent is then its prefix).
+            stop = _ABS_PATH_STOP.search(text, existing)
+            if _DROPPED_STEP.search(text, existing, stop.start() if stop else len(text)):
+                continue
             token = _TOKEN_RUN.match(text, existing)
             spans.append((start, existing, token.end() if token else existing))
     return spans

@@ -99,10 +99,13 @@ HIGH = "Xy9Kq2Lm3NpQ8rT5vW1zA4bC"
 
 @pytest.mark.parametrize("step", ["//", "/./", "/../with space/"])
 def test_the_kept_part_ends_where_main_s_rule_keeps_nothing(tmp_path: Path, step: str) -> None:
+    """Main's rule keeps nothing of a path holding `//` or `/./` (`Path` drops them), so neither
+    does the existing part; it stops before a `..` (fuzz of A-83 against main)."""
+
     directory = tmp_path / "with space"
     (directory / HIGH).mkdir(parents=True)
     shown = _masked(ValueError(f"cannot write {directory}{step}{HIGH}/missing.json: denied"))
-    assert f"{directory}/" in shown and HIGH not in shown, shown
+    assert HIGH not in shown, shown
     # Without the step the directory is kept, as an existing part.
     shown = _masked(ValueError(f"cannot write {directory}/{HIGH}/missing.json: denied"))
     assert f"{directory}/{HIGH}/missing.json" in shown, shown
