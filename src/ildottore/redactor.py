@@ -123,7 +123,7 @@ class _Joined:
         self.text = text.replace(_STASH_OPEN, "").replace(_STASH_CLOSE, "")
         # For the j-th delimiter at `at`, the index in the joined text of the character after it.
         self._after = array(
-            "q", (m.start() - rank for rank, m in enumerate(_STASH_DELIMITER.finditer(text)))
+            "q", [m.start() - rank for rank, m in enumerate(_STASH_DELIMITER.finditer(text))]
         )
 
     def at(self, index: int) -> int:
@@ -1464,8 +1464,18 @@ class Redactor:
         # reading whenever it masked anything and the visible one otherwise, so what a text was
         # masked as depended on whether anything at all was masked in it, however far away: a UUID
         # in one line showed the labelled secret of the next (pre-merge audits of A-78, F2).
-        out = read_both_ways(self._read_back, text)
-        if out == visible_stash_delimiters(text):  # neither reading masked anything
+        visible = visible_stash_delimiters(text)
+        read: dict[str, str] = {}
+
+        def _reading(form: str) -> str:
+            read[form] = self._read_back(form)
+            return read[form]
+
+        out = read_both_ways(_reading, text)
+        # Neither reading masked anything, or the joined one masked nothing the visible one did not
+        # (a delimiter far from every secret): the visible reading is the result, a fixed point.
+        # A pass that leaves stand-ins wrote them back as text, and reads the result again.
+        if out == visible or (out == read.get(visible) and not self._leaves_cuts):
             return out
         # The masks of one reading can stand where the other reading wrote text, so the whole is
         # read once more, which only adds masks, and the result is a fixed point.
