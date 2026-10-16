@@ -83,6 +83,20 @@ the file, schema copy, build or pipeline it names.
   fail, 8 inconclusive, exit 2); an sdist built the same way builds a wheel that carries the same
   92 data files. INSTALL.md documents the runtime install. Not released: no tag carries it.
 
+### Changed (breaking for an environment that pins an older websockets, typer, rich, PyYAML, Jinja2 or pytest-asyncio: six declared floors rise, u12 A-84)
+
+- `websockets>=15.0` (was 14.0: `adapters/websocket.py` passes the asyncio client's `proxy`,
+  added in 15.0), `typer>=0.26.8` (was 0.12: the oldest typer the suite has run on, and click 8.2
+  breaks typer before 0.15.4), `rich>=13.8.0` (was 13.7: typer 0.26.8 and 0.27.3 require it, which
+  the pre-merge audit measured as `ResolutionImpossible` below it), `pyyaml>=6.0.1` (was 6.0: no
+  CPython 3.11 wheel, and its sdist does not build under Cython 3), `jinja2>=3.1.6` (was 3.1: the
+  CVEs fixed in 3.1.3 to 3.1.6, sandbox escapes and `xmlattr`) and, in the `dev` extra,
+  `pytest-asyncio>=0.23.5`. These come from the projects' release histories, **not measured**:
+  nothing may be downloaded where they were written, and the `floors` job is the measurement (the
+  change waits for it to be green). The venv the suite ran on holds a version at or above each
+  (websockets 17.2, typer 0.26.8, rich 15.0.0, PyYAML 6.0.3, Jinja2 3.1.6, pytest-asyncio
+  1.4.0). `pydantic>=2.6` stays, for the job to decide.
+
 ### Added (CI runs the suite on the declared dependency floors, and builds and runs the wheel, u12 A-84)
 
 - Two jobs in `.github/workflows/ci.yml`; `static` and `validate` are unchanged but for Gate 1's

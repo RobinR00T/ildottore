@@ -9,8 +9,10 @@ Deliberately small, and permissive-licensed with one recorded exception (below):
 
 - `pydantic`, `pyyaml`, `jsonschema`, `httpx`, `jinja2`, `typer`, `rich`, `websockets` (the
   client of the `provider: websocket` adapter, BSD-3-Clause, no dependencies of its own; added
-  2026-10-07 at `>=14.0`), plus `anyio`, which `httpx` already pulls in and which
-  `pyproject.toml` lists only to set a security floor (`>=4.14.2`).
+  2026-10-07 at `>=14.0`, `>=15.0` since 2026-10-16 for its `proxy` argument), plus `anyio`,
+  which `httpx` already pulls in and which `pyproject.toml` lists only to set a security floor
+  (`>=4.14.2`). The floors are tested by the `floors` CI job (u12 A-84): every direct dependency
+  installed at the version after its `>=`, the suite run on Python 3.11.
 
 No heavyweight or native-extension dependency is pulled for the core. The multimodal image renderer
 is **pure stdlib** (`zlib` + a bitmap font, no Pillow), on purpose, so a scan has no imaging
