@@ -99,11 +99,20 @@ PIN_HISTORY: tuple[tuple[int, str, str], ...] = (
         "no verdict can change; from fix/packaging-dependency-floors on 7d01521f; version 1 is "
         "not released",
     ),
+    (
+        1,
+        "63e2465e2c59dc5db9c2a3a29bcf10fb16070af065b890f353fe74b3bd9808a9",
+        "re-pin 2026-10-16: the pre-merge audit of 0f556628 (u12 A-84): the default spec path "
+        "fails closed (specs/ read whenever it is a directory, the battery where there is none "
+        "and in the own checkout, a GitHub warning), the moved-path notes name the change, a "
+        "resume refusal keeps battery file names readable; spec selection and messages only, no "
+        "verdict can change; version 1 is not released",
+    ),
 )
 
 #: The digest each version is pinned to now: the last line of :data:`PIN_HISTORY` for it.
 PINNED: dict[int, str] = {
-    1: "a5133e824e05f286f6375a00439721cd64a9a5e4f99b76e92d1cfbab3afed230",
+    1: "63e2465e2c59dc5db9c2a3a29bcf10fb16070af065b890f353fe74b3bd9808a9",
 }
 
 #: One ``<version> <digest>`` line per pin, appended to and never edited: the history must start
