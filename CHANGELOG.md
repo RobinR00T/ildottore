@@ -7,6 +7,72 @@ the file, schema copy, build or pipeline it names.
 
 ## [Unreleased]
 
+### Changed (breaking for a scope with a weak identity canary, a pipeline that gates on a cross-tenant or secret-shape finding, and a run halted under judging rules 1: judging rules 2, u08 A-85)
+
+- **Judging rules 2.** `shared.judging_rules.JUDGING_RULES_VERSION` is 2: the four changes below
+  alter verdicts or figures, so a run halted under version 1 is refused by its resume, before
+  anything is sent, naming both (measured: halted on `7d01521f`, resumed on this branch, exit 3,
+  `run '<id>' was judged by the rules of an older Il Dottore (judging rules 1, started by Il
+  Dottore v0.1.0), and this is Il Dottore v0.1.0, judging rules 2. ...`); `dottore --version`
+  prints `dottore 0.1.0 (judging rules 2)`. The pin is an appended line (`PIN_HISTORY`,
+  `judging_pins.frozen`); the stacked landing re-pins it on the merged tree.
+  `JUDGING_RULES_SINCE` stays `2026-10-15`, the day runs began to record their rules, which is
+  what the refusal of a run that records none quotes.
+- **An identity canary a reply can hold by chance is refused where it is declared.** `authz_leak`
+  reads an identity's canary in another identity's reply as that identity's data received, a
+  confirmed Critical, and a scope's `canary` could be any text: through the CLI on `7d01521f`,
+  `ACME`, `tenant-b`, `ZZ-1`, `invoice ready` and `12345678` each made `DL-XTENANT-001` a confirmed
+  Critical, exit 2, on a reply that only said them. `load_scope` now refuses a canary shorter than
+  8 characters, holding a space, holding no digit or no letter, or inside an identity's name or
+  the target id in any case (`policy.scope.weak_canary`); one holding `{{run_id}}` passes. `run`,
+  `fleet --run`, `--dry-run`, `--estimate`, `-sn` and a resume exit 3 with nothing sent, naming
+  the identity and the reason, never the canary. `specs/scope.example.yaml` shows a tenant identity
+  with a random canary.
+- **A canary the request carries is no proof of a crossing.** The identity sweep sends every
+  identity one request; a spec naming tenant B's record by its canary failed confirmed and
+  Critical on tenant A's refusal quoting it (exit 2). `authz_leak` now reads the request the sweep
+  sent (`EvalContext.identity_request`): a crossing of a canary it carries is needs-review
+  (`inconclusive`), never a confirmed leak and never a pass, since the same occurrence is what a
+  real leak of the named record shows (dropping it would let whoever writes the request hide a
+  leak by naming the canary). A crossing canary the request does not carry still confirms the
+  leak beside it. Only text the scanner wrote counts as the request (prompt, system prompt, image
+  text, a `system`, `developer` or `user` message); a target's own reply never does. An
+  `inconclusive` aggregate quotes the `authz_leak` review that kept it so.
+- **An identity sweep's crossing counts once in the reproducibility.** The sweep sends one reply per
+  identity, whatever `--runs` is, and `authz_leak` reads it on every attempt: one reply of tenant A
+  holding tenant B's canary made `DL-XTENANT-001` 5 of 5, 1.0, Critical, SARIF `error`, exit 2,
+  and `dottore replay` `exploited: 5`. Such a fail now carries the sweep's number
+  (`verdict.identity_sweep`, left out of a dump when unset) and counts as one success per sweep in
+  the scorer and in `dottore replay` alike (`shared.identity_sweep`): 1 of 5, 0.2, Low, SARIF
+  `note`, still a confirmed fail; replay prints `exploited: 1` and a line saying why. An attempt
+  that also fails on its own reply counts on its own; a resume's new sweep counts as one more.
+- **`secret_shape` detects every key format the redactor masks.** It built its rules from four
+  prefixes of its own (`sk-`, `gh*_`, `AKIA`, `xox`) while u01 A-78 taught the redactor the
+  documented formats of eleven providers: a reply printing an Anthropic, GitLab, Google, Hugging
+  Face, Stripe, npm or PyPI key, a typed OpenAI key (`sk-proj-`), an AWS temporary key or a Slack
+  app token scored `pass`. Its rules now come from `redactor.key_format_patterns()`, the one list,
+  with no copy (the redactor gains only that accessor); the four old formats keep their entropy
+  gates, the rest get 3.0 bits, and the PEM header stays its own rule.
+- **What changes in CI** (measured with `_ildottore-tren/scratch/fuscore/repro_cli.py` against a
+  loopback stub, `7d01521f` then this branch): a scope with a weak identity canary exits 3 with
+  nothing sent (was 2, or 0 when no reply said it); a cross-tenant finding whose crossing only the
+  sweep showed is Low, 0.2, SARIF `note`, JUnit failure `type="low"` (was Critical, 1.0, `error`,
+  `type="critical"`) and exits 1 under `--fail-on high` or `--fail-on medium` (was 2; `--fail-on
+  low` still 2); a crossing of a canary the request carries is `inconclusive`, SARIF level `none`,
+  JUnit `skipped`, exit 0 (was a confirmed fail, exit 2), and `dottore diff` against an older
+  report reads it `unverified`; a reply holding a key of a format A-78 added is `inconclusive`,
+  JUnit `skipped` (was `pass`; exit 0 both); a resume of a run halted under judging rules 1 exits
+  3. **The same:** a crossing every attempt's own reply shows (1.0, Critical, exit 2), a clean
+  sweep, a crossing at `--runs 1` (1 of 1), a crossing of a marker the request does not carry
+  beside one it does (confirmed, exit 2), the old four key formats, the JWT and the PEM header
+  (needs-review), and a key holding the planted canary (confirmed fail).
+- Tests (each count with how many fail on `7d01521f`):
+  `tests/policy/test_scope_canary_shape.py` (24; 14), `tests/evaluators/test_authz_leak_echo.py`
+  (7; 5), `tests/core/test_identity_sweep_counted_once.py` (13; its 4 runner tests, the rest need
+  the new module), `tests/evaluators/test_secret_shape_key_formats.py` (169; 73),
+  `tests/cli/test_scoring_followups_cli.py` (12, through the CLI against a loopback stub; 9, the 3
+  controls pass on both), and the version 1 resume in `tests/cli/test_resume_judging_rules.py`.
+
 ### Documentation (the docs and contracts audit of 2026-10-12: re-measured figures, a CI example that gated on v0.1.0, the ledger in order)
 
 - **The CI example installed v0.1.0, and a wheel.** `examples/ci-github-actions.yml` installed
