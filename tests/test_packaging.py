@@ -12,14 +12,16 @@ Two kinds of check:
   the wheel and sdist selection of ``pyproject.toml`` can drop none of them (no ``exclude``,
   ``only-include``, ``force-include`` or ``sources`` that could), and ``.gitignore``, which
   hatchling applies, matches none of them;
-* with hatchling importable (the ``package`` job of ``.github/workflows/ci.yml``; the venv of a
-  plain ``pip install -e ".[dev]"`` has no hatchling, and these tests may not download it): a
-  real wheel and a real sdist, the wheel installed into a directory of its own and run from
-  outside the checkout, each command's output compared with the checkout's.
+* with hatchling importable (the ``package`` job of ``.github/workflows/ci.yml``, which sets
+  ``DOTTORE_REQUIRE_HATCHLING=1`` so a missing backend fails there; the venv of a plain
+  ``pip install -e ".[dev]"`` has no hatchling, and these tests may not download it): a real
+  wheel and a real sdist, the wheel installed into a directory of its own and run from outside
+  the checkout, each command's output compared with the checkout's.
 """
 
 from __future__ import annotations
 
+import importlib
 import os
 import shutil
 import subprocess
@@ -107,7 +109,10 @@ def test_gitignore_matches_none_of_them() -> None:
 def _build(kind: str, project: Path, out: Path) -> Path:
     """PEP 517's ``build_wheel`` or ``build_sdist`` of hatchling, in ``project``."""
 
-    pytest.importorskip("hatchling", reason="hatchling is installed by the `package` CI job")
+    if os.environ.get("DOTTORE_REQUIRE_HATCHLING") == "1":
+        importlib.import_module("hatchling")  # the `package` job: missing fails, never skips
+    else:
+        pytest.importorskip("hatchling", reason="hatchling is installed by the `package` CI job")
     out.mkdir(parents=True, exist_ok=True)
     name = subprocess.run(  # noqa: S603 - this interpreter, fixed arguments
         [
