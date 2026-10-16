@@ -76,10 +76,20 @@ def _raw_controls(text: str) -> list[str]:
     return [ch for ch in text if unicodedata.category(ch) in _RAW]
 
 
-def _injected_lines(output: str) -> list[str]:
-    """Lines a GitHub Actions runner would read as a workflow command (leading space trimmed)."""
+#: The one workflow command the CLI writes itself: under GitHub Actions, the note that a command
+#: with no --spec-path reads the built-in battery (u12 A-84). Its text is the tool's own.
+_OWN_ANNOTATION = "::warning title=dottore spec path::"
 
-    return [line for line in output.splitlines() if line.lstrip().startswith("::")]
+
+def _injected_lines(output: str) -> list[str]:
+    """Lines a GitHub Actions runner would read as a workflow command (leading space trimmed),
+    but the CLI's own spec-path annotation."""
+
+    return [
+        line
+        for line in output.splitlines()
+        if line.lstrip().startswith("::") and not line.startswith(_OWN_ANNOTATION)
+    ]
 
 
 @pytest.fixture
