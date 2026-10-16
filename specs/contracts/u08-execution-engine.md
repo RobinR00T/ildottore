@@ -1038,11 +1038,13 @@ target file's key is tenant A's, so the attempts and A's sweep send get A's repl
    (`scoring.risk.reproducibility_from_attempts`) and the replay (`store.replay.ReplayResult`)
    count through one rule, `shared.identity_sweep.count_successes`: one success per sweep. Now 0.2,
    Low, SARIF `note`, exit 1 under `--fail-on high` and 2 under `--fail-on low`, replay `exploited:
-   1` with a line saying why. The verdicts stand: the finding fails and stays confirmed, a crossing
-   being a clean corroboration (`docs/11 §4`); the stored reasoning says `the crossing of identity
-   sweep 1 alone made this a fail`. Every reader of the figure reads it from the finding (the JSON,
-   HTML, SARIF and JUnit reports, the summary's distributions and band counts, the run store, the
-   model-comparison matrix, `--fail-on`); `dottore diff` reads the status only and is unchanged.
+   1` with a line saying why, and the finding's line `5/5 resting on 1 identity sweep(s) alone,
+   counted once per sweep in the reproducibility`. The verdicts stand: the finding fails and stays
+   confirmed, a crossing being a clean corroboration (`docs/11 §4`); the stored reasoning says `the
+   crossing of identity sweep 1 alone made this a fail`. Every reader of the figure reads it from
+   the finding (the JSON, HTML, SARIF and JUnit reports, the summary's distributions and band
+   counts, the run store, the model-comparison matrix, `--fail-on`); `dottore diff` reads the
+   status only and is unchanged.
    Not taken: a sweep per run (the honest `k / N` with the sweep as the trial, at identities x
    runs sends, which changes the estimate, the ceilings and the resume: a change of its own); the
    sweep's verdict on one attempt only (the crossing would need review, and a clean spec whose
