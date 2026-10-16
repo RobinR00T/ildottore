@@ -56,6 +56,7 @@ from ildottore.redactor import (
     holds_known_secret_part,
     known_secret_parts,
     log_safe_json,
+    read_both_ways,
     visible_controls,
 )
 from ildottore.reporting import report_schema
@@ -890,75 +891,85 @@ def _masked(exc: BaseException) -> str:
     # credentials are set aside.
     raw = _os_error_text(exc)
     parts = known_secret_parts()
-    # The loopback host stands aside while the rules run, unless a registered credential holds
-    # it (the rule below for a kept token), and comes back after the last of them.
-    loopback = (
-        "127.0.0.1"
-        if _LOOPBACK_MARK not in raw and not holds_known_secret_part("127.0.0.1", parts)
-        else None
-    )
-    if loopback is not None:
-        raw = _LOOPBACK_IN_URL.sub(_LOOPBACK_MARK, raw)
-    cuts = UuidCuts(raw)
-    plain = Redactor(entropy_threshold=math.inf, late=False, uuid_cuts=cuts)
-    entropy = Redactor(patterns=[], late=("uuid",), uuid_cuts=cuts)
-    late = Redactor(patterns=[], entropy_threshold=math.inf)
-    text = plain.redact_text(raw)
-    # What is kept is found in the text with the stand-ins read back: a UUID a number rule read
-    # inside an existing path or a spec file name is the operator's or the tree's, kept whole as
-    # one no number rule reads (A-38, A-78 L5); the rest, stand-ins included, is `entropy`'s.
-    seen = cuts.read_back(text)
-    paths = sorted({re.escape(p) for p in _existing_prefixes(seen)}, key=len, reverse=True)
-    keep = re.compile(
-        r"(\b(?:"
-        + "|".join([_ARTIFACT_NAME, *carried])
-        + r")\b"
-        + "".join(f"|{p}(?![^/\\s'\"()\\[\\],;])" for p in paths)
-        + "".join(f"|(?<![\\w+/=-]){n}(?![\\w+/=-])" for n in names)
-        + ")"
-    )
-    # A kept token holding 8 consecutive characters of a registered credential is masked:
-    # `sk-<64 hex>` and `<64 hex>-v2` contain one (re-audit of the digest change), and so does
-    # `<dir>/report-<part of the key>.json`, which the old test, "inside the key or holding it
-    # whole", missed (delta audit of A-38). Outright, because the entropy rule passes an
-    # id-shaped spec file name and a low-entropy hex run. Judged on its own when main's rule
-    # kept it; a whole path holding one is not kept at all, so that stretch of the message is
-    # read exactly as without A-38 (kept and judged whole, a long path diluted the part). What is
-    # kept is decided where the pattern matched, in context: re-matching each piece of a split
-    # on its own let a piece equal to a name pass with the token it was glued to before it
-    # (pre-commit audit of the spec file names).
-    held: dict[str, bool] = {}
 
-    def holds_secret(kept: str) -> bool:
-        if kept not in held:
-            held[kept] = holds_known_secret_part(kept, parts)
-        return held[kept]
+    def one_reading(raw: str) -> str:
+        """The message masked, its control characters as they are."""
 
-    spans = [m.span() for m in keep.finditer(seen)]
-    whole = _whole_path_spans(seen, _Lookups())
-    spans += [
-        (start, end) for start, end, checked in whole if not holds_secret(seen[start:checked])
-    ]
-    merged: list[list[int]] = []
-    for start, end in sorted(spans):
-        # Overlapping spans only: two that touch are two parts, each judged on its own as main
-        # judged them, or a digest glued to a long kept path was diluted below the threshold.
-        if merged and start < merged[-1][1]:
-            merged[-1][1] = max(merged[-1][1], end)
-        else:
-            merged.append([start, end])
-    shown: list[str] = []
-    done = 0
-    for start, end in merged:
-        kept = seen[start:end]
-        shown.append(late.redact_late(_entropy_masked(entropy, text[done:start])))
-        shown.append(CREDENTIAL_MASK if holds_secret(kept) else kept)
-        done = end
-    shown.append(late.redact_late(_entropy_masked(entropy, text[done:])))
-    joined = "".join(shown)
-    if loopback is not None:
-        joined = joined.replace(_LOOPBACK_MARK, loopback)
-    return visible_controls(joined)
+        # The loopback host stands aside while the rules run, unless a registered credential holds
+        # it (the rule below for a kept token), and comes back after the last of them.
+        loopback = (
+            "127.0.0.1"
+            if _LOOPBACK_MARK not in raw and not holds_known_secret_part("127.0.0.1", parts)
+            else None
+        )
+        if loopback is not None:
+            raw = _LOOPBACK_IN_URL.sub(_LOOPBACK_MARK, raw)
+        cuts = UuidCuts(raw)
+        plain = Redactor(entropy_threshold=math.inf, late=False, uuid_cuts=cuts)
+        entropy = Redactor(patterns=[], late=("uuid",), uuid_cuts=cuts)
+        late = Redactor(patterns=[], entropy_threshold=math.inf)
+        text = plain.redact_text(raw)
+        # What is kept is found in the text with the stand-ins read back: a UUID a number rule read
+        # inside an existing path or a spec file name is the operator's or the tree's, kept whole as
+        # one no number rule reads (A-38, A-78 L5); the rest, stand-ins included, is `entropy`'s.
+        seen = cuts.read_back(text)
+        paths = sorted({re.escape(p) for p in _existing_prefixes(seen)}, key=len, reverse=True)
+        keep = re.compile(
+            r"(\b(?:"
+            + "|".join([_ARTIFACT_NAME, *carried])
+            + r")\b"
+            + "".join(f"|{p}(?![^/\\s'\"()\\[\\],;])" for p in paths)
+            + "".join(f"|(?<![\\w+/=-]){n}(?![\\w+/=-])" for n in names)
+            + ")"
+        )
+        # A kept token holding 8 consecutive characters of a registered credential is masked:
+        # `sk-<64 hex>` and `<64 hex>-v2` contain one (re-audit of the digest change), and so does
+        # `<dir>/report-<part of the key>.json`, which the old test, "inside the key or holding it
+        # whole", missed (delta audit of A-38). Outright, because the entropy rule passes an
+        # id-shaped spec file name and a low-entropy hex run. Judged on its own when main's rule
+        # kept it; a whole path holding one is not kept at all, so that stretch of the message is
+        # read exactly as without A-38 (kept and judged whole, a long path diluted the part). What
+        # is kept is decided where the pattern matched, in context: re-matching each piece of a
+        # split on its own let a piece equal to a name pass with the token it was glued to before it
+        # (pre-commit audit of the spec file names).
+        held: dict[str, bool] = {}
+
+        def holds_secret(kept: str) -> bool:
+            if kept not in held:
+                held[kept] = holds_known_secret_part(kept, parts)
+            return held[kept]
+
+        spans = [m.span() for m in keep.finditer(seen)]
+        whole = _whole_path_spans(seen, _Lookups())
+        spans += [
+            (start, end) for start, end, checked in whole if not holds_secret(seen[start:checked])
+        ]
+        merged: list[list[int]] = []
+        for start, end in sorted(spans):
+            # Overlapping spans only: two that touch are two parts, each judged on its own as main
+            # judged them, or a digest glued to a long kept path was diluted below the threshold.
+            if merged and start < merged[-1][1]:
+                merged[-1][1] = max(merged[-1][1], end)
+            else:
+                merged.append([start, end])
+        shown: list[str] = []
+        done = 0
+        for start, end in merged:
+            kept = seen[start:end]
+            shown.append(late.redact_late(_entropy_masked(entropy, text[done:start])))
+            shown.append(CREDENTIAL_MASK if holds_secret(kept) else kept)
+            done = end
+        shown.append(late.redact_late(_entropy_masked(entropy, text[done:])))
+        joined = "".join(shown)
+        if loopback is not None:
+            joined = joined.replace(_LOOPBACK_MARK, loopback)
+        return joined
+
+    # A message holding U+0000 or U+0001 is read with them dropped and with them made visible,
+    # and what either reading masks is masked, as the redactor reads a text (u01 A-83): the
+    # entropy pass read only what the first pass gave it, so where the redactor reads both, the
+    # joined reading's glued tokens went unread here.
+    return visible_controls(read_both_ways(one_reading, raw))
 
 
 @app.command()

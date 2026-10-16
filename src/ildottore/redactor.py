@@ -1464,19 +1464,12 @@ class Redactor:
         # reading whenever it masked anything and the visible one otherwise, so what a text was
         # masked as depended on whether anything at all was masked in it, however far away: a UUID
         # in one line showed the labelled secret of the next (pre-merge audits of A-78, F2).
-        visible = visible_stash_delimiters(text)
-        spans = _spans_both_ways(self._read_back, text)
-        if not spans:
-            return visible
-        pieces: list[str] = []
-        cursor = 0
-        for start, end, shown in spans:
-            pieces += (visible[cursor:start], "".join(shown))
-            cursor = end
-        pieces.append(visible[cursor:])
+        out = read_both_ways(self._read_back, text)
+        if out == visible_stash_delimiters(text):  # neither reading masked anything
+            return out
         # The masks of one reading can stand where the other reading wrote text, so the whole is
         # read once more, which only adds masks, and the result is a fixed point.
-        return self._to_fixed_point("".join(pieces))
+        return self._to_fixed_point(out)
 
     def _read_back(self, text: str) -> str:
         """``text`` to a fixed point, with any stand-in this pass leaves read back (A-83).
@@ -2763,6 +2756,26 @@ def _placed_masks(text: str, redacted: str) -> list[tuple[int, int, str]] | None
         (earliest[index - 1] + len(literals[index - 1]), latest[index], masks[index - 1])
         for index in range(1, count + 1)
     ]
+
+
+def read_both_ways(redact: Callable[[str], str], text: str) -> str:
+    """``redact(text)``, or, for a text holding a stash delimiter, the text with them made visible
+    and the masks ``redact`` gives it read either way (:func:`_spans_both_ways`, u01 A-83).
+
+    For a caller that masks in passes of its own (``cli.app._masked``), as
+    :meth:`Redactor.redact_text` reads a text; ``redact`` is given a text holding no delimiter.
+    """
+
+    if not _holds_stash_delimiter(text):
+        return redact(text)
+    visible = visible_stash_delimiters(text)
+    pieces: list[str] = []
+    cursor = 0
+    for start, end, shown in _spans_both_ways(redact, text):
+        pieces += (visible[cursor:start], "".join(shown))
+        cursor = end
+    pieces.append(visible[cursor:])
+    return "".join(pieces)
 
 
 def _mask_spans(redactor: _RedactsText, joined: str) -> list[tuple[int, int, tuple[str, ...]]]:
