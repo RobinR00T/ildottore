@@ -61,7 +61,7 @@ total-fixtures + per-family FP/FN rates (`docs/07 §2`). Full spec: `docs/07 §2
 ## §6 Data/wire shapes
 - `fixtures.vulnerable` / `fixtures.hardened`: `{response: str | list[str], tool_calls?: [...],
   logprobs?: [...], capabilities?: {...}, test_only?: bool}` (validated vs
-  `schemas/attack-spec.schema.json`).
+  `registry/schemas/attack-spec.schema.json`).
 - `GoldenReport = {total: int, correct: int, accuracy: float, by_family: {family: {fp: int,
   fn: int, n: int}}, mismatches: [{spec_id, scenario, expected, got}]}`.
 - MockTarget emits `ModelResponse` unchanged from `shared.models`; logprobs populated only when
@@ -107,9 +107,9 @@ total-fixtures + per-family FP/FN rates (`docs/07 §2`). Full spec: `docs/07 §2
   Alternative not taken: an optional fixture path resolved next to the spec inside its pack, hashed
   into the spec's digest. Revisit when a fixture outgrows a spec file (a long multi-turn
   transcript); no ADR is needed while nothing changes. Reversal: an optional path field in
-  `fixtures` (`schemas/attack-spec.schema.json` and u00's `Fixtures`, a program-level change through
-  u02), resolved by `testing/golden.load_fixtures` next to the spec inside its pack, its bytes
-  hashed into `shared/digest.spec_digest`, and `tests/golden/test_fixture_location.py` changed to
-  pin the new rule.
+  `fixtures` (`registry/schemas/attack-spec.schema.json` and u00's `Fixtures`, a program-level
+  change through u02), resolved by `testing/golden.load_fixtures` next to the spec inside its pack,
+  its bytes hashed into `shared/digest.spec_digest`, and `tests/golden/test_fixture_location.py`
+  changed to pin the new rule.
 - Whether per-family FP/FN thresholds are informational or also merge-gating in MVP‑1 (propose:
   overall 100% accuracy gates; per-family rates informational until u13 battery exists).

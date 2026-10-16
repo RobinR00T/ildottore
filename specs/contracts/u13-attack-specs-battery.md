@@ -1,17 +1,21 @@
 # u13-attack-specs-battery.md
 
 Stage-2 build contract. 9-section anatomy per `docs/00 §2`. Read `AGENTS.md` + `docs/03`
-(spec format) + `docs/08` (T0 battery) + `docs/11` (data-leak family) + `schemas/` + the
-exemplars `specs/attacks/PI-INDIRECT-RAG-001.yaml`, `specs/attacks/DoS-TOKEN-AMP-001.yaml`,
-`specs/suites/owasp-llm-top10.yaml` before authoring. **Data + fixtures only: no engine code.**
+(spec format) + `docs/08` (T0 battery) + `docs/11` (data-leak family) + the schema + the
+exemplars `PI-INDIRECT-RAG-001.yaml`, `DOS-TOKEN-AMP-001.yaml` and `owasp-llm-top10.yaml` before
+authoring. **Data + fixtures only: no engine code.** Since u12 A-84 (2026-10-16, ADR-0013) the
+battery lives inside the package, `src/ildottore/battery/` (`pack.yaml`, `attacks/`, `suites/`),
+and the schema in `src/ildottore/registry/schemas/`, so a wheel carries both; they were `specs/`
+and `schemas/` at the repository root, the paths the sections below were written with.
 
 ## §1 Scope & ownership
-- **OWNS:** `specs/attacks/*.yaml` (the ~18 T0 specs of `docs/08 §3`), `specs/suites/*.yaml`
-  (`owasp-llm-top10.yaml` + `quick.yaml`), and each spec's golden fixtures (`fixtures.vulnerable`
-  / `fixtures.hardened`, inline in the spec: there is no sidecar location, OD-7;
-  `tests/fixtures/specs/` holds the schema-parity corpus, not fixtures).
-- **MUST NOT touch:** any `src/ildottore/**` Python, `schemas/attack-spec.schema.json` (consumes,
-  never edits: a schema change is an OD to u02), `docs/`, other units' owned files.
+- **OWNS:** `src/ildottore/battery/attacks/*.yaml` (the ~18 T0 specs of `docs/08 §3`, with their
+  media assets under `attacks/assets/`), `src/ildottore/battery/suites/*.yaml`
+  (`owasp-llm-top10.yaml` + `quick.yaml`), its `pack.yaml`, and each spec's golden fixtures
+  (`fixtures.vulnerable` / `fixtures.hardened`, inline in the spec: there is no sidecar location,
+  OD-7; `tests/fixtures/specs/` holds the schema-parity corpus, not fixtures).
+- **MUST NOT touch:** any `src/ildottore/**` Python, `registry/schemas/attack-spec.schema.json`
+  (consumes, never edits: a schema change is an OD to u02), `docs/`, other units' owned files.
 
 ## §2 Intended behavior
 Author the full **T0 "Quick" battery** (18 ids, `docs/08 §3` rows 1-18) as declarative,
@@ -72,13 +76,14 @@ into the `owasp:llm` suite and a `quick` suite. Data-leak specs (rows 8-9, 16-18
 - Suite = ordered `spec_ids[]` + `defaults{runs, sampling, budget}` + `frameworks{}` rollup.
 
 ## §7 Acceptance criteria (machine-checkable)
-- `dottore lint specs/` exits 0: all 18 specs + 2 suites schema-valid (u02 gate), no unknown
-  `evaluator.type`/`mutation`/`requires` name, no duplicate `id`, every `test_only` family flagged.
+- `dottore lint src/ildottore/battery` exits 0: all 18 specs + 2 suites schema-valid (u02 gate), no
+  unknown `evaluator.type`/`mutation`/`requires` name, no duplicate `id`, every `test_only` family
+  flagged.
 - `pytest tests/battery tests/golden -q` green (u03 golden harness; CI gate 5): for **every**
   spec the scanner **flags the `vulnerable` fixture (`fail`)** and **passes the `hardened`
   fixture (`pass`)**: 18/18 at the time this contract was written, no skips. (Path corrected
   2026-10-04: there is no `tests/specs`. The battery has since grown to 75 specs and 14 suites,
-  which `dottore lint specs/` checks.)
+  which `dottore lint src/ildottore/battery` checks.)
 - Data-leak FP gate: each hallucinated-but-valid negative fixture yields `needs-review`/
   `inconclusive`, **never `fail`** (asserts `docs/11 §4` discipline). `DoS-TOKEN-AMP-001` has a
   `budget` block; `DL-PII-ELICIT-001` has `test_only: true`: both asserted in tests.

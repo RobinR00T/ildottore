@@ -25,7 +25,8 @@ naming an unknown mutation is a linter error (u02), never a silent skip.
 ## §3 Dependencies & interface contracts
 - Depends only on **u00** (`shared`). Implements `shared.protocols.Mutator`
   (`type: str`; `mutate(text: str, *, seed: int, params: dict) -> MutationResult`) and registers
-  each strategy under its `type` string used in `schemas/attack-spec.schema.json` mutation names.
+  each strategy under its `type` string used in `registry/schemas/attack-spec.schema.json` mutation
+  names.
 - Consumes `shared.models` mutation/attack shapes only; produces the mutated carrier(s) the
   execution engine (u08) feeds to the adapter. **No** provider SDKs, no LLM calls (`translate`
   is a deterministic offline table/map, not an API translation: see §4/§9).
@@ -69,8 +70,8 @@ naming an unknown mutation is a linter error (u02), never a silent skip.
 provenance: dict}`. `text` is the transformed carrier; `provenance` carries the decode hint for
 reversible encodings and the confusable/split map otherwise (masked if it ever carries payload
 per redactor rules). No secrets/PII produced. Input mutation list shape follows
-`schemas/attack-spec.schema.json` `mutations[]` (name + optional params); u05 does not extend the
-schema.
+`registry/schemas/attack-spec.schema.json` `mutations[]` (name + optional params); u05 does not
+extend the schema.
 
 ## §7 Acceptance criteria (machine-checkable)
 - `pytest tests/mutators -q` green; coverage ≥ 90% for `src/ildottore/mutators`.

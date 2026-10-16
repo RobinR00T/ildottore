@@ -272,8 +272,8 @@ dottore run --suite owasp:llm --compare -t gpt.yaml -t claude.yaml -t mistral.ya
 
 A regulatory preset (`--suite eu:ai-act`, `dora`, `nist:ai`, `mitre:atlas`, `iso:42001`) is
 not built: the alias table in `cli/flags.py` maps each to a suite id no file in the battery's
-`suites/` has, so the run exits 3 with "suite ... is not registered". For a framework view of what the
-battery tests, use `dottore coverage --framework atlas` (OWASP, ATLAS, IoPC and AISVS axes).
+`suites/` has, so the run exits 3 with "suite ... is not registered". For a framework view of what
+the battery tests, use `dottore coverage --framework atlas` (OWASP, ATLAS, IoPC and AISVS axes).
 
 ## 4. Output ergonomics
 

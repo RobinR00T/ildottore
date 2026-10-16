@@ -1404,7 +1404,9 @@ a pass, and each of these crashed or misled after the traffic it could have refu
   takes `--spec-path`, `--evidence-root`, `--run-db` and `-oJ/-oH/-oS/-oX/-oA` with `run`'s meaning
   and, without `--run`, carries them into the `dottore run` line it prints. A spec path that does
   not exist is `error: spec path not found: <path>. Pass --spec-path <dir>; ...`, not "1 spec
-  file(s) failed to load".
+  file(s) failed to load". Amended 2026-10-16 (A-84): the battery is inside the package, so a
+  wheel has it too; `specs/` here is read only when it holds a YAML file, and the note says
+  `the built-in battery inside the installed package`.
 
 Checked by `tests/cli/test_run_store_errors.py` (36), `tests/cli/test_evidence_root_preflight.py`
 (10), `tests/cli/test_attempt_ceiling.py` (12), `tests/cli/test_estimate_quiet.py` (2),
@@ -1795,6 +1797,77 @@ Merged 2026-10-14 with `fix/no-secret-in-fragments` (u01 A-77, `33782ad3`), whic
   `provider: openai` target with `transport: stdio` reads this clause's refusal of the file
   instead (M5): nothing is sent and no key is read.
 
+
+**A-84 The package carries what it reads, a refusal of an old path names the new one, and CI runs
+the suite on the declared floors (added 2026-10-16, a follow-up of the audit train of `de122e26`;
+ADR-0013).** The program read the built-in battery (`specs/pack.yaml`, `specs/attacks/` with one
+audio asset, `specs/suites/`) and the attack-spec schema (`schemas/attack-spec.schema.json`) three
+directories above the package (`cli/wiring.py:250`, `registry/schema.py:42`, `parents[3]`), the
+repository root only in a checkout, and the wheel `pyproject.toml` selects (`packages =
+["src/ildottore"]`) carried neither. Measured on `7d01521f`, a wheel built by that selection and
+installed with `pip install --no-index --no-deps --target`, run from outside the checkout:
+`registry ls` and `run --dry-run` exit 3 (`spec path not found: specs`), `lint <checkout>/specs`
+exits 3 (`unexpected FileNotFoundError` on the schema). No job installed a declared lower bound:
+every job installs the newest releases.
+
+* **Inside the package, found one way.** The battery moves to `src/ildottore/battery/`, the schema
+  to `src/ildottore/registry/schemas/attack-spec.schema.json`, as git renames; `specs/` keeps the
+  unit contracts, and the three example files beside the battery move to `examples/`
+  (`scope.example.yaml`, `fleet.example.yaml`, `target.example-openai.yaml`). One module,
+  `shared/package_data.py`, finds both through `importlib.resources.files("ildottore")`
+  (`BATTERY`, `ATTACK_SPEC_SCHEMA`, `wiring.PACKAGED_SPEC_PATH` is `BATTERY`), the same place for
+  a source checkout, an editable install and a wheel. The hatch configuration does not change.
+* **The default spec path.** `specs/` in the working directory is read when it holds a YAML file,
+  in it or below it (`wiring.holds_yaml`: a walk without following links, yes past 1,000 entries or
+  when a directory cannot be listed, so an unreadable tree is reported by the loader rather than
+  replaced), else the built-in battery; the note says which (`there is no specs/ directory here`
+  or `specs/ here holds no YAML file`, `so this reads the built-in battery inside the installed
+  package: <path> (pass --spec-path to read another)`). A `specs/` with no YAML file was refused as
+  holding no spec; it reads the battery now, which is how the repository root does. `lint` stays
+  strict (A-80): with no path it reads `specs/` here only, and in the repository root that is the
+  contracts' directory, a `NO_SPECS` error that names the battery's path.
+* **An old path names the new one.** A path of the old layout is refused as before, exit 3, and
+  the refusal adds `; it is now <path> (CHANGELOG, Unreleased)` (for a `specs/` that held the
+  battery, `; the built-in battery it held is now <path>`) when the new path exists in the same
+  checkout (`shared.package_data.MOVED`, `moved_note`): the loader's `PATH_NOT_FOUND` and
+  `NO_SPECS`, `shared.files.read_failure` (the scope file, a policy pack) and the CLI's text of a
+  `FileNotFoundError` (a target file, a fleet file). The CI example of #118 (`--spec-path
+  .ildottore/specs` on a checkout past this change) is refused that way. Nothing old is read in
+  the new one's place, so what gates a pipeline never changes without a word.
+* **The judging digest covers the battery.** Inside the package, the battery and the schema are
+  data files of it (`.yaml`, `.json`), and `.wav` joins `DATA_SUFFIXES` for the audio asset: 264
+  files where there were 171, 0.355 s against 0.378 s (Python 3.14, best of five). A resume after
+  any byte of a built-in spec changed is refused, naming the file, where the spec digests forgive
+  a description; a `--spec-path` pack stays bound by the spec digests alone. A run halted before
+  this change is refused by a resume after it, as after any change of the code. No verdict
+  changes, so `JUDGING_RULES_VERSION` stays 1, re-pinned with that reason.
+* **CI.** Two jobs in `.github/workflows/ci.yml`, the existing two unchanged: `floors` pins every
+  direct dependency (runtime and the `dev` extra) to the version after its `>=`
+  (`scripts/dependency_floors.py`, which refuses a runtime dependency without a floor or with a
+  specifier it does not read), installs with that constraints file on Python 3.11 and runs the
+  suite; `package` installs hatchling and runs `tests/test_packaging.py`, which builds the wheel and
+  the sdist, installs the wheel into a directory of its own and compares `--version`, `registry
+  ls`, `schema export`, `run --dry-run` and the judging digest, from outside the checkout, with
+  the checkout's (`DOTTORE_REQUIRE_HATCHLING=1` makes a missing backend fail there, never skip).
+  Both pin actions by the major tag the existing jobs use (Dependabot keeps them current) and
+  inherit `contents: read`. A scheduled run on the newest releases is not added: the PR jobs and
+  ci.yml's weekly run already install them; what a schedule cannot fix is a PR failing for a
+  release that is not in it, which is OD-49.
+
+Alternatives not taken (ADR-0013): hatch `force-include` from the repository root (two places by
+install kind, the `parents[3]` lookup kept for the checkout, and a judging digest that differs
+between a wheel and its checkout); a symlink (no symlinks on a default Windows checkout); moving
+`specs/` whole (it ships the contracts and moves the paths the method names); reading an old path
+as the new one (silent); `uv pip install --resolution lowest-direct` for the floors (one more tool
+in CI for what a 70-line script, tested offline, does).
+
+Checks: `tests/test_packaging.py` (every file a load of the battery reads, and the schema, under
+the package and bound by the judging digest, the selection and `.gitignore` able to drop none;
+with hatchling, the real wheel and sdist), `tests/cli/test_battery_in_the_package.py` (the default
+spec path, the repository root, each old path through the real CLI),
+`tests/test_dependency_floors.py`.
+Both test files fail on `7d01521f`: `ildottore.shared.package_data` does not exist there.
+
 ## §8 Out of scope / forbidden
 - MUST NOT implement attack/mutation/evaluation/scoring/reporting/fingerprint logic (u05-u11,
   u13): only wire and call them. MUST NOT own `cli/lint.py` (u02) or edit any spec YAML.
@@ -1952,3 +2025,15 @@ Merged 2026-10-14 with `fix/no-secret-in-fragments` (u01 A-77, `33782ad3`), whic
   `requires_policy` never send from `dottore`, and OD-11 ties `--allow-pii-elicitation` to this
   flag. Recommended: one `run` option that loads a pack through that loader, printed in the plan
   and recorded with the run, landing with OD-11's flag (`00-INDEX.md`, `docs/12`).
+- **OD-49** (shared with u14; numbered 2026-10-16, A-84; open, owner to decide): pin the
+  dependency set the PR jobs install, and move the newest-release run to a schedule. Every job
+  installs the newest release of every dependency (no lock file), so a release breaks the next PR
+  whatever it changes: the train broke twice on typer 0.27.3 the day it came out. A-84 adds the
+  `floors` job and leaves the existing jobs as they were. Recommended: a constraints file for the
+  PR jobs (`pip install -c`, generated from `pyproject.toml` and bumped by Dependabot, whose pip
+  ecosystem already runs weekly), plus a scheduled run with no constraints that installs the
+  newest releases and reports a break the day it lands, as `audit.yml` does for regressions.
+  Trade-off: an operator installs the newest releases, and a lock delays CI seeing what the
+  operator sees until the scheduled run, a day at most. Alternatives: keep as is (a PR can fail
+  for a release that is not in it); a lock file with hashes (`pip-compile --generate-hashes`),
+  stronger supply-chain evidence for one more tool (`SUPPLY-CHAIN.md` notes no lock file).

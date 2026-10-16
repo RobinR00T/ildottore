@@ -9,9 +9,9 @@ serialized. **One owner per unit, no double-edits.**
 
 | Unit | Owns (src/ildottore/…) | Depends on | Wave |
 |------|------------------------|------------|------|
-| `u00-shared-models` | `shared/` (models, protocols, enums) |: | W0 |
+| `u00-shared-models` | `shared/` (models, protocols, enums; `package_data.py` since A-84) |: | W0 |
 | `u01-config-scope-policy` | `policy/`, `config.py`, `redactor.py`, `safe_yaml.py` | u00 | W1 |
-| `u02-spec-registry-linter` | `registry/`, `cli/lint.py` | u00 | W1 |
+| `u02-spec-registry-linter` | `registry/` (its `schemas/attack-spec.schema.json` since A-84), `cli/lint.py` | u00 | W1 |
 | `u05-prompt-mutator` | `mutators/` | u00 | W1 |
 | `u07-scoring` | `scoring/` | u00 | W1 |
 | `u03-mock-target-golden-harness` | `adapters/mock.py`, `testing/golden.py` | u00, u01 | W2 |
@@ -21,9 +21,9 @@ serialized. **One owner per unit, no double-edits.**
 | `u09-fingerprint-engine` | `fingerprint/` | u00, u04 | W3 |
 | `u08-execution-engine` | `core/` (runner, planner, budgets) | u00,u01,u02,u04,u05,u06,u07 | W4 |
 | `u11-reporting` | `reporting/` | u00, u07, u10 | W4 |
-| `u13-attack-specs-battery` | `specs/attacks/*`, `specs/suites/*`, fixtures | u02, u03 | W4 |
+| `u13-attack-specs-battery` | `battery/attacks/*`, `battery/suites/*`, `battery/pack.yaml` (the repository's `specs/` until A-84), fixtures | u02, u03 | W4 |
 | `u12-cli` | `cli/` (composition root, commands) | all above | W5 |
-| `u14-self-validation-ci` | `tests/`, `.github/workflows/`, `.importlinter` | all above | W5 |
+| `u14-self-validation-ci` | `tests/`, `.github/workflows/`, `.importlinter`, `scripts/dependency_floors.py` | all above | W5 |
 
 ## Dependency DAG (build order)
 
@@ -106,6 +106,7 @@ not a unit-local choice:
 | OD-45 | u06/u08 | a judge whose self-consistency passes disagree: keep the attempt `inconclusive`, as `docs/02 §4` and `docs/04 §4` item 4 say, or drop the judge's vote, as built | human | **open, owner to decide (numbered 2026-10-12; OD-19 decided the combination rule and left this out, ADR-0010).** As built the judge returns `inconclusive` with no reason and the runner drops a reasonless judge abstention, so the deterministic evaluators decide the attempt (a `pass` when they all pass) (`docs/04 §2`, MANUAL §8, u06 §2). Recommended: keep the attempt `inconclusive` with a reason of its own, as a judge outage already is since the 2026-10-03 audit, at the cost of more inconclusive results from a noisy judge |
 | OD-46 | u12/u01 | a CLI flag that loads a policy pack: `dottore` loads none, so the 8 specs that declare `requires_policy` (the seven `agentic-extortion` specs and `DL-PII-ELICIT-001`) never send | human | **open, owner to decide (numbered 2026-10-12; listed unnumbered in `docs/12` until then).** A pack loader exists (`policy.packs.load_pack`) and no command calls it; OD-11 decided that `--allow-pii-elicitation` comes only together with this flag. Recommended: one `run` option that loads a pack through that loader, printed in the plan and recorded with the run, landing in the same change as OD-11's `--allow-pii-elicitation` |
 | OD-47 | u13/u05 | `leetspeak` rewrites `JB-ENCODING-001`'s Base64 payload, so that variant tests nothing, and `rot13` carries no decode cue (F9 of the 2026-10-03 audit) | human | **open, owner to decide (numbered 2026-10-12; "Left for Daniel" in the CHANGELOG and `docs/PROGRESS.md` until then).** The spec still lists `mutations: [identity, base64_wrap, rot13, leetspeak]`; F9 sits next to the multilingual area left alone after the safety-classifier stop of 2026-10-04. Recommended: drop `leetspeak` from that spec's `mutations`, a character substitution over an encoded payload breaking the encoding, and decide `rot13`'s cue apart, changing no mutator |
+| OD-49 | u12/u14 | pin the dependency set the PR jobs install (a constraints file Dependabot bumps) and move the newest-release run to a schedule | human | **open, owner to decide (numbered 2026-10-16, u12 A-84).** Every job installs the newest release of every dependency, so a release breaks the next PR whatever it changes (typer 0.27.3, twice in the train of 2026-10-15). A-84 adds a `floors` job and leaves the existing jobs as they were. Recommended: a constraints file for the PR jobs, bumped by Dependabot, and a scheduled run with none, which reports a break the day it lands; trade-off: CI then sees what an operator's fresh install sees up to a day late. Alternatives: as is; a hashed lock file (`SUPPLY-CHAIN.md` notes there is none) |
 
 ## Assurance clauses (added 2026-09-22, from the audit series)
 
@@ -144,6 +145,7 @@ it came from, so the criterion is checkable and the reason it exists is not lost
 | A-68 | u12 (and u04, u00) | a target that takes no temperature or top_p (a Claude model `adapters.anthropic.MODELS_WITHOUT_SAMPLING` lists, or `capabilities.sampling: false`) is sent neither and records neither, every place its numbers are read says they are not temperature-0 deterministic, a 400 that names as a parameter a sampling field the request sent names the capability, unretried, the judge's included, and a resume continues with the sampling its run started with |
 | A-80 | u12 (and u10, u08) | a run checks its stores and its paths before it sends, and nothing but findings exits 1: an unusable run store or evidence root is refused (exit 3) before any request (read-only in the modes that send nothing), concurrent opens of one store wait (interruptibly, said on stderr, naming the store when the wait runs out) and retry, any exception no command handles is exit 3 in one masked line (its traceback under `-v`), an attempt counts with its first accepted request under a ceiling that is the request ceiling, `--estimate` prints the ceilings and one line under `-q`, a report never overwrites an input or lands in a run directory of the evidence store, a broken pipe is exit 3, and the reading commands share one default spec path (said on stderr when they fall back; `lint` never falls back), `fleet --run` with `run`'s store and report options |
 | A-82 | u12 (and u01, u02, u11, u00) | what the operator gives the CLI is a value the tool has, or it is refused before anything is sent, naming the field and never a secret: a usage error goes through the redactor (the scripts run `main()`); an `env://` name is a variable's, an unset one is refused by a live run and warned by a dry run, `env://NONE` names no credential; `provider`, `transport`, a scope's and a fleet's `version` and `sampling_defaults` take known, finite values; a fleet endpoint carries no user info; a spec path that holds nothing is refused (`lint` exits 3), a spec id two files declare refuses a run naming both; `diff` reads report schema 1 only and knows a SARIF log, the report schema constrains its run and findings and `schema export` prints it; and a message keeps its figures, words and loopback host and never ends on an empty reason |
+| A-84 | u12 (and u02, u13, u14, u00) | the package carries what it reads: the built-in battery (`battery/`) and the attack-spec schema (`registry/schemas/`) live inside it, found through `importlib.resources` (`shared/package_data.py`), so a wheel runs with no checkout; `specs/` here is a spec path only when it holds a YAML file; a refusal of a path of the old layout names the new one; the judging digest covers the battery (`.wav` added); CI runs the suite on the declared dependency floors (`floors`) and builds and runs the wheel and sdist with hatchling (`package`); ADR-0013, OD-49 |
 | A-26 | u11 | a gap says which kind it is (roadmap, out of reach, or by design), with the reason |
 | A-12..A-15 | u11 | no denominator over survivors, uncounted values are reported, figures carry their edition, machine formats carry the run state |
 | A-25 | u09 | the ordering -sV produces is measured in CI, not just executed |

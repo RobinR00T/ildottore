@@ -102,10 +102,10 @@ fixtures. `dottore lint` runs them through an offline stub table that covers sev
 evaluator types (on 2026-10-04: 0 errors, 0 warnings across 75 specs, 14 suites, 1 pack), and
 the battery gate in CI (`tests/battery`) runs every spec's fixtures through the real evaluator
 the spec lists first, through the golden harness and the mock target. The CI wall is ruff,
-mypy --strict, import-linter, `lint src/ildottore/battery`, pytest + coverage and the self-scan; `bandit` and
-`pip-audit` are not in CI, only in `make gates`, which needs both installed by hand
+mypy --strict, import-linter, `lint src/ildottore/battery`, pytest + coverage and the self-scan;
+`bandit` and `pip-audit` are not in CI, only in `make gates`, which needs both installed by hand
 (`SUPPLY-CHAIN.md`). This note does not certify a green run: the latest workflow run does. The
 strength remains the methodology (reproducibility + evidence + risk mapping, judge hardening,
 self-validation, extensibility); what is left is coverage breadth (the rows above) and the
-deliberately deferred P2 items (streaming pre-moderation, timing side-channels)
-that trade away reproducibility.
+deliberately deferred P2 items (streaming pre-moderation, timing side-channels) that trade away
+reproducibility.

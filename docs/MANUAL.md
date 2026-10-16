@@ -1524,17 +1524,17 @@ package, so in a pack's own repository with no `specs/` it refuses with
 someone else's tree. The built-in battery is linted by its path: `dottore lint
 src/ildottore/battery` in a clone, which resolves as a pack (via its `pack.yaml`) so discovery
 loads `attacks/` + `suites/`; in the repository root, `dottore lint` alone reads the `specs/` of
-the unit contracts, a `NO_SPECS` error that names the battery's path (exit 3). A directory without a `pack.yaml` anywhere below it is
-read as **loose specs**: the `*.yaml` and `*.yml` files directly in it, not those in its
-subdirectories. A path that yields no spec and no suite file is a `NO_SPECS` error, which names the
-YAML files in its subdirectories that it did not read (`spec path sp holds no attack spec or suite
-to read: a directory without a pack.yaml is read as loose specs, ... and it has none; 2 YAML file(s)
-in its subdirectories (attacks/) are not read: add a pack.yaml to it (docs/06 §2) ...`); a path that
-does not exist is `PATH_NOT_FOUND`; a loose tree that reads specs and leaves YAML files in its
-subdirectories gets a `FILES_NOT_READ` warning naming them. Until 2026-10-11 `lint sp`, with the
-specs under `sp/attacks/` and no `pack.yaml`, printed `lint OK ... across 0 spec(s)` and exited 0,
-an invalid spec there included, an empty directory passed the same way,
-and `lint nonexistent` exited 1.
+the unit contracts, a `NO_SPECS` error that names the battery's path (exit 3). A directory without a
+`pack.yaml` anywhere below it is read as **loose specs**: the `*.yaml` and `*.yml` files directly in
+it, not those in its subdirectories. A path that yields no spec and no suite file is a `NO_SPECS`
+error, which names the YAML files in its subdirectories that it did not read (`spec path sp holds no
+attack spec or suite to read: a directory without a pack.yaml is read as loose specs, ... and it has
+none; 2 YAML file(s) in its subdirectories (attacks/) are not read: add a pack.yaml to it (docs/06
+§2) ...`); a path that does not exist is `PATH_NOT_FOUND`; a loose tree that reads specs and leaves
+YAML files in its subdirectories gets a `FILES_NOT_READ` warning naming them. Until 2026-10-11
+`lint sp`, with the specs under `sp/attacks/` and no `pack.yaml`, printed
+`lint OK ... across 0 spec(s)` and exited 0, an invalid spec there included, an empty directory
+passed the same way, and `lint nonexistent` exited 1.
 
 **Exit codes:** `0` no error (warnings allowed) · `1` an error-severity finding in a spec, suite
 or pack · `3` a path that does not exist or yields nothing to lint (`PATH_NOT_FOUND`,
@@ -1801,8 +1801,8 @@ Prints five JSON Schemas as one object keyed by name: `attack-spec`, `pack`, `su
 the reporter ships with (§10), which could not be printed until 2026-10-11. `--name` prints one
 of them; any other name is refused (exit 3) with the list (`error: unknown schema 'nope';
 available: attack-spec, pack, report, suite, test-plan`). The linter validates a spec against the
-hand-authored `attack-spec.schema.json` (inside the package, `src/ildottore/registry/schemas/`, since
-u12 A-84; it was `schemas/`), not against the `attack-spec` this exports.
+hand-authored `attack-spec.schema.json` (inside the package, `src/ildottore/registry/schemas/`,
+since u12 A-84; it was `schemas/`), not against the `attack-spec` this exports.
 
 ### `dottore coverage`
 

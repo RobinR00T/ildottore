@@ -78,7 +78,7 @@ jobs:
           #   not refused;
           # - resume (A-81): there is no `--resume`; here a resume is refused when the code that
           #   judged the halted half differs.
-        run: pip install "ildottore @ git+https://github.com/RobinR00T/ildottore@${ILDOTTORE_COMMIT}"
+        run: pip install "git+https://github.com/RobinR00T/ildottore@${ILDOTTORE_COMMIT}"
 
       # With no --spec-path the scan reads the built-in battery and says so on stderr, with its
       # path. A specs/ directory of your repository that holds a YAML file is read instead: pass

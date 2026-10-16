@@ -16,7 +16,8 @@ Stage-2 build contract. 9-section anatomy per `docs/00 §2`. Read `AGENTS.md` + 
 Discover spec packs from configured search paths, **parse + schema-validate + register** every
 attack spec / suite / `pack.yaml`: **executing no code and making no network calls at load**
 (S-threat-model, `docs/06 §2/§5`). Expose the Attack Spec Registry API (`list/get/resolve`) that
-downstream units (u08, u13) query. Drive `dottore lint specs/`: schema validity + policy
+downstream units (u08, u13) query. Drive `dottore lint` (the built-in battery:
+`dottore lint src/ildottore/battery`, inside the package since u12 A-84): schema validity + policy
 conformance + **id-collision** detection + **fixtures-prove-detection** (each spec's
 `fixtures.vulnerable` would be flagged and `fixtures.hardened` would pass its own declared
 evaluators). Later packs may extend but never silently override earlier ids. Full spec: `docs/03`,
@@ -26,9 +27,10 @@ evaluators). Later packs may extend but never silently override earlier ids. Ful
 - Depends on **u00 only**. Consumes `shared.models.AttackSpec` (+ suite/pack models if in u00,
   else define pack/suite Pydantic models locally against `schemas/`): must validate vs
   `schemas/attack-spec.schema.json` / `schemas/suite.schema.json` / `schemas/pack.schema.json`.
-  (As built: only `schemas/attack-spec.schema.json` is committed; the suite and pack schemas are
-  generated on demand from the Pydantic models, `dottore schema export --name suite|pack`,
-  OD-14.)
+  (As built: only `schemas/attack-spec.schema.json` is committed, inside the package since u12
+  A-84, `src/ildottore/registry/schemas/`, found through `shared.package_data`; the suite and pack
+  schemas are generated on demand from the Pydantic models,
+  `dottore schema export --name suite|pack`, OD-14.)
 - Registry is a plain library object (no protocol in `docs/01 §3`); it is injected at the
   composition root (u12). Exposes: `list(filter=category|owasp|tag|pack) -> list[AttackSpec]`,
   `get(id) -> AttackSpec`, `resolve(suite_id) -> list[AttackSpec]`, `packs() -> list[Pack]`.
@@ -110,7 +112,10 @@ evaluators). Later packs may extend but never silently override earlier ids. Ful
   evaluators (stub table); a deliberately broken spec in `.../bad/` triggers `FIXTURE_NO_DETECT`.
 - **Registry API:** property test (Hypothesis): `get(id)` round-trips every listed spec;
   `resolve(suite)` returns specs in suite order; `list(filter=...)` is a correct subset.
-- `dottore lint specs/` exits 0 on the shipped good tree, non-zero with itemized errors on `bad/`.
+- `dottore lint src/ildottore/battery` exits 0 on the shipped good tree, non-zero with itemized
+  errors on `bad/`. A path of the layout before u12 A-84 (`specs/attacks`, a `specs/` that held
+  the battery) is `PATH_NOT_FOUND` or `NO_SPECS` as before, naming the new path
+  (`shared.package_data.moved_note`).
 - `ruff check`, `ruff format --check`, `mypy src/ildottore/registry`,
   `mypy src/ildottore/cli/lint.py` clean; `lint-imports` green (registry imports `shared` only).
 

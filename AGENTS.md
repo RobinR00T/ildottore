@@ -108,9 +108,10 @@ Full method: `docs/00-ai-build-playbook.md`.
   period or parentheses. Scan the added diff lines, not whole files (pre-existing repo dashes
   are not ours to rewrite).
 - **Validate every example/config against the REAL loader, not by eye.** `specs/scope.example.yaml`
-  (`examples/scope.example.yaml` since u12 A-84) documented a fictional `engagement/allow_targets/endpoint_allowlist/policy` schema that no
-  loader accepts; `dottore lint` skips loose example YAMLs, so it went uncaught and leaked into
-  the docs. Load examples through `load_scope`/`load_target` (or a test) before trusting them.
+  (`examples/scope.example.yaml` since u12 A-84) documented a fictional
+  `engagement/allow_targets/endpoint_allowlist/policy` schema that no loader accepts; `dottore lint`
+  skips loose example YAMLs, so it went uncaught and leaked into the docs. Load examples through
+  `load_scope`/`load_target` (or a test) before trusting them.
 - **GPG signing can strand the branch.** `git rebase --exec 'git commit --amend --no-edit -S'
   <base>` can hang on `pinentry` INSIDE the rebase and leave an interrupted rebase that looks
   like the fix/docs commits were lost (HEAD sits on the first commit). Recovery: **`git rebase
