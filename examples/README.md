@@ -225,9 +225,9 @@ The last line prints `Run it:` followed by `dottore run <the two target files> -
 ".dottore/fleet/scope.yaml" --judge ".dottore/fleet/judge.yaml" --run-db ".dottore/runs.sqlite" -oJ
 "fleet.json"` (checked 2026-10-12 from a directory outside the repository with the editable
 install of INSTALL.md, and again on 2026-10-16 with an installed wheel and no checkout: `fleet`
-and `run` read `specs/` there when it holds a YAML file, else the built-in battery inside the
-installed package, and say on stderr when they read the battery, so neither needs the
-repository root; `fleet --run` used to fail with `path not found: specs` anywhere else).
+and `run` read `specs/` there when there is one, else the built-in battery inside the installed
+package, and say on stderr when they read the battery, so neither needs the repository root;
+`fleet --run` used to fail with `path not found: specs` anywhere else).
 
 `examples/fleet.yaml` declares its judge in a `judge:` block, so the generated scope
 authorizes it and `fleet` writes it to `.dottore/fleet/judge.yaml`. Passing

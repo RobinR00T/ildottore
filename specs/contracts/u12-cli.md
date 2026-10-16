@@ -1405,8 +1405,9 @@ a pass, and each of these crashed or misled after the traffic it could have refu
   and, without `--run`, carries them into the `dottore run` line it prints. A spec path that does
   not exist is `error: spec path not found: <path>. Pass --spec-path <dir>; ...`, not "1 spec
   file(s) failed to load". Amended 2026-10-16 (A-84): the battery is inside the package, so a
-  wheel has it too; `specs/` here is read only when it holds a YAML file, and the note says
-  `the built-in battery inside the installed package`.
+  wheel has it too, and the note says `the built-in battery inside the installed package`;
+  `specs/` here is still read whenever it is a directory, but at the root of this package's own
+  checkout, whose `specs/` holds the unit contracts.
 
 Checked by `tests/cli/test_run_store_errors.py` (36), `tests/cli/test_evidence_root_preflight.py`
 (10), `tests/cli/test_attempt_ceiling.py` (12), `tests/cli/test_estimate_quiet.py` (2),
@@ -1817,19 +1818,27 @@ every job installs the newest releases.
   `shared/package_data.py`, finds both through `importlib.resources.files("ildottore")`
   (`BATTERY`, `ATTACK_SPEC_SCHEMA`, `wiring.PACKAGED_SPEC_PATH` is `BATTERY`), the same place for
   a source checkout, an editable install and a wheel. The hatch configuration does not change.
-* **The default spec path.** `specs/` in the working directory is read when it holds a YAML file,
-  in it or below it (`wiring.holds_yaml`: a walk without following links, yes past 1,000 entries or
-  when a directory cannot be listed, so an unreadable tree is reported by the loader rather than
-  replaced), else the built-in battery; the note says which (`there is no specs/ directory here`
-  or `specs/ here holds no YAML file`, `so this reads the built-in battery inside the installed
-  package: <path> (pass --spec-path to read another)`). A `specs/` with no YAML file was refused as
-  holding no spec; it reads the battery now, which is how the repository root does. `lint` stays
-  strict (A-80): with no path it reads `specs/` here only, and in the repository root that is the
-  contracts' directory, a `NO_SPECS` error that names the battery's path.
+* **The default spec path, fail closed.** `specs/` in the working directory is read whenever it
+  is a directory, as before (A-80), and refused, exit 3, when it holds nothing to read; with no
+  `specs/` the built-in battery is read. The one exception is the root of this package's own
+  checkout, whose `specs/` holds the unit contracts (`wiring.is_own_checkout`: the working
+  directory resolves to `BATTERY.resolve().parents[2]`, which no installed wheel is beside). The
+  note says which (`there is no specs/ directory here` or `this is Il Dottore's own checkout,
+  whose specs/ holds the unit contracts`, then `so this reads the built-in battery inside the
+  installed package: <path> (pass --spec-path to read another)`), and with
+  `GITHUB_ACTIONS=true` the same text follows as `::warning title=dottore spec path::`, the
+  tool's own line, `%` escaped. Amended 2026-10-16 after the pre-merge audit (HIGH 2): the first
+  build read a `specs/` with no YAML file as no `specs/` and scanned the battery in its place, so
+  an empty `specs/attacks` beside a vulnerable mock exited 2 after 18 built-in specs and a `specs/`
+  reaching its pack through a link exited 0 on all 75, where `7d01521f` exits 3; a default that
+  swaps in another battery fails open. `lint` stays strict (A-80): with no path it reads `specs/`
+  here only, so in the repository root it is a `NO_SPECS` error (exit 3, it exited 0 before) that
+  names the battery's path. A name for the battery itself is OD-51.
 * **An old path names the new one.** A path of the old layout is refused as before, exit 3, and
-  the refusal adds `; it is now <path> (CHANGELOG, Unreleased)` (for a `specs/` that held the
-  battery, `; the built-in battery it held is now <path>`) when the new path exists in the same
-  checkout (`shared.package_data.MOVED`, `moved_note`): the loader's `PATH_NOT_FOUND` and
+  the refusal adds `; it is now <path> (the built-in battery moved into the package)` (or `(the
+  example files moved from specs/ to examples/)`; for a `specs/` that held the battery, `; the
+  built-in battery it held moved into the package: it is now <path>`) when the new path exists in
+  the same checkout (`shared.package_data.MOVED`, `moved_note`): the loader's `PATH_NOT_FOUND` and
   `NO_SPECS`, `shared.files.read_failure` (the scope file, a policy pack) and the CLI's text of a
   `FileNotFoundError` (a target file, a fleet file). The CI example of #118 (`--spec-path
   .ildottore/specs` on a checkout past this change) is refused that way. Nothing old is read in
@@ -1837,10 +1846,13 @@ every job installs the newest releases.
 * **The judging digest covers the battery.** Inside the package, the battery and the schema are
   data files of it (`.yaml`, `.json`), and `.wav` joins `DATA_SUFFIXES` for the audio asset: 264
   files where there were 171, 0.355 s against 0.378 s (Python 3.14, best of five). A resume after
-  any byte of a built-in spec changed is refused, naming the file, where the spec digests forgive
-  a description; a `--spec-path` pack stays bound by the spec digests alone. A run halted before
-  this change is refused by a resume after it, as after any change of the code. No verdict
-  changes, so `JUDGING_RULES_VERSION` stays 1, re-pinned with that reason.
+  any byte of a built-in spec changed is refused, naming the file in clear (`ResumeRefused` carries
+  the labels it names as `kept_names`, which the CLI's masking keeps, those this installation
+  covers and those of the record shaped like a label; a battery label read as a secret in the
+  first build, audit MEDIUM 1), where the spec digests forgive a description; a `--spec-path` pack
+  stays bound by the spec digests alone. A run halted before this change is refused by a resume
+  after it, as after any change of the code. No verdict changes, so `JUDGING_RULES_VERSION` stays 1,
+  re-pinned with that reason.
 * **CI.** Two jobs in `.github/workflows/ci.yml`, the existing two unchanged: `floors` pins every
   direct dependency (runtime and the `dev` extra) to the version after its `>=`
   (`scripts/dependency_floors.py`, which refuses a runtime dependency without a floor or with a
@@ -1865,7 +1877,8 @@ Checks: `tests/test_packaging.py` (every file a load of the battery reads, and t
 the package and bound by the judging digest, the selection and `.gitignore` able to drop none;
 with hatchling, the real wheel and sdist), `tests/cli/test_battery_in_the_package.py` (the default
 spec path, the repository root, each old path through the real CLI),
-`tests/test_dependency_floors.py`.
+`tests/test_dependency_floors.py`, `tests/cli/test_resume_judging_rules.py` (a changed battery
+file named in clear through the CLI).
 Both test files fail on `7d01521f`: `ildottore.shared.package_data` does not exist there.
 
 ## §8 Out of scope / forbidden
@@ -2037,3 +2050,12 @@ Both test files fail on `7d01521f`: `ildottore.shared.package_data` does not exi
   operator sees until the scheduled run, a day at most. Alternatives: keep as is (a PR can fail
   for a release that is not in it); a lock file with hashes (`pip-compile --generate-hashes`),
   stronger supply-chain evidence for one more tool (`SUPPLY-CHAIN.md` notes no lock file).
+- **OD-51** (numbered 2026-10-16, A-84; open, owner to decide): a name for the built-in battery on
+  the command line, `--spec-path builtin`. With no `--spec-path` a command reads `specs/` when the
+  working directory has one, and the battery otherwise, so a pipeline run from a repository that
+  keeps a `specs/` of its own (OpenAPI files, say) cannot ask for the battery by name: it is
+  refused (exit 3) or has to pass the battery's installed path. Recommended: a reserved
+  `builtin` value of `--spec-path` (a directory literally named `builtin` then needs `./builtin`),
+  printed as the battery's path in the plan and the note, and used by the CI example. Not built in
+  A-84: a new public spelling deserves its own decision. Alternatives: a `--builtin` flag; leave
+  the default as the only way.

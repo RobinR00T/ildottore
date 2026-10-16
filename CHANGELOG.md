@@ -27,34 +27,45 @@ the file, schema copy, build or pipeline it names.
   | `dottore lint specs/attacks` (`audit.yml`) | `dottore lint src/ildottore/battery/attacks` |
 
 - **What a pipeline that names an old path gets.** The same refusal as before, exit 3, and nothing
-  sent; when the new path exists in the same checkout the refusal names it. Measured on a
-  checkout of this change: `dottore lint <ck>/specs/attacks` prints `[ERROR] PATH_NOT_FOUND (-):
-  path not found: <ck>/specs/attacks; it is now <ck>/src/ildottore/battery/attacks (CHANGELOG,
-  Unreleased)`; `registry ls --spec-path <ck>/specs` (and `run`, `describe`, `coverage`) prints
-  `error: a spec path gives nothing to list: spec path <ck>/specs holds no attack spec or suite to
-  read: ... and it has none; the built-in battery it held is now <ck>/src/ildottore/battery
-  (CHANGELOG, Unreleased)`; `run -t <ck>/specs/targets/example-openai.yaml`, `--scope
-  <ck>/specs/scope.example.yaml` and `fleet <ck>/specs/fleet.example.yaml` end with `; it is now
-  <ck>/examples/target.example-openai.yaml` (and the two others) `(CHANGELOG, Unreleased)`. A
-  checkout pinned to an earlier commit is unchanged: the example of #118, pinned to `3740b387`,
-  still installs and gates as it did.
+  sent; when the new path exists in the same checkout the refusal names it and what moved it.
+  Measured on a checkout of this change: `dottore lint <ck>/specs/attacks` prints `[ERROR]
+  PATH_NOT_FOUND (-): path not found: <ck>/specs/attacks; it is now
+  <ck>/src/ildottore/battery/attacks (the built-in battery moved into the package)`; `registry ls
+  --spec-path <ck>/specs` (and `run`, `describe`, `coverage`) prints `error: a spec path gives
+  nothing to list: spec path <ck>/specs holds no attack spec or suite to read: ... and it has
+  none; the built-in battery it held moved into the package: it is now <ck>/src/ildottore/battery`;
+  `run -t <ck>/specs/targets/example-openai.yaml`, `--scope <ck>/specs/scope.example.yaml` and
+  `fleet <ck>/specs/fleet.example.yaml` end with `; it is now
+  <ck>/examples/target.example-openai.yaml (the example files moved from specs/ to examples/)` (and
+  the two others). A checkout pinned to an earlier commit is unchanged: the example of #118, pinned
+  to `3740b387`, still installs and gates as it did.
+- **`dottore lint` with no path in the repository root** exits 3 where it exited 0: it reads
+  `specs/` there, which holds the unit contracts now (`NO_SPECS`, naming the battery's new path).
+  Lint the battery by its path, `dottore lint src/ildottore/battery`.
 - **The CI example** (`examples/ci-github-actions.yml`) installs the wheel pip builds from a
   pinned commit (`pip install "git+https://github.com/RobinR00T/ildottore@<commit>"`) and scans
   with the built-in battery: no checkout of Il Dottore, no `--spec-path`. Its pin is a placeholder
-  until a commit of `main` carries this change; `v0.1.0` cannot be installed that way (its wheel
-  has no battery).
+  until a commit of `main` carries this change, and the step refuses it (and a tag, a branch or a
+  short SHA) with an `::error::` annotation before installing anything; `v0.1.0` cannot be
+  installed that way (its wheel has no battery).
 
-### Changed (breaking for a working directory whose `specs/` holds no YAML file: a command with no `--spec-path` reads the built-in battery there instead of refusing it, u12 A-84)
+### Changed (a command with no `--spec-path` reads the built-in battery wherever there is no `specs/`, and at the root of this repository's checkout; a GitHub annotation says so, u12 A-84)
 
 - `run`, `fleet --run`, `registry ls`, `describe`, `coverage` and `render-media` read `specs/` in
-  the working directory only when it holds a `*.yaml` or `*.yml` file, in it or below it; else the
-  built-in battery inside the installed package, said on stderr: `note: specs/ here holds no YAML
-  file, so this reads the built-in battery inside the installed package: <path> (pass --spec-path
-  to read another)` (or `there is no specs/ directory here`). A `specs/` with no YAML file was
-  refused (`NO_SPECS`, exit 3); a `specs/` with YAML is read, and refused when it holds no spec,
-  as before. This is how the repository root, whose `specs/` holds the contracts, reads the
-  battery. A tree past 1,000 entries, or one with a directory that cannot be listed, is read as a
-  spec path, as before. `dottore lint` is unchanged: with no path it reads `specs/` here only.
+  the working directory whenever it is a directory, as before, and refuse it (exit 3) when it holds
+  nothing to read: it is never replaced by the built-in battery. With no `specs/` they read the
+  battery inside the installed package, which a wheel now carries; so they do at the root of Il
+  Dottore's own checkout, whose `specs/` holds the unit contracts (the working directory resolves
+  to the directory three above the battery). stderr says which: `note: there is no specs/
+  directory here, so this reads the built-in battery inside the installed package: <path> (pass
+  --spec-path to read another)`, or `note: this is Il Dottore's own checkout, whose specs/ holds
+  the unit contracts, so ...`; with `GITHUB_ACTIONS=true` the same text follows as a `::warning
+  title=dottore spec path::` line, so a pipeline that gates on the default battery sees it in its
+  annotations. The first build of this change read a `specs/` holding no YAML file as no `specs/`
+  and scanned the battery in its place (an empty `specs/attacks` beside a vulnerable mock exited 2
+  after 18 built-in specs, a `specs/` reaching its pack through a link exited 0 on all 75): the
+  pre-merge audit's HIGH 2, fixed before landing. An explicit way to name the built-in battery
+  (`--spec-path builtin`) is OD-51, open.
 
 ### Changed (breaking for a halted run: a resume across this change is refused, and so is one after any edit of a built-in spec, u12 A-84)
 
@@ -64,8 +75,10 @@ the file, schema copy, build or pipeline it names.
   refused by a resume after it, as after any change of the code, naming the files that differ. A
   resume after an edit of a built-in spec, its description included, is refused naming the file,
   where the per-spec battery digest forgives a description; a `--spec-path` pack is bound by the
-  spec digests alone, as before. No verdict changes: `JUDGING_RULES_VERSION` stays 1, re-pinned
-  with that reason.
+  spec digests alone, as before. The refusal names the files that differ in clear
+  (`battery/attacks/SP-LEAK-001.yaml`); the first build of this change masked them as a
+  high-entropy secret (the pre-merge audit's MEDIUM 1). No verdict changes:
+  `JUDGING_RULES_VERSION` stays 1, re-pinned with that reason.
 
 ### Fixed (a wheel carries the built-in battery and the attack-spec schema, u12 A-84)
 

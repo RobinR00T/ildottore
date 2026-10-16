@@ -22,11 +22,21 @@ neighbouring entries can interleave (an older branch merged later sits above a n
   --dry-run`, with the same judging digest (`a5133e82`, 264 files), and judges a quick offline
   run the same (10 fail, 8 inconclusive, exit 2). The real hatchling build is first proven by the
   new `package` CI job.
-- With no `--spec-path`, `specs/` here is read only when it holds a YAML file (the repository
-  root reads the battery and says so on stderr); a path of the old layout is refused naming the
-  new one (`; it is now <path> (CHANGELOG, Unreleased)`). CHANGELOG lists every old path as
-  breaking. The judging digest covers the battery (`.wav` added): a resume across the change, or
-  after any edit of a built-in spec, is refused; version 1 re-pinned (no verdict changes).
+- With no `--spec-path`, `specs/` here is read whenever it is a directory and refused when it
+  holds nothing (fail closed); the battery is read where there is no `specs/` and at the root of
+  this package's own checkout, said on stderr and, under GitHub Actions, as a `::warning::` line.
+  A path of the old layout is refused naming the new one and what moved it. CHANGELOG lists every
+  old path as breaking, `dottore lint` with no path in the repository root (exit 0 to 3)
+  included. The judging digest covers the battery (`.wav` added): a resume across the change, or
+  after any edit of a built-in spec, is refused, naming the file in clear; version 1 re-pinned
+  (no verdict changes). OD-51 (a `builtin` spec-path keyword) is open.
+- Pre-merge audit of `0f556628` (the move measured sound, verdict parity on the full battery):
+  NOT READY, fixed in new commits. HIGH 1: six floors raised from release histories, not measured
+  (websockets 15.0, typer 0.26.8, rich 13.8.0, PyYAML 6.0.1, Jinja2 3.1.6, pytest-asyncio 0.23.5),
+  the merge waiting for the `floors` job; HIGH 2: the fail-open default above, dropped; MEDIUM 1:
+  a resume refusal masked a battery file's name; LOWs: the lint break listed, the runtime notes
+  name the change, stale old-path references, the CI example's placeholder pin refused unless it
+  is a full SHA (`::error::`), job timeouts, CODEOWNERS on the schema directory.
 - CI: `floors` (every direct dependency at its declared floor, Python 3.11, the suite) and
   `package` (hatchling wheel and sdist, the wheel run from outside the checkout); actionlint
   clean, not yet run on GitHub. The existing workflows pin actions by major tag (Dependabot), so

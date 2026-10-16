@@ -324,14 +324,16 @@ it gives up ("stayed locked by another process"). A report inside a run director
 store is refused.
 .TP
 .B --spec-path \fIPATH\fR
-Spec search path. Default: specs/ in the working directory when it holds a YAML file, else the
-built-in battery inside the installed package (ildottore/battery, which a wheel carries as a
-source checkout does), which run, fleet --run, registry ls, describe, coverage and render-media
-say on stderr when they read it; lint does not fall back. A path of the layout before the battery
-moved into the package (specs/attacks, specs/suites, a specs/ that held the battery) is refused
-naming where it is now. With none given, a default that is not there is "spec path not
-found: <path>. Pass --spec-path <dir>; ..."; a path given that does not exist or holds nothing
-is "a spec path gives nothing to run" (or to list, to describe, to measure), exit 3 either way.
+Spec search path. Default: specs/ in the working directory when there is one (refused, exit 3,
+when it holds no spec), else the built-in battery inside the installed package (ildottore/battery,
+which a wheel carries as a source checkout does; read too at the root of Il Dottore's own
+checkout), which run, fleet --run, registry ls, describe, coverage and render-media say on
+stderr, and as a ::warning:: line under GitHub Actions; lint does not fall back. A path of the
+layout before the battery moved into the package (specs/attacks, specs/suites, a specs/ that
+held the battery) is refused naming where it is now. With none given, a default that is not
+there is "spec path not found: <path>. Pass --spec-path <dir>; ..."; a path given that does not
+exist or holds nothing is "a spec path gives nothing to run" (or to list, to describe, to
+measure), exit 3 either way.
 .TP
 .B --no-color
 Disable colour output.
@@ -359,8 +361,8 @@ As each
 .B dottore \fICOMMAND\fR --help
 prints them. A
 .B --spec-path
-that is left out is specs/ in the working directory when it holds a YAML file, else the built-in
-battery inside the installed package, as for run; lint does not fall back.
+that is left out is specs/ in the working directory when there is one, else the built-in battery
+inside the installed package, as for run; lint does not fall back.
 .SS "fleet \fIfleet.yaml\fR"
 .TP
 .B --out \fIPATH\fR

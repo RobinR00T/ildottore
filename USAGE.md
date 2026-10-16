@@ -136,7 +136,7 @@ dottore calibrate report.json labels.yaml
 | `-oJ/-oH/-oS/-oX/-oA` | JSON / HTML / SARIF / JUnit / all four to `<prefix>.json`, `.html`, `.sarif`, `.xml` (`-oA report.v2` keeps its name: `report.v2.json`; `-oA report.json` is not doubled: `report.json`, `report.html`, ...). Two formats pointed at the same file are refused before anything is sent, and so is a report path that is an input of the run (the scope, a target, the judge, the fleet file, the run store, a spec file; through a symlink or a hard link too) |
 | `--fail-on <band>` | CI gate on confirmed findings (`info\|low\|medium\|high\|critical`, default `high`; `info` gates on any confirmed finding) |
 | `--include-needs-review` | also gate unconfirmed exploits (an unconfirmed `fail`, a fail only the judge reported among them); an `inconclusive` result never gates. Without the flag such a fail is at most a `warning` in the SARIF, whatever its band; with it, it gates, and keeps its band's level (`error` for critical or high) |
-| `--spec-path` | spec search path (default `specs/` in the working directory when it holds a YAML file, else the built-in battery inside the installed package, said on stderr when a command reads it; `lint` never falls back) |
+| `--spec-path` | spec search path (default `specs/` in the working directory when there is one, refused when it holds no spec, else the built-in battery inside the installed package, said on stderr when a command reads it; `lint` never falls back) |
 | `--evidence-root` / `--run-db` | evidence store root (default `.dottore/evidence`) and run store (default `.dottore/runs.sqlite`). Checked before anything is sent, writing nothing in `--dry-run`/`--estimate`/`-sn`: a directory as the store, a file that is not SQLite, a root that is a regular file, or a path under one, is refused (exit 3), and a sending run opens both before its first request. Runs may share one store (a lock is waited for up to 30 s, said on stderr, and Ctrl-C stops the wait) |
 | `-v` | prints the resolved plan, then runs (`-vv`: the skipped and blocked ids too); like the root `dottore -v <command>`, it also prints an internal error's traceback |
 
@@ -226,9 +226,10 @@ dottore fleet fleet.yaml --run -oJ fleet.json --run-db fleet.sqlite   # run's st
 
 `fleet` takes `--spec-path`, `--evidence-root`, `--run-db` and `-oJ/-oH/-oS/-oX/-oA` with `run`'s
 meaning (without `--run` they are carried into the `dottore run` line it prints), and reads the
-same default spec path as `run`: `specs/` in the working directory when it holds a YAML file,
-else the built-in battery inside the installed package. It therefore runs from any directory,
-from an installed wheel as from a source checkout (saying on stderr which battery it read).
+same default spec path as `run`: `specs/` in the working directory when there is one, else the
+built-in battery inside the installed package. It therefore runs from any directory that has no
+`specs/` of its own, from an installed wheel as from a source checkout (saying on stderr which
+battery it read).
 
 The judge goes in the fleet file too, as a `judge:` block (`id`, `endpoint`, `model`,
 `api_key_env`), because the generated scope is built from that file alone: `fleet` writes it

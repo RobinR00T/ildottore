@@ -51,9 +51,10 @@ prints, and both computed the same judging digest; a run against an offline mock
 way. CI builds the real wheel and sdist with hatchling and repeats that comparison (the `package`
 job, `tests/test_packaging.py`).
 
-With no `--spec-path`, a command reads the built-in battery and says so on stderr, with its path,
-unless the directory it runs in has a `specs/` that holds a YAML file (a pack of your own), which
-it reads instead (Troubleshooting below).
+With no `--spec-path`, a command reads the built-in battery and says so on stderr, with its path
+(and as a `::warning::` annotation under GitHub Actions), unless the directory it runs in has a
+`specs/` directory, which it reads instead and refuses (exit 3) when it holds no attack spec
+(Troubleshooting below).
 
 Two console scripts are installed: `dottore` and its short alias `dott`.
 
@@ -122,10 +123,14 @@ cover the host, or the run refuses to send (default-deny).
   `specs/` directory where you run nor a built-in battery in the installed package: an install of
   a commit from before the battery moved into the package (the runtime install above). `run`,
   `fleet --run`, `registry ls`, `describe` and `coverage` read `specs/` in the working directory
-  when it holds a YAML file, else the built-in battery inside the installed package, and say on
-  stderr when they read the battery; `dottore lint` reads `specs/` here only.
-- **`... ; it is now <path> (CHANGELOG, Unreleased)`**, a path of the layout before the battery
-  moved into the package: `specs/attacks`, `specs/suites`, `specs/pack.yaml` (now under
+  when there is one, else the built-in battery inside the installed package, and say on stderr
+  when they read the battery; `dottore lint` reads `specs/` here only.
+- **`spec path specs holds no attack spec or suite to read`** (exit 3), the directory you run in
+  has a `specs/` (an OpenAPI folder, say) and no `--spec-path` was given: it is read, never
+  swapped for the built-in battery. Run from another directory or pass `--spec-path`.
+- **`...; it is now <path> (the built-in battery moved into the package)`** (or `(the example
+  files moved from specs/ to examples/)`), a path of the layout before the battery moved into the
+  package: `specs/attacks`, `specs/suites`, `specs/pack.yaml` (now under
   `src/ildottore/battery/`), a `--spec-path <checkout>/specs` that held the battery (it holds the
   unit contracts now), `specs/scope.example.yaml`, `specs/fleet.example.yaml` and
   `specs/targets/example-openai.yaml` (now `examples/scope.example.yaml`,
