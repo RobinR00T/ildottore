@@ -47,7 +47,7 @@ import re
 import secrets
 import threading
 from array import array
-from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Collection, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, ClassVar, Final, Protocol, cast
 
@@ -949,6 +949,30 @@ class _Cuts:
         return out
 
 
+class UuidCuts:
+    """The stand-ins of a text masked in two passes, one with the number rules and one with the
+    entropy rule (the CLI's error masking, ``cli.app._masked``; u01/u12 A-83).
+
+    Within one pass the number rules write what they read inside a UUID in stand-ins, which the
+    entropy rule reads as main read their masks and the late pattern reads back (:class:`_Cuts`).
+    Two redactors given the same ``UuidCuts`` share them across passes: the first, which has no
+    entropy rule, leaves them in its output; the second, which has one, masks each UUID they are
+    in whole, with the pieces main masked around it, and masks a stand-in left over as the number
+    main masked there. The block is chosen from ``text``, the text the first pass reads, so in
+    what it writes every character of it is a stand-in; None when ``text`` uses every block, and
+    the numbers are masked as main masked them.
+    """
+
+    def __init__(self, text: str) -> None:
+        self.cuts = _Cuts.for_text(text)
+
+    def read_back(self, text: str) -> str:
+        """``text``, written by a pass sharing these stand-ins, with each read back: the same
+        length, every UUID as written."""
+
+        return text if self.cuts is None else self.cuts.decode(text)
+
+
 def _matches(pattern: Pattern, text: str) -> bool:
     """True if ``pattern`` finds a match in ``text`` (a ``skip`` match is none)."""
 
@@ -1317,8 +1341,10 @@ class Redactor:
     hashes are not correlatable across engagements). ``entropy_threshold`` /
     ``entropy_min_len`` govern the interim global high-entropy fallback (OD-15). ``late``
     runs the documented key formats, the JWT and the UUID after the labelled and the entropy
-    rules (``_late_patterns``, u01 A-78); the CLI turns it off on the redactor it runs before
-    its own entropy pass, and runs it after that pass.
+    rules (``_late_patterns``, u01 A-78), all of them or only the types it names; the CLI turns
+    them off on the redactor it runs before its own entropy pass, keeps the UUID on that pass,
+    and runs the rest after it. ``uuid_cuts`` shares the stand-ins of a UUID a number rule reads
+    with a redactor of a later pass (:class:`UuidCuts`).
     """
 
     _HIGH_ENTROPY_TOKEN: Final = re.compile(r"[A-Za-z0-9+/_=-]{16,}")
@@ -1330,13 +1356,18 @@ class Redactor:
         patterns: Sequence[Pattern] | None = None,
         entropy_threshold: float = 3.7,
         entropy_min_len: int = 16,
-        late: bool = True,
+        late: bool | Collection[str] = True,
+        uuid_cuts: UuidCuts | None = None,
     ) -> None:
         self._salt = (_PROCESS_SALT if salt is None else salt).encode("utf-8")
         self._patterns: list[Pattern] = (
             list(patterns) if patterns is not None else _default_patterns()
         )
-        self._set_late(_late_patterns() if late else [])
+        if isinstance(late, bool):
+            self._set_late(_late_patterns() if late else [])
+        else:
+            self._set_late([pattern for pattern in _late_patterns() if pattern.type in late])
+        self._uuid_cuts = uuid_cuts
         # The mask types kept as written (`_redact_once`), kept in step with `register`: the
         # tool's own rules', its patterns', and the A-78 types whichever redactor wrote them.
         self._mask_types = (
@@ -1434,7 +1465,7 @@ class Redactor:
         # masked as depended on whether anything at all was masked in it, however far away: a UUID
         # in one line showed the labelled secret of the next (pre-merge audits of A-78, F2).
         visible = visible_stash_delimiters(text)
-        spans = _spans_both_ways(self._to_fixed_point, text)
+        spans = _spans_both_ways(self._read_back, text)
         if not spans:
             return visible
         pieces: list[str] = []
@@ -1446,6 +1477,24 @@ class Redactor:
         # The masks of one reading can stand where the other reading wrote text, so the whole is
         # read once more, which only adds masks, and the result is a fixed point.
         return self._to_fixed_point("".join(pieces))
+
+    def _read_back(self, text: str) -> str:
+        """``text`` to a fixed point, with any stand-in this pass leaves read back (A-83).
+
+        The both-ways reading places the masks of each reading in the text as written, which a
+        stand-in is not; the last pass over the result writes them again.
+        """
+
+        out = self._to_fixed_point(text)
+        if self._leaves_cuts and self._uuid_cuts is not None and self._uuid_cuts.cuts is not None:
+            return self._uuid_cuts.cuts.decode(out)
+        return out
+
+    @property
+    def _leaves_cuts(self) -> bool:
+        """True for the first of two passes sharing stand-ins: no entropy rule here reads them."""
+
+        return self._uuid_cuts is not None and not self._hex_runs
 
     def for_terminal(self, text: str) -> str:
         """``text`` redacted, its control and format characters written out, for printing.
@@ -1491,7 +1540,14 @@ class Redactor:
         # The stand-ins of this pass (A-78, `_Cuts`): only a redactor whose entropy rule masks a
         # UUID cut by a number rule whole, and whose late pattern masks any other, uses them.
         # A UUID holds a `-`: a text with none needs no stand-ins, nor the scan for a free block.
-        cuts = _Cuts.for_text(text) if self._hex_runs and self._uuid_late and "-" in text else None
+        # Shared with another pass (A-83, `UuidCuts`), they are the ones it chose: a text whose
+        # every `-` a number rule took holds none, and its stand-ins are still to be read.
+        if self._uuid_cuts is not None:
+            cuts = self._uuid_cuts.cuts
+        else:
+            cuts = (
+                _Cuts.for_text(text) if self._hex_runs and self._uuid_late and "-" in text else None
+            )
 
         def _as_written(stretch: str) -> str:
             if cuts is not None:
@@ -1638,7 +1694,7 @@ class Redactor:
         # Last, after the URL rule as written too, which reads a mask's `:` as a userinfo's and
         # takes the URL for one its rule read (u01 A-78; pre-commit differential fuzz).
         working = self.redact_late(working, _as_written)
-        if cuts is not None:  # a number no mask took is masked as main masked it
+        if cuts is not None and not self._leaves_cuts:  # a number no mask took, as main masked it
             working = cuts.run.sub(lambda m: self._number_masks(cuts, m.group(0)), working)
 
         # One pass: a `str.replace` per kept mask was quadratic with thousands of them.
@@ -2291,7 +2347,7 @@ class Redactor:
         pieces main read (:meth:`_cut_spans`).
         """
 
-        if cuts is not None and cuts.run.search(token):
+        if cuts is not None and self._hex_runs and cuts.run.search(token):
             return self._cut_spans(token, cuts)
         if self._hex_runs and self._uuid_late and _UUID.fullmatch(token):
             # A UUID alone: masked whole either way, as the late pattern masks it.

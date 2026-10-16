@@ -52,6 +52,7 @@ from ildottore.policy.errors import PolicyError
 from ildottore.redactor import (
     CREDENTIAL_MASK,
     Redactor,
+    UuidCuts,
     holds_known_secret_part,
     known_secret_parts,
     log_safe_json,
@@ -855,11 +856,11 @@ def _masked(exc: BaseException) -> str:
     # value, is read as text by `entropy`, which then masks the value, as it did). What is kept
     # (a digest, an existing path) is kept from them too: run over the whole message, they
     # masked a UUID directory of an existing evidence root (pre-merge audit of A-78, L5).
-    # Without the late patterns, `plain` masks the number rules' numbers inside a UUID as
-    # before A-78, so the paths it leaves to keep are the ones it left before.
-    plain = Redactor(entropy_threshold=math.inf, late=False)
-    entropy = Redactor(patterns=[], late=False)
-    late = Redactor(patterns=[], entropy_threshold=math.inf)
+    # A UUID is masked as the reports mask it (u01/u12 A-83): what a number rule of `plain` reads
+    # inside one is left in stand-ins (`UuidCuts`), so the paths it leaves to keep are the ones
+    # it left before, and `entropy` masks each such UUID whole with the pieces main masked around
+    # it, as the redactor's own entropy rule does; it masks any other UUID as `uuid`, the one late
+    # pattern it runs. The cut UUID read `3f2a9c1d-«REDACTED:phone»...` before.
     # A bare digest stays readable only when the error itself carries it as one this tool
     # computed (`digests` on ScopeChecksumError and TamperError): the redactor cannot tell a
     # sha256 from a 64-hex key, so keeping every bare 64-hex printed a raw key pasted as an
@@ -898,8 +899,16 @@ def _masked(exc: BaseException) -> str:
     )
     if loopback is not None:
         raw = _LOOPBACK_IN_URL.sub(_LOOPBACK_MARK, raw)
+    cuts = UuidCuts(raw)
+    plain = Redactor(entropy_threshold=math.inf, late=False, uuid_cuts=cuts)
+    entropy = Redactor(patterns=[], late=("uuid",), uuid_cuts=cuts)
+    late = Redactor(patterns=[], entropy_threshold=math.inf)
     text = plain.redact_text(raw)
-    paths = sorted({re.escape(p) for p in _existing_prefixes(text)}, key=len, reverse=True)
+    # What is kept is found in the text with the stand-ins read back: a UUID a number rule read
+    # inside an existing path or a spec file name is the operator's or the tree's, kept whole as
+    # one no number rule reads (A-38, A-78 L5); the rest, stand-ins included, is `entropy`'s.
+    seen = cuts.read_back(text)
+    paths = sorted({re.escape(p) for p in _existing_prefixes(seen)}, key=len, reverse=True)
     keep = re.compile(
         r"(\b(?:"
         + "|".join([_ARTIFACT_NAME, *carried])
@@ -925,10 +934,10 @@ def _masked(exc: BaseException) -> str:
             held[kept] = holds_known_secret_part(kept, parts)
         return held[kept]
 
-    spans = [m.span() for m in keep.finditer(text)]
-    whole = _whole_path_spans(text, _Lookups())
+    spans = [m.span() for m in keep.finditer(seen)]
+    whole = _whole_path_spans(seen, _Lookups())
     spans += [
-        (start, end) for start, end, checked in whole if not holds_secret(text[start:checked])
+        (start, end) for start, end, checked in whole if not holds_secret(seen[start:checked])
     ]
     merged: list[list[int]] = []
     for start, end in sorted(spans):
@@ -941,7 +950,7 @@ def _masked(exc: BaseException) -> str:
     shown: list[str] = []
     done = 0
     for start, end in merged:
-        kept = text[start:end]
+        kept = seen[start:end]
         shown.append(late.redact_late(_entropy_masked(entropy, text[done:start])))
         shown.append(CREDENTIAL_MASK if holds_secret(kept) else kept)
         done = end
