@@ -1,5 +1,5 @@
 # fleet.yaml, declare every LLM / URL / MCP target to validate in ONE place.
-# Expand it with:   dottore fleet specs/fleet.example.yaml --out .dottore/fleet
+# Expand it with:   dottore fleet examples/fleet.example.yaml --out .dottore/fleet
 # then scan the generated targets, or add --run to scan immediately.
 #
 # The generated scope pins every http(s) endpoint to its host AND port (api.openai.com:443,

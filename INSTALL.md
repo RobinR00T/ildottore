@@ -25,17 +25,35 @@ venv to run the whole wall:
 .venv/bin/python -m pip install bandit pip-audit
 ```
 
-For a runtime-only install, drop `[dev]`, but keep `-e` and the checkout: a non-editable
-install (`pip install .`, `pip install "git+https://..."`, a built wheel) ships neither `specs/`
-nor `schemas/`, so it cannot load the battery. Measured on 2026-10-15 with the wheel
-`pyproject.toml` selects, from a directory outside the repo: `dottore lint` and `dottore run
---dry-run` without a spec path exit 3 with `spec path not found: specs`; with a checkout's
-`specs/`, `lint` exits 3 with `unexpected FileNotFoundError` and `run --dry-run` exits 3 with
-`[Errno 2]`, both on `schemas/attack-spec.schema.json`, looked up beside `site-packages`. With an
-editable install of the checkout, `run` from outside it reads the checkout's battery and says so
-on stderr, and `lint` needs its path (`dottore lint <checkout>/specs`, exit 0);
-`examples/ci-github-actions.yml` passes `--spec-path` all the same, to say which battery gates.
-The defect is in `docs/12` (P1).
+## Runtime only (no checkout to keep)
+
+Drop `[dev]` and `-e`: a wheel carries the built-in battery and the attack-spec schema, which live
+inside the package (`src/ildottore/battery/`, `src/ildottore/registry/schemas/`), so an installed
+copy needs no checkout beside it. From a clone, or from a commit you have reviewed (the package is
+not on PyPI: `pip install ildottore` finds nothing):
+
+```bash
+python3 -m venv .venv && .venv/bin/python -m pip install .
+.venv/bin/python -m pip install "ildottore @ git+https://github.com/RobinR00T/ildottore@<commit>"
+```
+
+`<commit>` is a full commit SHA of `main` from the change that put the battery in the package
+(CHANGELOG, `[Unreleased]`) on. An older one, the `v0.1.0` tag included, builds a wheel that
+carries neither the battery nor the schema: from outside a checkout `dottore run --dry-run` and
+`registry ls` exit 3 (`spec path not found: specs`), and `lint <checkout>/specs` exits 3 on the
+missing `schemas/attack-spec.schema.json` (`unexpected FileNotFoundError`; measured on `7d01521f`,
+2026-10-16). Measured on 2026-10-16, with a wheel built offline by the selection `pyproject.toml`
+declares (hatchling itself was not installed) and installed with
+`pip install --no-index --no-deps --target`: run from a directory
+outside the checkout, `--version`, `registry ls` (75 specs), `schema export`, `lint` of the
+installed battery (75 specs, 14 suites) and `run --dry-run` printed exactly what the checkout
+prints, and both computed the same judging digest; a run against an offline mock judged the same
+way. CI builds the real wheel and sdist with hatchling and repeats that comparison (the `package`
+job, `tests/test_packaging.py`).
+
+With no `--spec-path`, a command reads the built-in battery and says so on stderr, with its path,
+unless the directory it runs in has a `specs/` that holds a YAML file (a pack of your own), which
+it reads instead (Troubleshooting below).
 
 Two console scripts are installed: `dottore` and its short alias `dott`.
 
@@ -44,7 +62,7 @@ Two console scripts are installed: `dottore` and its short alias `dott`.
 ```bash
 .venv/bin/dottore --help
 .venv/bin/dottore registry ls          # 75 specs, fully offline
-.venv/bin/dottore lint specs/          # schema + policy + fixtures-prove-detection
+.venv/bin/dottore lint src/ildottore/battery   # schema + policy + fixtures-prove-detection
 make test                              # the full test suite (or: make gates)
 ```
 
@@ -101,12 +119,18 @@ cover the host, or the run refuses to send (default-deny).
 - **A run does nothing but validates**, you passed `--dry-run` (resolve + validate, send
   nothing). Drop it to actually scan.
 - **`spec path not found: specs`** (exit 3), no `--spec-path` was given and there is neither a
-  `specs/` directory where you run nor a battery beside the installed package. `run`,
-  `fleet --run`, `registry ls`, `describe` and `coverage` read `specs/` in the working directory,
-  else the `specs/` of the source checkout the package was installed from (the editable install
-  above), and say on stderr when they fall back; `dottore lint` reads `specs/` here only. A
-  non-editable install (a wheel, `pip install git+https://...`) ships neither the battery nor the
-  schemas a spec is validated against, so it cannot load specs: use the editable install.
+  `specs/` directory where you run nor a built-in battery in the installed package: an install of
+  a commit from before the battery moved into the package (the runtime install above). `run`,
+  `fleet --run`, `registry ls`, `describe` and `coverage` read `specs/` in the working directory
+  when it holds a YAML file, else the built-in battery inside the installed package, and say on
+  stderr when they read the battery; `dottore lint` reads `specs/` here only.
+- **`... ; it is now <path> (CHANGELOG, Unreleased)`**, a path of the layout before the battery
+  moved into the package: `specs/attacks`, `specs/suites`, `specs/pack.yaml` (now under
+  `src/ildottore/battery/`), a `--spec-path <checkout>/specs` that held the battery (it holds the
+  unit contracts now), `specs/scope.example.yaml`, `specs/fleet.example.yaml` and
+  `specs/targets/example-openai.yaml` (now `examples/scope.example.yaml`,
+  `examples/fleet.example.yaml`, `examples/target.example-openai.yaml`). Point at the path it
+  names, or drop `--spec-path` to read the built-in battery.
 - **`cannot open the run store at <path>`** or **`cannot write evidence under <root>`** (exit 3,
   before anything is sent), `--run-db` names a directory or a file that is not SQLite, or
   `--evidence-root` is a regular file. Point them at a new path.

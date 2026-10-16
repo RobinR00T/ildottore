@@ -32,7 +32,7 @@ Everything here is fully offline and touches no network:
 dottore registry ls                      # the full spec catalogue
 dottore registry ls --category jailbreak # filter by category / owasp / suite / tag
 dottore describe PI-DIRECT-001           # one spec's detail card
-dottore lint specs/                      # schema + policy + fixtures-prove-detection
+dottore lint src/ildottore/battery       # schema + policy + fixtures-prove-detection
 dottore schema export                    # the JSON Schemas that validate every spec
 dottore coverage                         # what the battery tests, per framework, gaps named
 dottore coverage --framework aisvs       # OWASP AISVS by level (falsification, never verification)
@@ -223,12 +223,11 @@ dottore fleet examples/fleet.yaml --out .dottore/fleet -oJ fleet.json --run-db .
 
 The last line prints `Run it:` followed by `dottore run <the two target files> --scope
 ".dottore/fleet/scope.yaml" --judge ".dottore/fleet/judge.yaml" --run-db ".dottore/runs.sqlite" -oJ
-"fleet.json"` (checked 2026-10-12 from a directory outside the repository, with the editable
-install of INSTALL.md: `fleet` and `run` read `specs/` there when it exists, else the battery
-beside the installed package, and say on stderr when they fall back, so neither needs the
-repository root any more; `fleet --run` used to fail with `path not found: specs` anywhere else.
-A wheel built from this repository ships neither the battery nor the schemas, so this holds for a
-source checkout or an editable install only).
+"fleet.json"` (checked 2026-10-12 from a directory outside the repository with the editable
+install of INSTALL.md, and again on 2026-10-16 with an installed wheel and no checkout: `fleet`
+and `run` read `specs/` there when it holds a YAML file, else the built-in battery inside the
+installed package, and say on stderr when they read the battery, so neither needs the
+repository root; `fleet --run` used to fail with `path not found: specs` anywhere else).
 
 `examples/fleet.yaml` declares its judge in a `judge:` block, so the generated scope
 authorizes it and `fleet` writes it to `.dottore/fleet/judge.yaml`. Passing
@@ -367,9 +366,14 @@ refuses.
 ## Add your own attack (no core code)
 
 ```bash
-dottore new-spec --id PI-MYORG-001 --family prompt_injection
+dottore new-spec --id PI-MYORG-001 --family prompt_injection --out mine
 # fill attack / expected_secure_behavior / evaluators / golden fixtures, then:
-dottore lint specs/
+dottore lint mine
 ```
+
+Until you fill it, `lint` refuses the scaffold (exit 1: its `TODO` framework codes and a hardened
+fixture the declared evaluators fail). Pass `--spec-path mine` to `run` to scan with it; a spec
+for the built-in battery goes in `src/ildottore/battery/attacks/` of a clone, with a reference
+from a suite in `src/ildottore/battery/suites/` (CONTRIBUTING.md).
 
 See [`../docs/06-extensibility-suites.md`](../docs/06-extensibility-suites.md).

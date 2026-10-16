@@ -72,11 +72,11 @@ jobs:
         run: python -m pip install -e ".[dev]"
 
       # ---- Gate 1 - spec lint: schema + static checks (layers 1-2) -------------------------
-      # The shipped spec pack must lint clean end-to-end (u02 §7 / u14 §7). `specs/` resolves
-      # as a pack via `specs/pack.yaml`, so discovery loads attacks/ + suites/ and skips the
-      # loose scope/target example YAMLs.
+      # The shipped spec pack must lint clean end-to-end (u02 §7 / u14 §7). The built-in battery
+      # is inside the package since u12 A-84 (it was specs/); it resolves as a pack via its
+      # pack.yaml, so discovery loads attacks/ + suites/.
       - name: "Gate 1 · spec lint (schema + static)"
-        run: dottore lint specs/
+        run: dottore lint src/ildottore/battery
 
       # ---- Gate 2 - import-boundary contract (layer 14) ------------------------------------
       - name: "Gate 2 · import-boundary contract"

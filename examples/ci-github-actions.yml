@@ -19,28 +19,28 @@ jobs:
     steps:
       - uses: actions/checkout@v4            # your application: ci/target.yaml, ci/scope.yaml
 
-      # Not on PyPI (`pip install ildottore` 404s), and not installable as a wheel either: a wheel
-      # (`pip install "git+https://...@<ref>"`, or `pip install` without `-e`) ships neither
-      # specs/ nor schemas/, so outside a checkout it cannot load the battery. Measured on
-      # 2026-10-15 with the wheel pyproject.toml selects, from a directory outside the repo:
-      # `dottore lint` and `dottore run --dry-run` exit 3, without a spec path on "spec path not
-      # found: specs", and with a checkout's specs/ on schemas/attack-spec.schema.json, which the
-      # wheel lacks.
-      # So check Il Dottore out next to your code, install that checkout editable, and pass
-      # --spec-path to it.
-      - name: Check out Il Dottore at a pinned commit
-        uses: actions/checkout@v4
+      - uses: actions/setup-python@v7
         with:
-          repository: RobinR00T/ildottore
+          python-version: "3.11"
+
+      # Not on PyPI (`pip install ildottore` 404s): pip builds a wheel from a commit you have
+      # reviewed, and the wheel carries the built-in battery and the attack-spec schema, which live
+      # inside the package (src/ildottore/battery/), so no checkout of Il Dottore is needed. The
+      # repository's own CI builds that wheel and runs it from outside the checkout (its `package`
+      # job). The previous version of this example checked Il Dottore out, installed the checkout
+      # editable and passed `--spec-path .ildottore/specs`: past the commit that moved the battery,
+      # that directory holds the unit contracts only, and the scan exits 3 naming
+      # `.ildottore/src/ildottore/battery`.
+      - name: Install Il Dottore at a pinned commit
+        env:
           # Pinned to a full commit SHA so a pipeline gate cannot change meaning under you
-          # between runs. The SHA below is main on 2026-10-15.
-          # pin: update to the commit you have reviewed
-          ref: 3740b3874642dbec711e82918e477060d4a39ea1
-          # ref: v0.1.0
-          path: .ildottore
-          # The only tag, v0.1.0 (2026-09-03), predates most of what these gates rely on, as
-          # USAGE.md and docs/MANUAL.md describe them. Pinned to v0.1.0 (the commented line),
-          # the same scan gates differently; CHANGELOG.md ([Unreleased]) has each change:
+          # between runs. pin: the commit of main you have reviewed. It must be the one that put
+          # the battery in the package (CHANGELOG.md, [Unreleased]) or a later one: a wheel of an
+          # earlier commit, the only tag v0.1.0 (2026-09-03) included, carries no battery and
+          # every scan exits 3 (`spec path not found: specs`).
+          ILDOTTORE_COMMIT: "<full commit SHA>"
+          # v0.1.0 also predates most of what these gates rely on, as USAGE.md and
+          # docs/MANUAL.md describe them; CHANGELOG.md ([Unreleased]) has each change:
           # - exit codes: a run that did not finish (budget halt, unreachable target, a target
           #   none of whose first replies could be read) does not exit 3, a usage error exits 2
           #   (the findings code), an empty spec selection exits 0, and `dottore diff` does not
@@ -78,20 +78,16 @@ jobs:
           #   not refused;
           # - resume (A-81): there is no `--resume`; here a resume is refused when the code that
           #   judged the halted half differs.
+        run: pip install "ildottore @ git+https://github.com/RobinR00T/ildottore@${ILDOTTORE_COMMIT}"
 
-      - uses: actions/setup-python@v7
-        with:
-          python-version: "3.11"
-
-      - name: Install Il Dottore (editable, from the checkout)
-        run: pip install -e ./.ildottore
-
+      # With no --spec-path the scan reads the built-in battery and says so on stderr, with its
+      # path. A specs/ directory of your repository that holds a YAML file is read instead: pass
+      # --spec-path to name the pack you mean if you keep one there.
       - name: Scan (fail the build on confirmed high/critical)
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}   # matches target auth_ref
         run: |
           dottore run --suite owasp:llm \
-            --spec-path .ildottore/specs \
             -t ci/target.yaml \
             --scope ci/scope.yaml \
             --fail-on high \
