@@ -1795,6 +1795,14 @@ Merged 2026-10-14 with `fix/no-secret-in-fragments` (u01 A-77, `33782ad3`), whic
   `provider: openai` target with `transport: stdio` reads this clause's refusal of the file
   instead (M5): nothing is sent and no key is read.
 
+**A-85 (u08's clause; this unit's half, added 2026-10-16).** `JUDGING_RULES_VERSION` is 2, pinned
+by an appended line: a run halted under version 1 is refused by its resume before anything is sent,
+naming both (`tests/cli/test_resume_judging_rules.py`, and measured with a run halted on
+`7d01521f`), and `dottore --version` prints `dottore 0.1.0 (judging rules 2)`.
+`JUDGING_RULES_SINCE` stays the day runs began to record their rules. A scope with a weak identity
+canary exits 3 in every mode (u01's half), and `dottore replay` says when it counts a sweep's
+crossing once (`tests/cli/test_scoring_followups_cli.py`).
+
 ## §8 Out of scope / forbidden
 - MUST NOT implement attack/mutation/evaluation/scoring/reporting/fingerprint logic (u05-u11,
   u13): only wire and call them. MUST NOT own `cli/lint.py` (u02) or edit any spec YAML.

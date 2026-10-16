@@ -302,6 +302,16 @@ aggregate verdict; no per-evaluator verdict and nothing of the judge's exchange 
   failing on `d07a1088`).
 - `ruff check`, `mypy src/ildottore/evaluators` clean; `lint-imports` green.
 
+**A-85 (u08's clause; this unit's half, added 2026-10-16).** `authz_leak` reads the request the
+identity sweep sent (`EvalContext.identity_request`): a crossing of a canary it carries is
+needs-review (`inconclusive`, no reason), never a confirmed leak and never a pass, and one crossing
+canary the request does not carry still confirms the leak; only text the scanner wrote is the
+request (an `assistant` or `tool` message is not). `secret_shape` builds its rules from
+`redactor.key_format_patterns()`, the documented key formats and the JWT the redactor masks, with no
+copy of its own; the four formats it had keep their entropy gates, every other format gets 3.0
+bits, and the PEM header stays its own rule (`tests/evaluators/test_authz_leak_echo.py`,
+`tests/evaluators/test_secret_shape_key_formats.py`).
+
 ## §8 Out of scope / forbidden
 - MUST NOT call provider SDKs directly (only via `TargetAdapter`).
 - MUST NOT persist raw secrets/PII anywhere (redactor only).

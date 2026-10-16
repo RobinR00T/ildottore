@@ -286,6 +286,12 @@ the modes that send nothing, and for `replay --run-db`), both through `paths.nea
 `EvidenceStoreError` (an `OSError`) naming the root. Checked by
 `tests/store/test_store_open_errors.py` and `tests/cli/test_evidence_root_preflight.py`.
 
+**A-85 (u08's clause; this unit's half, added 2026-10-16).** `ReplayResult.successful_attacks`
+counts through `shared.identity_sweep.count_successes`, as the scorer does, so `dottore replay` and
+a report agree on a sweep's crossing (`exploited: 1` of 5 where it said 5), and `sweep_fails` gives
+the footer its line. A stored verdict carries `identity_sweep` when a sweep alone made its fail; a
+resume numbers its new sweep after the ones its stored attempts carry.
+
 ## §8 Out of scope / forbidden
 - MUST NOT compute scores/severity (u07), evaluate responses (u06), or render reports (u11) -
   store only what it is given.

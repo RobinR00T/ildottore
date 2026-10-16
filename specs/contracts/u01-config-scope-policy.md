@@ -1045,6 +1045,15 @@ twice, pre-merge audit LOW e). `env://NONE` is the identity that carries no cred
 is never read (`cli.wiring.resolve_auth_ref`). Checked
 by `tests/cli/test_credential_variables.py` and `tests/cli/test_report_and_file_versions.py`.
 
+**A-85 (u08's clause; this unit's half, added 2026-10-16).** `load_scope` refuses an identity
+`canary` a reply can hold by chance (`policy.scope.weak_canary`): shorter than `MIN_CANARY_CHARS`
+(8), holding a space, holding no digit or no letter, or inside an identity's name or the target id
+in any case; one holding `{{run_id}}` passes. Refused where it is declared, so every reader of the
+scope exits 3 before anything is sent, naming the identity and the reason, never the canary
+(`tests/policy/test_scope_canary_shape.py`). The redactor gains one accessor,
+`key_format_patterns()` (the late patterns without the UUID), which `secret_shape` reads: the A-78
+sentence above that the evaluator "keeps its own rules" held until A-85.
+
 ## §8 Out of scope / forbidden
 - MUST NOT execute attacks, send requests, or import adapters/evaluators/core/store/reporting.
 - MUST NOT persist or print raw secrets/PII (redactor is the only path).
