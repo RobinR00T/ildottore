@@ -142,7 +142,8 @@ dottore calibrate report.json labels.yaml
 
 **Exit codes:** `0` clean · `1` findings below `--fail-on` · `2` findings at/above · `3` error
 (a usage error, such as an unknown option, is `3` too, and so is an internal error: one line,
-`error: unexpected <Class>: ...`, its traceback under `-v`; nothing but findings exits `1`).
+`error: unexpected <Class>: ...`, its traceback under `-v`, and an exit whose code is no exit
+status, `error: unexpected exit with status ...`; nothing but findings exits `1`).
 
 `3` also covers a run that **did not finish**, and it takes precedence over `2`. If a hard
 budget ceiling halts the campaign, the exit code is `3`, the reason is printed, and the report

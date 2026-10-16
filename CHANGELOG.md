@@ -7,6 +7,48 @@ the file, schema copy, build or pipeline it names.
 
 ## [Unreleased]
 
+### Fixed (breaking for a CI gate: an exit whose code is no exit status exits 3; what the CLI and the redactor write is masked as every other error and text is, u01/u12 A-83)
+
+- **An exit whose code is no exit status is an internal error, exit 3.** A command raising
+  `typer.Exit("<text>")` exited 0 with nothing said (1, with the text in clear, before A-82), a bool
+  code exited 0 and a number past 255 reached `sys.exit`, which POSIX cuts to its low 8 bits (256
+  is 0). Any code but `None` and an integer from 0 to 255 now prints `error: unexpected exit with
+  status <code> (an internal error, not a scan result; ...)` and exits 3, as a stray `SystemExit`
+  did. **Breaking for a CI gate:** such an exit was 0 (a clean scan) or 1 (findings below
+  `--fail-on`). No command of this tool raises one; it is the closure of A-9.
+- **The stray-exit line is masked.** `SystemExit("<text>")` in a command printed its text in clear
+  on that line since #114: a registered credential and a key now print as masks.
+- **A UUID in a CLI error is masked as a report masks it.** `tenant 3f2a9c1d-6819-4748-...` printed
+  `tenant 3f2a9c1d-«REDACTED:phone»«REDACTED:high_entropy:...»`, its first group in clear, and a
+  UUID no number rule reads was `«REDACTED:high_entropy:...»`; both are `«REDACTED:uuid:...»` now,
+  with what the reports mask around them. An existing path or a spec file name holding a UUID whose
+  groups are digits is kept whole, as one holding any other UUID was.
+- **A missing file under a directory holding a space keeps its directories.** With `TMPDIR` under
+  "AI projects", `cannot write evidence under /Users/.../AI «REDACTED:high_entropy:...»` (15 tests
+  of the suite failed on `7d01521f`): the existing part of such a path is kept where main's rule
+  stopped at a space or one of `'"()[],;` in a directory's name, the missing name is judged as text
+  as before (OD-25), and a path holding `//` or `/./` keeps nothing, as main's rule keeps nothing of
+  one.
+- **A text holding U+0000 or U+0001 is masked the same whatever else it holds.** The redactor kept
+  the reading with those two characters dropped whenever it masked anything, and the one with them
+  shown otherwise, so `x\x01credential: '<value>'` showed its value once a UUID elsewhere in the
+  text was masked (F2 of the A-78 audits). Both readings are made and what either masks is masked;
+  the characters show as `␀` and `␁` whether or not anything is masked (they were dropped whenever
+  something was). A CLI error is read both ways too. A text without them is masked exactly as
+  before.
+- **A credential written as an endpoint URL's user is masked by value.** `https://<token>@host` and
+  `https://<token>:@host` registered nothing, so a reply quoting the token kept it readable in the
+  evidence and every report; the user is registered when it is all the user info says, and every
+  part as written and percent-decoded.
+- **The A-82 "Fixed" heading below says whom it breaks**, as this file's rule asks.
+- Checked by `tests/cli/test_exit_status.py` (31 tests, 15 fail on `7d01521f`; typer 0.26.8 and
+  0.27.3), `tests/cli/test_uuid_in_cli_errors.py` (44, 35), `tests/cli/test_paths_with_spaces.py`
+  (32, 21), `tests/test_redactor_stash_delimiters_both_ways.py` (34, 13) and
+  `tests/cli/test_endpoint_user_credential.py` (9; 3 of its 4 end-to-end cases fail on `7d01521f`,
+  where the module does not import), and by differential fuzzes against `7d01521f` (contract u01
+  and u12 A-83). The judging rules keep version 1, re-pinned: the redactor decides what is stored
+  and printed, never a verdict.
+
 ### Documentation (the docs and contracts audit of 2026-10-12: re-measured figures, a CI example that gated on v0.1.0, the ledger in order)
 
 - **The CI example installed v0.1.0, and a wheel.** `examples/ci-github-actions.yml` installed

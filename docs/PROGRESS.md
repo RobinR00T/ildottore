@@ -5,6 +5,31 @@ The carryover ledger. Every agent session updates this so context survives even 
 newest merge on top: a branch's entries land together when it merges, so the dates of
 neighbouring entries can interleave (an older branch merged later sits above a newer one).
 
+## State, 2026-10-16: masking follow-ups of the train (`fix/masking-followups`, u01/u12 A-83)
+
+- From `main` at `7d01521f`, the items the pre-merge audits of the train queued for after it,
+  each reproduced there first. Decisions taken under the owner's delegation (best practice,
+  revisable) are recorded in the clause with the alternatives not taken; no open decision (OD-48
+  unused).
+- The CLI: an exit whose code is no exit status (a text, a bool, a number outside 0 to 255) exits
+  3 with the stray-exit line, which is masked now (`typer.Exit("<text>")` exited 0;
+  `SystemExit("<text>")` printed its text in clear); a UUID in an error is masked as a report masks
+  it (`redactor.UuidCuts`); a missing file under a directory holding a space keeps its existing
+  part (15 tests of the suite failed on `7d01521f` with `TMPDIR` under "AI projects"); an error
+  holding U+0000 or U+0001 is read both ways; an endpoint URL's user is registered when it is the
+  credential. The A-82 "Fixed" heading is labelled breaking.
+- The redactor: a text holding U+0000 or U+0001 is read with them dropped and with them shown, and
+  what either reading masks is masked (F2 of the A-78 audits, open since then); a text without
+  them reads as before (differential fuzz against `7d01521f`: no difference in 360,000 texts).
+- Found closed: the all-digit run id (A-61) and the exception class names (A-63).
+- Open, found by this branch and left: a hex run inside a token-level JWT match followed by a
+  letter outside ASCII is printed by the redactor (on `7d01521f` too); a registered credential is
+  masked whole, not by its parts, so a part of one inside a path a CLI error does not keep prints
+  (on `7d01521f` too); the CLI types a key the entropy pass masks whole as `high_entropy` where a
+  report names its format; a URL user beside a non-empty password (`<token>:x-oauth-basic@`) is
+  not registered; a user-only credential under 8 characters is neither registered nor refused.
+- Judging rules: version 1 re-pinned (masking only).
+
 ## State, 2026-10-12: the docs and contracts audit, fixed (`docs/audit-2026-10-12`)
 
 - From `main` at `de122e26`, one commit per finding group of the audit report

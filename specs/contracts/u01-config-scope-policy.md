@@ -1004,8 +1004,10 @@ shown otherwise (`redact_text`), so a secret one of them splits and that is glue
 mask of a type the tool writes with one inside it, is masked or not depending on the rest of the
 text, on main as here (an address anywhere in it flips it); masking more, A-78 flips it more often:
 every text the fuzzers above find where this change shows what main masks holds one of them, and
-none without. In a CLI error, a UUID the number rules read a number in is masked as main masked it
-(the number masked, the rest as the other rules leave it); one they read none in is masked whole. A
+none without (both readings are made since A-83, and what either masks is masked). In a CLI error,
+a UUID the number rules read a number in is masked as main masked it (the number masked, the rest
+as the other rules leave it); one they read none in is masked whole (since A-83 the CLI masks
+every UUID as the reports do, u12 A-83 item 4). A
 mask of one of the nine types that a target writes is kept outside a labelled value, where main read
 it as text: as a URL's user (`ws://«REDACTED:uuid»:<password>@h`) it stays whole and the password is
 masked, where main masked from its first `:` on; nothing it holds is a secret main masked but the
@@ -1044,6 +1046,66 @@ never the name (`shared.files.read_failure`; `--scope <5,000 digits>` printed `�
 twice, pre-merge audit LOW e). `env://NONE` is the identity that carries no credential: its variable
 is never read (`cli.wiring.resolve_auth_ref`). Checked
 by `tests/cli/test_credential_variables.py` and `tests/cli/test_report_and_file_versions.py`.
+
+**A-83 (added 2026-10-16; u12's half, the CLI, is u12 A-83) A text holding U+0000 or U+0001 is
+masked the same whatever else it holds, two passes of the redactor can share its UUID stand-ins,
+and an endpoint URL's user is registered when it is the credential.** The follow-ups the pre-merge
+audits of the train of `de122e26` queued (F2 of the A-78 audits; the CLI's UUID; a credential as a
+URL's user), each reproduced on `7d01521f`.
+
+*Both readings of the stash delimiters.* The redactor's stash tokens are `\x00<number>\x01`, so it
+never reads those two characters as text. `redact_text` dropped them and returned that reading
+whenever it masked anything, and read the text again with them made visible (`␀`, `␁`) only when
+it masked nothing. Dropped, they glue what they separate (`x\x01credential: <value>` loses its
+label, `bob@corp.io\x00_` its address); shown, they split what they join (`AKIA\x00IOSF...`, a key
+read as UTF-16 with Latin-1). So whether a value was masked depended on whether anything at all
+was masked in the text, however far away: `5f0eb9d2-2c10-0000-ac58-6fdf9029c33d
+cbrbtsw)idfknfiuys\x01credential: '10z61wev'` showed the value once the UUID was masked (F2,
+disclosed since A-78). Both readings are now made, each to its fixed point, the joined one placed
+back through the positions of the characters it keeps (`_Joined`, an array of the delimiters'
+places: a list of every kept index took about 30 bytes a character), and what either masks is
+masked in the text with the delimiters made visible (`read_both_ways`, `_spans_both_ways`, the code
+A-77's `_mask_spans` already used for a joined stream, now shared); the result is read once more,
+which only adds masks, unless the visible reading alone is the result, and is a fixed point. Two
+names that differ only by a delimiter stay two keys, and a delimiter shows in the output whether or
+not anything is masked (it was dropped whenever something was). A text without one is read
+exactly as before. `tests/test_redactor_stash_delimiters_both_ways.py` (34 tests, 13 fail on
+`7d01521f`): six secrets one reading hides, each with four unrelated masked values before it, the
+delimiters shown, a property over 300 texts of fixed points, and linear time (a ratio).
+
+*Shared stand-ins.* `UuidCuts(text)` chooses the block of stand-ins (A-78's `_Cuts`) from the text
+a first pass reads; two redactors given it share them: the first, built without the entropy rule,
+leaves them in its output; the second, with it, masks each UUID they are in whole with the pieces
+main masked around it and masks any stand-in left as the number main masked there. `late` takes the
+types of the late patterns to run as well as `True` and `False`. The CLI uses both (u12 A-83 item
+4); a redactor built without `uuid_cuts` is unchanged.
+
+*An endpoint URL's user.* `cli.wiring._endpoint_credentials` registers the password of a target
+file's endpoint, or the user when it is all the user info says, as written and percent-decoded
+(u12 A-83 item 7).
+
+*Measured.* The differential fuzz against `7d01521f`'s redactor (a `git show` copy, loaded beside
+this one; the A-78 auditors' grammar, `scratch/fixkeys-audit/fz/gen.py`; a regression being a run
+of 8 characters this output shows between two masks that no stretch main shows holds): 560,000
+texts with U+0000 and U+0001 among the glue, about 27% differ, every one holding a delimiter, and
+none shows a run main hides; 360,000 without a delimiter, none differs; the same without the
+entropy rule (120,000), with registered credentials (110,000) and through the identity mask
+(80,000): every difference holds a delimiter, none shows a run main hides; every output is a
+fixed point. (The auditors' own criterion, which counts a mask copied from the input as text,
+flags about 0.06% of the texts: in each, a mask this adds stands beside one the input held, where
+main showed the glue between them.) Time against main on the same inputs, best of five: prose,
+keys and labels, UUIDs cut by numbers, emails and phones, hostile runs and 24,000 short texts, all
+without a delimiter, 0.96 to 1.01 times; one U+0000 in 1 MB of prose 1.01, in 1 MB of keys 2.28 (two
+readings), a delimiter every 40 characters 3.21 (two readings and the last pass), and U+0000 after
+every character of 200 KB 30 times main's 0.003 s, which returned the joined reading at once: 0.10
+s, the cost of reading those 200 KB once more.
+
+*Not covered.* A hex run inside a token-level JWT match that a letter outside ASCII follows is
+left by the entropy rule to the JWT pattern, which fails on the text (`\b` between two letters):
+`eyJ` and 40 zeros, `.aaaaa.aaaaaé` print the zeros, on `7d01521f` too (found by this clause, not
+changed: it changes the redactor's output outside its items). A registered credential is masked
+whole, not by its parts: a part of one inside a path a CLI error does not keep prints, on
+`7d01521f` too.
 
 ## §8 Out of scope / forbidden
 - MUST NOT execute attacks, send requests, or import adapters/evaluators/core/store/reporting.

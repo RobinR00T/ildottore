@@ -282,8 +282,9 @@ battery tests, use `dottore coverage --framework atlas` (OWASP, ATLAS, IoPC and 
   unless `--include-needs-review` is given.
 - Terminal summary table by category + severity band + reproducibility.
 - Exit codes (`cli/exit_codes.py`): `0` clean, `1` findings below `--fail-on`, `2` findings
-  at/above `--fail-on`, `3` operational error, which includes a run that did not finish and a
-  command-line usage error (an unknown option exits 3, not 2). CI-friendly and scriptable.
+  at/above `--fail-on`, `3` operational error, which includes a run that did not finish, a
+  command-line usage error (an unknown option exits 3, not 2) and an exit whose code is no exit
+  status (a text, a bool, a number outside 0 to 255; A-83). CI-friendly and scriptable.
 - Everything is also machine-output (`-oJ`) so it pipes into other tooling: nmap philosophy.
 
 ## 5. Non-goals for the CLI
