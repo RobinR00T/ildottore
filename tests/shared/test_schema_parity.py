@@ -1,7 +1,7 @@
 """Schema-parity gate (contract §7).
 
 Asserts the Pydantic ``AttackSpec`` family stays 1:1 with the hand-authored
-``schemas/attack-spec.schema.json`` (the source of truth), and drives the
+``registry/schemas/attack-spec.schema.json`` (the source of truth), and drives the
 ``tests/fixtures/specs/{valid,invalid}/*.yaml`` corpus:
 
 * every ``valid/*.yaml`` parses into ``AttackSpec`` **and** its
@@ -50,9 +50,9 @@ from ildottore.shared.models import (
     Scoring,
     Setup,
 )
+from ildottore.shared.package_data import ATTACK_SPEC_SCHEMA
 
-REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-SCHEMA_PATH = REPO_ROOT / "schemas" / "attack-spec.schema.json"
+SCHEMA_PATH = ATTACK_SPEC_SCHEMA
 FIXTURES = Path(__file__).resolve().parent.parent / "fixtures" / "specs"
 VALID_DIR = FIXTURES / "valid"
 INVALID_DIR = FIXTURES / "invalid"

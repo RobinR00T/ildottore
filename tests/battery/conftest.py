@@ -16,18 +16,16 @@ deterministic (or capability-gated to ``inconclusive``).
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
 from ildottore.evaluators import build_default_registry
 from ildottore.registry import Registry, load_paths
 from ildottore.shared.models import AttackSpec, EvalContext, Verdict
+from ildottore.shared.package_data import BATTERY
 
-# Repo layout: tests/battery/conftest.py -> repo root is parents[2].
-REPO_ROOT = Path(__file__).resolve().parents[2]
-ATTACKS_DIR = REPO_ROOT / "specs" / "attacks"
-SUITES_DIR = REPO_ROOT / "specs" / "suites"
+# The built-in battery, inside the package since u12 A-84.
+ATTACKS_DIR = BATTERY / "attacks"
+SUITES_DIR = BATTERY / "suites"
 
 # The T0 "Quick" battery ids in docs/08 §3 order (row 15 DOS uppercased to satisfy the
 # schema id pattern ^[A-Z]+(-[A-Z0-9]+)+$). These are the 18 the suites must reference.
@@ -84,7 +82,7 @@ class PrimaryEvaluatorDispatcher:
 
 @pytest.fixture(scope="session")
 def load_result() -> object:
-    """Load the shipped ``specs/attacks`` tree once (no code exec, no network)."""
+    """Load the shipped ``battery/attacks`` tree once (no code exec, no network)."""
 
     return load_paths([ATTACKS_DIR])
 

@@ -58,7 +58,7 @@ from .conftest import (
 
 
 def test_all_specs_lint_clean() -> None:
-    """`dottore lint specs/attacks` exits 0: schema-valid, fixtures-prove, no unknowns."""
+    """`dottore lint <battery>/attacks` exits 0: schema-valid, fixtures-prove, no unknowns."""
 
     report = lint([ATTACKS_DIR])
     assert report.errors == [], "lint errors:\n" + "\n".join(

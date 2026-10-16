@@ -59,6 +59,7 @@ from ildottore.redactor import (
 )
 from ildottore.reporting import report_schema
 from ildottore.shared.judging_rules import JUDGING_RULES_VERSION
+from ildottore.shared.package_data import moved_note
 from ildottore.shared.schema_export import export_schemas
 from ildottore.store.replay import TamperError
 
@@ -536,9 +537,9 @@ def _root(
 
 
 def _spec_paths(spec: list[Path] | None) -> list[Path]:
-    """``--spec-path`` as given, else the default the reading commands share (u12 A-80).
+    """``--spec-path`` as given, else the default the reading commands share (u12 A-80, A-84).
 
-    A fallback to the battery beside the package is said on stderr: in a pack's own repository
+    A fallback to the built-in battery is said on stderr: in a pack's own repository
     (``pack.yaml`` at its root, no ``specs/``) a command read the built-in battery without a
     word (pre-merge audit of e6a1ab9b, MEDIUM 3). ``lint`` does not fall back at all.
     """
@@ -547,10 +548,15 @@ def _spec_paths(spec: list[Path] | None) -> list[Path]:
         return list(spec)
     paths = wiring.default_spec_paths()
     if paths == [wiring.PACKAGED_SPEC_PATH]:
+        here = (
+            "specs/ here holds no YAML file"
+            if Path("specs").is_dir()
+            else "there is no specs/ directory here"
+        )
         _echo_err(
-            "note: there is no specs/ directory here, so this reads the battery beside the "
-            f"installed package: {visible_controls(str(wiring.PACKAGED_SPEC_PATH))} (pass "
-            "--spec-path to read another)"
+            f"note: {here}, so this reads the built-in battery inside the installed package: "
+            f"{visible_controls(str(wiring.PACKAGED_SPEC_PATH))} (pass --spec-path to read "
+            "another)"
         )
     return paths
 
@@ -741,6 +747,10 @@ def _os_error_text(exc: BaseException) -> str:
         return (
             f"[Errno {exc.errno}] {exc.strerror}: a name of {len(str(exc.filename)):,} characters"
         )
+    if isinstance(exc, FileNotFoundError) and isinstance(exc.filename, str):
+        # A file the repository moved (u12 A-84: `-t specs/targets/example-openai.yaml`) is
+        # named where it is now.
+        return f"{exc}{moved_note(exc.filename)}"
     return str(exc)
 
 
@@ -902,7 +912,9 @@ def run(
         str | None,
         typer.Option(
             "--suite",
-            help="Suite id (the files in specs/suites/) or alias: owasp:llm, baseline, agentic.",
+            help=(
+                "Suite id (a file in a spec path's suites/) or alias: owasp:llm, baseline, agentic."
+            ),
         ),
     ] = None,
     categories: Annotated[
@@ -1018,7 +1030,10 @@ def run(
         list[Path] | None,
         typer.Option(
             "--spec-path",
-            help="Spec search path (default specs/ here, else the battery beside the package).",
+            help=(
+                "Spec search path (default specs/ here if it holds YAML, else the built-in "
+                "battery)."
+            ),
         ),
     ] = None,
     no_color: Annotated[bool, typer.Option("--no-color", help="Disable colour output.")] = False,
@@ -1194,7 +1209,10 @@ def fleet(
         list[Path] | None,
         typer.Option(
             "--spec-path",
-            help="Spec search path (default specs/ here, else the battery beside the package).",
+            help=(
+                "Spec search path (default specs/ here if it holds YAML, else the built-in "
+                "battery)."
+            ),
         ),
     ] = None,
     no_color: Annotated[bool, typer.Option("--no-color", help="Disable colour output.")] = False,
@@ -1417,8 +1435,8 @@ def lint(
     if not paths and not Path("specs").is_dir():
         typer.echo(
             "error: spec path not found: specs. Pass the spec path to lint (dottore lint <dir>); "
-            "with none, lint reads specs/ in the working directory and never the battery beside "
-            "the installed package.",
+            "with none, lint reads specs/ in the working directory and never the built-in battery "
+            "inside the installed package.",
             err=True,
         )
         raise typer.Exit(ExitCode.ERROR)

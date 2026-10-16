@@ -301,7 +301,7 @@ def test_every_shipped_scope_and_fleet_still_loads() -> None:
     from ildottore.cli.fleet import load_fleet
     from ildottore.policy import load_scope
 
-    for path in [*_REPO.glob("examples/scope*.yaml"), _REPO / "specs" / "scope.example.yaml"]:
+    for path in [*_REPO.glob("examples/scope*.yaml"), _REPO / "examples" / "scope.example.yaml"]:
         load_scope(path)
-    for path in (_REPO / "examples" / "fleet.yaml", _REPO / "specs" / "fleet.example.yaml"):
+    for path in (_REPO / "examples" / "fleet.yaml", _REPO / "examples" / "fleet.example.yaml"):
         load_fleet(path)

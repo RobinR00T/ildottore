@@ -42,8 +42,7 @@ from typer.testing import CliRunner
 from ildottore import redactor as redactor_mod
 from ildottore.cli.app import _masked, app
 from ildottore.redactor import Redactor, visible_controls
-
-REPO = Path(__file__).resolve().parents[1]
+from ildottore.shared.package_data import BATTERY
 
 #: Any `##<letters>[` written raw. Both parsers need one: GitHub's finds `##[` (ordinal, or with
 #: ICU ignoring a zero-width character inside it, which then reads the name from `[`), Azure's
@@ -148,7 +147,7 @@ _FILE_NAMES = [
 
 
 def _good() -> str:
-    return (REPO / "specs" / "attacks" / "PI-DIRECT-001.yaml").read_text()
+    return (BATTERY / "attacks" / "PI-DIRECT-001.yaml").read_text()
 
 
 def _pack(root: Path, files: dict[str, str]) -> Path:

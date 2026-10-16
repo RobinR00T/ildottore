@@ -29,6 +29,7 @@ from typer.testing import CliRunner
 from ildottore import redactor as redactor_mod
 from ildottore.cli.app import _masked, app
 from ildottore.redactor import register_known_secret
+from ildottore.shared.package_data import BATTERY
 
 REPO = Path(__file__).resolve().parents[1]
 
@@ -162,7 +163,7 @@ def _pack(root: Path, broken_name: str = INJECTED) -> Path:
     pack = root / "pack"
     (pack / "attacks").mkdir(parents=True)
     (pack / "pack.yaml").write_text("id: pack\npack_version: '1.0'\nname: pack\n")
-    good = (REPO / "specs" / "attacks" / "PI-DIRECT-001.yaml").read_text()
+    good = (BATTERY / "attacks" / "PI-DIRECT-001.yaml").read_text()
     (pack / "attacks" / "PI-DIRECT-001.yaml").write_text(good)
     (pack / "attacks" / broken_name).write_text(
         good.replace("id: PI-DIRECT-001", "id: PI-TYPO-001").replace(
@@ -235,7 +236,7 @@ def _named_spec_pack(root: Path, name: str) -> Path:
     pack = root / "named"
     (pack / "attacks").mkdir(parents=True)
     (pack / "pack.yaml").write_text("id: named\npack_version: '1.0'\nname: named\n")
-    good = (REPO / "specs" / "attacks" / "PI-DIRECT-001.yaml").read_text()
+    good = (BATTERY / "attacks" / "PI-DIRECT-001.yaml").read_text()
     head, _, rest = good.partition("\nname:")
     _, _, rest = rest.partition("\n")
     (pack / "attacks" / "PI-DIRECT-001.yaml").write_text(
@@ -611,7 +612,7 @@ def _schema_error_pack(root: Path) -> Path:
     pack = root / "keyed"
     (pack / "attacks").mkdir(parents=True)
     (pack / "pack.yaml").write_text("id: keyed\npack_version: '1.0'\nname: keyed\n")
-    good = (REPO / "specs" / "attacks" / "PI-DIRECT-001.yaml").read_text()
+    good = (BATTERY / "attacks" / "PI-DIRECT-001.yaml").read_text()
     key = json.dumps("k\n::error title=pwned::from-key")
     (pack / "attacks" / "PI-BAD-001.yaml").write_text(
         good.replace("id: PI-DIRECT-001", "id: PI-BAD-001").replace(
@@ -865,7 +866,7 @@ def test_the_dry_run_writes_a_canary_to_seed_out(tmp_path: Path) -> None:
     canary, the pack author's text: written out like the other lines that quote a pack (merge of
     this PR with main)."""
 
-    bola = (REPO / "specs" / "attacks" / "AC-BOLA-001.yaml").read_text()
+    bola = (BATTERY / "attacks" / "AC-BOLA-001.yaml").read_text()
     planted = 'canaries: ["ZYNAP_CANARY_{{run_id}}"]'
     assert bola.count(planted) == 1
     specs = tmp_path / "specs"

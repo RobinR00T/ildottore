@@ -19,6 +19,8 @@ import stat
 from pathlib import Path
 from typing import Final
 
+from ildottore.shared.package_data import moved_note
+
 __all__ = ["MAX_FILE_BYTES", "read_failure", "read_text_capped"]
 
 #: The most of an operator's file that is read: 1 MiB, the spec loader's ``MAX_YAML_BYTES``. The
@@ -38,7 +40,9 @@ def read_failure(what: str, path: str | Path, exc: OSError) -> str:
 
     if exc.errno == errno.ENAMETOOLONG:
         return f"cannot read {what}, a name of {len(str(path)):,} characters: {exc.strerror}"
-    return f"cannot read {what} {path}: {exc}"
+    # A file the repository moved (u12 A-84: `specs/scope.example.yaml`) is named where it is now.
+    moved = moved_note(path) if exc.errno == errno.ENOENT else ""
+    return f"cannot read {what} {path}: {exc}{moved}"
 
 
 def read_text_capped(path: str | Path, *, cap: int = MAX_FILE_BYTES) -> str:

@@ -9,7 +9,6 @@ These tests pin what is built, so a sidecar seam cannot appear without the decis
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 import pytest
 import yaml
@@ -17,9 +16,9 @@ from pydantic import ValidationError
 
 from ildottore.shared.digest import spec_digest
 from ildottore.shared.models import AttackSpec, Fixtures
+from ildottore.shared.package_data import ATTACK_SPEC_SCHEMA, BATTERY
 
-_ROOT = Path(__file__).resolve().parents[2]
-_SCHEMA = json.loads((_ROOT / "schemas" / "attack-spec.schema.json").read_text(encoding="utf-8"))
+_SCHEMA = json.loads(ATTACK_SPEC_SCHEMA.read_text(encoding="utf-8"))
 
 _CASES = {
     "vulnerable": {"response": "the canary is X", "expect_verdict": "fail"},
@@ -43,7 +42,7 @@ def test_a_fixture_path_is_refused_by_the_model(key: str) -> None:
 def test_the_fixtures_are_inside_the_spec_digest() -> None:
     """Change only a fixture and the spec's digest changes: the proof travels with the spec."""
 
-    base = yaml.safe_load((_ROOT / "specs" / "attacks" / "PI-DIRECT-001.yaml").read_text("utf-8"))
+    base = yaml.safe_load((BATTERY / "attacks" / "PI-DIRECT-001.yaml").read_text("utf-8"))
     edited = json.loads(json.dumps(base))
     edited["fixtures"]["hardened"]["response"] = "a different refusal"
     assert spec_digest(AttackSpec.model_validate(base)) != spec_digest(

@@ -136,6 +136,7 @@ from ildottore.shared.models import (
     Target,
     WebSocketSpec,
 )
+from ildottore.shared.package_data import BATTERY
 from ildottore.shared.protocols import Reporter, TargetAdapter
 from ildottore.store import FsEvidenceStore, SqliteRunStore
 
@@ -244,23 +245,50 @@ def build_registry(spec_paths: list[Path]) -> Registry:
     return load_registry(spec_paths)[0]
 
 
-#: The battery of a source checkout or an editable install, ``<repo>/specs``, found from the
-#: package itself (``<repo>/src/ildottore/cli/wiring.py``), as ``registry.schema`` finds
-#: ``<repo>/schemas``. A wheel built from this repository ships neither.
-PACKAGED_SPEC_PATH = Path(__file__).resolve().parents[3] / "specs"
+#: The built-in battery, inside the package (``ildottore/battery``), where a source checkout, an
+#: editable install and an installed wheel all have it (u12 A-84). It was ``<repo>/specs``, found
+#: three directories above this file, which a wheel does not have.
+PACKAGED_SPEC_PATH = BATTERY
+
+#: How many entries below ``specs/`` :func:`holds_yaml` looks at before it takes the directory for
+#: a spec path, as it was before A-84: a large tree is read and judged by the loader, not walked.
+_MAX_SPECS_SCAN = 1000
+
+
+def holds_yaml(directory: Path) -> bool:
+    """Whether ``directory`` holds a ``*.yaml`` or ``*.yml`` file, in it or below it (u12 A-84).
+
+    ``os.walk`` without following links, at most :data:`_MAX_SPECS_SCAN` entries. It answers yes
+    past them, and when a directory of the tree cannot be listed: such a tree is read as a spec
+    path, as before, and the loader says what it cannot read, rather than the built-in battery
+    being scanned in place of specs the operator cannot see are unreadable.
+    """
+
+    unlisted: list[OSError] = []
+    seen = 0
+    for _current, subdirs, names in os.walk(directory, onerror=unlisted.append, followlinks=False):
+        subdirs.sort()
+        if any(name.endswith((".yaml", ".yml")) for name in names):
+            return True
+        seen += len(subdirs) + len(names)
+        if seen >= _MAX_SPECS_SCAN:
+            return True
+    return bool(unlisted)
 
 
 def default_spec_paths() -> list[Path]:
-    """Where every command reads specs when it is given no spec path (u12 A-80).
+    """Where every command reads specs when it is given no spec path (u12 A-80, A-84).
 
-    ``specs/`` in the working directory when it is a directory (the repository root, or a
-    project that keeps its own pack there, as before), else the battery beside the installed
-    package, else ``specs/`` (whose absence the commands report). ``fleet --run`` had no
-    ``--spec-path`` and read ``specs/`` only, so it worked from the repository root only.
+    ``specs/`` in the working directory when it is a directory that holds a YAML file (a project
+    that keeps its own pack or specs there, as before), else the built-in battery inside the
+    installed package, else ``specs/`` (whose absence the commands report). A ``specs/`` with no
+    YAML file in it cannot be a spec path: the repository's own holds the unit contracts since the
+    battery moved into the package, and a project's may hold anything else. ``fleet --run`` had
+    no ``--spec-path`` and read ``specs/`` only, so it worked from the repository root only.
     """
 
     local = Path("specs")
-    if local.is_dir():
+    if local.is_dir() and holds_yaml(local):
         return [local]
     if PACKAGED_SPEC_PATH.is_dir():
         return [PACKAGED_SPEC_PATH]
@@ -356,8 +384,8 @@ def refuse_spec_paths_that_hold_nothing(
         names = ", ".join(e.message.removeprefix(PATH_NOT_FOUND_TEXT) for e in found)
         raise ValueError(
             f"spec path not found: {names}. Pass {flag}; without it {reader} reads specs/ in the "
-            "working directory, else the battery beside the installed package when that is a "
-            "source checkout."
+            "working directory when it holds a YAML file, else the built-in battery inside the "
+            "installed package, which this installation lacks."
         )
     raise ValueError(f"a spec path gives nothing to {to}: {'; '.join(e.message for e in found)}")
 
@@ -790,7 +818,7 @@ def resolve_auth_ref(auth_ref: str | None) -> str | None:
     """Resolve a target's ``auth_ref`` **reference** to its secret value (S6).
 
     Only the ``env://NAME`` scheme is supported in MVP-1 (matches every
-    ``auth_ref`` in ``specs/targets/``); the environment is read here, at send-time
+    ``auth_ref`` in ``examples/target.*.yaml``); the environment is read here, at send-time
     construction - never earlier, and the resolved value is never logged (the
     caller passes it straight into the adapter's ``api_key``, which itself never
     appears in evidence: the redactor masks ``raw_ids``, and the value never enters
@@ -900,7 +928,7 @@ def build_real_adapter(
     template-driven :class:`WebSocketAdapter` (its wire shape is the target file's
     ``websocket:`` block), anything else → the
     generic :class:`RestAdapter` (the long-tail escape hatch, ADR-0002). ``target.endpoint``
-    is the **full** request URL (``specs/targets/example-openai.yaml``); its origin
+    is the **full** request URL (``examples/target.example-openai.yaml``); its origin
     becomes the adapter's ``base_url`` and its path is either the adapter's own
     fixed ``_endpoint_path`` (openai/anthropic) or the ``RestTemplate.path`` (rest) -
     either way ``adapter._full_url()`` reconstructs the declared endpoint exactly, so
@@ -1765,7 +1793,7 @@ def load_target(path: Path) -> Target:
 
     The file declares ``id``/``type`` and an optional ``capabilities`` map, plus the
     optional **live-target** fields ``provider``/``endpoint``/``model``/``auth_ref``/
-    ``sampling_defaults`` (``specs/targets/example-openai.yaml``) that
+    ``sampling_defaults`` (``examples/target.example-openai.yaml``) that
     :func:`real_adapter_factory` routes on. ``auth_ref`` is carried as the bare
     reference string (e.g. ``env://NAME``) - the secret itself is **never** read
     here (S6); it is resolved only at send time via :func:`resolve_auth_ref`.

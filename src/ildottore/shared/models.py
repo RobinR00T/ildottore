@@ -521,7 +521,7 @@ class Target(_Frozen):
 
     ``provider``/``endpoint``/``model``/``auth_ref``/``sampling_defaults`` are the
     optional **live-target** fields a real ``target.yaml`` declares (``docs/09``,
-    ``specs/targets/example-openai.yaml``) so the u12 composition root can route a
+    ``examples/target.example-openai.yaml``) so the u12 composition root can route a
     non-mock target to the correct over-the-wire adapter (u04) without a second
     parse of the file. ``auth_ref`` is a reference (e.g. ``env://NAME``), never an
     inline secret (S6); it is resolved to a value only at send time, in ``cli``.

@@ -33,11 +33,11 @@ from ildottore.shared.models import (
     ModelResponse,
     Verdict,
 )
+from ildottore.shared.package_data import BATTERY
 
 from ..cli.conftest import write_scope
-from .conftest import REPO_ROOT
 
-_SPECS = REPO_ROOT / "specs"
+_SPECS = BATTERY
 
 
 def _text_oracle(spec: AttackSpec, text: str) -> Verdict:

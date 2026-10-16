@@ -10,7 +10,6 @@ not declare, and an allowlist taken from the setup leaves the `external` tools o
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 import pytest
@@ -26,8 +25,9 @@ from ildottore.shared.models import (
     ModelRequest,
     ModelResponse,
 )
+from ildottore.shared.package_data import BATTERY
 
-_SPEC = Path(__file__).resolve().parents[2] / "specs" / "attacks" / "AG-EXTORT-CHAIN-001.yaml"
+_SPEC = BATTERY / "attacks" / "AG-EXTORT-CHAIN-001.yaml"
 
 
 def _spec() -> AttackSpec:

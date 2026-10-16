@@ -21,8 +21,8 @@ import pytest
 from typer.testing import CliRunner
 
 from ildottore.cli.main import app
+from ildottore.shared.package_data import BATTERY
 
-REPO = Path(__file__).resolve().parents[2]
 SHORT = "tok4567"
 LONG = "tok-45678-long"
 MESSAGE = (
@@ -102,7 +102,7 @@ def _workspace(
         + (capabilities if len(target_keys) > 1 else "")
         + target_extra
     )
-    args = ["-t", str(target), "--scope", str(scope), "--spec-path", str(REPO / "specs")]
+    args = ["-t", str(target), "--scope", str(scope), "--spec-path", str(BATTERY)]
     if judge_key is not None:
         judge = tmp_path / "judge.yaml"
         judge.write_text(
@@ -190,7 +190,7 @@ def test_an_offline_mock_is_sent_no_key_so_its_length_is_not_checked(
         'id: mock-target\ntype: chatbot\nmock_scenario: hardened\nauth_ref: "env://SHORT"\n'
     )
     store = ["--evidence-root", str(tmp_path / "ev"), "--run-db", str(tmp_path / "runs.sqlite")]
-    args = ["run", "-t", str(target), "--scope", str(scope), "--spec-path", str(REPO / "specs")]
+    args = ["run", "-t", str(target), "--scope", str(scope), "--spec-path", str(BATTERY)]
     result = CliRunner().invoke(
         app, [*args, *store, "--spec", "PI-DIRECT-001", "--runs", "1", *extra]
     )

@@ -23,10 +23,10 @@ from ildottore.policy.packs import PolicyEngine, PolicyPack
 from ildottore.policy.scope import Endpoint, Identity, Scope, ScopeTarget
 from ildottore.shared.enums import FLAGGED_FAMILIES, Category
 from ildottore.shared.models import AttackSpec
+from ildottore.shared.package_data import BATTERY
 
 from .conftest import make_spec
 
-REPO = Path(__file__).resolve().parents[2]
 ENDPOINT = "https://api.acme.test/v1/chat"
 
 
@@ -49,7 +49,7 @@ def _engine(pack: PolicyPack, safety: SafetyFlags | None = None) -> PolicyEngine
 
 
 def _shipped(spec_id: str) -> AttackSpec:
-    return wiring.build_registry([REPO / "specs"]).get(spec_id)
+    return wiring.build_registry([BATTERY]).get(spec_id)
 
 
 def test_the_shipped_pii_spec_needs_both_dl4_keys_even_with_its_capability_enabled() -> None:
@@ -128,7 +128,7 @@ def test_a_diagnostic_family_does_not_need_the_mark(family: Category) -> None:
 def test_the_gate_refuses_no_spec_the_battery_ships() -> None:
     """The new refusal must bite third-party copies only: every shipped flagged spec is marked."""
 
-    registry = wiring.build_registry([REPO / "specs"])
+    registry = wiring.build_registry([BATTERY])
     unmarked = [s.id for s in registry.list() if s.category in FLAGGED_FAMILIES and not s.test_only]
     assert unmarked == []
 
@@ -149,7 +149,7 @@ def test_run_refuses_a_copy_of_a_shipped_spec_with_the_mark_deleted(tmp_path: Pa
     pack = tmp_path / "thirdparty"
     (pack / "attacks").mkdir(parents=True)
     (pack / "pack.yaml").write_text("id: thirdparty\npack_version: '1.0'\nname: thirdparty\n")
-    source = (REPO / "specs" / "attacks" / "DOS-TOKEN-AMP-001.yaml").read_text()
+    source = (BATTERY / "attacks" / "DOS-TOKEN-AMP-001.yaml").read_text()
     copy = re.sub(r"(?m)^test_only:.*\n", "", source).replace(
         "id: DOS-TOKEN-AMP-001", "id: TP-UNMARKED-001", 1
     )

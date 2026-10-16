@@ -694,7 +694,7 @@ def _assert_same_specs(
     if changed:
         advice.append(
             "Point --spec-path at the specs the run was made with (a copy of them, or the "
-            "specs/ of the version that started it)"
+            "built-in battery of the version that started it)"
         )
     raise ValueError(
         f"the battery changed since run {run_id!r} halted: {'; '.join(parts)}. Resuming "

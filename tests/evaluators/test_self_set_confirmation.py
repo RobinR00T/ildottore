@@ -16,7 +16,6 @@ declares both, and its two deterministic evaluators disagreed on the same trace,
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from typing import Any
 
 import pytest
@@ -41,9 +40,10 @@ from ildottore.shared.models import (
     ModelResponse,
     Verdict,
 )
+from ildottore.shared.package_data import BATTERY
 from tests.evaluators.conftest import make_ctx, make_spec
 
-_ATTACKS = Path(__file__).resolve().parents[2] / "specs" / "attacks"
+_ATTACKS = BATTERY / "attacks"
 
 #: Every argument key the evaluator used to read as a confirmation.
 _KEYS = ("confirm", "confirmed", "confirmation", "force", "approved", "ack")

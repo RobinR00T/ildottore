@@ -23,6 +23,7 @@ from ildottore.cli.wiring import build_fingerprint_engine
 from ildottore.core.planner import build_plan
 from ildottore.fingerprint.layers.carrier import CARRIER_MARKER, CARRIER_PROBE_DETAIL
 from ildottore.shared.models import Capabilities, ModelRequest
+from ildottore.shared.package_data import BATTERY
 
 from ..cli.conftest import make_spec
 
@@ -145,7 +146,7 @@ def test_it_changes_no_verdict_that_the_plain_mock_would_not_also_produce(tmp_pa
             evidence_root=home / "ev",
             run_db=home / "runs.sqlite",
         )
-        outcome = execute_run(opts, [Path("specs")])
+        outcome = execute_run(opts, [BATTERY])
         return {f.spec_id: f.status.value for f in outcome.findings}
 
     decoding = verdicts("comprehending")

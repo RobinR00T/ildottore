@@ -28,12 +28,12 @@ import pytest
 from typer.testing import CliRunner
 
 from ildottore.cli.app import app
+from ildottore.shared.package_data import BATTERY
 
 from .conftest import write_scope, write_target
 
 runner = CliRunner()
-_REPO = Path(__file__).resolve().parents[2]
-_SPEC = (_REPO / "specs" / "attacks" / "PI-DIRECT-001.yaml").read_text(encoding="utf-8")
+_SPEC = (BATTERY / "attacks" / "PI-DIRECT-001.yaml").read_text(encoding="utf-8")
 
 
 def _lint(*args: str) -> Any:
@@ -119,7 +119,7 @@ def test_a_loose_tree_names_the_files_it_does_not_read(tmp_path: Path) -> None:
 
 
 def test_the_shipped_pack_and_a_file_named_directly_are_unchanged(tmp_path: Path) -> None:
-    result = _lint(str(_REPO / "specs"))
+    result = _lint(str(BATTERY))
     assert result.exit_code == 0, result.output
     assert "NO_SPECS" not in result.output and "FILES_NOT_READ" not in result.output
     single = _tree(tmp_path, {"PI-DIRECT-001.yaml": _SPEC}) / "PI-DIRECT-001.yaml"
@@ -150,7 +150,7 @@ def test_run_refuses_a_spec_path_that_holds_nothing(tmp_path: Path) -> None:
         (tmp_path / "nope", f"path not found: {tmp_path / 'nope'}"),
         (tmp_path / "empty", f"spec path {tmp_path / 'empty'} holds no attack spec or suite"),
     ):
-        result = _run(tmp_path, _REPO / "specs", path)
+        result = _run(tmp_path, BATTERY, path)
         assert result.exit_code == 3, result.output
         assert "error: a spec path gives nothing to run" in result.output
         assert said in result.output.replace("\n", "")
@@ -180,16 +180,14 @@ def test_the_inspection_commands_refuse_a_path_that_holds_nothing(
 
 
 def test_registry_ls_refuses_a_suite_that_is_not_registered() -> None:
-    result = runner.invoke(
-        app, ["registry", "ls", "--suite", "nope", "--spec-path", str(_REPO / "specs")]
-    )
+    result = runner.invoke(app, ["registry", "ls", "--suite", "nope", "--spec-path", str(BATTERY)])
     assert result.exit_code == 3, result.output
     assert "error: suite 'nope' is not registered. Registered suites: " in result.output
     assert "owasp-llm-top10" in result.output
 
 
 def test_registry_ls_and_coverage_of_the_shipped_pack_are_unchanged() -> None:
-    specs = str(_REPO / "specs")
+    specs = str(BATTERY)
     assert runner.invoke(app, ["registry", "ls", "--spec-path", specs]).exit_code == 0
     assert (
         runner.invoke(app, ["registry", "ls", "--suite", "quick", "--spec-path", specs]).exit_code
@@ -210,7 +208,7 @@ def test_registry_ls_and_coverage_of_the_shipped_pack_are_unchanged() -> None:
 def test_a_default_spec_path_that_is_not_there_says_how_to_pass_one(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, args: list[str], how: str, who: str
 ) -> None:
-    """No spec path given, no `specs/` here and no battery beside the package: the refusal is the
+    """No spec path given, no `specs/` here and no built-in battery: the refusal is the
     one `run` gives (u12 A-80's wording, one mechanism since the merge of A-80 and A-82), with
     each command's own way to pass a path; one given that does not exist keeps A-82's."""
 
@@ -222,8 +220,8 @@ def test_a_default_spec_path_that_is_not_there_says_how_to_pass_one(
     assert result.exit_code == 3, result.output
     assert (
         f"error: spec path not found: specs. Pass {how}; without it {who} reads specs/ in the "
-        "working directory, else the battery beside the installed package when that is a source "
-        "checkout."
+        "working directory when it holds a YAML file, else the built-in battery inside the "
+        "installed package, which this installation lacks."
     ) in result.output
     given = ["coverage", "nope"] if args == ["coverage"] else [*args, "--spec-path", "nope"]
     result = runner.invoke(app, given)

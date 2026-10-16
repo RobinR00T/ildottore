@@ -29,8 +29,7 @@ from typer.testing import CliRunner
 
 from ildottore.cli.app import app
 from ildottore.redactor import log_safe_json
-
-REPO = Path(__file__).resolve().parents[1]
+from ildottore.shared.package_data import BATTERY
 
 #: Any ``##<letters>[`` written raw: what either runner needs to read a command.
 _RAW_PREFIX = re.compile(r"##[A-Za-z]*\[")
@@ -102,7 +101,7 @@ _TARGET_ID = "t ##vso[task.setvariable variable=GATE]pass"
 
 
 def _good() -> str:
-    return (REPO / "specs" / "attacks" / "PI-DIRECT-001.yaml").read_text()
+    return (BATTERY / "attacks" / "PI-DIRECT-001.yaml").read_text()
 
 
 def _broken_pack(root: Path) -> Path:
