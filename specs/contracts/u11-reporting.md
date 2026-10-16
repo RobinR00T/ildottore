@@ -336,8 +336,9 @@ validates, and the pre-merge audit's 184. `reporting.report_schema()` returns it
 finding's reproducibility, band and verdicts, so a cross-tenant finding whose crossing only the
 identity sweep showed is Low, SARIF `note`, JUnit failure `type="low"`, where it was Critical,
 `error`, `type="critical"`, and an attempt's verdict holds `identity_sweep` (the report schema keeps
-a verdict's fields open). A crossing of a canary the request carries is `inconclusive`: SARIF level
-`none`, JUnit `skipped`.
+a verdict's fields open). A crossing of a canary the request carries is a fail that needs review
+(`echo_only`): every report states it `needs_review` from `confirmed`, SARIF keeps a needs-review
+fail at most `warning` without `--include-needs-review`, and JUnit lists it as a failure.
 
 ## §8 Out of scope / forbidden
 - MUST NOT compute risk scores, bands, or confirmed/needs-review state (that is u07): only read.

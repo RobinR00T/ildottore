@@ -303,8 +303,9 @@ aggregate verdict; no per-evaluator verdict and nothing of the judge's exchange 
 - `ruff check`, `mypy src/ildottore/evaluators` clean; `lint-imports` green.
 
 **A-85 (u08's clause; this unit's half, added 2026-10-16).** `authz_leak` reads the request the
-identity sweep sent (`EvalContext.identity_request`): a crossing of a canary it carries is
-needs-review (`inconclusive`, no reason), never a confirmed leak and never a pass, and one crossing
+identity sweep sent (`EvalContext.identity_request`): a crossing of a canary it carries is a fail
+that needs review (`echo_only`), never confirmed and never a pass, as u08 A-79's judge-only fail on
+cut text, and one crossing
 canary the request does not carry still confirms the leak; only text the scanner wrote is the
 request (an `assistant` or `tool` message is not). `secret_shape` builds its rules from
 `redactor.key_format_patterns()`, the documented key formats and the JWT the redactor masks, with no

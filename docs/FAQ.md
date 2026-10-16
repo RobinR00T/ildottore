@@ -218,7 +218,8 @@ run was made with, or the route (`--hardened`).
 Risk and confidence are separate. Every report puts a finding in one of four states:
 **confirmed** (a decisive exploit at or above the confidence threshold, with at least one fail a
 deterministic evaluator decided), **needs review** (an unconfirmed exploit, a fail only the judge
-reported among them, or a spec that was sent and could not be decided), **not exploited** (it
+reported or a cross-tenant fail resting only on a canary the request itself carries among them,
+since u08 A-85, or a spec that was sent and could not be decided), **not exploited** (it
 passed) and **not tested** (nothing was sent: a capability skip, a policy block). The CI gate
 (`--fail-on`) counts confirmed exploits only. `--include-needs-review` adds the unconfirmed
 exploits, never the undecided results: a format-valid secret/PII hit without corroboration is

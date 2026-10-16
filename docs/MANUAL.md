@@ -1779,13 +1779,15 @@ dottore diff BASELINE CURRENT
 Both are JSON run reports (`-oJ` output) **of the same target**. Classifies each spec id as
 NEW-FAIL (regression), FIXED (was failing, now passes), UNVERIFIED (was failing, now
 inconclusive or never sent: not shown fixed), STILL-FAIL or UNCHANGED and exits `2` when any
-regression is present, so it is CI-gateable like `run`. A FIXED the operator's declaration may
-have made (OD-43, §8: the current report has attempts of that spec the declaration changed, or
-the two reports declare different tools not destructive) reads `FIXED (operator declaration,
-OD-43)`, with a line naming those specs: the pass may be the operator's word, not the target's. A
-report covering several targets, or two reports about different targets, is refused (exit 3):
-indexing by spec id used to merge targets, so a PASS on one could replace a FAIL on another. A
-report of a run that did not complete is refused too, and so is one that cannot be read (not UTF-8,
+regression is present, so it is CI-gateable like `run`. It reads the status, so a fail that needs
+review counts as a fail: a crossing of a canary the request carries (u08 A-85) is STILL-FAIL against
+a report where it was a confirmed one, and NEW-FAIL against one where it passed. A FIXED the
+operator's declaration may have made (OD-43, §8: the current report has attempts of that spec the
+declaration changed, or the two reports declare different tools not destructive) reads `FIXED
+(operator declaration, OD-43)`, with a line naming those specs: the pass may be the operator's
+word, not the target's. A report covering several targets, or two reports about different
+targets, is refused (exit 3): indexing by spec id used to merge targets, so a PASS on one could
+replace a FAIL on another. A report of a run that did not complete is refused too, and so is one that cannot be read (not UTF-8,
 not JSON, or nested past what the JSON parser holds), with the file named. A report is read when its
 `schema_version` is `1.0`, `1` or `1.<minor>` (report-1.0 grows additively, §10); one without
 `schema_version`, one of another major version (`2.0`), a SARIF log
@@ -2268,10 +2270,15 @@ Risk and confidence are **separate axes**:
   without corroboration is never a confirmed leak: its verdict is `inconclusive` by design
   (`docs/11 §4`). Nor is a crossing of a canary the identity sweep's request carries (u08 A-85):
   a spec that names tenant B's record by B's canary gets it back in tenant A's refusal, and a
-  real leak of that record holds it too, so the verdict is `inconclusive` and quotes why
-  (`authz_leak: 1 tenant-scoped canary(ies) surfaced in a non-owner identity, and the request
-  every identity was sent carries each of them ...`), never a pass. A crossing canary the request
-  does not carry still confirms the leak.
+  real leak of that record holds it too, so it is a fail that needs review, as a fail the judge
+  alone reported is: never confirmed, never a pass, gated only with `--include-needs-review`,
+  at its band (one sweep's crossing reads Low, so 1 under `--fail-on high` and 2 under
+  `--fail-on low`). The verdict says why (`authz_leak: 1 tenant-scoped canary(ies) surfaced in a
+  non-owner identity, and the request every identity was sent carries each of them ...`, and
+  `echo_only: true`), the finding's line counts it (`resting on a canary the request carries,
+  which never confirms a finding on its own`), and `dottore replay` lists the attempt as
+  `fail (needs review: a canary the request carries)`. A crossing canary the request does not
+  carry still confirms the leak.
 
 Every report puts each finding in one of four **states** (the HTML report's sections, the
 `state` property of a SARIF result, the summary's `confirmed_count` and `needs_review_count`):
@@ -2776,6 +2783,6 @@ not checked. See [`06-extensibility-suites.md`](06-extensibility-suites.md),
 | WebSocket attempts all `inconclusive` with `WebSocketTurnTimeout` | No frame matched `final_path`/`final_value` within `timeout_seconds`: check the final frame's shape against what your deployment really sends (an acknowledgement frame your server sends after `session.start` is read as part of the first turn unless `session.expect` or `ignore_types` names it). |
 | `authz_leak` is `capability_unavailable` | It needs two identities to compare: the target's `multi_identity` capability and a scope with >=2 identities (each with its owned `canary`), and every identity heard from: one whose send failed, whose reply could not be read or whose reply the provider's filter stopped is named in the verdict (`the identity sweep left out ...`) and keeps it from passing. The runner then sends as each identity, for a spec that requires `multi_identity` (`DL-XTENANT-001`) and for one that declares `authz_leak` to corroborate (`EMB-XTENANT-RETRIEVAL-001`), never over an in-band scene (a `type: model` target gets the spec's documents in every request, the other tenant's included). Without a sweep, the first stays `inconclusive`; the second is decided by its other evaluators, and its verdict says `authz_leak set aside: no identity sweep ran`. After a sweep where fewer than two identities answered, `authz_leak` stays `inconclusive` for both (the second's verdict says `authz_leak kept: fewer than two identities answered the identity sweep`; with two or more answers beside one left out, `authz_leak kept: 2 identities answered the identity sweep, and it did not hear from every identity`), unless a deterministic check failed or the reply that came back shows the canary of another identity (that one is a confirmed fail, whether or not its owner answered): check that every identity's credential and endpoint work. A spec that requires `multi_identity` and carries a scene (documents, tools or memory) is never swept on a `type: model` target, since the scene goes in-band, and stays `inconclusive` there unless a deterministic check failed. A real scan also needs each tenant's canary pre-seeded in that tenant's data. |
 | `scope file ... identity '<name>': its canary can appear in a reply by chance (...)` (exit 3) | The identity's `canary` is one ordinary text can hold: shorter than 8 characters, with a space, without a digit or a letter, or part of an identity's name or of the target id (§4.1, u08 A-85). `authz_leak` would read it in another identity's reply as that identity's data received. Plant a random token (`CANARY-<16 random hex digits>`) in that identity's data and write it there. |
-| A cross-tenant spec is `inconclusive` with `authz_leak: 1 tenant-scoped canary(ies) surfaced in a non-owner identity, and the request every identity was sent carries each of them` | The attack prompt (or its system prompt or image text) names the canary, so tenant A's reply may only quote it while refusing, or may hold tenant B's record: needs review, never a pass (u08 A-85). Give the identity a canary the request does not name, or plant a second marker in the record (the spec's own `setup.canaries`): a crossing of one the request does not carry still confirms the leak. |
+| A cross-tenant spec fails, `needs review`, with `authz_leak: 1 tenant-scoped canary(ies) surfaced in a non-owner identity, and the request every identity was sent carries each of them` | The attack prompt (or its system prompt or image text) names the canary, so tenant A's reply may only quote it while refusing, or may hold tenant B's record: a fail that is never confirmed and never a pass, which gates CI only with `--include-needs-review` (u08 A-85). Give the identity a canary the request does not name, or plant a second marker in the record (the spec's own `setup.canaries`): a crossing of one the request does not carry still confirms the leak. |
 | A cross-tenant finding is `confirmed` but Low, with `the crossing of identity sweep 1 alone made this a fail` | The identity sweep sends one reply per identity, whatever `--runs` is, so a crossing only it showed is one success of `--runs` (1 of 5 is 0.2; u08 A-85). Under the default `--fail-on high` the run exits 1 for it, under `--fail-on low` 2, as for any confirmed Low finding. To measure how often the crossing reproduces, run the spec again, or make every attempt's own reply show it (the spec's `secret_leakage` canary planted in the other tenant's data). |
 | `error: <target>: exhausted 1 attempt(s) to <path>: HTTP 503` after a `-sV` probe was sent three times | The probe adapter has no retries of its own: the layer above it retries twice and the adapter's error reports its own single send. On a resume, the `resume: the -sV probe pass ... stopped after N request(s)` line before it gives the count of sends, retries included, and says whether the run store added them to the run's spend. |

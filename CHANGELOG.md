@@ -31,13 +31,16 @@ the file, schema copy, build or pipeline it names.
 - **A canary the request carries is no proof of a crossing.** The identity sweep sends every
   identity one request; a spec naming tenant B's record by its canary failed confirmed and
   Critical on tenant A's refusal quoting it (exit 2). `authz_leak` now reads the request the sweep
-  sent (`EvalContext.identity_request`): a crossing of a canary it carries is needs-review
-  (`inconclusive`), never a confirmed leak and never a pass, since the same occurrence is what a
-  real leak of the named record shows (dropping it would let whoever writes the request hide a
-  leak by naming the canary). A crossing canary the request does not carry still confirms the
-  leak beside it. Only text the scanner wrote counts as the request (prompt, system prompt, image
-  text, a `system`, `developer` or `user` message); a target's own reply never does. An
-  `inconclusive` aggregate quotes the `authz_leak` review that kept it so.
+  sent (`EvalContext.identity_request`): a crossing of a canary it carries is a fail that needs
+  review (`verdict.echo_only`), as u08 A-79 treats a fail only the judge reported on cut text:
+  never confirmed, never a pass, gated by `--fail-on` only with `--include-needs-review`, and
+  counted once per sweep like any fail resting on the sweep. Never a pass, since the same
+  occurrence is what a real leak of the named record shows (dropping it would let whoever writes
+  the request hide a leak by naming the canary). A crossing canary the request does not carry
+  still confirms the leak beside it. Only text the scanner wrote counts as the request (prompt,
+  system prompt, image text, a `system`, `developer` or `user` message); a target's own reply
+  never does. The stored aggregate quotes the `authz_leak` review, the finding's line counts such
+  attempts, and `dottore replay` marks each `(needs review: a canary the request carries)`.
 - **An identity sweep's crossing counts once in the reproducibility.** The sweep sends one reply per
   identity, whatever `--runs` is, and `authz_leak` reads it on every attempt: one reply of tenant A
   holding tenant B's canary made `DL-XTENANT-001` 5 of 5, 1.0, Critical, SARIF `error`, exit 2,
@@ -58,9 +61,11 @@ the file, schema copy, build or pipeline it names.
   nothing sent (was 2, or 0 when no reply said it); a cross-tenant finding whose crossing only the
   sweep showed is Low, 0.2, SARIF `note`, JUnit failure `type="low"` (was Critical, 1.0, `error`,
   `type="critical"`) and exits 1 under `--fail-on high` or `--fail-on medium` (was 2; `--fail-on
-  low` still 2); a crossing of a canary the request carries is `inconclusive`, SARIF level `none`,
-  JUnit `skipped`, exit 0 (was a confirmed fail, exit 2), and `dottore diff` against an older
-  report reads it `unverified`; a reply holding a key of a format A-78 added is `inconclusive`,
+  low` still 2); a crossing of a canary the request carries is a fail that needs review, Low,
+  SARIF `note`, JUnit failure `type="low"` (was a confirmed Critical, `error`), exit 0 by default
+  and, with `--include-needs-review`, 1 under `--fail-on high` or `medium` and 2 under `--fail-on
+  low` (was 2), and `dottore diff` reads it as a fail (`still_fail` against an older report);
+  a reply holding a key of a format A-78 added is `inconclusive`,
   JUnit `skipped` (was `pass`; exit 0 both); a resume of a run halted under judging rules 1 exits
   3. **The same:** a crossing every attempt's own reply shows (1.0, Critical, exit 2), a clean
   sweep, a crossing at `--runs 1` (1 of 1), a crossing of a marker the request does not carry
@@ -68,9 +73,10 @@ the file, schema copy, build or pipeline it names.
   (needs-review), and a key holding the planted canary (confirmed fail).
 - Tests (each count with how many fail on `7d01521f`):
   `tests/policy/test_scope_canary_shape.py` (24; 14), `tests/evaluators/test_authz_leak_echo.py`
-  (7; 5), `tests/core/test_identity_sweep_counted_once.py` (13; its 4 runner tests, the rest need
-  the new module), `tests/evaluators/test_secret_shape_key_formats.py` (169; 73),
-  `tests/cli/test_scoring_followups_cli.py` (12, through the CLI against a loopback stub; 9, the 3
+  (8; 6), `tests/core/test_identity_sweep_counted_once.py` (13; its 4 runner tests, the rest need
+  the new module), `tests/core/test_echo_never_confirms.py` (2),
+  `tests/evaluators/test_secret_shape_key_formats.py` (169; 73),
+  `tests/cli/test_scoring_followups_cli.py` (15, through the CLI against a loopback stub; 12, the 3
   controls pass on both), and the version 1 resume in `tests/cli/test_resume_judging_rules.py`.
 
 ### Documentation (the docs and contracts audit of 2026-10-12: re-measured figures, a CI example that gated on v0.1.0, the ledger in order)

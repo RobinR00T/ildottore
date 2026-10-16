@@ -222,8 +222,10 @@ the number of the identity sweep whose crossing alone made a fail (the runner st
 fail the attempt), left out of a dump when unset, so every other verdict is stored, reported and
 hashed as before; `EvalContext` gains `identity_request`, the request the sweep sent every identity,
 which `authz_leak` reads to tell a canary a reply echoes from that request from one it received.
-Both optional, behaviour-free. `shared/identity_sweep.py` holds the one counting rule the scorer and
-the replay read (`count_successes`: one success per sweep).
+`Verdict` gains `echo_only` too, a fail resting only on a canary the identity sweep's request
+carries, which never confirms a finding on its own (`shared.combination.never_confirms`), left out
+of a dump when false. All optional, behaviour-free. `shared/identity_sweep.py` holds the one
+counting rule the scorer and the replay read (`count_successes`: one success per sweep).
 
 ## §8 Out of scope / forbidden
 - MUST NOT import any other `ildottore` package or any provider SDK / httpx / Jinja / Typer.
