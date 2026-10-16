@@ -43,10 +43,10 @@ the file, schema copy, build or pipeline it names.
 - **The A-82 "Fixed" heading below says whom it breaks**, as this file's rule asks.
 - Checked by `tests/cli/test_exit_status.py` (31 tests, 15 fail on `7d01521f`; typer 0.26.8 and
   0.27.3), `tests/cli/test_uuid_in_cli_errors.py` (44, 35), `tests/cli/test_paths_with_spaces.py`
-  (32, 21), `tests/test_redactor_stash_delimiters_both_ways.py` (34, 13) and
-  `tests/cli/test_endpoint_user_credential.py` (9; 3 of its 4 end-to-end cases fail on `7d01521f`,
-  where the module does not import), and by differential fuzzes against `7d01521f` (contract u01
-  and u12 A-83). The judging rules keep version 1, re-pinned: the redactor decides what is stored
+  (32, 21), `tests/test_redactor_stash_delimiters_both_ways.py` (34, 13),
+  `tests/cli/test_masked_both_ways.py` (5, 1) and `tests/cli/test_endpoint_user_credential.py` (9;
+  3 of its 4 end-to-end cases fail on `7d01521f`, where the module does not import), and by
+  differential fuzzes against `7d01521f` (contract u01 and u12 A-83). The judging rules keep version 1, re-pinned: the redactor decides what is stored
   and printed, never a verdict.
 
 ### Documentation (the docs and contracts audit of 2026-10-12: re-measured figures, a CI example that gated on v0.1.0, the ledger in order)

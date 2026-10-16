@@ -1915,8 +1915,8 @@ rule reads), or by main's own report redactor (15), or is a documented key prefi
 checked by hand: an `xoxe.` prefix the reports show too, and part of a registered credential
 inside a path that main prints in the same path with another UUID. No message differs for any
 other reason, and none is masked whole as `«REDACTED:fragment»`. Time: `_masked` on 20,000
-messages without U+0000 or U+0001, 1.07 to 1.10 times main's; on the fuzz's messages, about half
-of which hold one, TIMING_BOTH times (two readings).
+messages without U+0000 or U+0001, 1.07 to 1.12 times main's (four measures, two before the last
+fix); on the fuzz's messages, 9,889 of the 20,000 holding one, 1.8 times (two readings).
 
 ## §8 Out of scope / forbidden
 - MUST NOT implement attack/mutation/evaluation/scoring/reporting/fingerprint logic (u05-u11,
