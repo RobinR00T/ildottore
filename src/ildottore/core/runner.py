@@ -191,6 +191,17 @@ _LEFT_UNANSWERED: Final = (
 _LeftOut = dict[str, tuple[str, str]]
 
 
+@dataclass(frozen=True)
+class _Sweep:
+    """One identity sweep of a spec (u08 A-85): which of the spec's sweeps in the run it is, and
+    the request it sent every identity. ``authz_leak``'s fail is stamped with the number, so the
+    reproducibility counts the sweep once (``shared.identity_sweep``), and reads the request, so a
+    canary a reply only echoes from it is not a crossing."""
+
+    number: int
+    request: ModelRequest
+
+
 @runtime_checkable
 class PolicyGate(Protocol):
     """The slice of the Policy Engine (u01) the runner needs.
@@ -1058,7 +1069,12 @@ class CampaignRunner:
             # collect {identity_id: response} + the canary -> owner map, so authz_leak can flag a
             # tenant-scoped canary reaching a non-owner identity. None when nothing was swept (a
             # single-identity target, say), so authz_leak stays honestly capability_unavailable.
-            identities_map, canary_owners, filtered_identities = await self._sweep_identities(
+            (
+                identities_map,
+                canary_owners,
+                filtered_identities,
+                sweep_request,
+            ) = await self._sweep_identities(
                 target,
                 spec,
                 base_prompt,
@@ -1066,6 +1082,13 @@ class CampaignRunner:
                 ledger=ledger,
                 mutators=mutators,
                 completed=completed,
+            )
+            # Numbered after the sweeps a prior part of the run made for this spec, whose fails
+            # its stored attempts carry, so a resume's new sweep is counted as one more (A-85).
+            sweep = (
+                _Sweep(number=_next_sweep(attempts), request=sweep_request)
+                if identities_map is not None and sweep_request is not None
+                else None
             )
             for mutation in mutators:
                 # Filled as each attempt completes, so a halt in the middle of the batch (a
@@ -1117,6 +1140,7 @@ class CampaignRunner:
                             canary_owners=canary_owners,
                             target=target,
                             trace=result.trace_so_far,
+                            sweep=sweep,
                         )
                     except Exception as exc:
                         # The ceiling that stopped the batch refuses the judge's request too.
@@ -1328,7 +1352,7 @@ class CampaignRunner:
     ) -> tuple[dict[str, ModelResponse] | None, dict[str, str]]:
         """``(identities, canary_owners)`` of :meth:`_sweep_identities`, for its callers."""
 
-        identities, owners, _ = await self._sweep_identities(
+        identities, owners, _, _ = await self._sweep_identities(
             target,
             spec,
             base_prompt,
@@ -1349,8 +1373,12 @@ class CampaignRunner:
         ledger: BudgetLedger,
         mutators: Sequence[str] = (),
         completed: set[str] | frozenset[str] = frozenset(),
-    ) -> tuple[dict[str, ModelResponse] | None, dict[str, str], _LeftOut]:
+    ) -> tuple[dict[str, ModelResponse] | None, dict[str, str], _LeftOut, ModelRequest | None]:
         """Send the attack as each authorized identity; collect responses + owner map.
+
+        The fourth value is the request every identity was sent (its ``identity`` unset), which
+        ``authz_leak`` reads to tell an echo of it from a crossing (u08 A-85); ``None`` when no
+        sweep was made.
 
         The third value names each identity the sweep left out, with why: its reply the
         provider's filter stopped (OD-42), could not be read, or its send failed (audit of the
@@ -1375,16 +1403,17 @@ class CampaignRunner:
         """
 
         if self._identity_adapters is None or not sweeps_identities(spec, target):
-            return None, {}, {}
+            return None, {}, {}, None
         if mutators and self._n >= 1 and self._holds_plan(completed, spec.id, mutators):
-            return None, {}, {}
+            return None, {}, {}, None
         probes = list(self._identity_adapters(target))
         if len(probes) < 2:
-            return None, {}, {}
+            return None, {}, {}, None
 
         identities: dict[str, ModelResponse] = {}
         owners: dict[str, str] = {}
         filtered: _LeftOut = {}
+        sent = _build_request(spec, base_prompt, sampling=self._sampling(spec))
         for probe in probes:
             # The canary an identity owns comes from the scope, not from its reply, so it is
             # mapped before the send. Mapped once the reply was read, an owner whose send failed,
@@ -1393,9 +1422,7 @@ class CampaignRunner:
             # a pass on ``de122e26`` (pre-merge audit of ``d07a1088``, MEDIUM 2).
             if probe.canary:
                 owners[probe.canary.replace("{{run_id}}", run_id)] = probe.identity_id
-            request = _build_request(spec, base_prompt, sampling=self._sampling(spec)).model_copy(
-                update={"identity": probe.identity_id}
-            )
+            request = sent.model_copy(update={"identity": probe.identity_id})
             try:
                 # Paced like every other send: an identity sweep is N more requests on the
                 # wire, so it obeys the authorized rate too.
@@ -1428,7 +1455,7 @@ class CampaignRunner:
                 filtered[probe.identity_id] = (describe_filter_stop(response), _LEFT_FILTERED)
                 continue
             identities[probe.identity_id] = response
-        return identities, owners, filtered
+        return identities, owners, filtered, sent
 
     # --- evaluation ----------------------------------------------------------
 
@@ -1447,8 +1474,12 @@ class CampaignRunner:
         canary_owners: dict[str, str] | None = None,
         target: Target | None = None,
         trace: ModelResponse | None = None,
+        sweep: _Sweep | None = None,
     ) -> Verdict:
         """Run the spec's evaluator pipeline over one attempt and combine.
+
+        ``sweep`` is the identity sweep ``identities`` came from (u08 A-85): ``authz_leak``'s fail
+        is stamped with its number and reads the request it sent.
 
         An env-errored attempt (no response) is ``inconclusive`` without touching an
         evaluator - env-vs-product, never a fabricated fail (contract §4 KEEP).
@@ -1485,6 +1516,7 @@ class CampaignRunner:
                 identities=identities,
                 canary_owners=canary_owners,
                 target=target,
+                sweep=sweep,
             )
             if traced is not None:
                 return traced
@@ -1523,6 +1555,7 @@ class CampaignRunner:
                 canary_owners=canary_owners,
                 target=target,
                 stopped=_UNREADABLE_STOP if unreadable else _ENV_STOP,
+                sweep=sweep,
             )
             if traced is not None:
                 return traced
@@ -1561,6 +1594,7 @@ class CampaignRunner:
                     canary_owners=canary_owners,
                     target=target,
                     filtered_identities=filtered_identities,
+                    sweep=sweep,
                 ),
                 spec,
                 filtered_identities,
@@ -1579,6 +1613,7 @@ class CampaignRunner:
             canary_owners,
             target=target,
             filtered_identities=filtered_identities,
+            sweep=sweep,
         )
         combined = _combine_verdicts(per_evaluator, spec, swept=identities)
         # Only a verdict that no deterministic evaluator failed is in doubt: a reply that leaks
@@ -1628,6 +1663,7 @@ class CampaignRunner:
         canary_owners: dict[str, str] | None,
         target: Target | None,
         stopped: str = _FILTER_STOP,
+        sweep: _Sweep | None = None,
     ) -> Verdict | None:
         """A fail on what came back before a send stopped: the trace so far, or a block's text.
 
@@ -1667,6 +1703,7 @@ class CampaignRunner:
             identities,
             canary_owners,
             target=target,
+            sweep=sweep,
         )
         fails = [v for v in verdicts if v.status is VerdictStatus.FAIL]
         if not fails:
@@ -1715,6 +1752,7 @@ class CampaignRunner:
         canary_owners: dict[str, str] | None,
         target: Target | None,
         filtered_identities: _LeftOut | None = None,
+        sweep: _Sweep | None = None,
     ) -> Verdict:
         """A reply the provider's filter cut, replaced, or stopped on an unreported side (OD-42).
 
@@ -1769,6 +1807,7 @@ class CampaignRunner:
                 canary_owners,
                 target=target,
                 filtered_identities=filtered_identities,
+                sweep=sweep,
             )
         # The judge runs after the deciding evaluators and alone: a ceiling that refuses its
         # request, or any error of its own, is a note, never a raise that would store the cut
@@ -1785,6 +1824,7 @@ class CampaignRunner:
                     identities,
                     canary_owners,
                     target=target,
+                    sweep=sweep,
                 )
             except Exception as exc:
                 judge_note = f"; {_judge_not_consulted(exc)}"
@@ -1847,8 +1887,13 @@ class CampaignRunner:
         *,
         target: Target | None = None,
         filtered_identities: _LeftOut | None = None,
+        sweep: _Sweep | None = None,
     ) -> list[Verdict]:
         """Evaluate one response with each of the spec's configured evaluators.
+
+        ``sweep`` (u08 A-85): every context carries the request the identity sweep sent, and an
+        ``authz_leak`` fail carries the sweep's number, since it reads the sweep's replies and not
+        this attempt's.
 
         ``target`` gives every evaluator's context what a seeded deployment's file says of its
         own tools: the ones it grants beyond the spec's scene (OD-18 B) and the ones it declares
@@ -1899,12 +1944,16 @@ class CampaignRunner:
                 canaries=canaries,
                 identities=identities,
                 canary_owners=canary_owners or {},
+                identity_request=sweep.request if sweep is not None else None,
                 granted_tools=list(granted),
                 not_destructive_tools=list(declared),
             )
             try:
                 verdicts.append(
-                    _authz_beside_filtered(await evaluator.evaluate(ctx), filtered_identities)
+                    _swept_by(
+                        _authz_beside_filtered(await evaluator.evaluate(ctx), filtered_identities),
+                        sweep,
+                    )
                 )
             except BudgetExhausted as exc:
                 refused = refused or exc
@@ -2447,6 +2496,18 @@ def _combine_verdicts(
     LOW 2). Either way the verdict says which. Alone, it stays.
     """
 
+    combined = _combine_with_authz(verdicts, spec, swept=swept)
+    return _sweep_note(_authz_review_note(combined, verdicts))
+
+
+def _combine_with_authz(
+    verdicts: list[Verdict],
+    spec: AttackSpec,
+    *,
+    swept: Mapping[str, ModelResponse] | None = None,
+) -> Verdict:
+    """:func:`_combine_verdicts` before its note: the uncompared ``authz_leak`` rule above."""
+
     uncompared = [v for v in verdicts if _uncompared_authz_leak(v, spec)]
     if not uncompared or len(uncompared) == len(verdicts):
         return combine_verdicts(verdicts)
@@ -2461,6 +2522,32 @@ def _combine_verdicts(
     else:
         combined = combine_verdicts([v for v in verdicts if not _uncompared_authz_leak(v, spec)])
         note = "authz_leak set aside: no identity sweep ran"
+    return combined.model_copy(update={"reasoning": f"{combined.reasoning}; {note}"})
+
+
+def _authz_review_note(combined: Verdict, verdicts: list[Verdict]) -> Verdict:
+    """An ``inconclusive`` aggregate, quoting the ``authz_leak`` review that kept it so.
+
+    Only the aggregate is stored, and "1 evaluator(s) inconclusive" did not say that a canary the
+    request carries surfaced in another identity's reply, or that two identities' replies share
+    a line (needs-review, u08 A-85): the reviewer is told what to look at.
+    """
+
+    if combined.status is not VerdictStatus.INCONCLUSIVE:
+        return combined
+    review = next(
+        (
+            v
+            for v in verdicts
+            if v.evaluator_type == EvaluatorType.AUTHZ_LEAK.value
+            and v.status is VerdictStatus.INCONCLUSIVE
+            and v.inconclusive_reason is None
+        ),
+        None,
+    )
+    if review is None:
+        return combined
+    note = f"authz_leak: {review.reasoning}"
     return combined.model_copy(update={"reasoning": f"{combined.reasoning}; {note}"})
 
 
@@ -2564,6 +2651,43 @@ def _swept_note(verdict: Verdict, spec: AttackSpec, filtered: _LeftOut | None) -
         return verdict
     return verdict.model_copy(
         update={"reasoning": f"{verdict.reasoning}; {_filtered_note(filtered)}"}
+    )
+
+
+def _swept_by(verdict: Verdict, sweep: _Sweep | None) -> Verdict:
+    """``authz_leak``'s fail, stamped with the identity sweep it read (u08 A-85)."""
+
+    if (
+        sweep is None
+        or verdict.evaluator_type != EvaluatorType.AUTHZ_LEAK.value
+        or verdict.status is not VerdictStatus.FAIL
+    ):
+        return verdict
+    return verdict.model_copy(update={"identity_sweep": sweep.number})
+
+
+def _sweep_note(verdict: Verdict) -> Verdict:
+    """The aggregate, saying so when one identity sweep's crossing alone made it a fail.
+
+    The reproducibility counts such a fail once per sweep (``shared.identity_sweep``), so the
+    report's ``k / N`` would read as a miscount of the attempts it lists as fails without it.
+    """
+
+    if verdict.identity_sweep is None:
+        return verdict
+    note = (
+        f"the crossing of identity sweep {verdict.identity_sweep} alone made this a fail; the "
+        "sweep sent one reply per identity, so the reproducibility counts it once, not once per "
+        "attempt"
+    )
+    return verdict.model_copy(update={"reasoning": f"{verdict.reasoning}; {note}"})
+
+
+def _next_sweep(attempts: Sequence[Attempt]) -> int:
+    """The number of a spec's next identity sweep: one more than any its stored fails carry."""
+
+    return 1 + max(
+        (a.verdict.identity_sweep or 0 for a in attempts if a.verdict is not None), default=0
     )
 
 

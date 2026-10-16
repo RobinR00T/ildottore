@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ildottore.shared.enums import VerdictStatus
+from ildottore.shared.identity_sweep import count_successes, sweep_of
 from ildottore.shared.models import Attempt
 from ildottore.shared.provider_filter import (
     blocked_attempt_ids,
@@ -73,13 +74,20 @@ class ReplayResult:
         return len(self.effective_attempts())
 
     def successful_attacks(self) -> int:
-        """Attempts whose verdict is ``fail`` (= target exploited; ``docs/04``)."""
+        """Attempts whose verdict is ``fail`` (= target exploited; ``docs/04``).
 
-        return sum(
-            1
-            for a in self.effective_attempts()
-            if a.verdict is not None and a.verdict.status is VerdictStatus.FAIL
-        )
+        An identity sweep's crossing counts once, as the report's reproducibility counts it
+        (u08 A-85, ``shared.identity_sweep``): one sweep reply failed every attempt beside it.
+        """
+
+        return count_successes(self.effective_attempts(), success=_failed)
+
+    def sweep_fails(self) -> tuple[int, int]:
+        """``(attempts, sweeps)``: attempts whose fail is an identity sweep's alone, and how many
+        sweeps those are, so the footer can say why ``exploited`` counts fewer than it lists."""
+
+        swept = [a for a in self.effective_attempts() if _failed(a) and sweep_of(a) is not None]
+        return len(swept), len({sweep_of(a) for a in swept})
 
     def reproducibility(self) -> float:
         """``successful_attacks / N`` in ``[0, 1]``; 0.0 for an empty run."""
@@ -119,6 +127,10 @@ class ReplayResult:
         """
 
         return len(unreadable_attempt_ids(self.effective_attempts()))
+
+
+def _failed(attempt: Attempt) -> bool:
+    return attempt.verdict is not None and attempt.verdict.status is VerdictStatus.FAIL
 
 
 def _load_verified_attempt(artifact: Path) -> Attempt:

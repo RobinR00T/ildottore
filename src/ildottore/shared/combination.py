@@ -90,7 +90,25 @@ def decided_by_judge_alone(verdict: Verdict) -> bool:
 
 
 def combine_verdicts(verdicts: list[Verdict]) -> Verdict:
-    """Combine one attempt's per-evaluator verdicts by the deterministic-first rule."""
+    """Combine one attempt's per-evaluator verdicts by the deterministic-first rule.
+
+    A fail that only an identity sweep's verdict made (``Verdict.identity_sweep``: the attempt
+    would not fail without it) keeps that sweep's number, so the reproducibility counts the sweep
+    once and not once per attempt (u08 A-85, ``shared.identity_sweep``). A fail that another
+    verdict makes too is the attempt's own, and carries none.
+    """
+
+    combined = _combine(verdicts)
+    swept = sorted({v.identity_sweep for v in verdicts if v.identity_sweep is not None})
+    if combined.status is not VerdictStatus.FAIL or not swept:
+        return combined
+    if _combine([v for v in verdicts if v.identity_sweep is None]).status is VerdictStatus.FAIL:
+        return combined
+    return combined.model_copy(update={"identity_sweep": swept[0]})
+
+
+def _combine(verdicts: list[Verdict]) -> Verdict:
+    """The rule itself (see the module docstring), without the sweep's mark."""
 
     if not verdicts:
         return Verdict(

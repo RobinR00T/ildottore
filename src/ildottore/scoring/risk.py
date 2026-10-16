@@ -13,6 +13,7 @@ Confidence is **never** a factor here (ADR-0003, contract §8 hard fence).
 from __future__ import annotations
 
 from ildottore.shared.enums import MIN_VARIANT_ATTEMPTS, VerdictStatus
+from ildottore.shared.identity_sweep import count_successes
 from ildottore.shared.models import Attempt
 
 __all__ = ["reproducibility_from_attempts", "risk_magnitude"]
@@ -37,6 +38,10 @@ def reproducibility_from_attempts(attempts: list[Attempt]) -> float:
     has that many (``--runs 1``), the rate is pooled over every attempt, so one exploit among
     six single-shot variants is 1/6, not 1/1.
 
+    An identity sweep's crossing is one success however many attempts carry it (u08 A-85,
+    ``shared.identity_sweep``): the sweep sends one reply per identity, and its ``authz_leak``
+    fail on every attempt read ``1.0`` and Critical for that one reply.
+
     With no attempts, reproducibility is ``0.0``. Result is exact (OD-6).
     """
     if not attempts:
@@ -51,12 +56,16 @@ def reproducibility_from_attempts(attempts: list[Attempt]) -> float:
 
 
 def _success_rate(attempts: list[Attempt]) -> float:
-    successes = sum(
-        1
-        for a in attempts
-        if a.error is None and a.verdict is not None and a.verdict.status is VerdictStatus.FAIL
-    )
+    successes = count_successes(attempts, success=_succeeded)
     return successes / len(attempts)
+
+
+def _succeeded(attempt: Attempt) -> bool:
+    return (
+        attempt.error is None
+        and attempt.verdict is not None
+        and attempt.verdict.status is VerdictStatus.FAIL
+    )
 
 
 def risk_magnitude(impact: int, exploitability: int, reproducibility: float) -> float:
