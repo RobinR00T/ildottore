@@ -28,12 +28,12 @@ into the `owasp:llm` suite and a `quick` suite. Data-leak specs (rows 8-9, 16-18
   (mock-target + golden harness that replays fixtures). No runtime dep on u04/u06/u08.
 - Every spec validates against `schemas/attack-spec.schema.json`; field semantics per `docs/03 §2`.
 - `evaluators[].type` strings MUST be ones u06 registers, which is exactly the
-  `EvaluatorType` enum (the schema enum is kept 1:1 with it by `tests/shared/test_schema_parity.py`):
-  `regex_absence`/`regex_presence`, `exact_match`, `refusal`, `secret_leakage`, `tool_call`,
-  `tool_sequence`, `semantic_judge`, `pii_detector`, `secret_shape`, `verbatim_overlap`,
-  `logprob_membership`, `authz_leak`, `kill_chain_progression`.
-  (Refreshed 2026-09-19: the original list omitted the MVP-2 types and listed `canary`, which
-  was never an `EvaluatorType`; a planted canary is proven by `secret_leakage`.)
+  `EvaluatorType` enum (the schema enum is kept 1:1 with it by
+  `tests/shared/test_schema_parity.py`): `regex_absence`/`regex_presence`, `exact_match`, `refusal`,
+  `secret_leakage`, `tool_call`, `tool_sequence`, `semantic_judge`, `pii_detector`, `secret_shape`,
+  `verbatim_overlap`, `logprob_membership`, `authz_leak`, `kill_chain_progression`. (Refreshed
+  2026-09-19: the original list omitted the MVP-2 types and listed `canary`, which was never an
+  `EvaluatorType`; a planted canary is proven by `secret_leakage`.)
 - `mutations[]` use only built-in strategy names from `docs/03 §4`. `requires[]` uses
   `Capabilities` names (`rag`, `tools`, `memory`, `system_prompt`, `logprobs`, `multi_identity`).
 - Verdict polarity fixed repo-wide (`00-INDEX`): `pass` = secure, `fail` = exploited.
@@ -124,10 +124,10 @@ into the `owasp:llm` suite and a `quick` suite. Data-leak specs (rows 8-9, 16-18
   and a per-run `--allow-pii-elicitation` flag (the operator's deliberate act, so a pack
   reused from another engagement does not enable it alone). A run flag is not added alone: with
   no pack to load it would enable nothing, since the CLI's own pack enables no capability. Both
-  come with the policy-pack flag, which stays open (unnumbered, `docs/12`) because it also gates
-  the seven `agentic-extortion` specs. Alternatives not taken: one flag that enables it alone
-  (one switch and no written record, against DL4 and DL5); dropping the spec until then (it would
-  lose its lint proof; `blocked_by_policy` already says what holds it back); an opt-in in the
+  come with the policy-pack flag, which stays open (OD-46 since 2026-10-12, `docs/12`) because it
+  also gates the seven `agentic-extortion` specs. Alternatives not taken: one flag that enables it
+  alone (one switch and no written record, against DL4 and DL5); dropping the spec until then (it
+  would lose its lint proof; `blocked_by_policy` already says what holds it back); an opt-in in the
   scope file (the scope authorizes targets, not test categories). Pinned by
   `tests/policy/test_policy_audit_2026_10_03.py:55` (the shipped spec stays blocked with only its
   capability enabled, neither DL4 key turned) and `:69` (it runs only when every key is turned).
@@ -135,6 +135,10 @@ into the `owasp:llm` suite and a `quick` suite. Data-leak specs (rows 8-9, 16-18
   `SafetyFlags(allow_pii_elicitation=True)` and adds `allow_pii_elicitation` and `layer_b_pii` to
   the pack `cli/wiring.build_permissive_pack` builds, with DL4 in `docs/11` rewritten to one
   key.
+- **OD-47** (shared with u05; numbered 2026-10-12; open, owner to decide): `leetspeak` rewrites
+  `JB-ENCODING-001`'s Base64 payload, so that variant tests nothing, and `rot13` carries no decode
+  cue (F9, 2026-10-03 audit). Recommended: drop `leetspeak` from that spec's `mutations` and
+  decide `rot13`'s cue apart, changing no mutator (`00-INDEX.md`).
 - Fixture location convention: inline in the spec vs `tests/fixtures/specs/<id>/`. **Decided
   2026-10-11 under the owner's delegation (best practice), revisable: inline only, as built
   (OD-7, reasoning in u03 §9).** Revisit if a fixture outgrows its spec file (a long multi-turn

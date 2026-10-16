@@ -144,7 +144,7 @@ built as u06 §7 A-73 (halves in u08, u02 and u00). Why, against today's code (`
 * **A second rule.** The field keeps its name and its enum, so a future rule can be a value of
   it; none is built.
 * **Removing the old names.** They load, with a warning, until a release that says it drops them.
-* **The judge's self-consistency disagreement** (`docs/04` §2, open question): the rule still drops
+* **The judge's self-consistency disagreement** (`docs/04` §2, OD-45, open): the rule still drops
   a reasonless judge abstention, as before. Not part of this decision.
 
 ### Reversal

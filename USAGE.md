@@ -118,7 +118,7 @@ dottore calibrate report.json labels.yaml
 | `--judge` | judge model `target.yaml` (LLM-as-judge for `semantic_judge` on live scans) |
 | `--suite` | `owasp:llm` (alias of `owasp-llm-top10`, as is `baseline`); also `quick`, `multi-turn`, `access-control`, `agentic-owasp2026`, `obfuscation-enhancers`, `embeddings`, `agentic-extortion` (alias `agentic`), `mcp`, `responsible-ai`, `guardrail-evasion`, `multimodal`, `structured-output`, `nova-iopc`. `mitre:atlas`, `nist:ai`, `eu:ai-act`, `dora` and `iso:42001` are still accepted as aliases but point at no registered suite and exit 3 |
 | `--quick` | the T0 battery: selects `--suite quick` (18 specs) at `-T0`. Conflicts with an explicit `--suite` |
-| `--deep` | timing `-T2` over whatever the other flags select (with no selection flag, the whole registry minus what the target cannot run): it selects no larger suite (on the example target, the same 34 specs, at 2.0 req/s instead of 5.0). By itself it tailors nothing: mutator ordering needs a fingerprint, so its adaptive part only takes effect with `-sV` (or `-A`), as `run --help` says |
+| `--deep` | timing `-T2` over whatever the other flags select (with no selection flag, the whole registry minus what the target cannot run): it selects no larger suite (on the example target, the same 33 specs, at 2.0 req/s instead of 5.0). By itself it tailors nothing: mutator ordering needs a fingerprint, so its adaptive part only takes effect with `-sV` (or `-A`), as `run --help` says |
 | `-p/--categories` | `pi`, `jailbreak`, `leakage`, `tool`, `rag`, `output`, `dos`, `safety`, `bias` (long forms accepted) |
 | `--spec` / `--exclude` | run/skip specific spec ids or globs (e.g. `PI-*`); repeatable |
 | `--top-tests N` | keep the N highest-signal specs |
@@ -151,14 +151,14 @@ carries `summary.status.state = "budget_exhausted"` with `coverage.specs.total` 
 attempt failed on transport, or got a reply that could not be read as the provider's) is
 `"unreachable"`, one whose every attempt the provider's filter refused, cut or stopped (or that
 got no reply that could be read), with none a fail, is `"filtered"` (it measured the filter, not
-the model; exit `0` until 2026-10-11), and one whose replies could not be read 5 in a row before any was read, or 20
-in a row after, and whose one benign check then could not be read either, stops early as
-`"aborted"` (`aborted on UnreadableReplies: ...`, with what to check for that provider); a filter
-that blocks only attack prompts lets the check through, and the run goes on. One unreadable reply fails only its attempt (OD-21), and its spec is
-`inconclusive`, never a pass; `summary.unreadable_reply` counts them. A partial scan is never
-reported as a clean one. Read `summary.status.reason` before you treat it as a flake;
-[`docs/MANUAL.md`](docs/MANUAL.md) explains why. Only an **exploited** (`fail`) finding trips
-the gate; `pass`/`inconclusive` never do.
+the model; exit `0` until 2026-10-11), and one whose replies could not be read 5 in a row before any
+was read, or 20 in a row after, and whose one benign check then could not be read either, stops
+early as `"aborted"` (`aborted on UnreadableReplies: ...`, with what to check for that provider); a
+filter that blocks only attack prompts lets the check through, and the run goes on. One unreadable
+reply fails only its attempt (OD-21), and its spec is `inconclusive`, never a pass;
+`summary.unreadable_reply` counts them. A partial scan is never reported as a clean one. Read
+`summary.status.reason` before you treat it as a flake; [`docs/MANUAL.md`](docs/MANUAL.md) explains
+why. Only an **exploited** (`fail`) finding trips the gate; `pass`/`inconclusive` never do.
 
 **A provider's input filter does not stop the scan.** An attack prompt the deployment's own filter
 refuses before the model sees it (Azure OpenAI's HTTP 400 `content_filter`; Gemini's
@@ -187,8 +187,8 @@ is an ordinary stop, so a target cannot hide its reply behind another provider's
 it (never a gateway in front of Azure, which relays Azure's), and even then a reply with no text
 and no tool call that ends on the provider's own word is the filter's, never a pass.
 An endpoint can still withhold chosen attacks with its own provider's word and keep `--fail-on`
-green, so read the counts below if your pipeline should stop on them. The summary counts them (`Cut by
-the provider's output filter: N attempt(s) in S spec(s) came back cut or replaced`, and
+green, so read the counts below if your pipeline should stop on them. The summary counts them
+(`Cut by the provider's output filter: N attempt(s) in S spec(s) came back cut or replaced`, and
 `summary.cut_by_provider_output_filter` in JSON). `--fail-on` does not trip on them: read that key
 if your pipeline should ([`docs/MANUAL.md`](docs/MANUAL.md) §9).
 
@@ -241,12 +241,13 @@ ports (an offline `mock://` entry sends nothing and keeps a bare host).
 Keys are never written to the file: each entry names an env var (`api_key_env`), resolved
 only at send time. A value that is not a variable's name (the key pasted there), an endpoint
 that carries a credential (`user:password@`, a path segment or a parameter shaped like a key,
-a parameter named like a credential such as `?api_key=` or `?accessToken=`, a URL with no host) and a `provider` the tool does not have are refused before anything is written,
-never quoted; an entry with no `api_key_env` is sent no credential (`env://NONE` in
-the scope, no `auth_ref` in its target file). `provider` is inferred from the endpoint (`/chat/completions` -> openai,
-`/messages` -> anthropic, else `rest`). A WebSocket target is not a fleet entry: a `ws://` or
-`wss://` endpoint, or `provider: websocket`, is refused before anything is written (exit 3),
-since its target file needs a `websocket:` block; write it by hand from
+a parameter named like a credential such as `?api_key=` or `?accessToken=`, a URL with no host) and
+a `provider` the tool does not have are refused before anything is written, never quoted; an entry
+with no `api_key_env` is sent no credential (`env://NONE` in the scope, no `auth_ref` in its target
+file). `provider` is inferred from the endpoint (`/chat/completions` -> openai, `/messages` ->
+anthropic, else `rest`). A WebSocket target is not a fleet entry: a `ws://` or `wss://` endpoint, or
+`provider: websocket`, is refused before anything is written (exit 3), since its target file needs a
+`websocket:` block; write it by hand from
 [`examples/target.websocket.yaml`](examples/target.websocket.yaml) (OD-37). A WebSocket judge
 is accepted only with `--judge` naming that hand-written file, matching the `judge:` block,
 and no `judge.yaml` is written for it. A `kind: mcp`
@@ -256,7 +257,8 @@ See [`specs/fleet.example.yaml`](specs/fleet.example.yaml).
 
 An MCP server reachable over the wire uses `provider: mcp` with an `endpoint`; a local one
 uses `transport: stdio` + `command` and is launched as a subprocess only if the scope target's
-`commands` list authorizes that exact command line (default-deny). See [`docs/MANUAL.md`](docs/MANUAL.md).
+`commands` list authorizes that exact command
+line (default-deny). See [`docs/MANUAL.md`](docs/MANUAL.md).
 
 ## A chat endpoint over a WebSocket
 

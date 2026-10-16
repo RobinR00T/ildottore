@@ -118,45 +118,47 @@ first contact.
 
 ## 3. What it costs, measured (not estimated from memory)
 
-`dottore run --estimate` prices a plan without sending anything. Today, against the shipped
-battery of 75 specs at the default `runs=5`:
+`dottore run --estimate` prices a plan without sending anything. Measured on 2026-10-12 (since
+OD-44, `MCP-TOOLPOISON-001` runs against an MCP server only), against the shipped battery of 75
+specs at the default `runs=5`:
 
 | Target shape | Specs run | Requests | Rough token gloss |
 |---|---|---|---|
-| A bare hosted model (`type: model`, no tools/rag/memory/multimodal) | 34 | 550 | ~395k |
-| A hosted model declaring `tools`, `rag` and `memory` (`type: model`, setup in-band, OD-18) | 59 | at most 1,260 | ~849k |
-| A fully capable deployment (`type: agent`, every capability declared, nothing declared seeded) | 41 | 585 (+18 with `-sV`) | ~412k |
-| The same deployment declaring every scene seeded (`seeded_setup.specs: ["*"]`, OD-18 B) | 62 | 740 | ~497k |
-| ... and a `run_token` for the 5 specs whose canary has to be seeded | 67 | 780 | ~523k |
+| A bare hosted model (`type: model`, no tools/rag/memory/multimodal) | 33 | 545 | ~392.5k |
+| A hosted model declaring `tools`, `rag` and `memory` (`type: model`, setup in-band, OD-18) | 58 | at most 1,255 | ~847k |
+| A fully capable deployment (`type: agent`, every capability declared, nothing declared seeded) | 40 | 580 (+18 with `-sV`) | ~410k |
+| The same deployment declaring every scene seeded (`seeded_setup.specs: ["*"]`, OD-18 B) | 61 | 735 | ~494k |
+| ... and a `run_token` for the 5 specs whose canary has to be seeded | 66 | 775 | ~520k |
 
 With `--judge`, add the judge model's own traffic: for the first shape, `--estimate --judge`
 prints **+700 requests (~954k tokens)** to the judge, two per evaluated attempt. Since
 2026-10-03 those requests are paced and debited from the same ceilings, and the estimate counts
-them; before that, `--estimate --judge` printed the same 550 as without a judge.
+them; before that, `--estimate --judge` printed the same figure as without a judge.
 
 Every row was measured with one identity in the scope. With two or more, a live run also sends
 the attack once as each identity for every spec that sweeps them (`DL-XTENANT-001`, and
 `EMB-XTENANT-RETRIEVAL-001` on a deployment that declares `multi_identity` and holds its scene,
 never over an in-band scene; the second row declares no `multi_identity`, and with it declared
 only `DL-XTENANT-001`, which has no scene, would be swept there), and since PR #60 (merged
-2026-10-09) the estimate prices that too: with two identities the third row is 587, the fourth 742
-and the last 784 (re-measured on 2026-10-07 with `--estimate`; the single-identity figures above
-did not move). Before, main priced the last row at 780 with two
-identities, for a run that would send 782 (the sweep of `DL-XTENANT-001`, never priced).
+2026-10-09) the estimate prices that too: with two identities the third row is 582, the fourth 737
+and the last 779 (re-measured on 2026-10-12 with `--estimate`: 2, 2 and 4 above the
+single-identity rows, which pricing the sweep left as they were). Before, main priced the last row
+at 780 with two identities, for a run that would send 782 (the sweep
+of `DL-XTENANT-001`, never priced).
 
 Two things that table says out loud:
 
-* **A raw model endpoint exercises what it declares.** 39 of 75 specs are capability-gated and
+* **A raw model endpoint exercises what it declares.** 40 of 75 specs are capability-gated and
   skip on a bare `type: model` target that declares nothing. Declaring `tools`, `rag` and
-  `memory` on a `type: model` target sends 59: since OD-18 (ADR-0009 option A, 2026-10-06) the
+  `memory` on a `type: model` target sends 58: since OD-18 (ADR-0009 option A, 2026-10-06) the
   spec's documents, tools and memory seed are built into the request, and a tool call is
   answered with the spec's declared result for at most 4 rounds. That measures how **the
   model** handles untrusted content in its context; it does not test an application's own
   retrieval or tools, and each attempt records `setup_delivery: in_band`. The request figure is
-  a ceiling (every tool turn priced at 5 sends; main priced the same 59 specs at 740 before the
-  rounds existed), and the derived budget is sized from it. A target that declares every
+  a ceiling (every tool turn priced at 5 sends; main priced the 59 specs it then sent at 740
+  before the rounds existed), and the derived budget is sized from it. A target that declares every
   capability and is not `type: model` is a deployed application, and **sends only what it can
-  test**: 41, with the 26 that depend on a spec's documents, mock tools or memory seed reported
+  test**: 40, with the 26 that depend on a spec's documents, mock tools or memory seed reported
   `inconclusive: setup_not_seeded` and nothing sent for them (OD-18 option B, 2026-10-07). A
   deployment holds that content only where its operator has seeded it, and its target file says
   which specs (`seeded_setup.specs`); declared, they go out as the plain prompt, each attempt
@@ -166,16 +168,19 @@ Two things that table says out loud:
   (`transfer_to_<agent>`) writes that tool in `seeded_setup.granted_tools` as `{name, destructive:
   false}`, or every spec that declares `tool_call` fails it by its name; that is the operator's
   declaration, printed on an `operator:` line of the dry run and stated in every report
-  (OD-43, MANUAL §4.2). Declaring every scene seeded sends 62: five specs
+  (OD-43, MANUAL §4.2). Declaring every scene seeded sends 61: five specs
   (`DL-XSESSION-001`, the three `EMB-*` retrieval specs and `AC-BOLA-001`, whose canary sits in
   another customer's record) carry a per-run canary that has to be in the deployment, which
   nobody can seed before the run, so they also need `seeded_setup.run_token`; with it, each gets
-  its own canary to seed and all 67 are sent (the last row; main sent the same 67 before option B,
-  without saying 26 of them meant nothing). The other 8 are the policy-blocked ones below.
-  (The first version of this table said 66 and 775. It was measured against a target missing
-  one capability, `multi_identity`, so one spec was silently skipped. An audit re-ran it. The
-  correct figures are above, and the lesson is in the commit: a number is measured against the
-  thing the row claims, or the row says which thing it was measured against.)
+  its own canary to seed and all 66 are sent (the last row; main sent these 66 and
+  `MCP-TOOLPOISON-001` before option B, without saying 26 of them meant nothing). The other 8 are
+  the policy-blocked ones below, and the ninth is `MCP-TOOLPOISON-001`, which needs an MCP server
+  (OD-44).
+  (The first version of this table said 66 and 775 when the battery sent 67. It was measured
+  against a target missing one capability, `multi_identity`, so one spec was silently skipped. An
+  audit re-ran it, and the lesson is in the commit: a number is measured against the thing the row
+  claims, or the row says which thing it was measured against. The row is 66 and 775 again since
+  OD-44, for the reason above.)
 * **Eight specs can never pass the default policy pack**, on purpose: the offensive-simulation
   family (`AG-CRED-SWEEP-001`, `AG-DESTRUCTIVE-DBDROP-001`, `AG-EXFIL-EGRESS-001`,
   `AG-EXTORT-CHAIN-001`, `AG-PERSIST-BEACON-001`, `AG-AUTONOMY-SELFCORRECT-001`,
@@ -183,9 +188,9 @@ Two things that table says out loud:
   deliberate act in the policy pack, and on someone else's system it needs their authorization
   in writing, not just a flag. Today it is not possible from the command line at all: `dottore`
   has no option to load a policy pack (and none for the PII run key), so none of these eight
-  sends on any CLI run. Whether to add one is an open decision. On the fully capable target all
-  eight reach the policy gate and are `blocked_by_policy`. On the bare model the capability
-  filter runs first: the six offensive-simulation specs that require `tools` are among the 39
+  sends on any CLI run. Whether to add one is an open decision (OD-46). On the fully capable target
+  all eight reach the policy gate and are `blocked_by_policy`. On the bare model the capability
+  filter runs first: the six offensive-simulation specs that require `tools` are among the 40
   capability skips (`inconclusive: capability_unavailable`), and only `DL-PII-ELICIT-001` and
   `JB-OFFENSIVE-RANSOM-CODEGEN-001` are `blocked_by_policy`, which is the "2 blocked (policy)"
   the estimate prints for that row.
@@ -237,8 +242,8 @@ A-24).
 * **Rate.** `--rate 1` is one request per second. Providers rate-limit and so should you: the
   pacer is shared by the probes, the battery, the identity sweep and the judge.
 * **Judge.** Without `--judge`, `semantic_judge` is not registered on a live run and counts as
-  `inconclusive: capability_unavailable`, which the runner keeps: a spec that declares it (74 of
-  the 75) can still `fail` on a deterministic evaluator, but can never `pass`, and comes back
+  `inconclusive: capability_unavailable`, which the runner keeps: a spec that declares it (all
+  75 do) can still `fail` on a deterministic evaluator, but can never `pass`, and comes back
   `inconclusive` wherever the deterministic evaluators do not find an exploit. The CLI prints a
   warning saying so before it sends. A live run is worth the second model.
 

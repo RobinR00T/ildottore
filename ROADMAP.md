@@ -7,15 +7,17 @@ Where the project is and what is left. The living, prioritized gap analysis is
 
 ## Shipped
 
-The battery is **75 specs across 14 suites**, aligned to OWASP LLM Top 10 (2025), MITRE ATLAS,
-NIST AI 600-1 and the Nova IoPC taxonomy. Everything below runs offline against a mock and, where
+The battery is **75 specs across 14 suites**, mapped to OWASP LLM Top 10 (2025), MITRE ATLAS and
+the Nova IoPC taxonomy, with a NIST AI RMF 1.0 subcategory token on every spec (NIST AI 600-1 is
+a reference, not a mapping the code checks). Everything below runs offline against a mock and, where
 noted, over the wire.
 
 - ✅ **Core engine**: spec-driven attacks, deterministic reproduction (N sends), evaluator
   combination (deterministic-first, LLM judge as a hardened secondary), risk scoring, evidence
   store with redaction-at-rest, `replay`, `diff`, coverage reporting.
-- ✅ **Adapters**: OpenAI-compatible, Anthropic, generic REST, and MCP (read-only discovery over
-  Streamable HTTP and stdio). `--judge` wires an LLM-as-judge for live scans.
+- ✅ **Adapters**: OpenAI-compatible, Anthropic, generic REST, a template-driven WebSocket chat
+  client (`provider: websocket`), and MCP (read-only discovery over Streamable HTTP and stdio).
+  `--judge` wires an LLM-as-judge for live scans.
 - ✅ **Attack families**: prompt injection (direct / indirect-RAG / indirect-tool), jailbreak,
   system-prompt & data leakage (canary-proven), insecure output handling, excessive agency,
   unbounded consumption, multi-turn (Crescendo / Linear / Sequential / Bad-Likert / Tree),
@@ -39,6 +41,10 @@ noted, over the wire.
 
 ## Near-term (candidates, not committed)
 
+- ⬜ **An installable package**: a wheel (`pip install` without `-e`, or
+  `pip install "git+https://..."`) ships neither `specs/` nor `schemas/` and cannot load the
+  battery outside a checkout (found 2026-10-12, `docs/12` P1); until it does, install a clone
+  editable (`INSTALL.md`).
 - ⬜ **Live validation matrix**: run the multimodal (image + audio) battery end-to-end against real
   vision/audio models (a local Ollama vision model and/or a hosted provider) and record the
   results. The attacks are golden-proven offline; a live pass is the highest-credibility next step.

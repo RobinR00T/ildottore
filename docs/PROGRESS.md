@@ -1,7 +1,92 @@
 # PROGRESS: Il Dottore (living ledger)
 
 The carryover ledger. Every agent session updates this so context survives even a cold start
-(the method's observability/resume + "own the context" discipline). Newest on top.
+(the method's observability/resume + "own the context" discipline). Entries are in merge order,
+newest merge on top: a branch's entries land together when it merges, so the dates of
+neighbouring entries can interleave (an older branch merged later sits above a newer one).
+
+## State, 2026-10-12: the docs and contracts audit, fixed (`docs/audit-2026-10-12`)
+
+- From `main` at `de122e26`, one commit per finding group of the audit report
+  (`_ildottore-tren/scratch/audit-docs/REPORT.txt`), every figure re-measured on this branch
+  with `PYTHONPATH` at the worktree's `src`; decisions taken under the owner's delegation (best
+  practice) are recorded as such in each commit.
+- HIGH: `examples/ci-github-actions.yml` installed `@v0.1.0` by `pip install "git+https://..."`.
+  A wheel built with the selection `pyproject.toml` declares ships neither `specs/` nor
+  `schemas/` (measured with that selection assembled offline, hatchling being absent, again on
+  2026-10-15 with `main` merged in: `lint` and `run --dry-run` exit 3, without a spec path on
+  `spec path not found: specs`, with a checkout's `specs/` on `schemas/attack-spec.schema.json`),
+  so the example now checks out a pinned SHA of `main` and installs it editable, with
+  `--spec-path`; the v0.1.0 gate differences are listed beside the pin. Packaging is left for its
+  own change, recorded in `docs/12` P1 and ROADMAP.
+- MEDIUM, re-measured: 33 specs and 545 requests on `examples/target.local.yaml`; "34 of 75
+  specs never ran" against an HTML stub (9 requests, 8 attempts, 0 tokens); the `docs/16` §3
+  table (33/545, 58/1,255, 40/580, 61/735, 66/775; two identities 582, 737, 779; judge +700);
+  140 and 350 replay attempts on the vulnerable mock; `dottore fingerprint` exits 0 on a 200
+  that is not JSON (OD-21); the Bedrock item closed by OD-42; the scope checksum is integrity
+  only (OD-2).
+- Ledger and contracts: CHANGELOG "breaking for <whom>" labels (15 more headings, 17 in all),
+  the A-37 row, A-62 and A-64 reserved (A-75 stays free), OD rows in order, unit owners, ODs
+  cited in each §9, and three open decisions numbered for the owner: OD-45 (a judge's
+  self-consistency disagreement), OD-46 (a policy-pack flag), OD-47 (F9, `leetspeak` over
+  `JB-ENCODING-001`'s Base64).
+- CLI: no `--help` shows internal text, pinned by `tests/cli/test_help_text.py` (17 tests: no
+  backtick, no "(u" and a digit, no unit or clause id); `dottore(1)` documents every command's
+  options.
+- Pre-merge audit of `10980e5e`: not ready, three changes and LOWs, fixed in new commits (no
+  history rewrite). The FAQ quotes the CLI's refusal as printed ("(open decision)", OD-46 named
+  after it); three more headings are labelled breaking, and OD-21 and OD-41 add "an older build
+  reading the run" (measured: `dottore replay` of such a run with the code of `6837a71d`'s and of
+  `fcdf9860`'s parent exits 3, a validation error at `verdict.inconclusive_reason`); A-75 is left
+  free; OD-45, OD-46 and OD-47 are named in u08, u01 and u05, and in `docs/02` and `docs/11`;
+  the wheel defect is recorded (`docs/12` P1, ROADMAP) with what it prints; the first rewrap is
+  reverted and redone last, reflowing its paragraphs, with the YAML comment rewording in a
+  commit of its own. The landing checklist is `_ildottore-tren/scratch/fixdocs/LANDING.md`.
+- Gates: `make --no-print-directory gates` on this branch before the rewrap commit: 5493
+  tests (17 new), 97.84% coverage, 75 specs lint OK, four import contracts kept, self-scan 0
+  high/critical, bandit clean; pip-audit, stopped by a DNS outage (`pypi.org` not resolved) on
+  2026-10-12, re-run on 2026-10-13 on the same tree: clean. `main` itself after the merges of
+  2026-10-11, measured in a clean copy of `de122e26` (`git archive`): 5476 passed, 97.84%
+  coverage, a figure no entry recorded. Lines over 100 columns are rewrapped in the last commit,
+  alone, so it can be redone after a rebase.
+- Landing, 2026-10-15: the rewrap reverted (`88c75b8b`), `origin/main` at `a906cea9` (#111 to
+  #116) merged with `--no-ff` (`ba9d5fc8`, conflict resolution only), then one commit each: the
+  wheel and editable installs re-measured (lint and run exit 3 on a missing spec path and on the
+  wheel's missing schema; an editable install's run falls back to the checkout's battery); the
+  root `-v` help without backticks (#114's, which the help test refused); `dottore(1)` with the
+  root `-v`, fleet's new options, `schema export --name report`, the spec path's new default and
+  lint's exit 3; a blank credential variable's dry run (exit 0 with a warning, 3 on #113); the
+  siblings' headings to the label and tense conventions. Re-measured on the merged tree and
+  unchanged: 33 specs and 545 requests (no flag, `--deep`, `-A`), the `docs/16` §3 rows and
+  two-identity rows, replay 140 and 350, the HTML-stub transcript (9 requests, 8 attempts, 0
+  tokens, byte-identical), the mixed-stub fingerprint warning, Scenario B.
+  `make --no-print-directory gates` on the merged tree, plain and with
+  `GITHUB_ACTIONS=true CI=true`: green both times, 7003 passed and 1 skipped, 97.68% coverage.
+- Stacked on #117 (`fix/resume-judging-rules`, head `e92a7541`, not yet landed), merged with
+  `--no-ff` (`aad7b64c`, one CHANGELOG conflict). Its "corrupt run-context value is refused"
+  heading is labelled breaking (30 labelled headings); its A-81 row is in the index already, and
+  the CLI's options are as on `a906cea9`. The gates then failed one test,
+  `test_the_judging_code_is_the_code_its_version_was_pinned_for`: this branch's help and
+  docstring text in `cli/app.py` and `cli/run.py` changes the judging digest, so version 1 is
+  re-pinned by an appended line (`dbfbedd7`, "help and docstring text only"), PINNED moved, no
+  line edited. Re-measured on that tree and unchanged: item 11 (a blank or three-space variable
+  exits 0 under `--dry-run`, `-sn` and `--estimate`, a five-character one exits 3), 33/545, the
+  `docs/16` rows, replay 140 and 350, the HTML-stub line, the fingerprint warning, Scenario B.
+  `make --no-print-directory gates`, plain and with `GITHUB_ACTIONS=true CI=true`: green both
+  times, 7107 passed and 1 skipped, 97.70% coverage.
+- #117 landed (main at `3740b387`, tree equal to `e92a7541`'s), recorded here with
+  `git merge -s ours` (`f87541a6`, tree unchanged). The CI example pins
+  `3740b3874642dbec711e82918e477060d4a39ea1` and its v0.1.0 caveat gains A-79, the scoring audit,
+  the SARIF level of a fail that needs review, A-80, A-78, A-82 and A-81 (actionlint passes; the
+  scan command dry-runs, exit 0, against an editable install of a clean copy of `3740b387`). The
+  appended judging pin `dbfbedd7` is the digest of the final tree (the pin test's 24 pass).
+  `--version` prints `dottore 0.1.0 (judging rules 1)` since #117, so MANUAL §5 and `dottore(1)`
+  quote it. Re-measured on the final tree and unchanged: 33/545 (no flag, `--deep`, `-A`), the
+  `docs/16` rows and two-identity rows, replay 140 and 350, the HTML-stub line, the fingerprint
+  warning, Scenario B, the `-v` operator line, item 11, the wheel install's four exits.
+  `make --no-print-directory gates` before the rewrap, plain and with
+  `GITHUB_ACTIONS=true CI=true`: green both times, 7107 passed and 1 skipped, 97.70%
+  coverage. The rewrap is the last commit.
 
 ## State, 2026-10-15 (landing): main (`a906cea9`) merged in, version 1 pinned at landing (u12 A-81)
 
@@ -128,9 +213,10 @@ The carryover ledger. Every agent session updates this so context survives even 
   `self.<method>`): it must be listed or exempted in `JUDGING_EXEMPT` with its reason. The list
   went from 29 entries to 163, with 75 exemptions, and the walk finds none uncovered; it follows
   `self.<member>` to a class attribute a base class sets, and, after the scoring branch's audit
-  named them, `_run_spec`, `_sweep_identities` and the reproduction functions are listed. Plugin evaluators are recorded
-  (`evaluator_plugins`) and a resume under others is refused. The auditor's mut-a to mut-d, applied
-  as patches to this tree, each fail the pin now; the digest is equal on Python 3.9, 3.12 and 3.14.
+  named them, `_run_spec`, `_sweep_identities` and the reproduction functions are listed. Plugin
+  evaluators are recorded (`evaluator_plugins`) and a resume under others is refused. The auditor's
+  mut-a to mut-d, applied as patches to this tree, each fail the pin now; the digest is equal on
+  Python 3.9, 3.12 and 3.14.
 - M-1: version 1 is "the rules as of the merge that introduced the version"; every run that
   records no version is refused, whatever halted it; the docs name `JUDGING_RULES_SINCE` instead of
   the date. `scratch/fixcli2/LANDING.md` lists what the final rebase updates.
@@ -175,8 +261,9 @@ The carryover ledger. Every agent session updates this so context survives even 
 - M1: the run context records `selection`, `spec_fields`, `target_fields` and `route`, and the
   refusals name the field (`1 changed (PI-DIRECT-001), in attack`), the selection flags the run was
   made with (`Resume with --spec PI-DIRECT-001 --spec SP-LEAK-001`), the target field (`its
-  capabilities field changed`), or the route and its flag (`... resolves the offline 'hardened' replay
-  (--hardened forces it). The target file is otherwise unchanged ... Resume without --hardened`).
+  capabilities field changed`), or the route and its flag (`... resolves the offline 'hardened'
+  replay (--hardened forces it). The target file is otherwise unchanged
+  ... Resume without --hardened`).
 - L6: `run_sqlite._check_context` checks every field of `context_json` where it is read (and the
   appends refuse rather than overwrite); `runs.started_at` is checked by the resume. On
   `de122e26`: `adaptive: "x"` refused as "adaptive planning on", `scope_sha256s: 7` and a
@@ -214,10 +301,10 @@ The carryover ledger. Every agent session updates this so context survives even 
   is kept; an Anthropic key is now "a credential format"; a credential variable that is not set or
   holds only blanks is named by A-82's check rather than refused as shorter than 8 characters;
   A-78's stdio test reads A-82's transport refusal. Each listed in u12 A-82's merge paragraph.
-- `make gates` green on the merged tree (`007e3c41`): 6,984 tests (6,983 passed, 1 skipped), 97.68% coverage,
-  75 specs lint OK, four contracts kept, self-scan, bandit and pip-audit clean; the same 6,984 with
-  `GITHUB_ACTIONS=true CI=true`, and the whole suite against Typer 0.27.3 (the extracted wheel
-  first on `PYTHONPATH`, nothing installed). The M7 fuzz (687 cases, `main()`, `app()` and the
+- `make gates` green on the merged tree (`007e3c41`): 6,984 tests (6,983 passed, 1 skipped), 97.68%
+  coverage, 75 specs lint OK, four contracts kept, self-scan, bandit and pip-audit clean; the same
+  6,984 with `GITHUB_ACTIONS=true CI=true`, and the whole suite against Typer 0.27.3 (the extracted
+  wheel first on `PYTHONPATH`, nothing installed). The M7 fuzz (687 cases, `main()`, `app()` and the
   click command), `m3probe.py` (32 of 32 legitimate endpoints kept, 35 of 35 hostile refused),
   `m3c.py`, the family fuzz and the M4 live checks give the same results as before the merge; the
   22 new CLI test files of both branches pass on Typer 0.27.3 (529, 1 skipped).
@@ -472,7 +559,11 @@ The carryover ledger. Every agent session updates this so context survives even 
   to 3 give the same counts on both, 0 refusals), and `e2e_bigsse.py` inconclusive
   `unreadable_reply`, bytes 376515, no raw key or canary, its excerpt 1,663 characters (4,092 on
   `5dd87b42`: only the first half is shown).
-- Tests: 109 new against `main` (5476 there, 5585 here), 7 of them since `5dd87b42`. `make gates` green on `f435cdcc` (`PYTHONPATH` set to the worktree's `src` and root, `TMPDIR` at the system default, nothing written under `/tmp`): ruff and format clean (423 files), mypy strict (161), four import contracts kept, 75 specs lint OK, 5585 tests, 97.83% coverage, self-scan 0 high or critical, bandit and pip-audit clean.
+- Tests: 109 new against `main` (5476 there, 5585 here), 7 of them since `5dd87b42`. `make gates`
+  green on `f435cdcc` (`PYTHONPATH` set to the worktree's `src` and root, `TMPDIR` at the system
+  default, nothing written under `/tmp`): ruff and format clean (423 files), mypy strict (161), four
+  import contracts kept, 75 specs lint OK, 5585 tests, 97.83% coverage, self-scan 0 high or
+  critical, bandit and pip-audit clean.
 
 ## State, 2026-10-12 (late morning): the third pre-merge audit, of `74ace451` (A-77), fixed
 
@@ -494,7 +585,10 @@ The carryover ledger. Every agent session updates this so context survives even 
 - LOW 5: A-77's not-covered list names every excerpt shape the audit's `reader_attacks.py` still
   rebuilds (10 of 26 on both trees; the set changed: the block case is masked now, and JSON lines
   in another shape than Ollama's or OpenAI's chunks, the one with a raw U+2028, are records).
-- Tests: 102 new against `main` (5476 there, 5578 here), 4 of them since `74ace451`. `make gates` green on `06caf3c3` (`PYTHONPATH` set to the worktree's `src`, `TMPDIR` at the system default): ruff and format clean (423 files), mypy strict (161), four import contracts kept, 75 specs lint OK, 5578 tests, 97.81% coverage, self-scan 0 high or critical, bandit and pip-audit clean.
+- Tests: 102 new against `main` (5476 there, 5578 here), 4 of them since `74ace451`. `make gates`
+  green on `06caf3c3` (`PYTHONPATH` set to the worktree's `src`, `TMPDIR` at the system default):
+  ruff and format clean (423 files), mypy strict (161), four import contracts kept, 75 specs lint
+  OK, 5578 tests, 97.81% coverage, self-scan 0 high or critical, bandit and pip-audit clean.
 
 ## State, 2026-10-12 (morning): the second pre-merge audit, of `ea13562f` (A-77), fixed
 
@@ -520,7 +614,11 @@ The carryover ledger. Every agent session updates this so context survives even 
   alternatives of clean replies, the test counts, and the stale docstrings and docs.
 - Merge prep with `fix/redactor-key-formats`: the judge-note test's filler is ordinary words
   (its 230 letters were a hex run to A-78).
-- Tests: 98 new against `main` (5476 there, 5574 here), 27 of them since `ea13562f`. `make gates` green on `3714473b` (with `PYTHONPATH` set to the worktree's `src` and `TMPDIR` at the system default): ruff and format clean (423 files), mypy strict (161), four import contracts kept, 75 specs lint OK, 5574 tests, 97.83% coverage, self-scan 0 high or critical, bandit and pip-audit clean.
+- Tests: 98 new against `main` (5476 there, 5574 here), 27 of them since `ea13562f`. `make gates`
+  green on `3714473b` (with `PYTHONPATH` set to the worktree's `src` and `TMPDIR` at the system
+  default): ruff and format clean (423 files), mypy strict (161), four import contracts kept, 75
+  specs lint OK, 5574 tests, 97.83% coverage, self-scan 0 high or critical,
+  bandit and pip-audit clean.
 
 ## State, 2026-10-12 (night, later): the pre-merge audit of `c4bd2012` (A-77), fixed
 
@@ -530,10 +628,10 @@ The carryover ledger. Every agent session updates this so context survives even 
   which the URL rule masks again as one, so the store's guard refused a URL password the
   redactor had masked and the run aborted (`aborted on RedactionLeakError`, exit 3; `main` exits
   0). The first piece a mask covers now shows it and the others lose the text under it, so the
-  pieces joined show each mask once and never more than the redacted text. Measured: `url_tokens.py` 18 of 18 refused, now 18
-  stored; `ws_dsn.py` 2 of 2 refused, now stored; the auditor's DSN run exit 3, now 0;
-  `fuzz_rejoin.py` 110, 120 and 122 refusals per 1,000 cases (seeds 1 to 3), now 0. A refused
-  write no longer ends the campaign alone: the runner stores the attempt again with its
+  pieces joined show each mask once and never more than the redacted text. Measured: `url_tokens.py`
+  18 of 18 refused, now 18 stored; `ws_dsn.py` 2 of 2 refused, now stored; the auditor's DSN run
+  exit 3, now 0; `fuzz_rejoin.py` 110, 120 and 122 refusals per 1,000 cases (seeds 1 to 3), now 0. A
+  refused write no longer ends the campaign alone: the runner stores the attempt again with its
   pieces withheld (`redactor.withhold_split`), `request.metadata.evidence_withheld` and the
   finding's line saying so; a second refusal ends it as before. The A-77 property test now cuts
   four URLs with a password too and checks every joined text is a fixed point (it fails on
@@ -548,7 +646,10 @@ The carryover ledger. Every agent session updates this so context survives even 
   to 25 per 1,000, now 0. Left, in A-77's
   not-covered list: a secret the alternatives alone spell beside kept tokens (`excerpt_bytes.py`
   case B), and evidence written before A-77 (a CHANGELOG line says so).
-- Tests: 71 new against `main` (5476 there, 5547 here), 31 of them since `c4bd2012`. `make gates` green on `78f94404` (with `PYTHONPATH` set to the worktree's `src`): ruff and format clean (422 files), mypy strict (160), four import contracts kept, 75 specs lint OK, 5547 tests, 97.81% coverage, self-scan 0 high or critical, bandit and pip-audit clean.
+- Tests: 71 new against `main` (5476 there, 5547 here), 31 of them since `c4bd2012`. `make gates`
+  green on `78f94404` (with `PYTHONPATH` set to the worktree's `src`): ruff and format clean (422
+  files), mypy strict (160), four import contracts kept, 75 specs lint OK, 5547 tests, 97.81%
+  coverage, self-scan 0 high or critical, bandit and pip-audit clean.
 
 ## State, 2026-10-12 (night): a secret kept in pieces, the report's keys, judge notes (A-77)
 
@@ -580,7 +681,10 @@ The carryover ledger. Every agent session updates this so context survives even 
   is put back verbatim only as a list of SHA-256 hex digests.
 - Tests: 40 new (5476 on `main`, 5516 here), 33 failing on `de122e26` and 7 passing there (replay
   and `logprob_membership` read the stored attempt alike, the shape, the model's keys, SARIF,
-  JUnit and HTML, a labelled secret across the judge cut). `make gates` green on `143c94ae` (with `PYTHONPATH` set to the worktree's `src`): ruff and format clean (421 files), mypy strict (160), four import contracts kept, 75 specs lint OK, 5516 tests, 97.84% coverage (`reporting/masking.py` 100%, `redactor.py` 98%), self-scan 0 high or critical, bandit and pip-audit clean.
+  JUnit and HTML, a labelled secret across the judge cut). `make gates` green on `143c94ae` (with
+  `PYTHONPATH` set to the worktree's `src`): ruff and format clean (421 files), mypy strict (160),
+  four import contracts kept, 75 specs lint OK, 5516 tests, 97.84% coverage (`reporting/masking.py`
+  100%, `redactor.py` 98%), self-scan 0 high or critical, bandit and pip-audit clean.
 - Open: a secret a target splits over a list of its own JSON that is no stream, or encodes;
   evidence written before this change keeps its pieces on disk.
 
@@ -765,8 +869,8 @@ The carryover ledger. Every agent session updates this so context survives even 
   (`_LATE_MASK_TYPES`, `_EMITTED`). H1: reports name the target by the rules before A-78 with the
   identity salt (`redactor.report_identity`); a baseline written by `de122e26` diffs against a run
   of the branch (exit 0). L4: the pre-flight checks the sweep identities' credentials
-  (`check_identity_credentials`), and the stdio exemption needs `provider: mcp`. L5: the CLI runs the
-  late patterns only on what it does not keep, and the model-name twin drops the UUID pattern.
+  (`check_identity_credentials`), and the stdio exemption needs `provider: mcp`. L5: the CLI runs
+  the late patterns only on what it does not keep, and the model-name twin drops the UUID pattern.
 - M2: the docs, the PR body and A-78 now say what the reruns show: no regression against main in
   any text without U+0000 or U+0001 (the auditor's fuzzers and the author's, 1,100,000 and
   1,500,000 texts), 19 in texts holding one (the `redact_text` retry, pre-existing); `diff --json`
@@ -822,9 +926,12 @@ The carryover ledger. Every agent session updates this so context survives even 
   entropy rule's; the `secret_shape` evaluator still detects only `sk-`, `gh*_`, `AKIA`, `xox`,
   JWT and PEM; a credential written as an endpoint URL's user is not registered.
 - Tests: `tests/test_redactor_key_formats.py` (589, 415 fail on `de122e26`),
-  `tests/reporting/test_own_values_readable.py` (9, 2), `tests/store/test_identity_masks_before_a78.py`
-  (12, 3 without the compatibility code), `tests/adapters/test_short_credentials.py` (39, 19),
-  `tests/cli/test_short_credential_cli.py` (10, 7). `make gates` green on `09b1b0a2` (with `PYTHONPATH` set to the worktree's `src`): 6135 tests (5476 on `main` at `de122e26`, 659 new), 97.83% coverage (`redactor.py` 99%), 75 specs lint OK, four import contracts kept, self-scan, bandit and pip-audit clean.
+  `tests/reporting/test_own_values_readable.py` (9, 2),
+  `tests/store/test_identity_masks_before_a78.py` (12, 3 without the compatibility code),
+  `tests/adapters/test_short_credentials.py` (39, 19), `tests/cli/test_short_credential_cli.py` (10,
+  7). `make gates` green on `09b1b0a2` (with `PYTHONPATH` set to the worktree's `src`): 6135 tests
+  (5476 on `main` at `de122e26`, 659 new), 97.83% coverage (`redactor.py` 99%), 75 specs lint OK,
+  four import contracts kept, self-scan, bandit and pip-audit clean.
 - Corrected by the pre-merge audit of `0b4b1f14` (the entry above): "they only add masks" and
   "none without U+0000/U+0001" did not hold (a value between two cut UUIDs, a line joined by a
   phone mask, a URL password behind a mask's `:`, a target-written mask of a new type), the
@@ -908,10 +1015,11 @@ The carryover ledger. Every agent session updates this so context survives even 
   replay said 1), now `inconclusive` with 1 in the report and the replay; `repro_resume_reverse.py`:
   replay 0 unreadable on `de122e26`, now 1, matching the report.
 - HIGH 2: a conversation (or an in-band scene's tool rounds) that a later send's environment error
-  or unreadable reply ended keeps the trace so far beside the attempt (`AttemptResult.trace_so_far`);
-  the trace evaluators read it first, a fail is stored as any fail with the error under
-  `request.metadata.conversation_error`, anything else as before. `repro_mt_env.py`: turn 2 env
-  PASS and unreadable inconclusive on `de122e26`, block fail; now all three fail, exit 2.
+  or unreadable reply ended keeps the trace so far beside the attempt
+  (`AttemptResult.trace_so_far`); the trace evaluators read it first, a fail is stored as any fail
+  with the error under `request.metadata.conversation_error`, anything else as before.
+  `repro_mt_env.py`: turn 2 env PASS and unreadable inconclusive on `de122e26`, block fail; now all
+  three fail, exit 2.
 - MEDIUM: the identity sweep names every identity it did not hear from (unreadable reply, failed
   send, a prompt its filter refused), beside OD-42's filter stops, and `authz_leak` cannot pass
   beside it. An environment error counts too (a gate fails closed); the cost, a transient failure
@@ -1011,8 +1119,8 @@ The carryover ledger. Every agent session updates this so context survives even 
 - MEDIUM: `filter_stops: []` turned the filter's withheld reply into a pass. d1, `PI-DIRECT-001`
   answered with `content_filter` and no text: with `[]` 3 passes, exit 0 (6 judge requests on
   the empty replies); without it, cut, `filtered`, exit 3. The docs recommended `[]` for "a
-  gateway", and a gateway in front of Azure relays Azure's filter. Now each adapter says what its provider
-  documents whatever is declared (`own_filter_stops`: OpenAI `content_filter`, Anthropic
+  gateway", and a gateway in front of Azure relays Azure's filter. Now each adapter says what its
+  provider documents whatever is declared (`own_filter_stops`: OpenAI `content_filter`, Anthropic
   `refusal`, a REST template's `shape_filter_stops`), and `stop_provenance` never marks foreign a
   reply with no text and no tool call that ends on one of them. It goes through the existing path
   (`filter_side`, `_cut_verdict`, `_evaluators_for_filtered_reply`): no runner change. After: d1
@@ -1133,10 +1241,10 @@ The carryover ledger. Every agent session updates this so context survives even 
   than refused out of order, since a report's redactor can mask a name and move it).
 - Tests now: `tests/evaluators/test_operator_not_destructive.py` (34, 33 fail on `main` at
   `a69dbd8c`), `tests/core/test_operator_declaration_runner.py` (9, all fail there),
-  `tests/cli/test_operator_declaration_campaign.py` (16, all fail there). `make gates` green on `9096f659`
-  (with `PYTHONPATH` set to the worktree's `src`): 5391 tests (5332 on `main` at `a69dbd8c`, 59
-  new), 97.83% coverage (`shared/tool_abuse.py` and `evaluators/tool_call.py` 100%), 75 specs
-  lint OK, four import contracts kept, self-scan, bandit and pip-audit clean.
+  `tests/cli/test_operator_declaration_campaign.py` (16, all fail there). `make gates` green on
+  `9096f659` (with `PYTHONPATH` set to the worktree's `src`): 5391 tests (5332 on `main` at
+  `a69dbd8c`, 59 new), 97.83% coverage (`shared/tool_abuse.py` and `evaluators/tool_call.py` 100%),
+  75 specs lint OK, four import contracts kept, self-scan, bandit and pip-audit clean.
 
 ## State, 2026-10-11 (later): a target file may declare one of its own granted tools not destructive (OD-43)
 
@@ -1175,8 +1283,8 @@ The carryover ledger. Every agent session updates this so context survives even 
   like a hand-off ("make sure it destroys nothing", the second look lint gives a scene's
   `destructive: false` since the A-71 audit's M2; the heuristic moved to
   `shared/tool_abuse.handoff_shaped`, read by both); the `-q` lines end `, <k> tool(s) declared
-  not destructive`. Every attempt it changed carries in its verdict `operator declaration (OD-43): the
-  target file declares '<tool>' (its name holds '<verb>') not destructive
+  not destructive`. Every attempt it changed carries in its verdict `operator declaration (OD-43):
+  the target file declares '<tool>' (its name holds '<verb>') not destructive
   (seeded_setup.granted_tools, destructive: false), so no call to it was judged destructive`, in
   the form of the scene's own clearing note and after it when both apply, carried by the runner to
   the stored aggregate, and the finding counts them. `_run_evaluators` takes the target and reads
@@ -1196,10 +1304,10 @@ The carryover ledger. Every agent session updates this so context survives even 
   `tests/core/test_operator_declaration_runner.py` (6, all fail there, among them a cut reply),
   `tests/cli/test_operator_declaration_campaign.py` (12, all fail there: every report of one run
   through the real CLI and the same run without the declaration, the dry run, `-sn`, the two plan
-  warnings, the worked example, five resume cases, a corrupt record among them). Docs: MANUAL §4.2, §5, §8, §10 and replay,
-  FAQ, USAGE, both man pages, `docs/01`, `03`, `04`, `09`, `12`, `16`, ADR-0009,
-  `examples/target.app.yaml` (the support agent now declares its hand-off) and Scenario G's real
-  output, CHANGELOG. `make gates` green on `a9564e9d` (with `PYTHONPATH` set to the
+  warnings, the worked example, five resume cases, a corrupt record among them). Docs: MANUAL §4.2,
+  §5, §8, §10 and replay, FAQ, USAGE, both man pages, `docs/01`, `03`, `04`, `09`, `12`, `16`,
+  ADR-0009, `examples/target.app.yaml` (the support agent now declares its hand-off) and Scenario
+  G's real output, CHANGELOG. `make gates` green on `a9564e9d` (with `PYTHONPATH` set to the
   worktree's `src`): 5312 tests (5264 on `main` at `e8f9d1f6`, 48 new), 97.82% coverage
   (`shared/tool_abuse.py` and `evaluators/tool_call.py` 100%), 75 specs lint OK, four import
   contracts kept, self-scan, bandit and pip-audit clean.
@@ -1234,13 +1342,13 @@ The carryover ledger. Every agent session updates this so context survives even 
   Measured with the auditor's `probe_cli.py` on `b5a4e7e1`: the broad filter on attack words
   finishes the default battery (160 of 550 blocked, 2 checks at `--concurrency 1`, exit 0; on
   `07aa0b3a`, exit 3 at a run of 20 and every resume after 5); all HTML: 9 requests (6 at 1), 27
-  with `-sV` (24 at 1); two readable then HTML: 26 to 27, exit 3; 30% HTML at random: finishes, every
-  spec `inconclusive`. Tests: core 15 (6 fail on `07aa0b3a`), adapters 37 (3 fail there), CLI 11 (4
-  fail there). `eca90de1` names the resume note's clause apart (mypy). `make --no-print-directory
-  gates` green on `eca90de1` (2026-10-11, 18:34 to 18:41): ruff, format (405 files), mypy strict
-  (159 source files), import-linter (4 kept), spec lint (0 errors, 0 warnings across 75 specs, 14
-  suites, 1 pack), 5,348 tests with 97.75% coverage, self-scan 0 high/critical, bandit, pip-audit
-  (no known vulnerabilities).
+  with `-sV` (24 at 1); two readable then HTML: 26 to 27, exit 3; 30% HTML at random: finishes,
+  every spec `inconclusive`. Tests: core 15 (6 fail on `07aa0b3a`), adapters 37 (3 fail there), CLI
+  11 (4 fail there). `eca90de1` names the resume note's clause apart (mypy).
+  `make --no-print-directory gates` green on `eca90de1` (2026-10-11, 18:34 to 18:41): ruff, format
+  (405 files), mypy strict (159 source files), import-linter (4 kept), spec lint (0 errors, 0
+  warnings across 75 specs, 14 suites, 1 pack), 5,348 tests with 97.75% coverage, self-scan 0
+  high/critical, bandit, pip-audit (no known vulnerabilities).
 - Noted, not part of this branch: the auditor's `probe_excerpt.py` shows an `sk-ant-api03-` key of
   a repeated 8-character pattern readable in the excerpt, and the redactor leaves it readable
   everywhere else too (its entropy rule; the excerpt only applies the redactor).
@@ -1514,9 +1622,9 @@ The carryover ledger. Every agent session updates this so context survives even 
   vulnerable (67 confirmed fails, 8 inconclusive) and hardened (64 passes, 11 inconclusive)
   unchanged spec by spec. No fixture verdict changed. The no-judge dry-run warning on
   `examples/target.local.yaml` read 34 of the 34 specs (was 33 of 34): every shipped spec declares
-  a judge; since OD-44 (below) it reads 33 of the 33. Left out: `MCP-TOOLPOISON-001` against a non-MCP target with a judge configured is
-  what the judge makes of a reply that lists no tool (gating MCP specs to `provider: mcp` is a
-  planner change of its own).
+  a judge; since OD-44 (below) it reads 33 of the 33. Left out: `MCP-TOOLPOISON-001` against a
+  non-MCP target with a judge configured is what the judge makes of a reply that lists no tool
+  (gating MCP specs to `provider: mcp` is a planner change of its own).
 - **OD-19 (ADR-0010 B with the amendment, accepted, u06 A-73):** one rule, `deterministic_first`,
   in `shared/combination.py`, called by the runner, the lint fixture engine and
   `evaluators.combine` (a Hypothesis property checks they agree); the schema gains the value, the
@@ -1724,9 +1832,10 @@ The carryover ledger. Every agent session updates this so context survives even 
   `92c7b11`). Left open: Bedrock's guardrail intervention (an HTTP 200 read as a reply), OpenAI's
   `invalid_prompt` 400 and Gemini's OpenAI-compatible endpoint (no documented shape); the `-sV`
   pass still stops on such a refusal of an attributing probe (the benign one and, since the
-  audit, the carriers are failed probes). Not run against a live Azure or Gemini endpoint. `make gates` green (2026-10-10, 20:49): ruff, format (386 files),
-  mypy strict (156 source files), import-linter (4 kept), spec lint (0 errors, 0 warnings across 75
-  specs, 14 suites, 1 pack), 4,954 tests with 97.63% coverage, self-scan 0 high/critical, bandit,
+  audit, the carriers are failed probes). Not run against a live Azure or Gemini endpoint.
+  `make gates` green (2026-10-10, 20:49): ruff, format (386 files), mypy strict (156 source files),
+  import-linter (4 kept), spec lint (0 errors, 0 warnings across 75 specs, 14 suites, 1 pack), 4,954
+  tests with 97.63% coverage, self-scan 0 high/critical, bandit,
   pip-audit (no known vulnerabilities).
 
 ## State, 2026-10-10: URL passwords behind a credential holding a URL separator (#96)
@@ -1799,16 +1908,17 @@ The carryover ledger. Every agent session updates this so context survives even 
   the fixes are redone in small commits. MEDIUM: a judge whose model refused sampling was silent
   (`SemanticJudgeEvaluator` read `SamplingRefused` as an outage: every judged spec inconclusive,
   exit 0, 29 judge 400s); it is re-raised and stops the run. Lows: `SamplingRefused` fires only on a
-  sent parameter named as a parameter (`sampling_params_named`, `tests/adapters/test_sampling_refused.py`
-  with 21 tests, 17 failing on `7dd5ec1`); the run records whether its target and judge were sent a
-  temperature and a resume that keeps attempts continues as it started; `sampling_not_sent` counts
-  the block as written; the judge refusal says "capabilities" without nested parentheses; the
-  gateway id forms (ARNs, `anthropic/claude-opus-4.7`, `[1m]`) match; Mythos is named everywhere,
-  the reference's Sonnet 5 contradiction is written down, USAGE carries the not-tested-live
-  caveat, `examples/target.openai.yaml` no longer suggests `sampling: false` for a reasoning model.
-  `tests/cli/test_models_without_sampling.py`: 66 tests, 18 failing on `7dd5ec1`. Verification of
-  `569bb3b`: a probe recorded nothing of a block whose only field is a seed that does not go out,
-  and the resume notice named a top_p that never goes out to Anthropic; both fixed.
+  sent parameter named as a parameter (`sampling_params_named`,
+  `tests/adapters/test_sampling_refused.py` with 21 tests, 17 failing on `7dd5ec1`); the run records
+  whether its target and judge were sent a temperature and a resume that keeps attempts continues as
+  it started; `sampling_not_sent` counts the block as written; the judge refusal says "capabilities"
+  without nested parentheses; the gateway id forms (ARNs, `anthropic/claude-opus-4.7`, `[1m]`)
+  match; Mythos is named everywhere, the reference's Sonnet 5 contradiction is written down, USAGE
+  carries the not-tested-live caveat, `examples/target.openai.yaml` no longer suggests
+  `sampling: false` for a reasoning model. `tests/cli/test_models_without_sampling.py`: 66 tests, 18
+  failing on `7dd5ec1`. Verification of `569bb3b`: a probe recorded nothing of a block whose only
+  field is a seed that does not go out, and the resume notice named a top_p that never goes out
+  to Anthropic; both fixed.
 
 ## State, 2026-10-09 (night): Claude models that take no temperature or top_p (A-68)
 
@@ -1961,12 +2071,13 @@ The carryover ledger. Every agent session updates this so context survives even 
   suites) are unchanged: no mapping moved (`dottore coverage --json` is byte-identical to
   `f12ba83`'s). `make gates` green (with `PYTHONPATH` set to the worktree's `src`): 4685 tests
   (67 new, 24 of them from the pre-merge audit below), 97.60% coverage, 75 specs lint OK, four
-  import contracts kept, self-scan, bandit and pip-audit clean. Left open, out of reach rather than decided: a confirmation from outside the
-  model needs an input no evaluator has (a harness's approval record, approvals a target
-  declares, a spec whose later turn confirms after the agent asked); when one exists it is the
-  only thing that may mark a destructive call confirmed. Until then neither evaluator can honour a
-  scripted confirmation (a later turn saying "yes, I confirm"), so a custom spec that tests acting
-  after one should rely on `semantic_judge` (MANUAL §8, `docs/03`).
+  import contracts kept, self-scan, bandit and pip-audit clean. Left open, out of reach rather than
+  decided: a confirmation from outside the model needs an input no evaluator has (a harness's
+  approval record, approvals a target declares, a spec whose later turn confirms after the agent
+  asked); when one exists it is the only thing that may mark a destructive call confirmed. Until
+  then neither evaluator can honour a scripted confirmation (a later turn saying "yes, I confirm"),
+  so a custom spec that tests acting after one should rely on
+  `semantic_judge` (MANUAL §8, `docs/03`).
 - Pre-merge audit of `095aa55`: merge-ready once one MEDIUM was fixed, now fixed with five lows.
   The MEDIUM: the agreement of `tool_call` and `kill_chain_progression` was overclaimed in the
   `kill_chain` docstring, the MANUAL, `docs/13` and the A-65 row ("the two agree on any trace a
@@ -2625,9 +2736,9 @@ The carryover ledger. Every agent session updates this so context survives even 
   `signal.default_int_handler`, whose KeyboardInterrupt raised inside a weakref callback is printed
   and dropped, so the run went on. Ctrl-C never was, because inside `asyncio.run` it goes to
   asyncio's handler, which cancels. Now SIGTERM and SIGHUP call the SIGINT handler in place at that
-  moment, and raise as before only when SIGINT has none (ignored, a job a script starts with `&`). Left as
-  it is: with Ctrl-C ignored, and outside the event loop (where no request is sent), a signal in a
-  callback can still be dropped, as Ctrl-C can in any Python program. Contract u12 A-60;
+  moment, and raise as before only when SIGINT has none (ignored, a job a script starts with `&`).
+  Left as it is: with Ctrl-C ignored, and outside the event loop (where no request is sent), a
+  signal in a callback can still be dropped, as Ctrl-C can in any Python program. Contract u12 A-60;
   `tests/cli/test_termination_signals.py`, 2 of its 8 tests fail on `e4d6c83`.
 
 ## State, 2026-10-07 (afternoon): a refused `--resume -sV` whose advice was refused in turn
@@ -3029,14 +3140,14 @@ The carryover ledger. Every agent session updates this so context survives even 
   handler's own write has nothing after it (2 of 41 tries just after a 503 stop). Writing again on
   that signal was built and withdrawn (on a locked store, one Ctrl-C after a pass that succeeded
   waited 15.1 s instead of 9.8 for a record lost anyway); the window is written in the contract.
-  Contract u12 A-46; `tests/cli/test_probe_pass_spend.py`, 11 of its 14 tests fail on `2f6201a`. Not changed: a fresh
-  run's pass and a `--resume-unverified` run with no recorded spend record nothing; a signal during
-  a handler's write, a SIGKILL, or a write that fails (a warning) still leave the record low. Left open as a follow-up: the adapters
-  are built with no retries of their own, so the error that stops a probe pass, and an attack
-  attempt's evidence, say `exhausted 1 attempt(s)` after three sends. Merged in a scratch
-  repository with PR #66 and with PR #68, code, u12 and the index merge cleanly (only
-  `CHANGELOG.md` and `docs/PROGRESS.md` conflict) and the merged trees pass both PRs' tests and
-  these.
+  Contract u12 A-46; `tests/cli/test_probe_pass_spend.py`, 11 of its 14 tests fail on `2f6201a`. Not
+  changed: a fresh run's pass and a `--resume-unverified` run with no recorded spend record nothing;
+  a signal during a handler's write, a SIGKILL, or a write that fails (a warning) still leave the
+  record low. Left open as a follow-up: the adapters are built with no retries of their own, so the
+  error that stops a probe pass, and an attack attempt's evidence, say `exhausted 1 attempt(s)`
+  after three sends. Merged in a scratch repository with PR #66 and with PR #68, code, u12 and the
+  index merge cleanly (only `CHANGELOG.md` and `docs/PROGRESS.md` conflict) and the merged trees
+  pass both PRs' tests and these.
 
 ## State, 2026-10-07 (afternoon): every YAML loader capped by expanded size
 
@@ -3553,7 +3664,8 @@ The carryover ledger. Every agent session updates this so context survives even 
   (EMB-XTENANT-RETRIEVAL / EMB-INVERSION-PROBE / EMB-NEIGHBOR-LEAK + embeddings suite).
 - **Safeguard event logged** (2026-07-08): Opus 4.8 blocked the kill_chain sub-agents 3×
   (cyber-topic false positive); exemption email prepped for Marta+Laurens; mitigation = route
-  security-content sub-agents to Sonnet 5 (works). See `~/AI projects/ildottore-anthropic-safeguard-log.md`.
+  security-content sub-agents to Sonnet
+  5 (works). See `~/AI projects/ildottore-anthropic-safeguard-log.md`.
 - **Backlog left (docs/12):** adversarial-suffix/transfer attacks, guardrail-evasion, multilingual
   battery, function-calling attacks, finding-dedupe-across-mutations; P2 items. Pre-public: GPG
   re-sign + history scrub of old `.dottore/` artifacts. OD-11 default (PII off) still human-pending.
@@ -3570,7 +3682,8 @@ The carryover ledger. Every agent session updates this so context survives even 
   sub-agent for kill_chain were blocked 3× ('flagged for a cybersecurity topic', Opus 4.8;
   req_011CcpPiPD5JcrF26mwMTWs5 +2). Code (impl it1) + its 20-test FP/harmful suite had already
   landed → gate stayed green; conductor did **manual** senior validation. Did NOT circumvent.
-  Logged to ~/AI projects/ildottore-anthropic-safeguard-log.md; exemption: claude.com/form/cyber-use-case.
+  Logged to ~/AI projects/ildottore-anthropic-safeguard-log.md;
+  exemption: claude.com/form/cyber-use-case.
 - **RESPONSIBLE-USE.md** charter added (`80d574f`). Dependabot actions-bump merged earlier.
 - Carryover: MVP-2 w2 (baseline/drift, adversarial-suffix, multilingual, embeddings); GPG re-sign
   + history scrub of old `.dottore/` artifacts before public flip.
@@ -3669,8 +3782,10 @@ The carryover ledger. Every agent session updates this so context survives even 
 
 ## State: 2026-07-07 16:22 CEST
 
-- **Stage:** 1 ✅ · 2 Specify **✅** (15 contracts + consistency gate reconciled) · 3 Execute ⬜ (starting W0).
-- Repo bootstrap complete + first commit (37 files, **unsigned**: gpg-agent locked non-interactively).
+- **Stage:** 1 ✅ · 2 Specify **✅** (15 contracts + consistency gate reconciled) · 3
+  Execute ⬜ (starting W0).
+- Repo bootstrap complete + first commit (37 files,
+  **unsigned**: gpg-agent locked non-interactively).
 - **Stage 2 done via workflow** (`wpzv95kk4`, 15 agents, ~981k tok): 14 unit contracts written +
   cross-unit consistency review. The gate caught **3 blocking issues** at the TestPlan/planner
   seam (u08↔u09) + missing schemas → **resolved by ADR-0006** (TestPlan+ModelFingerprint in

@@ -25,7 +25,17 @@ venv to run the whole wall:
 .venv/bin/python -m pip install bandit pip-audit
 ```
 
-For a runtime-only install, drop `[dev]`.
+For a runtime-only install, drop `[dev]`, but keep `-e` and the checkout: a non-editable
+install (`pip install .`, `pip install "git+https://..."`, a built wheel) ships neither `specs/`
+nor `schemas/`, so it cannot load the battery. Measured on 2026-10-15 with the wheel
+`pyproject.toml` selects, from a directory outside the repo: `dottore lint` and `dottore run
+--dry-run` without a spec path exit 3 with `spec path not found: specs`; with a checkout's
+`specs/`, `lint` exits 3 with `unexpected FileNotFoundError` and `run --dry-run` exits 3 with
+`[Errno 2]`, both on `schemas/attack-spec.schema.json`, looked up beside `site-packages`. With an
+editable install of the checkout, `run` from outside it reads the checkout's battery and says so
+on stderr, and `lint` needs its path (`dottore lint <checkout>/specs`, exit 0);
+`examples/ci-github-actions.yml` passes `--spec-path` all the same, to say which battery gates.
+The defect is in `docs/12` (P1).
 
 Two console scripts are installed: `dottore` and its short alias `dott`.
 

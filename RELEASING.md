@@ -25,7 +25,7 @@ no passphrase); the maintainer signs the batch and it merges via PR:
 
 ```bash
 # on the release branch, after the checklist passes:
-"$HOME/AI projects/ildottore/scripts/sign-branch.sh"   # warms gpg-agent, then rebase-signs from main
+"$(git rev-parse --show-toplevel)/scripts/sign-branch.sh"   # warms gpg-agent, then rebase-signs from main
 ```
 
 `scripts/sign-branch.sh` avoids the pinentry-in-rebase hang (it warms the gpg-agent first) and runs

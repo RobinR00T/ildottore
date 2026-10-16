@@ -10,8 +10,8 @@ evidence-backed report mapped to operational risk.
 
 The value is not the prompts. It is **reproducibility + evidence + risk mapping**. Every
 attempt persists its prompt, full response, sampling params, tool traces and the aggregate
-verdict with its reasoning; findings are scored `impact x exploitability x reproducibility` and re-derivable
-with `dottore replay`. A finding we cannot reproduce or evidence is treated as noise.
+verdict with its reasoning; findings are scored `impact x exploitability x reproducibility` and
+re-derivable with `dottore replay`. A finding we cannot reproduce or evidence is treated as noise.
 
 ### Is it safe to run? Will it actually do damage?
 
@@ -162,10 +162,11 @@ option (`--fail-on bogus`, `--timeout 0`, two formats writing one file) is refus
 through the same mask as every error (a key that a shell variable put into `--runs` is not
 echoed). `dottore lint` exits `0` clean, `1` when a spec fails lint and `3` when a path does not
 exist or holds nothing to lint. For regression-only gating, compare against a baseline with
-`dottore diff baseline.json current.json`. See [`examples/ci-github-actions.yml`](../examples/ci-github-actions.yml).
-In the SARIF you upload to code scanning, a fail that needs review is at most a `warning` (since
-2026-10-11), so code scanning, which by default fails a pull request's check on an `error`, does
-not fail one that `--fail-on` lets through; a confirmed fail keeps its band's level.
+`dottore diff baseline.json current.json`. See
+[`examples/ci-github-actions.yml`](../examples/ci-github-actions.yml). In the SARIF you upload to
+code scanning, a fail that needs review is at most a `warning` (since 2026-10-11), so code scanning,
+which by default fails a pull request's check on an `error`, does not fail one that `--fail-on` lets
+through; a confirmed fail keeps its band's level.
 
 `1` means findings below the band and nothing else. Until 2026-10-12 a crash (a run store that
 could not be opened, a lock, any exception no command handled) was a traceback with exit `1`, so
@@ -208,9 +209,9 @@ rules, or of a run that records none (any run a version from before
 under other evaluator plugins than the run was judged with, and one under other code with the
 same version (the run also records a digest of the installed code that judged it, so an upgrade
 or a local edit nobody bumped the version for is caught). Finish the run with the installation
-(and plugins) that started it, or start a fresh run; no flag waives it. Other refusals name what changed
-and the flag that puts it back: the spec field and `--spec-path`, the selection flags the run was
-made with, or the route (`--hardened`).
+(and plugins) that started it, or start a fresh run; no flag waives it. Other refusals name what
+changed and the flag that puts it back: the spec field and `--spec-path`, the selection flags the
+run was made with, or the route (`--hardened`).
 
 ### What is "confirmed" vs "needs-review"?
 
@@ -250,22 +251,22 @@ scene cleared, and `dottore lint` warns when the cleared name is not shaped like
 A tool your deployment grants under `seeded_setup.granted_tools` is in no scene, so no spec can
 mark it. Your target file can: write the grant as `{name: transfer_to_billing_agent,
 destructive: false}` and a call to that exact name is not failed by its name alone (owner
-decision OD-43, 2026-10-11). It is your declaration, so it is always shown: `--dry-run` and
-`-sn` print it on an `operator:` line, every report and the run store state it for the run,
+decision OD-43, 2026-10-11). It is your declaration, so it is always shown: `--dry-run`, `-v`
+and `-sn` print it on an `operator:` line, every report and the run store state it for the run,
 each attempt it changed says so in its verdict, and changing it refuses a resume. It is held to
 the narrowest reading: `false` only (`true`, a quoted `"false"`, a mapping without
 `destructive` and any other key are refused), exact names (a padded one is refused, and the dry
-run flags a grant that is a spec's scene tool but for case), never a tool of a spec's own scene (there the scene decides, `destructive: true`
-included), never `kill_chain_progression`, and never a call off the allowlist or an injected or
-forbidden argument. See MANUAL §4.2 and §8.
+run flags a grant that is a spec's scene tool but for case), never a tool of a spec's own scene
+(there the scene decides, `destructive: true` included), never `kill_chain_progression`, and never a
+call off the allowlist or an injected or forbidden argument. See MANUAL §4.2 and §8.
 
 ### Which suites and categories exist?
 
 Suites: `owasp-llm-top10` (alias `owasp:llm`), `quick`, `multi-turn`, `access-control`,
 `agentic-owasp2026`, `obfuscation-enhancers`, `embeddings`, `agentic-extortion`, `mcp`,
 `responsible-ai`, `guardrail-evasion`, `multimodal`, `structured-output`, `nova-iopc`.
-Category aliases for `-p`: `pi`, `jailbreak`, `leakage`, `tool`, `rag`, `output`, `dos`, `safety`, `bias`
-(long forms accepted). `dottore registry ls` is the source of truth.
+Category aliases for `-p`: `pi`, `jailbreak`, `leakage`, `tool`, `rag`, `output`, `dos`, `safety`,
+`bias` (long forms accepted). `dottore registry ls` is the source of truth.
 
 ### Can I add my own attack without touching the code?
 
@@ -276,7 +277,8 @@ scanner must flag, a hardened one it must pass), then `dottore lint specs/`. A d
 own `*.yaml` files only, and `lint` says so: a path that holds none exits `3` with `NO_SPECS`,
 naming the YAML files in its subdirectories it did not read, where until 2026-10-11 it printed
 `lint OK ... across 0 spec(s)`. A spec id two files declare refuses `run`, naming both files. See
-[`06-extensibility-suites.md`](06-extensibility-suites.md) and [`CONTRIBUTING.md`](../CONTRIBUTING.md).
+[`06-extensibility-suites.md`](06-extensibility-suites.md) and
+[`CONTRIBUTING.md`](../CONTRIBUTING.md).
 
 ### Does it support MCP servers?
 
@@ -346,15 +348,16 @@ exploit (a fail): it is `inconclusive` with the reason `blocked_by_provider_filt
 every attempt was blocked is `inconclusive` and not exercised, never a pass; one with some blocked
 attempts is decided by the usual rule (any `fail` is a `fail`; a `pass` needs more than half of the
 attempts to pass). A run whose every attempt was blocked or cut, with no fail, exits 3 since
-2026-10-11 (state `filtered`): it measured the filter, not the model (next answer). The terminal summary, the finding's reasoning and every report count them
+2026-10-11 (state `filtered`): it measured the filter, not the model (next answer). The terminal
+summary, the finding's reasoning and every report count them
 (`Blocked by the provider's input filter: 8 attempt(s) in 2 spec(s) never reached the model`). A
 blocked attempt is not sent again, on a retry or a resume, and it counts against
 `--budget-requests`. Only those documented shapes count, and only from the provider that documents
 them (Azure's 400 from an `openai` target; from an `anthropic` or `rest` target it is an ordinary
-4xx): any other 4xx (another code, the same body at 403) still stops the run; a Bedrock guardrail's canned reply (an HTTP 200) is read by the next
-answer. To measure the model rather than the deployment, scan a deployment whose filter annotates
-instead of blocking ([`MANUAL.md`](MANUAL.md) §9,
-[`adr/0011`](adr/0011-a-prompt-the-provider-filter-refused-is-not-a-verdict.md)).
+4xx): any other 4xx (another code, the same body at 403) still stops the run; a Bedrock guardrail's
+canned reply (an HTTP 200) is read by the next answer. To measure the model rather than the
+deployment, scan a deployment whose filter annotates instead of blocking ([`MANUAL.md`](MANUAL.md)
+§9, [`adr/0011`](adr/0011-a-prompt-the-provider-filter-refused-is-not-a-verdict.md)).
 
 ### My deployment's output filter blanks or replaces some replies. Do those specs pass?
 
@@ -454,8 +457,9 @@ again. At 5 in a row before any reply was read, or 20 in a row after, it sends o
 first: a content filter that answers attack prompts with a block page lets it through, and the run
 goes on. Only when that one cannot be read either does the run stop early (exit 3, `aborted on
 UnreadableReplies: ...`, with what to check for that provider); a resume of a run that read replies
-starts with the endpoint proven, and a shorter run that read nothing is `unreachable`. A 4xx is not this: it still stops the run ([`MANUAL.md`](MANUAL.md) §3, a
-reply the adapter cannot read; [`adr/0012`](adr/0012-a-reply-the-adapter-cannot-read-is-not-a-verdict.md)).
+starts with the endpoint proven, and a shorter run that read nothing is `unreachable`. A 4xx is not
+this: it still stops the run ([`MANUAL.md`](MANUAL.md) §3, a reply the
+adapter cannot read; [`adr/0012`](adr/0012-a-reply-the-adapter-cannot-read-is-not-a-verdict.md)).
 
 ### If my system passes Il Dottore, does it meet OWASP AISVS?
 
@@ -488,8 +492,8 @@ OD-43). A spec whose canary has to be in your
 deployment needs `seeded_setup.run_token` (`--dry-run -vv` prints the canary to seed), and your
 deployment must return its tool calls, or a spec whose poison is a tool's result is
 `setup_not_reached` (and a spec judged on its tool trace is not sent through a REST target).
-`examples/target.app.yaml` is a worked file. The offline mock needs none of this: its replies are written for the scene (OD-18,
-`docs/adr/0009-a-spec-setup-never-reaches-a-live-target.md`).
+`examples/target.app.yaml` is a worked file. The offline mock needs none of this: its replies are
+written for the scene (OD-18, `docs/adr/0009-a-spec-setup-never-reaches-a-live-target.md`).
 
 ### Why does a run refuse my target with "target(s) not authorized by the scope"?
 
@@ -516,9 +520,9 @@ a target that lacks the capability they need skips them, and one that has it rep
 end in `error: nothing would be sent` (exit 3), and the message says why: "Widen the selection
 or declare the capability on the target. A spec blocked by policy needs a policy pack that
 enables it, and the CLI cannot load one today (open decision), so it cannot run from
-`dottore`." For `DL-PII-ELICIT-001` the opt-in is decided (OD-11): the pack that enables it and a
-per-run `--allow-pii-elicitation` flag come together, never the flag alone; until then it stays
-off.
+`dottore`." That open decision is OD-46. For `DL-PII-ELICIT-001` the opt-in is decided (OD-11): the
+pack that enables it and a per-run `--allow-pii-elicitation` flag come together, never the flag
+alone; until then it stays off.
 
 ### Where does evidence live, and is it safe to keep?
 

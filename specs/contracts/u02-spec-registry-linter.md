@@ -111,8 +111,8 @@ evaluators). Later packs may extend but never silently override earlier ids. Ful
 - **Registry API:** property test (Hypothesis): `get(id)` round-trips every listed spec;
   `resolve(suite)` returns specs in suite order; `list(filter=...)` is a correct subset.
 - `dottore lint specs/` exits 0 on the shipped good tree, non-zero with itemized errors on `bad/`.
-- `ruff check`, `ruff format --check`, `mypy src/ildottore/registry`, `mypy src/ildottore/cli/lint.py`
-  clean; `lint-imports` green (registry imports `shared` only).
+- `ruff check`, `ruff format --check`, `mypy src/ildottore/registry`,
+  `mypy src/ildottore/cli/lint.py` clean; `lint-imports` green (registry imports `shared` only).
 
 **A-17 Every framework field is validated against something (added 2026-09-22).** `owasp` and
 `mitre_atlas.tactic` must be in their pinned universes (or in the declared companion sets),
@@ -451,8 +451,9 @@ spec schema error that opens with an integer writes it with thousands separators
 read as a phone number (L8). After the pre-merge audit: the registry skips a second declaration of
 an id from the same resolved file (`lint sp sp` reported 75 collisions naming one file twice), and
 `cli.lint.run_lint` takes the CLI's mask for the findings that quote a search path
-(`PATH_NOT_FOUND`, `NO_SPECS`, `FILES_NOT_READ`). Checked by `tests/cli/test_spec_paths_that_hold_nothing.py`,
-`tests/cli/test_spec_id_collisions.py` and `tests/cli/test_cli_messages_read_right.py`.
+(`PATH_NOT_FOUND`, `NO_SPECS`, `FILES_NOT_READ`). Checked by
+`tests/cli/test_spec_paths_that_hold_nothing.py`, `tests/cli/test_spec_id_collisions.py` and
+`tests/cli/test_cli_messages_read_right.py`.
 
 ## §8 Out of scope / forbidden
 - MUST NOT execute spec/plugin code or open any socket at load (parse + validate + register only).
@@ -462,7 +463,8 @@ an id from the same resolved file (`lint sp sp` reported 75 collisions naming on
 - Not its call: pack-signing enforcement (OD-2 / DECIDE) · scope-file signing (u01).
 
 ## §9 Open decisions (human sign-off → rolls to 00-INDEX ledger)
-- Pack **checksum/signature** enforcement in MVP-1 vs MVP-2 (ties to OD-2). Propose: parse +
+- **OD-10** pack **checksum/signature** enforcement in MVP-1 vs MVP-2 (ties to OD-2); resolved
+  in `00-INDEX.md` as proposed here. Propose: parse +
   record manifest in MVP-1, enforce signatures in MVP-2.
 - Whether suite/pack Pydantic models live in `shared/` (u00) or locally in `registry/` if u00
   omits them: propose local until promoted to shared by an ADR.

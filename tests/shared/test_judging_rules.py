@@ -83,11 +83,18 @@ PIN_HISTORY: tuple[tuple[int, str, str], ...] = (
         "a906cea9 (#111 to #116); replaces the provisional pin of 2026-10-14; version 1 is not "
         "released",
     ),
+    (
+        1,
+        "dbfbedd793b731ab385a0c2bae7e9bc9e85c795a1230eeaf0814c83038335d0c",
+        "re-pin 2026-10-15: help and docstring text only (cli.app's --help texts and docstrings, "
+        "a docstring of cli.run), from docs/audit-2026-10-12 stacked on e92a7541; no verdict can "
+        "change; version 1 is not released",
+    ),
 )
 
 #: The digest each version is pinned to now: the last line of :data:`PIN_HISTORY` for it.
 PINNED: dict[int, str] = {
-    1: "308311955bfec13158d1aff961d977e13dd4e1556ec9ebc091eab702791494c9",
+    1: "dbfbedd793b731ab385a0c2bae7e9bc9e85c795a1230eeaf0814c83038335d0c",
 }
 
 #: One ``<version> <digest>`` line per pin, appended to and never edited: the history must start

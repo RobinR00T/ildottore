@@ -50,7 +50,7 @@ dottore run --dry-run --quick \
   --scope examples/scope.local.yaml
 ```
 
-Real output of that exact command:
+Real output of that exact command (the `--judge` warning on stderr left out):
 
 ```
 dry-run: plan resolved, sent nothing.
@@ -140,9 +140,9 @@ A Claude model is scanned the same way with `provider: anthropic`, an
 and later, Sonnet 5 and Sonnet 5.5, and the Fable and Mythos 5 families take no `temperature` or
 `top_p` (Anthropic's API reference, not tested live by this project), so the scanner sends them
 neither, from the list in `adapters.anthropic.MODELS_WITHOUT_SAMPLING`, and the run and
-`--dry-run` say that their replies are not temperature-0 deterministic. A model the list does not name and that
-refuses them is declared with `sampling: false` under `capabilities`; `sampling: true` sends them
-to a listed one.
+`--dry-run` say that their replies are not temperature-0 deterministic. A model the list does not
+name and that refuses them is declared with `sampling: false` under `capabilities`; `sampling: true`
+sends them to a listed one.
 
 A hosted deployment may run its own input filter before the model. Azure OpenAI's content filter
 answers an attack prompt it blocks with HTTP 400 and the error code `content_filter`; the run
@@ -205,7 +205,7 @@ the benign check, then one per other spec in flight at the default `--concurrenc
 8 attempts and the check, recorded 0 tokens, and ended, exit 3, with
 
 ```
-error: run on api did not complete: aborted on UnreadableReplies: the target's first 8 replies in this run could not be read as replies (the last: ResponseMalformed: api: success response was not valid JSON: Expecting value: line 1 column 1 (char 0); not evaluated), and none could, nor a benign check sent then: check that the target file's endpoint is an OpenAI chat completions URL (or a server that speaks that API) and its provider is openai (a filter in front of the endpoint that answers every request with a block page reads the same). The run stopped rather than send the rest of the battery to be scored inconclusive; the replies are stored as inconclusive attempts, and a resume sends them again; 35 of 75 specs never ran or did not finish
+error: run on api did not complete: aborted on UnreadableReplies: the target's first 8 replies in this run could not be read as replies (the last: ResponseMalformed: api: success response was not valid JSON: Expecting value: line 1 column 1 (char 0); not evaluated), and none could, nor a benign check sent then: check that the target file's endpoint is an OpenAI chat completions URL (or a server that speaks that API) and its provider is openai (a filter in front of the endpoint that answers every request with a block page reads the same). The run stopped rather than send the rest of the battery to be scored inconclusive; the replies are stored as inconclusive attempts, and a resume sends them again; 34 of 75 specs never ran or did not finish
 ```
 
 ## Scenario E, scan a fleet
@@ -309,8 +309,8 @@ the tool's judgement, so the `operator:` line shows it before anything is sent, 
 the terminal summary state it, and each attempt it changed says so in its verdict (OD-43,
 [`../docs/MANUAL.md`](../docs/MANUAL.md) §4.2). It clears that check only: `send_email` off the
 allowlist or an injected argument still fails. The host is `example.test`, so a run without
-`--dry-run` has nowhere to go: point both files at your deployment first. What a seeded spec tests is only as good as what you
-seeded, which the tool cannot check.
+`--dry-run` has nowhere to go: point both files at your deployment first. What a seeded spec tests
+is only as good as what you seeded, which the tool cannot check.
 
 ## Scenario H, scan a chat endpoint that only speaks WebSocket
 

@@ -7,7 +7,7 @@
 # run records the same sha256 in its run store and reports, naming the scope it ran under.
 version: "1.0"
 targets:
-  - id: openai-gpt-x-staging          # must match the target file's id (see targets/example-openai.yaml)
+  - id: openai-gpt-x-staging          # must match the id in targets/example-openai.yaml
     base_url: "https://api.openai.com/v1/chat/completions"
     endpoints:                        # host + allowed path prefixes (default-deny)
       - host: "api.openai.com"
@@ -15,7 +15,7 @@ targets:
     identities:                       # >=1; auth by reference only, never a secret value
       - name: default
         auth_ref: "env://OPENAI_API_KEY"
-# checksum: "<sha256 of the body above>"   # optional, tamper-evident
+# checksum: "<sha256 of the body above>"   # optional integrity check, not a signature (OD-2)
 #
 # Policy-gated specs (those declaring `requires_policy`, e.g. PII elicitation or the
 # agentic-extortion battery) are gated by the run's POLICY PACK, not by this file: the

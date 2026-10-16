@@ -12,7 +12,8 @@ dottore \- spec-driven security scanner for LLMs and AI applications (nmap-for-A
 .br
 .B dottore
 .I fleet
-\fIfleet.yaml\fR [\fB--run\fR] [\fB--judge\fR \fIjudge.yaml\fR] [\fIrun's store, spec path and report options\fR]
+\fIfleet.yaml\fR [\fB--run\fR] [\fB--judge\fR \fIjudge.yaml\fR] [\fIrun's store, spec
+path and report options\fR]
 .br
 .B dottore
 .I "lint | describe | registry | coverage | new-spec | replay | diff | calibrate | render-media | schema"
@@ -57,8 +58,8 @@ Identify the model and guardrails behind an endpoint; attack nothing.
 .B fleet
 Expand a fleet.yaml into an authorization scope plus one target file per model; with
 .B --run
-scan them all. Each http or https scope entry is pinned to its host and port. The judge is declared in the
-fleet file's
+scan them all. Each http or https scope entry is pinned to its host and port. The judge is declared
+in the fleet file's
 .B judge:
 block, which the scope authorizes and
 .B fleet
@@ -96,8 +97,9 @@ not registered, and a --spec-path that does not exist or yields nothing, are ref
 .TP
 .B new-spec
 Scaffold a new attack spec and empty fixtures. A --family holding a control or format character,
-shaped like a key (a credential format or a high-entropy token), or nothing but spaces is refused (exit 3) and nothing is written; any other text is written as a
-YAML string that reads back as written.
+shaped like a key (a credential format or a high-entropy token), or nothing but spaces is refused
+(exit 3) and nothing is written; any other text is written as a YAML string that
+reads back as written.
 .TP
 .B replay
 Re-read a run from stored evidence, sending nothing. When the run store
@@ -140,7 +142,8 @@ Render a multimodal spec's carriers to disk for inspection (a PNG for an image p
 pinned WAV for an audio part) and print each path, media type, size and SHA-256; no target.
 .TP
 .B schema export
-Print the JSON Schemas that validate every spec, and the JSON report's (--name report).
+Print the JSON Schemas: attack-spec, pack, suite and test-plan, generated from the models,
+and report, the JSON report's hand-authored report-1.0 schema.
 .SH "RUN OPTIONS"
 The full list, as
 .B dottore run --help
@@ -196,8 +199,8 @@ The T0 battery: selects the quick suite (18 specs) at -T0. Conflicts with --suit
 .TP
 .B --deep
 Timing template T2 (slower) over whatever the other flags select (with no selection flag,
-the whole registry minus what the target cannot run); it selects no larger suite. Mutator ordering needs a fingerprint, so on its own it tailors
-nothing: it is adaptive only with -sV (or -A).
+the whole registry minus what the target cannot run); it selects no larger suite. Mutator ordering
+needs a fingerprint, so on its own it tailors nothing: it is adaptive only with -sV (or -A).
 .TP
 .B -T \fI0..5\fR
 Timing template (default 3; --quick implies 0, --deep and -A imply 2; an explicit -T always
@@ -267,10 +270,10 @@ sent, with no flag to waive it: its kept attempts carry that version's verdicts 
 replies are redacted, so they cannot be judged again. So is a run judged by other code under the
 same version (the run records a digest of the installed code that judges, and the refusal
 names the files that differ), one judged under another Python, and one judged with other
-evaluator plugins (dottore.evaluators entry points). Finish it with the version and plugins that started
-it (--version names its judging rules), or start a fresh run. A refusal names what changed and the flag that restores it: the spec field
-and --spec-path, the selection flags the run was made with, or the route (--hardened); a
-corrupt run-store value is refused naming its field.
+evaluator plugins (dottore.evaluators entry points). Finish it with the version and plugins that
+started it (--version names its judging rules), or start a fresh run. A refusal names what changed
+and the flag that restores it: the spec field and --spec-path, the selection flags the run was made
+with, or the route (--hardened); a corrupt run-store value is refused naming its field.
 .TP
 .B --resume-unverified
 Resume a run whose integrity record is missing (its ceiling then covers this invocation only).
@@ -338,6 +341,123 @@ Suppress the per-spec progress lines.
 A counter, repeatable (-v, -vv), not a value: -v prints the resolved plan and then runs; -vv
 also lists the skipped and blocked spec ids with their reasons. Either also prints the traceback of
 an internal error, as the root dottore -v does for any command.
+.SH "GLOBAL OPTIONS"
+.TP
+.B -v, --verbose
+Before the command: print the traceback of an internal error (exit 3), for any command; run -v
+also prints the resolved plan. A counter, repeatable (-vv).
+.TP
+.B --version
+Print the version and the judging rules (dottore 0.1.0 (judging rules 1)) and exit.
+.TP
+.B --help
+Show the help of dottore or of the command it follows, and exit.
+.SH "OPTIONS OF THE OTHER COMMANDS"
+As each
+.B dottore \fICOMMAND\fR --help
+prints them. A
+.B --spec-path
+that is left out is specs/ in the working directory when it is a directory, else the battery
+beside the installed package, as for run; lint does not fall back.
+.SS "fleet \fIfleet.yaml\fR"
+.TP
+.B --out \fIPATH\fR
+Directory for the generated scope.yaml, target files and judge.yaml (default .dottore/fleet).
+.TP
+.B --run
+Scan every expanded target right away, with the spec path run would use.
+.TP
+.B --judge \fIPATH\fR
+Judge target.yaml; it must match the fleet file's judge: block, which is used on its own when
+this is omitted.
+.TP
+.B --runs \fIN\fR, -p, --categories \fITEXT\fR, --no-color
+With
+.BR --run :
+the reproducibility runs (default 5), a comma-separated category selection and no colour, as
+for run.
+.TP
+.B --spec-path \fIPATH\fR, --evidence-root \fIPATH\fR, --run-db \fIPATH\fR, -oJ, -oH, -oS, -oX \fIPATH\fR, -oA \fIPREFIX\fR
+As for run: with
+.B --run
+they apply to the scan; without it they are carried into the printed dottore run line.
+.SS "fingerprint \fITARGET\fR"
+.TP
+.B --scope \fIPATH\fR
+REQUIRED authorization record, with
+.B --offline
+too (exit 3 without it).
+.TP
+.B --offline
+Probe the deterministic mock instead of the live endpoint: nothing is sent.
+.SS "coverage [\fIPATHS\fR...]"
+.TP
+.B --framework \fITEXT\fR
+all (default), owasp, atlas, iopc or aisvs; any other value is refused (exit 3).
+.TP
+.B --suite \fITEXT\fR
+Measure one suite (id or alias) instead of the whole battery.
+.TP
+.B --gaps, --no-gaps
+List the codes not covered, in their three groups (the default), or print the figures alone;
+with
+.B --json
+the lists are left out of each axis.
+.TP
+.B --json
+Machine-readable output.
+.SS "lint [\fIPATHS\fR...]"
+.TP
+.B --json
+Machine-readable output: the counts, the errors, the warnings and ok. The exit status is 0 when
+lint passes, 1 when it finds an error in what it read, and 3 when a path does not exist or
+holds no spec or suite.
+.SS "describe \fISPEC_ID\fR"
+.TP
+.B --spec-path \fIPATH\fR
+Spec search path.
+.SS "registry ls"
+.TP
+.B --category \fITEXT\fR, --owasp \fITEXT\fR, --tag \fITEXT\fR, --suite \fITEXT\fR
+Keep the specs of that category, OWASP LLM code, tag or suite.
+.TP
+.B --spec-path \fIPATH\fR
+Spec search path.
+.SS "render-media \fISPEC_ID\fR"
+.TP
+.B --out \fIPATH\fR
+Output directory (default the current one).
+.TP
+.B --spec-path \fIPATH\fR
+Spec search path.
+.SS "new-spec"
+.TP
+.B --id \fITEXT\fR, --family \fITEXT\fR
+REQUIRED: the new spec's id (PI-NEW-001) and its family tag.
+.TP
+.B --category \fITEXT\fR
+Category (default prompt_injection).
+.TP
+.B --out \fIPATH\fR
+Output directory (default the current one); an existing file of that id is not overwritten
+(exit 3).
+.TP
+.B --stdout
+Print the scaffold instead of writing it.
+.SS "replay \fIRUN_ID\fR"
+.TP
+.B --evidence-root \fIPATH\fR
+Evidence store root (default .dottore/evidence).
+.TP
+.B --run-db \fIPATH\fR
+Run store whose findings are the evidence manifest (default .dottore/runs.sqlite).
+.SS "schema export"
+.TP
+.B --name \fITEXT\fR
+Print one schema: attack-spec, pack, report, suite or test-plan; any other name is refused
+(exit 3) with that list. Without it, one JSON object holds all five.
+.SS "diff \fIBASELINE CURRENT\fR, calibrate \fIREPORT LABELS\fR"
+Arguments only: two JSON run reports, or a report and an operator labels file.
 .SH "EXIT STATUS"
 .TP
 .B 0
@@ -359,8 +479,8 @@ pipe, or a run that did not finish (a hard budget ceiling halted it, every attem
 transport or got a reply that could not be read, the provider's filter answered every attempt
 for the model and none failed (filtered), or an error stopped it: a non-retryable 4xx,
 or replies that could not be read, 5 in a row before any was read or 20 in a row after, aborted
-on UnreadableReplies). 3 takes precedence over 2: a run that did not finish exits 3 even when it found
-confirmed exploits, so read summary.status.reason before treating 3 as a retryable
+on UnreadableReplies). 3 takes precedence over 2: a run that did not finish exits 3 even when it
+found confirmed exploits, so read summary.status.reason before treating 3 as a retryable
 infrastructure error.
 .PP
 Only an exploited (fail) finding trips the gate; pass and inconclusive never do.

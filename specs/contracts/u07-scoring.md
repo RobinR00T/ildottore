@@ -97,6 +97,7 @@ and the SARIF level is mapped by the SARIF reporter.)
 - Not its call: confidence threshold default (§9) · band cutoffs are policy-tunable, not owned.
 
 ## §9 Open decisions (human sign-off → rolls to 00-INDEX ledger)
-- Confidence threshold default for `confirmed` vs `needs-review` (propose 0.75): new OD, roll up.
+- **OD-6** confidence threshold default for `confirmed` vs `needs-review` (propose 0.75): new OD,
+  roll up. Recorded in `00-INDEX.md` as OD-6: default 0.75, band on the raw float before rounding.
 - Reproducibility rounding/precision for banding at boundaries (propose exact float, band on
   raw `risk` before rounding): confirm.

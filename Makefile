@@ -58,7 +58,7 @@ spec-lint: ## Gate 1: schema + policy + fixtures-prove-detection lint
 test: ## Full test suite, quiet
 	$(BIN)/pytest -q
 
-cov: ## Coverage gate: core >= 85% (CI gate 12)
+cov: ## Coverage gate: aggregate >= 85% (CI gate 12, OD-13)
 	$(BIN)/pytest -q --cov=$(SRC)/ildottore --cov-report=term-missing --cov-fail-under=85
 
 selfscan: ## Gate 11: self-scan our own judge; fail on new high/critical

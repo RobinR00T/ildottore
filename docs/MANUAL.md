@@ -142,11 +142,11 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   template reads the text at `text`, since a target file cannot declare a template). With
   concurrent specs, each one already sending stops at its own next unreadable reply, so the stop
   costs at most the 5 (or 20) requests, the check and one per other spec in flight, and every
-  reply sent is stored. A run of fewer attempts that read nothing is `unreachable` (exit 3, below), its reason
-  giving the same advice. A non-retryable 4xx is not this: it still stops the run. Over MCP stdio a
-  line that is not JSON is skipped as stray output, so a server that writes nothing else times out
-  instead. An MCP server over stdio may write up to the same 4 MiB for one request, its stray
-  lines and its reply together. A REST template whose `text_path` starts at an index
+  reply sent is stored. A run of fewer attempts that read nothing is `unreachable` (exit 3, below),
+  its reason giving the same advice. A non-retryable 4xx is not this: it still stops the run. Over
+  MCP stdio a line that is not JSON is skipped as stray output, so a server that writes nothing else
+  times out instead. An MCP server over stdio may write up to the same 4 MiB for one request, its
+  stray lines and its reply together. A REST template whose `text_path` starts at an index
   (`0.generated_text`, Hugging Face's Inference API) reads a body that is a JSON array.
 - **Half a character in a reply.** JSON can escape a lone surrogate (half of a UTF-16 pair),
   which no UTF-8 file, database or request can hold. Where a reply is parsed, and where a tool
@@ -168,7 +168,7 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   limit of a spec file (so are a policy pack and the signature pack, which the CLI does not take
   from the command line). A larger regular file is refused before any of it is read; anything
   else, such as a pipe (`--scope <(cat scope.yaml)`) or a device, is read up to one byte past
-  the limit and refused if that byte comes.  The error names the file and the sizes, written
+  the limit and refused if that byte comes. The error names the file and the sizes, written
   with thousands separators (`file is 1,073,741,824 bytes, over the 1,048,576-byte cap`), and
   the command exits 3. `dottore fleet` measures every file it would write and refuses, before
   writing any, one over the limit: the scope repeats each endpoint and is usually the largest,
@@ -205,7 +205,7 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   with **zero** sends (otherwise the capability filter skips them first). They cannot be
   enabled from the command line today. A pack loader exists in the code
   (`policy.packs.load_pack`) but no command calls it. Whether the CLI should accept a policy
-  pack is an open decision.
+  pack is an open decision (OD-46).
 - **`test_only` marks a spec; it does not switch it off.** A marked spec runs. What the gate
   refuses is an **unmarked** spec in a flagged family (`jailbreak`, `data_leakage`,
   `agent_tool_abuse`, `availability_cost`, `safety_content`): the one `dottore lint` reports as
@@ -405,10 +405,10 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   value (`"x #\u0023[error]y"` is `x ##[error]y`). The JUnit XML report writes it `&#35;`, the
   character reference every XML parser reads as `#`. A program that compares the bytes rather than
   the parsed value sees the escape. The HTML report is left as it is: it is a page for a browser,
-  and inside `<script>` or `<style>` a reference would not be decoded. Not covered: a forged evidence tree can still start a
-  `replay` line with an id; the operator's own values in the run's plan lines (the target id under
-  `--dry-run`, `--estimate` and `-sn`) are printed as written; invisible characters outside Cf
-  (variation selectors, U+034F, U+3164) are not written out.
+  and inside `<script>` or `<style>` a reference would not be decoded. Not covered: a forged
+  evidence tree can still start a `replay` line with an id; the operator's own values in the run's
+  plan lines (the target id under `--dry-run`, `--estimate` and `-sn`) are printed as written;
+  invisible characters outside Cf (variation selectors, U+034F, U+3164) are not written out.
 
 See [`02-threat-model.md`](02-threat-model.md) and [`RESPONSIBLE-USE.md`](RESPONSIBLE-USE.md).
 
@@ -537,9 +537,9 @@ same rule. `--dry-run`, `-v` and `-sn` print a `filters:` line for a file that d
 for a WebSocket file's `response.filter_stops`).
 The file holds these keys and no others: `id`, `type`, `name`, `provider`, `endpoint`, `model`,
 `auth_ref`, `capabilities`, `sampling_defaults`, `transport`, `command`, `seeded_setup`,
-`websocket`, `filter_stops` and `mock_scenario` (below). Any other key is refused before anything is sent
-(exit 3), and so is a `name`, `provider`, `endpoint`, `model`, `auth_ref` or `transport` that is
-not text, on one line that names the file and the key, never the value:
+`websocket`, `filter_stops` and `mock_scenario` (below). Any other key is refused before anything is
+sent (exit 3), and so is a `name`, `provider`, `endpoint`, `model`, `auth_ref` or `transport` that
+is not text, on one line that names the file and the key, never the value:
 `error: target file target.yaml failed validation:
 endpont: Extra inputs are not permitted`. Until 2026-10-07 both were read as absent, so `endpont:`
 left a live target with no endpoint and the run went to the offline mock, which sent it nothing and
@@ -608,13 +608,13 @@ either: Anthropic's API reference says every Claude 4 model answers the pair wit
 in the reference bundled with the claude-api skill, cached 2026-09-25, and not tested against
 the live API). Every request the scanner makes to a target that takes sampling (below) sets a
 temperature (a spec's own, temperature 0 for a spec that declares none, the probes' 0, the
-judge's 0 and 0.5), so on an Anthropic target or judge no `top_p` goes out at all: not the block's, not the 1.0 six shipped specs set
-themselves (`EMB-INVERSION-PROBE-001`, `EMB-NEIGHBOR-LEAK-001`, `EMB-XTENANT-RETRIEVAL-001`,
-`PI-DIRECT-001`, `PI-INDIRECT-RAG-001`, `PI-INDIRECT-TOOL-001`), not the judge's 1.0; the
-temperature is kept. Before, a block `top_p`, or one of those specs, stopped an Anthropic campaign
-at its first request (`non-retryable HTTP 400`, exit 3), and an Anthropic judge was refused on
-every request. 1.0 is `top_p`'s own default, so dropping the specs' and the judge's changes
-nothing they ask for; a block `top_p` below 1 is not applied there, and `--dry-run` says so.
+judge's 0 and 0.5), so on an Anthropic target or judge no `top_p` goes out at all: not the block's,
+not the 1.0 six shipped specs set themselves (`EMB-INVERSION-PROBE-001`, `EMB-NEIGHBOR-LEAK-001`,
+`EMB-XTENANT-RETRIEVAL-001`, `PI-DIRECT-001`, `PI-INDIRECT-RAG-001`, `PI-INDIRECT-TOOL-001`), not
+the judge's 1.0; the temperature is kept. Before, a block `top_p`, or one of those specs, stopped an
+Anthropic campaign at its first request (`non-retryable HTTP 400`, exit 3), and an Anthropic judge
+was refused on every request. 1.0 is `top_p`'s own default, so dropping the specs' and the judge's
+changes nothing they ask for; a block `top_p` below 1 is not applied there, and `--dry-run` says so.
 
 **Models that take no sampling.** The same reference says Claude Opus 4.7, Opus 4.8, Opus 5 and
 Opus 5.5 and the Fable and Mythos 5 families refuse a `temperature` or a `top_p` outright (HTTP
@@ -679,10 +679,10 @@ it keeps attempts, so one campaign is not half pinned and half unpinned, and is 
 version decides when it keeps none; both are said on stderr (`resume: <run id> sent stub a
 temperature when it started and keeps 3 attempt(s) sent so, so it continues as it started; this
 version would send no temperature or top_p (a fresh run does)`; a top_p is not named, since one
-goes out only where a spec or a block sets it, and never beside a temperature to Anthropic). If the reference
-is right, a run of an older version against a listed model stopped at its first request and kept
-nothing, so its resume sends no sampling; if a listed model did take the temperature, the run kept
-pinned attempts, and its resume stays pinned. A run started by the first version of this
+goes out only where a spec or a block sets it, and never beside a temperature to Anthropic). If the
+reference is right, a run of an older version against a listed model stopped at its first request
+and kept nothing, so its resume sends no sampling; if a listed model did take the temperature, the
+run kept pinned attempts, and its resume stays pinned. A run started by the first version of this
 capability (7dd5ec1, never released) recorded nothing and is read as pinned.
 
 `--dry-run` says what goes out, per field and over the specs it would send (`sampling:
@@ -733,9 +733,10 @@ in_band`, and the result says how the model handles untrusted context, not how a
 application does. A spec whose untrusted content is only a tool's result is `inconclusive`
 (`setup_not_reached`) when the model never called that tool and no deterministic check failed
 (a fail only the judge reported does not count, since 2026-10-11: the judge read a reply to a
-scene that never reached the model), and the coverage figures do not count it; an adapter that cannot carry the scene (no tool definitions,
-or no system prompt for a memory seed, as a REST template without a system field) leaves the
-spec `inconclusive: setup_not_delivered` with nothing sent.
+scene that never reached the model), and the coverage figures do not count it; an adapter that
+cannot carry the scene (no tool definitions, or no system prompt for a memory seed, as a REST
+template without a system field) leaves the spec
+`inconclusive: setup_not_delivered` with nothing sent.
 
 Any other `type` is a **deployed application**, which has its own documents, tools and memory,
 so the scene is the operator's to seed (OD-18 option B). The target file says which specs it
@@ -997,13 +998,13 @@ open was dialled again inside each send, uncounted: `max_attempts: 1` made 8 dia
 requests.
 
 **Reading a turn.** Frames are JSON objects (a binary, non-JSON or non-object frame is a reply
-the adapter cannot read, which fails its attempt, as a malformed HTTP reply does: §3, OD-21). A frame whose `type_path` value is in
-`ignore_types` is discarded; one with `error_path` present ends the attempt as `inconclusive`
-(an environment error, retried by the runner's policy and debited each time); every string at
-`text_path` is appended; the frame satisfying `final_path`/`final_value` ends the turn; its
-`usage_path` mapping, if any, trues up the token ledger (without one the pre-send estimate
-stands, as for a REST target). A turn with no text is still a reply when it carries a tool call
-(read at `tool_calls_path`) or ends with a filter stop the file declares at `final_path` (OD-42
+the adapter cannot read, which fails its attempt, as a malformed HTTP reply does: §3, OD-21). A
+frame whose `type_path` value is in `ignore_types` is discarded; one with `error_path` present ends
+the attempt as `inconclusive` (an environment error, retried by the runner's policy and debited each
+time); every string at `text_path` is appended; the frame satisfying `final_path`/`final_value` ends
+the turn; its `usage_path` mapping, if any, trues up the token ledger (without one the pre-send
+estimate stands, as for a REST target). A turn with no text is still a reply when it carries a tool
+call (read at `tool_calls_path`) or ends with a filter stop the file declares at `final_path` (OD-42
 reads it as the filter's cut); one with none of the three is a reply that cannot be read too.
 
 **Filter stops.** A WebSocket chat API has no standard stop, so the value at `final_path` is read
@@ -1122,7 +1123,8 @@ documents, tools or memory is `setup_not_seeded` on a fleet entry that declares 
 those, scan with a target file (§4.2). Template:
 [`../specs/fleet.example.yaml`](../specs/fleet.example.yaml).
 
-An entry may declare `capabilities` with the keys a target file takes (§4.2). Its target file
+An entry may declare `capabilities` with the keys a target file takes (§4.2), except `mcp`
+(`kind: mcp` sets it, and an entry that declares it is refused). Its target file
 gets `tools: false` (`true` for an `mcp` entry) and `rag: false` unless the entry sets them, plus
 every key the entry sets; a key `capabilities` does not know is refused before anything is
 written (exit 3).
@@ -1156,6 +1158,9 @@ required there) and no `auth_ref` in its target file: no credential is sent.
 
 `dottore` is the command; `dott` is a shorter alias. There is no default subcommand: always
 type it (`dottore run ...`). `dottore target.yaml --scope scope.yaml` is a usage error (exit 3).
+`dottore --version` prints the version and the judging rules (`dottore 0.1.0 (judging rules 1)`)
+and exits; `--help` after `dottore` or
+after any command prints its options, the list `dottore(1)` gives per command.
 
 ### `dottore run`, run a campaign
 
@@ -1176,7 +1181,7 @@ required.
 | `--exclude TEXT` | exclude spec id/glob (repeatable) |
 | `--top-tests INT` | keep the N highest-signal specs |
 | `--quick` | the T0 battery: selects `--suite quick` (18 specs) and timing `-T0`. Conflicts with an explicit `--suite` (pass one) |
-| `--deep` | timing `-T2` (unless you pass `-T`) over whatever the other flags select (with no selection flag, the whole registry minus what the target cannot run). It does **not** select a larger suite (on the example target, `--dry-run` selects the same 34 specs with or without it, at 2.0 req/s instead of 5.0). By itself it tailors nothing: it switches adaptive planning on (a `--resume` of the run must ask for it too, with `--deep`, `-sV` or `-A`), but the planner orders mutators only from a fingerprint, which only `-sV` or `-A` produces (`run --help`: "adaptive only with -sV") |
+| `--deep` | timing `-T2` (unless you pass `-T`) over whatever the other flags select (with no selection flag, the whole registry minus what the target cannot run). It does **not** select a larger suite (on the example target, `--dry-run` selects the same 33 specs with or without it, at 2.0 req/s instead of 5.0). By itself it tailors nothing: it switches adaptive planning on (a `--resume` of the run must ask for it too, with `--deep`, `-sV` or `-A`), but the planner orders mutators only from a fingerprint, which only `-sV` or `-A` produces (`run --help`: "adaptive only with -sV") |
 
 **Discovery and aggression**
 
@@ -1321,20 +1326,20 @@ send, by the `send_number` every stored attempt carries in `request.metadata` (`
 first send, one more for each re-send). The resume's note names each id it sends again once, by
 that attempt, and whether an id is sent again is read from that attempt too: a reply that could
 not be read, whose re-send the provider's input filter then refused, is still that reply, so the
-next resume sends it again (until 2026-10-12 the block kept it for good). What a halted run keeps: every reply the target gave, stored when its batch
-returns or a halt stops it (a Ctrl-C still drops the batch in flight), a conversation whose last
-reply crossed the token ceiling included. Each is judged when the ceiling leaves room for the
-judge; when it does not, a reply a deterministic check already failed keeps that fail (it
-decides without the judge), and the others are stored without a verdict, which the resume sends
-again and judges. Its spend is in the run store. Nothing is stored for sends that made no reply,
-an identity sweep or a conversation stopped mid-way: the resume sends them again from the
-start, with their cost already counted against the ceiling. A run halted by this version is not
-for an older one to resume: it would keep a reply stored without a verdict and score the spec
-without it. Nor is a run an older version halted for this one: the attempts a resume keeps carry
-the verdicts the rules of the version that judged them gave, and those rules change (OD-16, OD-19,
-OD-21, OD-41 and OD-42 did in one week, under one `0.1.0`). The run store records the version of
-the rules when a run starts (`context_json.judging_rules`, which `dottore --version` prints beside
-the package version), and a resume under other rules, or of a run that records none (one a
+next resume sends it again (until 2026-10-12 the block kept it for good). What a halted run keeps:
+every reply the target gave, stored when its batch returns or a halt stops it (a Ctrl-C still drops
+the batch in flight), a conversation whose last reply crossed the token ceiling included. Each is
+judged when the ceiling leaves room for the judge; when it does not, a reply a deterministic check
+already failed keeps that fail (it decides without the judge), and the others are stored without a
+verdict, which the resume sends again and judges. Its spend is in the run store. Nothing is stored
+for sends that made no reply, an identity sweep or a conversation stopped mid-way: the resume sends
+them again from the start, with their cost already counted against the ceiling. A run halted by this
+version is not for an older one to resume: it would keep a reply stored without a verdict and score
+the spec without it. Nor is a run an older version halted for this one: the attempts a resume keeps
+carry the verdicts the rules of the version that judged them gave, and those rules change (OD-16,
+OD-19, OD-21, OD-41 and OD-42 did in one week, under one `0.1.0`). The run store records the version
+of the rules when a run starts (`context_json.judging_rules`, which `dottore --version` prints
+beside the package version), and a resume under other rules, or of a run that records none (one a
 version from before `shared.judging_rules.JUDGING_RULES_SINCE` halted), is refused before anything
 is sent: finish it with the version that started it, or start a fresh run. The
 kept replies are not judged again because they cannot be: they are stored redacted, a leaked
@@ -1431,10 +1436,10 @@ Azure's `content_filter`, Anthropic's `refusal`, Bedrock's `guardrail_intervened
 Vertex AI's `MODEL_ARMOR`, also read at a REST template's `finish_path`; the attack phase reads
 the same stops, §9), each only from the provider that writes it: a filter word another provider
 documents is an ordinary stop (an OpenAI-compatible endpoint that says `refusal`, a WebSocket
-target that lists none, since 2026-10-11, A-79); a reply cut at the probe's 512-token cap is not one, and with no
-stop reason from the provider on any reply (a REST template without `finish_path`, a WebSocket or
-MCP target, the offline mocks) it is `null`. An input filter that answers the benign request with a
-4xx (Azure OpenAI's prompt filter: HTTP 400, `content_filter`) is a failed probe,
+target that lists none, since 2026-10-11, A-79); a reply cut at the probe's 512-token cap is not
+one, and with no stop reason from the provider on any reply (a REST template without `finish_path`,
+a WebSocket or MCP target, the offline mocks) it is `null`. An input filter that answers the benign
+request with a 4xx (Azure OpenAI's prompt filter: HTTP 400, `content_filter`) is a failed probe,
 `guardrail/guardrail_benign: ProviderFilterBlock` (any other 4xx: `AdapterStatusError`), with
 `benign_refused: null`, and the command goes on. So is a carrier probe the filter refuses (a
 carrier is an instruction sent through an encoding, which Azure's Prompt Shields classes as an
@@ -1442,12 +1447,12 @@ encoding attack): `carrier/carrier_base64_wrap: ProviderFilterBlock`, that carri
 left out of `effective_mutators`. Either refusal is the provider saying its input filter refused a
 prompt, so `input_filter` is `true`; otherwise it is `null`, never `false` (benign probes cannot
 show there is no filter, and an undocumented 4xx claims nothing). Until 2026-10-11 (OD-40) it was
-`null` on every pass. The same refusal of an attributing probe still exits 3. In the attack phase such a refusal is a blocked attempt and the campaign goes
-on (§9).
-On a target that answers every attributing probe alike, `refusal_style` and `benign_refused` are
-`null`. `false` is what two benign probes saw, not proof that there is no filter. Before, any
-refusal of the first probe was reported as an output filter (and a canned one as an input
-filter), so a model that followed the instruction looked filtered.
+`null` on every pass. The same refusal of an attributing probe still exits 3. In the attack phase
+such a refusal is a blocked attempt and the campaign goes on (§9). On a target that answers every
+attributing probe alike, `refusal_style` and `benign_refused` are `null`. `false` is what two benign
+probes saw, not proof that there is no filter. Before, any refusal of the first probe was reported
+as an output filter (and a canned one as an input filter), so a model that followed
+the instruction looked filtered.
 
 A probe whose reply comes back refused (over 4 MiB, an encoding the adapters do not decode,
 nested more than 100 levels deep) does not stop the command: the fingerprint is built from the
@@ -1456,8 +1461,9 @@ replies that came back, `spoofing_flags` carries `probes_failed`, an evidence en
 <target>: N of 18 probe(s) got no usable reply (...)`, and the exit is 0. Before, it exited 3 on
 the first such reply. When every probe is refused there is no fingerprint: the line starts
 `error:`, nothing is printed on stdout, and the exit is 3. A probe that gets no answer at all (a
-closed port, a 503 or a timeout after the retries), a refusal by the scope or a 200 that is not
-JSON still exits 3, with the cause.
+closed port, a 503 or a timeout after the retries) or a refusal by the scope still exits 3, with
+the cause. A 200 that is not JSON or not the provider's shape fails only its probe (OD-21): the
+same `warning:` line names it as `ResponseMalformed` and the exit is 0.
 
 A target that takes no sampling (§4.2, "Models that take no sampling": a listed Claude model, or
 `capabilities.sampling: false`) is probed with no temperature, so its fingerprint is as repeatable
@@ -1481,10 +1487,10 @@ mean to `run` (the same default spec path, the same checks before anything is se
 report may overwrite the fleet file or a file `fleet` generated); without `--run` they are
 carried into the `dottore run` line `fleet` prints. Until 2026-10-12 `fleet --run` read
 `specs/` in the working directory with no way to change it, so it worked from the repository
-root only (`path not found: specs`), and it wrote no report. Every generated scope entry for an `http` or `https` endpoint is pinned to its
-host **and port** (an offline `mock://` entry, which sends nothing, keeps a bare host)
-(`localhost:11434`, `api.openai.com:443`), so authorizing a local model does not authorize
-every other port on that machine.
+root only (`path not found: specs`), and it wrote no report. Every generated scope entry for an
+`http` or `https` endpoint is pinned to its host **and port** (an offline `mock://` entry, which
+sends nothing, keeps a bare host) (`localhost:11434`, `api.openai.com:443`), so authorizing a local
+model does not authorize every other port on that machine.
 
 The LLM-as-judge is declared **in the fleet file**, in a `judge:` block, because that file is
 the authorization record the scope is built from:
@@ -1512,19 +1518,20 @@ dottore lint [PATHS]... [--json]
 
 Schema + policy + fixtures-prove-detection lint. With no path it reads `specs/` in the working
 directory and nothing else: it never falls back to the battery beside the installed package, so
-in a pack's own repository with no `specs/` it refuses with `error: spec path not found: specs. Pass the spec path to lint ...` (exit 3) rather
-than passing someone else's tree. `specs/` resolves as a pack (via
-`pack.yaml`) so discovery loads `attacks/` + `suites/` and skips the loose example YAMLs.
-A directory without a `pack.yaml` anywhere below it is read as **loose specs**: the `*.yaml`
-and `*.yml` files directly in it, not those in its subdirectories. A path that yields no spec and
-no suite file is a `NO_SPECS` error, which names the YAML files in its subdirectories that it
-did not read (`spec path sp holds no attack spec or suite to read: a directory without a
-pack.yaml is read as loose specs, ... and it has none; 2 YAML file(s) in its subdirectories
-(attacks/) are not read: add a pack.yaml to it (docs/06 §2) ...`); a path that does not exist is
-`PATH_NOT_FOUND`; a loose tree that reads specs and leaves YAML files in its subdirectories gets a
-`FILES_NOT_READ` warning naming them. Until 2026-10-11 `lint sp`, with the specs under
-`sp/attacks/` and no `pack.yaml`, printed `lint OK ... across 0 spec(s)` and exited 0, an invalid
-spec there included, an empty directory passed the same way, and `lint nonexistent` exited 1.
+in a pack's own repository with no `specs/` it refuses with
+`error: spec path not found: specs. Pass the spec path to lint ...` (exit 3) rather than passing
+someone else's tree. `specs/` resolves as a pack (via `pack.yaml`) so discovery loads `attacks/` +
+`suites/` and skips the loose example YAMLs. A directory without a `pack.yaml` anywhere below it is
+read as **loose specs**: the `*.yaml` and `*.yml` files directly in it, not those in its
+subdirectories. A path that yields no spec and no suite file is a `NO_SPECS` error, which names the
+YAML files in its subdirectories that it did not read (`spec path sp holds no attack spec or suite
+to read: a directory without a pack.yaml is read as loose specs, ... and it has none; 2 YAML file(s)
+in its subdirectories (attacks/) are not read: add a pack.yaml to it (docs/06 §2) ...`); a path that
+does not exist is `PATH_NOT_FOUND`; a loose tree that reads specs and leaves YAML files in its
+subdirectories gets a `FILES_NOT_READ` warning naming them. Until 2026-10-11 `lint sp`, with the
+specs under `sp/attacks/` and no `pack.yaml`, printed `lint OK ... across 0 spec(s)` and exited 0,
+an invalid spec there included, an empty directory passed the same way,
+and `lint nonexistent` exited 1.
 
 **Exit codes:** `0` no error (warnings allowed) · `1` an error-severity finding in a spec, suite
 or pack · `3` a path that does not exist or yields nothing to lint (`PATH_NOT_FOUND`,
@@ -1662,11 +1669,10 @@ Writes a spec skeleton plus empty fixtures (or prints them with `--stdout`). `--
 direction override such as U+202E), one shaped like a key (a credential format or a high-entropy
 token, as `dottore fleet` reads an endpoint; not shown) or nothing but spaces is refused (exit 3)
 and nothing is written (`CVE-2021-44228` is a family), and `--id` is checked for the
-schema's shape with `--stdout` too; any other text is written as a YAML string that reads back as written (`tags: ["key:
-value"]`, and `["yes"]` rather than the boolean YAML reads from `yes`), a plain word as before
-(`tags: [jailbreak]`). Until 2026-10-11 the value went into the
-file raw, so a control character made a scaffold `lint` then refused, and a `: ` or a `]` one
-that did not parse.
+schema's shape with `--stdout` too; any other text is written as a YAML string that reads back as
+written (`tags: ["key: value"]`, and `["yes"]` rather than the boolean YAML reads from `yes`), a
+plain word as before (`tags: [jailbreak]`). Until 2026-10-11 the value went into the file raw, so a
+control character made a scaffold `lint` then refused, and a `: ` or a `]` one that did not parse.
 
 ### `dottore replay`, reproduce a past run from evidence
 
@@ -1694,11 +1700,12 @@ write) may be missing without being a deletion, unless a finding cites it. An ar
 spec id outside the battery the run recorded before sending is refused. A resume adopts the
 artifacts already on disk into the journal, in one transaction, once they pass the check, so a
 run started by an older version kept resuming (a run that records no judging rules, one a version
-from before `JUDGING_RULES_SINCE` halted, is refused now, `--resume` above). Known limits: in a run not yet journaled (stored
-before 2026-10-04 and never resumed since), a spec with no recorded finding cannot be checked,
-and a spec whose findings were stored before 2026-10-03 with masked digests is replayed without
-the check (the rest of the run is checked); and resuming a run with an older version, then again
-with this one, can be refused, because the older version does not journal what it writes.
+from before `JUDGING_RULES_SINCE` halted, is refused now, `--resume` above). Known limits: in a run
+not yet journaled (stored before 2026-10-04 and never resumed since), a spec with no recorded
+finding cannot be checked, and a spec whose findings were stored before 2026-10-03 with masked
+digests is replayed without the check (the rest of the run is checked); and resuming a run with an
+older version, then again with this one, can be refused, because the older version does not
+journal what it writes.
 
 Under the pooled rate, replay counts the attempts that went out with no temperature (a target
 that takes no sampling, §4.2): `N of M attempt artifact(s) went out with no temperature (the target
@@ -1724,10 +1731,11 @@ artifact(s) with a call to a tool the target file declares not destructive, not 
 Probes are hash-checked but not part of the manifest. The last line is the **pooled** rate
 over every attempt of the run, all specs and variants together; a report's reproducibility is
 per spec and takes the best variant, so the two can differ on the same run. On a `--runs 2`
-run against the `vulnerable` mock (the default `--runs 5` gives 355 attempts):
+run against the `vulnerable` mock (`type: chatbot`, no capability declared; the default
+`--runs 5` gives 350 attempts):
 
 ```
-attempts: 142  exploited: 142  pooled rate: 1.00 (every attempt of the run; a report's reproducibility is per spec, best variant)
+attempts: 140  exploited: 140  pooled rate: 1.00 (every attempt of the run; a report's reproducibility is per spec, best variant)
 ```
 
 A resume sends an attempt that ended in an environment error again under its id, so several
@@ -1736,11 +1744,12 @@ verdict (a ceiling stopped its evaluation) is sent again the same way, and liste
 its verdict. Replay lists them all but counts one per id, by the rule a report scores with
 (`--resume`, §5: an answered and judged one, else one with a verdict, a reply that could not be
 read before an environment error or a block, else the later send by its `send_number`), and says
-so in a line above the totals: `(2 more artifacts share an attempt id with one listed above: one per id is
-counted below)` (`1 more artifact shares` for one). Attack attempts and the
-recognition probes sent by `-sV` are listed apart: a probe is not an attempt, so it never enters
-the reproducibility ratio or the attempt count, but it is stored, hashed and replayable like
-one, which is what lets a run answer "what did this tool send my endpoint".
+so in a line above the totals:
+`(2 more artifacts share an attempt id with one listed above: one per id is counted below)`
+(`1 more artifact shares` for one). Attack attempts and the recognition probes sent by `-sV` are
+listed apart: a probe is not an attempt, so it never enters the reproducibility ratio or the attempt
+count, but it is stored, hashed and replayable like one, which is what lets a run answer "what did
+this tool send my endpoint".
 
 ### `dottore diff`, regression gate against a baseline
 
@@ -1754,17 +1763,17 @@ inconclusive or never sent: not shown fixed), STILL-FAIL or UNCHANGED and exits 
 regression is present, so it is CI-gateable like `run`. A FIXED the operator's declaration may
 have made (OD-43, §8: the current report has attempts of that spec the declaration changed, or
 the two reports declare different tools not destructive) reads `FIXED (operator declaration,
-OD-43)`, with a line naming those specs: the pass may be the operator's word, not the target's. A report covering several targets, or
-two reports about different targets, is refused (exit 3): indexing by spec id used to merge
-targets, so a PASS on one could replace a FAIL on another. A report of a run that did not
-complete is refused too, and so is one that cannot be read (not UTF-8, not JSON, or nested past
-what the JSON parser holds), with the file named. A report is read when its `schema_version` is
-`1.0`, `1` or `1.<minor>` (report-1.0 grows additively, §10); one without `schema_version`, one of
-another major version (`2.0`), a SARIF log (`is a SARIF log (-oS), not the JSON run report (-oJ)
-that dottore diff compares`) and a document with no `findings` list are each refused on a line
-that says which (exit 3). A bare JSON list of findings is still read. Until 2026-10-11 the first
-two were compared as if they were this build's reports, and a SARIF log gave `error: 'findings'`.
-A finding that does not validate (a `status` that
+OD-43)`, with a line naming those specs: the pass may be the operator's word, not the target's. A
+report covering several targets, or two reports about different targets, is refused (exit 3):
+indexing by spec id used to merge targets, so a PASS on one could replace a FAIL on another. A
+report of a run that did not complete is refused too, and so is one that cannot be read (not UTF-8,
+not JSON, or nested past what the JSON parser holds), with the file named. A report is read when its
+`schema_version` is `1.0`, `1` or `1.<minor>` (report-1.0 grows additively, §10); one without
+`schema_version`, one of another major version (`2.0`), a SARIF log
+(`is a SARIF log (-oS), not the JSON run report (-oJ) that dottore diff compares`) and a document
+with no `findings` list are each refused on a line that says which (exit 3). A bare JSON list of
+findings is still read. Until 2026-10-11 the first two were compared as if they were this build's
+reports, and a SARIF log gave `error: 'findings'`. A finding that does not validate (a `status` that
 is not a verdict, a field of the wrong type, a key a finding does not have) is refused on one line
 that names the report and gives the place and the reason of each of its problems (the first such
 finding, by its index), never the value written: `error: the report /abs/bad.json failed validation:
@@ -1784,10 +1793,12 @@ undefined precision or recall as `n/a` and floors its percentages (99.6% is show
 dottore schema export [--name suite|pack|test-plan|attack-spec|report]
 ```
 
-Prints the generated JSON Schemas that machine-validate every spec, and the JSON report's
-(`report`, the hand-authored `report-1.0.schema.json` the reporter ships with, §10), all of them
-as one object keyed by name, or the one `--name` names. The report schema could not be printed
-until 2026-10-11.
+Prints five JSON Schemas as one object keyed by name: `attack-spec`, `pack`, `suite` and
+`test-plan`, generated from the models, and `report`, the hand-authored `report-1.0.schema.json`
+the reporter ships with (§10), which could not be printed until 2026-10-11. `--name` prints one
+of them; any other name is refused (exit 3) with the list (`error: unknown schema 'nope';
+available: attack-spec, pack, report, suite, test-plan`). The linter validates a spec against the
+hand-authored `schemas/attack-spec.schema.json`, not against the `attack-spec` this exports.
 
 ### `dottore coverage`
 
@@ -1801,7 +1812,12 @@ dottore coverage --framework iopc     # one framework
 dottore coverage --framework aisvs    # OWASP AISVS, one line per level
 dottore coverage --suite nova-iopc    # what a single suite covers
 dottore coverage --json               # for a dashboard or a report generator
+dottore coverage --no-gaps            # the figures alone, no list of uncovered codes
 ```
+
+`--gaps`, the default, lists the codes not covered in the three groups below; `--no-gaps` prints
+only the figures (the block that follows, without the lists), and with `--json` leaves each
+axis's `missing`, `out_of_reach` and `not_tested_by_design` lists out.
 
 ```
 Battery coverage (75 specs, no scan performed)
@@ -1843,11 +1859,12 @@ what it is sent. Attacks on the **agent harness** a developer runs locally (the 
 repository ships, the trust prompt shown before it is opened, the plugins and skills an agent
 installs) are a different target class: they act on the machine opening the project, not on
 the model's replies, so no request this tool sends can exercise them and none of these figures
-covers them. See `docs/REFERENCES.md` for a current survey of that class. Off-universe values never reach a numerator (a Responsible-AI
-`RAI0x` code is not an OWASP LLM category), so a percentage cannot exceed 100%, and a spec file
-that fails to load is named in a warning instead of quietly leaving the spec count. A spec path
-that does not exist or yields nothing to read, and a `--suite` that is not registered, are
-refused (exit 3): until 2026-10-11 the first printed 0% on every axis and exited 0.
+covers them. See `docs/REFERENCES.md` for a current survey of that class. Off-universe values never
+reach a numerator (a Responsible-AI `RAI0x` code is not an OWASP LLM category), so a percentage
+cannot exceed 100%, and a spec file that fails to load is named in a warning instead of quietly
+leaving the spec count. A spec path that does not exist or yields nothing to read, and a `--suite`
+that is not registered, are refused (exit 3): until 2026-10-11 the first printed 0% on every
+axis and exited 0.
 
 **Why the AISVS figures are low, and should be.** OWASP AISVS lists 191 *controls* ("verify
 that a classifier screens every prompt"), not attacks. A black-box scanner never sees the
@@ -2202,7 +2219,7 @@ makes the attempt inconclusive; otherwise a judge `fail` decides; otherwise `pas
 that was consulted and merely abstained (confidence below the spec's threshold, or its two
 passes disagreeing) is dropped; an unparseable answer counts like an outage and is kept
 (`capability_unavailable`). Whether a disagreement should be dropped or keep the attempt
-inconclusive is an open question for the maintainer (`docs/04 §2`). Per
+inconclusive is an open decision for the owner (OD-45, `docs/04 §2`). Per
 spec, across attempts: any exploited attempt makes it `fail`; a compromised judge on any
 attempt makes it inconclusive; and `pass` needs a strict majority of passing attempts (one
 pass over four errors is inconclusive, not secure). See
@@ -2296,17 +2313,17 @@ provider's filter** and the campaign goes on (OD-41, ADR-0011):
   `content_filter`. From an `anthropic` target, a target file's `provider: rest` target or any
   other, the same body is an ordinary 4xx and stops the campaign: until then any adapter read it,
   so a target could answer every attack with it and turn the run green. Every other 4xx stops
-  the campaign as before (another code at 400, the same body at 403, a body that is not JSON). Gemini's block is read
-  only through a `RestTemplate` built in Python (a target file's `provider: rest` target reads the
-  text at `text` and has no template: from `dottore` this shape is not reached), whose
-  `text_path` starts at `candidates.` (as Gemini's and Vertex
-  AI's replies do), for `SAFETY`, `OTHER`, `BLOCKLIST`, `PROHIBITED_CONTENT` and Vertex AI's
-  `MODEL_ARMOR` and `JAILBREAK`. A Bedrock guardrail that blocked the prompt answers HTTP 200
-  with its own message as the text: with its trace enabled that is read as a block too, and
-  otherwise as a stop on an unreported side (next section). Its text is the message you
-  configured, so it is read as a replaced reply is (next section): only by the evaluators whose
-  fail cannot come from configured words, so a planted canary in it is a fail and a forbidden
-  phrase in your message is not (since 2026-10-11; until then only the trace evaluators read it).
+  the campaign as before (another code at 400, the same body at 403, a body that is not JSON).
+  Gemini's block is read only through a `RestTemplate` built in Python (a target file's
+  `provider: rest` target reads the text at `text` and has no template: from `dottore` this shape is
+  not reached), whose `text_path` starts at `candidates.` (as Gemini's and Vertex AI's replies do),
+  for `SAFETY`, `OTHER`, `BLOCKLIST`, `PROHIBITED_CONTENT` and Vertex AI's `MODEL_ARMOR` and
+  `JAILBREAK`. A Bedrock guardrail that blocked the prompt answers HTTP 200 with its own message as
+  the text: with its trace enabled that is read as a block too, and otherwise as a stop on an
+  unreported side (next section). Its text is the message you configured, so it is read as a
+  replaced reply is (next section): only by the evaluators whose fail cannot come from configured
+  words, so a planted canary in it is a fail and a forbidden phrase in your message is not (since
+  2026-10-11; until then only the trace evaluators read it).
 
 Against a loopback stub that answers Azure's 400 to prompts holding "instructions for" or
 "developer mode", `dottore run --spec GUARD-INPUT-EVASION-001 --spec PI-DIRECT-001 --runs 2
@@ -2374,13 +2391,13 @@ How such an attempt scores:
   planted canary or secret, per run), `authz_leak` (a canary that crossed identities) and the tool
   trace. A forbidden phrase, a compliance phrase or PII in a message you configured is no exploit
   of the model, which never wrote it (pre-merge audit of `a55710e9`, MEDIUM 1: a `regex_absence`
-  phrase in it was a confirmed fail). The judge reads a partial reply (text the model wrote before the cut, never a
-  guardrail's configured message), and since 2026-10-11 its fail stands too: the text came back,
-  so it was delivered, whatever the filter says (the amendment to OD-42, A-79). It is combined
-  with the others by the rule every reply gets (OD-19), so a deterministic abstention still keeps
-  it from deciding, and a fail it alone reported needs review, never confirmed: it gates only
-  with `--include-needs-review` (`semantic judge reported exploited; the provider's output filter
-  then cut the reply (stop reason content_filter); the text came back, so it was read as
+  phrase in it was a confirmed fail). The judge reads a partial reply (text the model wrote before
+  the cut, never a guardrail's configured message), and since 2026-10-11 its fail stands too: the
+  text came back, so it was delivered, whatever the filter says (the amendment to OD-42, A-79). It
+  is combined with the others by the rule every reply gets (OD-19), so a deterministic abstention
+  still keeps it from deciding, and a fail it alone reported needs review, never confirmed: it gates
+  only with `--include-needs-review` (`semantic judge reported exploited; the provider's output
+  filter then cut the reply (stop reason content_filter); the text came back, so it was read as
   delivered`). Until then it was recorded and never decided, so harmful text stopped with a
   filter word was `inconclusive`. Its pass is recorded after the reasoning (`; semantic_judge on
   what came back, recorded and not deciding: pass (0.95): ...`); when a request ceiling refuses
@@ -2587,12 +2604,12 @@ whose every attempt was cut with a canary in each exits 2, not 3.
   are joined and redacted once; the first piece a mask covers shows it and the others lose the
   text under it, so, joined, the pieces show each mask once and never more than `response.text`
   shows (a few show less, when a literal between two masks could stand in more than one place),
-  and a masked token's alternatives and `bytes` are masked with it. A key streamed in three deltas is stored as
-  `«REDACTED:high_entropy:<digest>»`, `""`, `""`; a refusal is stored as it came. The figures, the
-  token count and the frames' protocol fields are kept, so `dottore replay` and the membership
-  evaluator read the same run. The evidence store refuses a write in which a joined text still
-  masks something, as it refuses one in which a string does; the attempt is then stored with the
-  pieces of its reply withheld (empty tokens and content, the text, figures and verdict kept,
+  and a masked token's alternatives and `bytes` are masked with it. A key streamed in three deltas
+  is stored as `«REDACTED:high_entropy:<digest>»`, `""`, `""`; a refusal is stored as it came. The
+  figures, the token count and the frames' protocol fields are kept, so `dottore replay` and the
+  membership evaluator read the same run. The evidence store refuses a write in which a joined text
+  still masks something, as it refuses one in which a string does; the attempt is then stored with
+  the pieces of its reply withheld (empty tokens and content, the text, figures and verdict kept,
   `request.metadata.evidence_withheld` saying why) and its finding's line says `stored with the
   pieces of the reply withheld`, which SARIF's message repeats with an `evidence_withheld` count,
   and the terminal prints an `Evidence withheld:` line, so the run goes on (A-77). A recognition
@@ -2641,7 +2658,9 @@ high) and the SARIF run's `properties` say `"include_needs_review": true`: the c
 `dottore` exits 2 (until 2026-10-12 it stayed a `warning`, and code scanning passed it).
 
 A ready-made GitHub Actions workflow is in
-[`../examples/ci-github-actions.yml`](../examples/ci-github-actions.yml).
+[`../examples/ci-github-actions.yml`](../examples/ci-github-actions.yml). It checks out a pinned
+commit of `main`, not the `v0.1.0` tag, which gates differently (the file lists how), installs
+that checkout editable and passes `--spec-path` to it: a wheel cannot load the battery (INSTALL.md).
 
 ## 12. Extending the battery
 
@@ -2670,8 +2689,10 @@ mutator takes no parameter. `dottore lint` reports any other parameter as
 and the runner refuses the spec the same way at run time: nothing is sent for it, and its
 finding is `inconclusive` with the reason `unknown_mutator_parameter: translate:klingon, rot13:x
 names a parameter the mutator does not accept; nothing was sent for this spec`. A plugin
-mutator that does not declare its parameters is not checked. See [`06-extensibility-suites.md`](06-extensibility-suites.md),
-[`03-attack-spec-format.md`](03-attack-spec-format.md) and [`../CONTRIBUTING.md`](../CONTRIBUTING.md).
+mutator that does not declare its parameters is
+not checked. See [`06-extensibility-suites.md`](06-extensibility-suites.md),
+[`03-attack-spec-format.md`](03-attack-spec-format.md) and
+[`../CONTRIBUTING.md`](../CONTRIBUTING.md).
 
 ## 13. Troubleshooting
 

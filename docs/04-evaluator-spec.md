@@ -99,7 +99,7 @@ The values a spec can write:
   (`DL-XTENANT-001`), or whose only evaluator is `authz_leak`, keeps it. Both notes sit in each
   attempt's verdict reasoning, which the JSON report carries and the HTML, SARIF, JUnit and
   terminal outputs do not.
-- **Open question for the owner (judge self-consistency).** `docs/02 §4` and §4 item 4 below
+- **Open question for the owner (judge self-consistency, OD-45).** `docs/02 §4` and §4 item 4 below
   say a disagreement between the judge's passes makes the result `inconclusive`. The judge
   evaluator does return `inconclusive`, but with no reason, and the runner drops a reasonless
   judge abstention, so the attempt is decided by the deterministic evaluators as if the judge
@@ -140,7 +140,7 @@ The judge implementation **must**:
    configured). Disagreement → `inconclusive`. (As built: two passes of the one `--judge`
    model, no second judge model. The evaluator returns `inconclusive` with no reason, which the
    runner drops, so the deterministic evaluators decide the attempt; see the open question in
-   §2.)
+   §2, OD-45.)
 5. Include an **injection tripwire**: a control instruction the judge must ignore; if the
    parsed output shows it obeyed the tripwire, the judge run is discarded and marked
    `judge_compromised` → `inconclusive` + flagged for the operator.

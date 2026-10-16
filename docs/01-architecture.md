@@ -199,7 +199,7 @@ scientifically weak. Therefore:
   (e.g. "no DoS category against prod"). Data-leak layer-B specs and PII elicitation are
   **off unless the policy pack enables them** (`docs/11 §5`). The CLI loads no pack today:
   `run` builds a permissive pack from the selected specs, so every spec that declares
-  `requires_policy` stays blocked; a flag to load a pack is an open decision (`docs/09 §5`).
+  `requires_policy` stays blocked; a flag to load a pack is an open decision (OD-46, `docs/09 §5`).
 - `scope.yaml` may declare **≥2 auth identities** for one target (`multi_identity`) so
   cross-tenant/authz specs can compare identity A vs B. A central **redactor** masks
   secrets/PII in logs, evidence and reports.

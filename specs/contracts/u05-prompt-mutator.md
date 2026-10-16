@@ -94,8 +94,14 @@ schema.
 - MUST NOT introduce nondeterminism (wall clock, unseeded RNG, dict-order-dependent output).
 
 ## §9 Open decisions (human sign-off → rolls to 00-INDEX ledger)
-- `translate` implementation: ship a small static phrase-map subset (deterministic, offline) for
-  MVP‑1 vs a pluggable dictionary provider; and the default language set. **Proposed:** static
-  offline subset for a fixed 3-4 language list; pluggable later (L3). Flag as new OD to index.
+- **OD-8** `translate` implementation: ship a small static phrase-map subset (deterministic,
+  offline) for MVP‑1 vs a pluggable dictionary provider; and the default language set.
+  **Proposed:** static offline subset for a fixed 3-4 language list; pluggable later (L3). Flag as
+  new OD to index.
 - Whether `unicode_confusable`/`zero_width_inject` density defaults live in mutator code or move to
   a shared `frameworks/`-style table (**propose:** in-module tables for MVP‑1).
+- **OD-47** (shared with u13; numbered 2026-10-12; open, owner to decide): `leetspeak` rewrites
+  `JB-ENCODING-001`'s Base64 payload, so that variant tests nothing, and `rot13` carries no decode
+  cue (F9, 2026-10-03 audit). This unit's half: `leetspeak` substitutes characters in whatever it
+  is given, an encoded payload included. Recommended (`00-INDEX.md`): drop `leetspeak` from that
+  spec's `mutations` and decide `rot13`'s cue apart, changing no mutator.

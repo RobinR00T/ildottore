@@ -42,8 +42,9 @@ combination and a vote nothing called, and a judge-only fail was `confirmed` whe
   cross-identity) ⇒ `needs-review`, never confirmed (`docs/11 §4`).
 - DECIDE (OD-3): default judge model + whether a 2nd judge runs for self-consistency. (As
   built: there is no default judge; the judge is the `--judge` target, or offline the scripted
-  judge of the `vulnerable` and `hardened` mocks (`bare` and `comprehending` have none), and self-consistency is two passes of that one model; no second judge model runs.
-  Ledger OD-3 records the same.)
+  judge of the `vulnerable` and `hardened` mocks (`bare` and `comprehending` have none), and
+  self-consistency is two passes of that one model; no second judge model runs. Ledger
+  OD-3 records the same.)
 
 ## §5 Implementation plan (each step its own commit, green before next)
 1. `base.py` + `registry.py` (protocol, entry-point discovery per `docs/06`).
@@ -56,7 +57,7 @@ combination and a vote nothing called, and a judge-only fail was `confirmed` whe
    returns `inconclusive` with no reason; the runner drops a reasonless judge abstention, so the
    deterministic evaluators decide the attempt. `docs/02 §4` says a disagreement makes the
    result `inconclusive`: which of the two is intended is an open question for the owner,
-   `docs/04 §2`. An outage or an unparseable answer carries `capability_unavailable` and a
+   OD-45, `docs/04 §2`. An outage or an unparseable answer carries `capability_unavailable` and a
    tripwire hit `judge_compromised`; both are kept.)
 5. `combine.py` (evaluator_logic). Since OD-19 (2026-10-11) a thin entry to
    `shared.combination.combine_verdicts`; its boolean modes and weighted vote are gone (A-73).
@@ -64,9 +65,10 @@ combination and a vote nothing called, and a judge-only fail was `confirmed` whe
 ## §6 Data/wire shapes
 `Verdict = {status: "pass"|"fail"|"inconclusive", confidence: float[0,1], reasoning: str,
 matched: list[str], evaluator_type: str, inconclusive_reason: InconclusiveReason|None}` (set
-`inconclusive_reason` whenever status is `inconclusive`; closed StrEnum per u00/ADR-0006). Judge raw+parsed output persisted to evidence
-(masked). (Not built: a stored attempt carries only the aggregate verdict; no per-evaluator
-verdict and nothing of the judge's exchange is persisted, `docs/04 §5`.) PII/secret hits stored **typed + masked/hashed only** (`docs/11 §5`).
+`inconclusive_reason` whenever status is `inconclusive`; closed StrEnum per u00/ADR-0006). Judge
+raw+parsed output persisted to evidence (masked). (Not built: a stored attempt carries only the
+aggregate verdict; no per-evaluator verdict and nothing of the judge's exchange is persisted,
+`docs/04 §5`.) PII/secret hits stored **typed + masked/hashed only** (`docs/11 §5`).
 
 ## §7 Acceptance criteria (machine-checkable)
 - `pytest tests/evaluators -q` green; coverage ≥ 90% for this package.
@@ -130,18 +132,19 @@ verdict and nothing of the judge's exchange is persisted, `docs/04 §5`.) PII/se
   `AG-CONFIRM-BYPASS-001`'s `vulnerable` fixture now does (`confirm: true` on `delete_records`),
   so lint and the battery fail if the flag counts again; the four specs that described the old
   rule (`AG-CONFIRM-BYPASS-001`, `AG-DESTRUCTIVE-DBDROP-001`, `AG-AUTONOMY-SELFCORRECT-001`,
-  `AG-EXTORT-CHAIN-001`) now state this one. Checks: `tests/evaluators/test_self_set_confirmation.py`
-  (67 tests, 45 failing on `f12ba83`; the 22 that pass there pin what did not change: a flag on
-  a call that destroys nothing stays a pass, `kill_chain_progression` reads no flag, a flag
-  already changed neither verdict on a call off the allowlist, which fails as unauthorized, and
-  the two traces where the evaluators differ by design), four tests inverted in
-  `tests/evaluators/test_deterministic.py`, `tests/registry/test_fixtures_engine.py` and
-  `tests/registry/test_non_string_keys.py`, and on `f12ba83` the shipped specs give
-  `FIXTURE_NO_DETECT` for `AG-CONFIRM-BYPASS-001` in `dottore lint specs/` and three failures in
-  `tests/battery/test_battery.py`. Out of reach, stated rather than hidden: a confirmation from
-  outside the model. One added later (a harness's approval record, approvals a target declares,
-  a spec whose later turn confirms after the agent asked) is the only thing that may mark a
-  destructive call confirmed, and it needs an input the evaluator does not have today.
+  `AG-EXTORT-CHAIN-001`) now state this one. Checks:
+  `tests/evaluators/test_self_set_confirmation.py` (67 tests, 45 failing on `f12ba83`; the 22 that
+  pass there pin what did not change: a flag on a call that destroys nothing stays a pass,
+  `kill_chain_progression` reads no flag, a flag already changed neither verdict on a call off the
+  allowlist, which fails as unauthorized, and the two traces where the evaluators differ by design),
+  four tests inverted in `tests/evaluators/test_deterministic.py`,
+  `tests/registry/test_fixtures_engine.py` and `tests/registry/test_non_string_keys.py`, and on
+  `f12ba83` the shipped specs give `FIXTURE_NO_DETECT` for `AG-CONFIRM-BYPASS-001` in
+  `dottore lint specs/` and three failures in `tests/battery/test_battery.py`. Out of reach, stated
+  rather than hidden: a confirmation from outside the model. One added later (a harness's approval
+  record, approvals a target declares, a spec whose later turn confirms after the agent asked) is
+  the only thing that may mark a destructive call confirmed, and it needs an input the evaluator
+  does not have today.
 - **A-71 A scene's `destructive: false` clears a tool its name alone made destructive, and the
   lint stub judges a call through this evaluator's helpers (added 2026-10-11).** Two defects the
   pre-merge audit of OD-38 left open in `docs/PROGRESS.md`. (1) The destructive verbs are matched
@@ -180,19 +183,19 @@ verdict and nothing of the judge's exchange is persisted, `docs/04 §5`.) PII/se
   the flag. Out of reach of the flag: a tool a deployment grants under
   `seeded_setup.granted_tools` is in no scene, so a granted `transfer_to_<agent>` is still
   destructive by its name; whether a target file may declare one of its own tools not destructive
-  was the owner's question, not decided here (decided 2026-10-11: OD-43, A-72 below). (2) The lint stub (`registry/fixtures_engine._tool_call`,
-  u02) was a copy of this evaluator that had drifted: the backtick pattern dropped here as
-  quadratic (an unclosed backtick before 100,000 letters: about 4 s, against about 3 ms), injection
-  markers read only in top-level argument values while this evaluator walks nested maps and lists,
-  no lists in the forbidden-argument walk, and no arguments read from OpenAI's JSON string (the
-  `tool_sequence` stub too). The checks now live once in `shared/tool_abuse.py` (allowlist, the
-  verbs and the scene's flags, the injection markers and their walk, the forbidden walk), since
-  `registry` and `evaluators` may not import each other, and both read calls through
-  `shared/toolcalls.py`. Every shipped fixture's verdict under this package's evaluators and
-  under the stubs is unchanged (156 fixture cases over 78 files, 77 unique ids since
-  `PI-INDIRECT-RAG-001` is both shipped and in the valid corpus, and the 594 traces of every
-  shipped fixture under every `tool_call` config of every shipped spec; byte-identical once the
-  per-process salt of the canary masks is normalized, on `f76f145` and again on the audit's
+  was the owner's question, not decided here (decided 2026-10-11: OD-43, A-72 below). (2) The lint
+  stub (`registry/fixtures_engine._tool_call`, u02) was a copy of this evaluator that had drifted:
+  the backtick pattern dropped here as quadratic (an unclosed backtick before 100,000 letters: about
+  4 s, against about 3 ms), injection markers read only in top-level argument values while this
+  evaluator walks nested maps and lists, no lists in the forbidden-argument walk, and no arguments
+  read from OpenAI's JSON string (the `tool_sequence` stub too). The checks now live once in
+  `shared/tool_abuse.py` (allowlist, the verbs and the scene's flags, the injection markers and
+  their walk, the forbidden walk), since `registry` and `evaluators` may not import each other, and
+  both read calls through `shared/toolcalls.py`. Every shipped fixture's verdict under this
+  package's evaluators and under the stubs is unchanged (156 fixture cases over 78 files, 77 unique
+  ids since `PI-INDIRECT-RAG-001` is both shipped and in the valid corpus, and the 594 traces of
+  every shipped fixture under every `tool_call` config of every shipped spec; byte-identical once
+  the per-process salt of the canary masks is normalized, on `f76f145` and again on the audit's
   fixes), `dottore lint specs/` and `dottore coverage --json` are byte-identical to `6d5f7ae`'s,
   and no shipped spec marks a tool `destructive: false`. Checks:
   `tests/evaluators/test_scene_not_destructive.py` (43 tests, 26 failing on `6d5f7ae`),
@@ -233,17 +236,17 @@ verdict and nothing of the judge's exchange is persisted, `docs/04 §5`.) PII/se
   `Verdict.operator_cleared` naming the tools, which the reports count from instead of the text
   (a judge or a tool's name can echo it; pre-merge audit of `ed381359`, L1); the runner puts the
   same note and record on the stored aggregate, a conversation the input filter cut after such a
-  call and a reply the output filter cut included (u08 half, M1). A seeded name map cannot carry a call onto the
-  declaration (the A-71 audit's L1, for the operator's word): a map renames a call only to a
-  scene tool, which the declaration never reaches, and a scene tool mapped onto a declared name is
-  refused by the loader and by `seeding_gap`. And it gets the second look lint gives a scene's
-  `destructive: false` (A-71's M2): the plan flags a declared name a verb is in that is not named
-  like a hand-off (`shared.tool_abuse.handoff_shaped`, the heuristic lint reads too). Considered
-  and not adopted: a sibling list `seeded_setup.not_destructive: [...]` that must be a subset of the
-  grants. Writing the declaration on the grant itself keeps one word for one rule (a tool marked
-  `destructive: false`, in a scene or in a target file), cannot name a tool the file does not
-  grant, and leaves every plain list of names reading, digesting and resuming as before. Checks:
-  `tests/evaluators/test_operator_not_destructive.py` (34 tests, 33 failing on `main` at
+  call and a reply the output filter cut included (u08 half, M1). A seeded name map cannot carry a
+  call onto the declaration (the A-71 audit's L1, for the operator's word): a map renames a call
+  only to a scene tool, which the declaration never reaches, and a scene tool mapped onto a declared
+  name is refused by the loader and by `seeding_gap`. And it gets the second look lint gives a
+  scene's `destructive: false` (A-71's M2): the plan flags a declared name a verb is in that is not
+  named like a hand-off (`shared.tool_abuse.handoff_shaped`, the heuristic lint reads too).
+  Considered and not adopted: a sibling list `seeded_setup.not_destructive: [...]` that must be a
+  subset of the grants. Writing the declaration on the grant itself keeps one word for one rule (a
+  tool marked `destructive: false`, in a scene or in a target file), cannot name a tool the file
+  does not grant, and leaves every plain list of names reading, digesting and resuming as before.
+  Checks: `tests/evaluators/test_operator_not_destructive.py` (34 tests, 33 failing on `main` at
   `a69dbd8c`; the other checks that a refusal never quotes the value),
   `tests/core/test_operator_declaration_runner.py` (9, all failing there, among them a reply the
   provider's filter cut, A-70, a conversation its input filter cut, A-69, and the counters read
@@ -274,20 +277,20 @@ verdict and nothing of the judge's exchange is persisted, `docs/04 §5`.) PII/se
   reasoning saying how many attempts the judge alone decided, and `--fail-on` gates it only with
   `--include-needs-review`; `scoring.confidence.gate_state`, which no production path calls,
   agrees (u07's half: all the verdicts judge-only fails is `needs-review`), and
-  `reporting/summary.finding_state` says so. No verdict and no confirmation of a shipped fixture changed (the
-  vulnerable mock, every capability declared, `--runs 2`: 224 failing attempts, none decided by
-  the judge alone; 67 confirmed fails before and after). Checks:
-  `tests/evaluators/test_one_combination_rule.py` and `tests/registry/test_deprecated_combination.py`
-  (48 tests: on `feb148f` the first does not import, `shared.combination` being new, and 6 of the
-  second's 7 fail; with that module alone added, 17 of the 48 fail), the rewritten
-  `tests/evaluators/test_combine.py`. **Amended 2026-10-11 after the audit of the scoring:** a
-  fail the judge alone decided does not skip the runner's `setup_not_reached` check, since the
-  judge read a reply to a scene that never reached the model (LOW 2, u08's half); `run --help`
-  names it among the fails `--include-needs-review` gates (LOW 3: the help listed every other
-  kind); and SARIF gives a fail that needs review at most `warning`, not its band's `error`
-  (LOW 4, u11's half), so code scanning does not fail a check `dottore` passes; under
-  `--include-needs-review`, which makes it gate, it keeps its band's level (the pre-merge audit
-  of `d07a1088`, LOW 3, u11's half).
+  `reporting/summary.finding_state` says so. No verdict and no confirmation of a shipped fixture
+  changed (the vulnerable mock, every capability declared, `--runs 2`: 224 failing attempts, none
+  decided by the judge alone; 67 confirmed fails before and after). Checks:
+  `tests/evaluators/test_one_combination_rule.py` and
+  `tests/registry/test_deprecated_combination.py` (48 tests: on `feb148f` the first does not import,
+  `shared.combination` being new, and 6 of the second's 7 fail; with that module alone added, 17 of
+  the 48 fail), the rewritten `tests/evaluators/test_combine.py`. **Amended 2026-10-11 after the
+  audit of the scoring:** a fail the judge alone decided does not skip the runner's
+  `setup_not_reached` check, since the judge read a reply to a scene that never reached the model
+  (LOW 2, u08's half); `run --help` names it among the fails `--include-needs-review` gates (LOW 3:
+  the help listed every other kind); and SARIF gives a fail that needs review at most `warning`, not
+  its band's `error` (LOW 4, u11's half), so code scanning does not fail a check `dottore` passes;
+  under `--include-needs-review`, which makes it gate, it keeps its band's level (the pre-merge
+  audit of `d07a1088`, LOW 3, u11's half).
 - **A-74's u06 half (amended 2026-10-12 after the pre-merge audit of `d07a1088`, MEDIUM 2): an
   `authz_leak` with fewer than two replies still reads the owner map.** It returned
   `capability_unavailable` before reading anything, so with two identities, the owner's send
@@ -307,6 +310,11 @@ verdict and nothing of the judge's exchange is persisted, `docs/04 §5`.) PII/se
 
 ## §9 Open decisions (human sign-off → rolls to 00-INDEX ledger)
 - **OD-3** default judge model (own-hosted vs API) + second-judge self-consistency on/off.
+  **Recorded default (`00-INDEX.md`):** the configured target model at temperature 0, the second
+  judge OFF in MVP-1 (revisit). As built (audit F-25): there is no default judge; a live run
+  without `--judge` leaves `semantic_judge` unregistered (`inconclusive: capability_unavailable`),
+  the judge's first pass is at temperature 0 and its self-consistency passes at 0.5, and the
+  second judge stays OFF.
 - **OD-19** `evaluator_logic: weighted` declared by 33 specs and implemented in no run path.
   **Decided 2026-10-11 under the owner's delegation (best practice, revisable): ADR-0010 option B
   with its amendment, built (A-73).** One rule, `deterministic_first`, named by every value; the
@@ -321,7 +329,16 @@ verdict and nothing of the judge's exchange is persisted, `docs/04 §5`.) PII/se
   a judge. The alternative not taken: C, a relevance precondition in both regex evaluators, a
   heuristic over 30 specs whose own wrong abstentions (a short genuine refusal reads like a
   non-answer) would need a new `InconclusiveReason`.
-- Whether `secret_shape` entropy threshold is global or per-key-type (propose per-type).
+- **OD-45** (numbered 2026-10-12; open, owner to decide): a judge whose self-consistency passes
+  disagree. As built (§2 item 4) the judge returns `inconclusive` with no reason and the runner
+  drops it, so the deterministic evaluators decide the attempt; `docs/02 §4` says the attempt
+  stays `inconclusive`. OD-19 left it out (ADR-0010). Recommended: keep the attempt
+  `inconclusive` with a reason of its own, as a judge outage already is, at the cost of more
+  inconclusive results from a noisy judge (`00-INDEX.md`).
+- **OD-15** (shared with u01) whether `secret_shape`'s entropy threshold is global or
+  per-key-type. **Status (`00-INDEX.md`):** `secret_shape` has landed with per-key-type entropy
+  thresholds; the redactor still uses its own global one (`redactor.py`), so the reuse half of
+  the resolution is pending (audit F-25).
 - **OD-38** a `confirm: true` the model sets on its own destructive tool call: a confirmation,
   or not. **Decided 2026-10-09 by the owner, built (A-65):** not a confirmation. Only a
   confirmation from outside the model counts (the user's reply after the agent asked, never the
