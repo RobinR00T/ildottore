@@ -107,8 +107,29 @@ def visible_stash_delimiters(text: str) -> str:
     return text.translate(_VISIBLE)
 
 
-def _without_stash_delimiters(text: str) -> str:
-    return text.replace(_STASH_OPEN, "").replace(_STASH_CLOSE, "")
+def _holds_stash_delimiter(text: str) -> bool:
+    return _STASH_OPEN in text or _STASH_CLOSE in text
+
+
+class _Joined:
+    """``text`` with its stash delimiters dropped, and where each of its characters is in ``text``.
+
+    The positions are held as the delimiters' places only, in an array of 8-byte integers: a list
+    of every kept character's index took about 30 bytes a character, 120 MB for a 4 MB reply
+    holding one ``\x00`` (u01 A-83).
+    """
+
+    def __init__(self, text: str) -> None:
+        self.text = text.replace(_STASH_OPEN, "").replace(_STASH_CLOSE, "")
+        # For the j-th delimiter at `at`, the index in the joined text of the character after it.
+        self._after = array(
+            "q", (m.start() - rank for rank, m in enumerate(_STASH_DELIMITER.finditer(text)))
+        )
+
+    def at(self, index: int) -> int:
+        """Where character ``index`` of the joined text is in ``text``."""
+
+        return index + bisect.bisect_right(self._after, index)
 
 
 # --- a registered credential split by characters that do not show -----------------------
@@ -1399,17 +1420,32 @@ class Redactor:
         abort the campaign.
         """
 
-        # The stash delimiters are dropped first, so an attacker cannot forge a token, and a
-        # secret split by them is whole again: `AKIA\x00IOSF...` and a key read as UTF-16 with
-        # Latin-1 (`s\x00k\x00-\x00...`) are masked. When nothing is masked, the input is
-        # redacted again with them made visible instead, so two names that differ only by one
-        # (`cmd`, `cmd\x01`) stay two keys in the stored evidence, and what joining the pieces
-        # hid is masked: `bob@corp.io\x00_` is no email once joined (pre-merge audit).
-        stripped = _without_stash_delimiters(text)
-        joined = self._to_fixed_point(stripped)
-        if joined != stripped or stripped == text:  # masked, or no delimiter to show
-            return joined
-        return self._to_fixed_point(visible_stash_delimiters(text))
+        if not _holds_stash_delimiter(text):
+            return self._to_fixed_point(text)
+        # A text holding a stash delimiter is read two ways, and what either masks is masked
+        # (u01 A-83). With them dropped, an attacker cannot forge a token, and a secret split by
+        # them is whole again: `AKIA\x00IOSF...` and a key read as UTF-16 with Latin-1
+        # (`s\x00k\x00-\x00...`). With them made visible, a word they end stays a word, so what
+        # joining glued to its neighbour is masked: `bob@corp.io\x00_` is no email once joined,
+        # nor `x\x01credential: <value>` a label. The output is the text with them made visible
+        # and both readings' masks in place, so two names that differ only by one (`cmd`,
+        # `cmd\x01`) stay two keys in the stored evidence. The first version returned the joined
+        # reading whenever it masked anything and the visible one otherwise, so what a text was
+        # masked as depended on whether anything at all was masked in it, however far away: a UUID
+        # in one line showed the labelled secret of the next (pre-merge audits of A-78, F2).
+        visible = visible_stash_delimiters(text)
+        spans = _spans_both_ways(self._to_fixed_point, text)
+        if not spans:
+            return visible
+        pieces: list[str] = []
+        cursor = 0
+        for start, end, shown in spans:
+            pieces += (visible[cursor:start], "".join(shown))
+            cursor = end
+        pieces.append(visible[cursor:])
+        # The masks of one reading can stand where the other reading wrote text, so the whole is
+        # read once more, which only adds masks, and the result is a fixed point.
+        return self._to_fixed_point("".join(pieces))
 
     def for_terminal(self, text: str) -> str:
         """``text`` redacted, its control and format characters written out, for printing.
@@ -2496,7 +2532,6 @@ def identity_masks(value: str) -> tuple[str, ...]:
 _FRAGMENT_MASK: Final = _MASK_TEMPLATE.format(type="fragment")
 #: How many passes a value gets at most, as ``redact_text`` reads a text to a fixed point.
 _SPLIT_ROUNDS: Final = 4
-_STASH_DELIMITERS: Final = frozenset((_STASH_OPEN, _STASH_CLOSE))
 #: A logprob item's token and its figure (ADR-0005 ``TokenLogprob``, and OpenAI's wire shape).
 _TOKEN: Final = "token"  # noqa: S105 - a field name, not a credential
 _LOGPROB: Final = "logprob"
@@ -2677,27 +2712,38 @@ def _placed_masks(text: str, redacted: str) -> list[tuple[int, int, str]] | None
 def _mask_spans(redactor: _RedactsText, joined: str) -> list[tuple[int, int, tuple[str, ...]]]:
     """The stretches of ``joined`` the redactor masks, merged, with the masks each shows.
 
-    ``redact_text`` drops its two stash delimiters before it reads a text, or writes them out
-    when that masks nothing, so a text holding one is read both ways, the first through the
-    positions of the characters it keeps, and what either masks is masked.
+    A text holding a stash delimiter is read both ways, as ``redact_text`` reads it
+    (:func:`_spans_both_ways`).
     """
 
-    if _STASH_DELIMITERS.isdisjoint(joined):
-        forms: list[tuple[str, list[int] | None]] = [(joined, None)]
-    else:
-        kept = [index for index, char in enumerate(joined) if char not in _STASH_DELIMITERS]
-        forms = [
-            ("".join(joined[index] for index in kept), kept),
-            (visible_stash_delimiters(joined), None),
-        ]
+    return _spans_both_ways(redactor.redact_text, joined)
+
+
+def _spans_both_ways(
+    redact: Callable[[str], str], text: str
+) -> list[tuple[int, int, tuple[str, ...]]]:
+    """The stretches of ``text`` that ``redact`` masks, merged, with the masks each shows.
+
+    ``redact`` is given a text holding no stash delimiter only. A text holding one is read with
+    them dropped, each mask placed back through the positions of the characters it keeps, and
+    with them made visible (``␀``, ``␁``); what either reading masks is masked (u01 A-83). A
+    reading whose masks cannot be placed masks the whole text (``fragment``).
+    """
+
+    joined = _Joined(text) if _holds_stash_delimiter(text) else None
+    forms: list[tuple[str, _Joined | None]] = (
+        [(text, None)]
+        if joined is None
+        else [(joined.text, joined), (visible_stash_delimiters(text), None)]
+    )
     spans: list[tuple[int, int, str]] = []
-    for text, positions in forms:
-        redacted = redactor.redact_text(text)
-        if redacted == text:
+    for form, positions in forms:
+        redacted = redact(form)
+        if redacted == form:
             continue
-        for start, end, mask in _placed_masks(text, redacted) or [(0, len(text), _FRAGMENT_MASK)]:
+        for start, end, mask in _placed_masks(form, redacted) or [(0, len(form), _FRAGMENT_MASK)]:
             if positions is not None:
-                start, end = positions[start], positions[end - 1] + 1
+                start, end = positions.at(start), positions.at(end - 1) + 1
             spans.append((start, end, mask))
     spans.sort(key=lambda span: (span[0], span[1]))
     merged: list[tuple[int, int, tuple[str, ...]]] = []

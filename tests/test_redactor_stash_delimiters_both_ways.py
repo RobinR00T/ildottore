@@ -1,0 +1,132 @@
+"""A text holding U+0000 or U+0001 is masked the same whatever else it holds (u01 A-83, item 6).
+
+The redactor's stash tokens are ``\\x00<number>\\x01``, so it never reads those two characters as
+text. ``redact_text`` dropped them and returned that reading whenever it masked anything, and
+otherwise read the text again with them made visible (``␀``, ``␁``). Dropped, they glue what they
+separate (``x\\x01credential: <value>`` loses its label, ``bob@corp.io\\x00_`` its address); shown,
+they split what they join (``AKIA\\x00IOSF...``). So whether a value was masked depended on
+whether anything at all was masked in the text, however far from it: a UUID on one line showed
+the labelled secret on the next (disclosed as F2 by the pre-merge audits of A-78). Both readings
+are now made, and what either masks is masked, in the text with the delimiters made visible.
+"""
+
+from __future__ import annotations
+
+import time
+
+import pytest
+from hypothesis import given, settings
+from hypothesis import strategies as st
+
+from ildottore.redactor import Redactor
+
+#: Each: a text whose secret one reading of the delimiters hides, and the secret.
+CASES = {
+    "label glued by U+0001": ("note\x01credential: 'Summer2026xQ'", "Summer2026xQ"),
+    "label glued by U+0000": ("x)idfknfiuys\x00password=Hunter2Secret99", "Hunter2Secret99"),
+    "address ended by U+0000": ("write bob.smith@corp.io\x00_x", "bob.smith@corp.io"),
+    "number ended by U+0001": ("call 600123456\x01x", "600123456"),
+    "key split by U+0000": ("AKIA\x00IOSFODNN7EXAMPLE", "IOSFODNN7EXAMPLE"),
+    "key read as UTF-16": ("\x00".join("sk-Ab3dE5fG7hJ9kL1mN3pQ5rS7") + "\x00", "Ab3dE5fG7h"),
+}
+#: Something the redactor masks, unrelated to the case, as F2 found them.
+UNRELATED = (
+    "5f0eb9d2-2c10-4000-ac58-6fdf9029c33d",
+    "alice@example.org",
+    "OPENAI_API_KEY=sk-proj-Ab3dEf6hIj9kLm2nOp5qRs8tUv1wXy4z",
+    "2222222222222222222222222222222",
+)
+
+
+def _shown(text: str) -> str:
+    return text.replace("␀", "").replace("␁", "")
+
+
+@pytest.mark.parametrize("case", sorted(CASES))
+def test_the_secret_is_masked_alone(case: str) -> None:
+    text, secret = CASES[case]
+    redactor = Redactor(salt="s")
+    out = redactor.redact_text(text)
+    assert secret not in _shown(out), out
+    assert "\x00" not in out and "\x01" not in out
+    assert redactor.redact_text(out) == out
+
+
+@pytest.mark.parametrize("unrelated", UNRELATED)
+@pytest.mark.parametrize("case", sorted(CASES))
+def test_the_secret_is_masked_whatever_else_the_text_holds(case: str, unrelated: str) -> None:
+    """On ``7d01521f`` the first three cases showed their secret once anything else was masked."""
+
+    text, secret = CASES[case]
+    redactor = Redactor(salt="s")
+    alone = redactor.redact_text(text)
+    both = redactor.redact_text(f"{unrelated}\n{text}")
+    assert secret not in _shown(both), both
+    # The line is masked as it is on its own.
+    assert both.endswith("\n" + alone), (both, alone)
+
+
+def test_the_delimiters_show_whether_or_not_anything_is_masked() -> None:
+    """Dropped from the output whenever something was masked, `cmd\\x01` and `cmd` read alike in
+    one text and apart in another."""
+
+    redactor = Redactor(salt="s")
+    assert redactor.redact_text("cmd\x01 run") == "cmd␁ run"
+    masked = redactor.redact_text("cmd\x01 run AKIAIOSFODNN7EXAMPLE")
+    assert masked.startswith("cmd␁ run «REDACTED:aws_access_key:"), masked
+
+
+def test_a_text_without_a_delimiter_is_read_once() -> None:
+    redactor = Redactor(salt="s")
+    text = "tenant 5f0eb9d2-2c10-4000-ac58-6fdf9029c33d, password: Hunter2Secret99"
+    assert redactor.redact_text(text) == redactor._to_fixed_point(text)
+
+
+_PIECES = st.sampled_from(
+    [
+        "password: Hunter2Secret99",
+        "credential: 'Summer2026xQ'",
+        "bob.smith@corp.io",
+        "AKIAIOSFODNN7EXAMPLE",
+        "5f0eb9d2-2c10-4000-ac58-6fdf9029c33d",
+        "call 600123456",
+        "«REDACTED:email»",
+        "«REDACTED:uuid:0123abcd»",
+        "https://ops:Secr3tPassw0rd@db.internal/v1",
+        "word",
+        "x)",
+        "_",
+        " ",
+        "\n",
+        "\x00",
+        "\x01",
+        "\x00\x01",
+    ]
+)
+
+
+@settings(max_examples=300, deadline=None)
+@given(st.lists(_PIECES, min_size=1, max_size=12))
+def test_every_output_is_a_fixed_point_and_shows_no_delimiter(pieces: list[str]) -> None:
+    redactor = Redactor(salt="s")
+    out = redactor.redact_text("".join(pieces))
+    assert "\x00" not in out and "\x01" not in out
+    assert redactor.redact_text(out) == out
+
+
+def test_reading_both_ways_stays_linear() -> None:
+    """Twice the text, about twice the time: the positions of the characters the joined reading
+    keeps are held as the delimiters' places, not one entry a character."""
+
+    redactor = Redactor(salt="s")
+    unit = "user@corp.io\x00 AKIA\x00IOSFODNN7EXAMPLE x\x01credential: 'Summer2026xQ'\n"
+
+    def cost(copies: int) -> float:
+        text = unit * copies
+        started = time.perf_counter()
+        redactor.redact_text(text)
+        return time.perf_counter() - started
+
+    cost(200)  # warm the patterns
+    small, large = min(cost(2_000) for _ in range(3)), min(cost(8_000) for _ in range(3))
+    assert large < 8 * small, (small, large)
