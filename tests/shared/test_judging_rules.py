@@ -90,11 +90,19 @@ PIN_HISTORY: tuple[tuple[int, str, str], ...] = (
         "a docstring of cli.run), from docs/audit-2026-10-12 stacked on e92a7541; no verdict can "
         "change; version 1 is not released",
     ),
+    (
+        1,
+        "ce74f59ffe475a510cabae443bc2980dd199342d238138d7bc74ab4a7ebb064f",
+        "re-pin 2026-10-16: masking only (u01/u12 A-83, fix/masking-followups on 7d01521f): the "
+        "redactor's reading of U+0000 and U+0001, the CLI's error masking and exit statuses, an "
+        "endpoint URL's user registered; the redactor decides what is stored and printed, the "
+        "evaluators judge the raw reply, so no verdict can change; version 1 is not released",
+    ),
 )
 
 #: The digest each version is pinned to now: the last line of :data:`PIN_HISTORY` for it.
 PINNED: dict[int, str] = {
-    1: "dbfbedd793b731ab385a0c2bae7e9bc9e85c795a1230eeaf0814c83038335d0c",
+    1: "ce74f59ffe475a510cabae443bc2980dd199342d238138d7bc74ab4a7ebb064f",
 }
 
 #: One ``<version> <digest>`` line per pin, appended to and never edited: the history must start

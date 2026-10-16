@@ -1086,19 +1086,29 @@ file's endpoint, or the user when it is all the user info says, as written and p
 
 *Measured.* The differential fuzz against `7d01521f`'s redactor (a `git show` copy, loaded beside
 this one; the A-78 auditors' grammar, `scratch/fixkeys-audit/fz/gen.py`; a regression being a run
-of 8 characters this output shows between two masks that no stretch main shows holds): 560,000
-texts with U+0000 and U+0001 among the glue, about 27% differ, every one holding a delimiter, and
-none shows a run main hides; 360,000 without a delimiter, none differs; the same without the
-entropy rule (120,000), with registered credentials (110,000) and through the identity mask
-(80,000): every difference holds a delimiter, none shows a run main hides; every output is a
-fixed point. (The auditors' own criterion, which counts a mask copied from the input as text,
-flags about 0.06% of the texts: in each, a mask this adds stands beside one the input held, where
-main showed the glue between them.) Time against main on the same inputs, best of five: prose,
-keys and labels, UUIDs cut by numbers, emails and phones, hostile runs and 24,000 short texts, all
-without a delimiter, 0.96 to 1.01 times; one U+0000 in 1 MB of prose 1.01, in 1 MB of keys 2.28 (two
-readings), a delimiter every 40 characters 3.21 (two readings and the last pass), and U+0000 after
-every character of 200 KB 30 times main's 0.003 s, which returned the joined reading at once: 0.10
-s, the cost of reading those 200 KB once more.
+of 8 characters this output shows between two masks that no stretch main shows holds), on the
+final tree: 500,000 texts with U+0000 and U+0001 among the glue, 135,514 differ (27.1%), every one
+holding a delimiter, and none shows a run main hides; 300,000 without a delimiter, none differs;
+without the entropy rule, with registered credentials and through the identity mask, 80,000 each:
+every difference holds a delimiter (20,319, 21,750 and 21,792), none shows a run main hides; every
+output is a fixed point. The auditors' own criterion, which counts a mask copied from the input
+as text, flags 316 of the 500,000: in each, a mask this adds stands beside one the input held,
+where main showed the glue between them. Time against main on the same inputs, best of five:
+prose, keys and labels, UUIDs cut by numbers, emails and phones, hostile runs and 24,000 short
+texts, all without a delimiter, 0.96 to 1.01 times; one U+0000 in 1 MB of prose 1.01, in 1 MB of
+keys 2.28 (two readings), a delimiter every 40 characters 3.21 (two readings and the last pass),
+and U+0000 after every character of 200 KB 30 times main's 0.003 s, which returned the joined
+reading at once: 0.10 s, the cost of reading those 200 KB once more.
+
+*Placing a reading back.* `read_both_ways` places a reading's masks with `tolerant=True`: the CLI
+masks in passes, and a later pass can read an earlier one's mask as a URL's user and rewrite it
+(`redis://«REDACTED:«REDACTED:url_password»@`), so its output holds text the message does not and
+strict placement failed, which masked the whole message as `«REDACTED:fragment»` (about 1% of the
+CLI fuzz's messages). A mask opener glued before a mask is part of it, and a literal it cannot
+place, or an end that is not the text's own, is dropped and the masks beside it stand as one; a
+first version showed that literal with the masks, which showed text the other reading masked. A
+redactor's own output always places strictly (none of the 500,000 texts above needed it); A-77's
+`_mask_spans` keeps the strict placement.
 
 *Not covered.* A hex run inside a token-level JWT match that a letter outside ASCII follows is
 left by the entropy rule to the JWT pattern, which fails on the text (`\b` between two letters):

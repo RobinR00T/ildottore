@@ -23,6 +23,9 @@ from typer.testing import CliRunner
 from ildottore.cli.app import _masked, app
 from ildottore.redactor import Redactor
 
+#: Registered credentials are process-wide: none from an earlier test changes a mask here.
+pytestmark = pytest.mark.usefixtures("no_known_secrets")
+
 REPO = Path(__file__).resolve().parents[2]
 CUT = "3f2a9c1d-6819-4748-9c2d-1234567890ab"  # two groups a phone number to the number rules
 DIGITS = "12345678-1234-1234-1234-123456789012"  # every group, one number

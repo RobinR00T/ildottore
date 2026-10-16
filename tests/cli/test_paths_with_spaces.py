@@ -26,6 +26,9 @@ from ildottore.redactor import register_known_secret, visible_controls
 
 from .conftest import make_spec, write_scope, write_spec_tree, write_target
 
+#: Registered credentials are process-wide: none from an earlier test changes a mask here.
+pytestmark = pytest.mark.usefixtures("no_known_secrets")
+
 #: A character main's rule stops a path at, in a directory's name.
 STOPS = [" ", "(", ")", "[", "]", ",", ";", "'", '"', "\t"]
 #: Names a missing file may have: each is masked or kept as it is under a plain directory.

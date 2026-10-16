@@ -28,6 +28,9 @@ from typer.testing import CliRunner
 from ildottore.cli.main import app
 from ildottore.cli.wiring import _endpoint_credentials
 
+#: Registered credentials are process-wide: none from an earlier test changes a mask here.
+pytestmark = pytest.mark.usefixtures("no_known_secrets")
+
 REPO = Path(__file__).resolve().parents[2]
 #: Shaped like an identifier, so no shape rule of the redactor masks it: only its value can.
 TOKEN = "deploy-token-alpha-2026"

@@ -28,7 +28,10 @@ neighbouring entries can interleave (an older branch merged later sits above a n
   (on `7d01521f` too); the CLI types a key the entropy pass masks whole as `high_entropy` where a
   report names its format; a URL user beside a non-empty password (`<token>:x-oauth-basic@`) is
   not registered; a user-only credential under 8 characters is neither registered nor refused.
-- Judging rules: version 1 re-pinned (masking only).
+- Judging rules: version 1 re-pinned by an appended line (`ce74f59f`, "masking only"):
+  the redactor decides what is stored and printed, the evaluators judge the raw reply, and
+  the exit status changed is that of an exit no command raises, so no stored verdict can
+  change. The stacked landing pins again on the merged tree.
 
 ## State, 2026-10-12: the docs and contracts audit, fixed (`docs/audit-2026-10-12`)
 

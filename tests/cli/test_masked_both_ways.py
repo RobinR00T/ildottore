@@ -22,6 +22,9 @@ import pytest
 
 from ildottore.cli.app import _masked
 
+#: Registered credentials are process-wide: none from an earlier test changes a mask here.
+pytestmark = pytest.mark.usefixtures("no_known_secrets")
+
 CASES = {
     # A URL's user the first pass masks, and a delimiter elsewhere in the message.
     "rewritten user": (

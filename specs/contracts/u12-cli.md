@@ -1879,7 +1879,10 @@ and no secret can be told from one by its shape; the filesystem says which direc
 *6. A message holding U+0000 or U+0001.* `_masked` runs its passes on the message read with them
 dropped and with them made visible, and masks what either reading masks (`redactor.read_both_ways`,
 as `redact_text` reads a text, u01 A-83): its entropy pass read only what its first pass gave it,
-so the joined reading's glued tokens went unread.
+so the joined reading's glued tokens went unread. Its masks are placed back tolerantly (u01 A-83,
+*Placing a reading back*): a later pass can rewrite an earlier one's mask, and placed strictly,
+about 1% of the fuzz's messages were masked whole as `«REDACTED:fragment»`
+(`tests/cli/test_masked_both_ways.py`, 5 tests).
 
 *7. A credential as an endpoint URL's user.* A target file's endpoint registered its password for
 masking by value (SEC-02) and nothing else, so a token written as the URL's user
@@ -1907,12 +1910,13 @@ bracket, a `_` after a `/`, a UUID whose groups a number rule reads; missing nam
 registered credentials in 30% of the messages), three draws of 20,000: about 5,600 messages a draw
 show a run of 8 characters that main hides. Each is shown by main itself on the same message with
 every such directory replaced by a twin main's rule reads (no stop character, a UUID no number
-rule reads), or by main's own report redactor (14), or is a documented key prefix before a
+rule reads), or by main's own report redactor (15), or is a documented key prefix before a
 `hex_token` mask (2), which main's CLI prints too (`sk-proj-«REDACTED:hex_token»`); two more were
 checked by hand: an `xoxe.` prefix the reports show too, and part of a registered credential
 inside a path that main prints in the same path with another UUID. No message differs for any
-other reason. Time: `_masked` on 20,000 messages without U+0000 or U+0001, 1.07 to 1.10 times
-main's; on messages holding them, 1.8 times (two readings).
+other reason, and none is masked whole as `«REDACTED:fragment»`. Time: `_masked` on 20,000
+messages without U+0000 or U+0001, 1.07 to 1.10 times main's; on the fuzz's messages, about half
+of which hold one, TIMING_BOTH times (two readings).
 
 ## §8 Out of scope / forbidden
 - MUST NOT implement attack/mutation/evaluation/scoring/reporting/fingerprint logic (u05-u11,

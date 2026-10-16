@@ -20,6 +20,9 @@ from hypothesis import strategies as st
 
 from ildottore.redactor import Redactor
 
+#: Registered credentials are process-wide: none from an earlier test changes a mask here.
+pytestmark = pytest.mark.usefixtures("no_known_secrets")
+
 #: Each: a text whose secret one reading of the delimiters hides, and the secret.
 CASES = {
     "label glued by U+0001": ("note\x01credential: 'Summer2026xQ'", "Summer2026xQ"),
