@@ -293,7 +293,7 @@ the file, schema copy, build or pipeline it names.
   document with no `findings` list are each refused (exit 3) on a line that says which. Add
   `"schema_version": "1.0"` to a report built by hand, or pass a bare list of findings.
 
-### Fixed (CLI input validation, from the full CLI audit of 2026-10-11; u12 A-82)
+### Fixed (breaking for a CI gate, a report checked against the exported schema and a `new-spec` call: CLI input validation, from the full CLI audit of 2026-10-11; u12 A-82)
 
 - **A usage error no longer prints a secret.** `dottore run --runs "$KEY"` printed `Invalid value
   for '--runs': 'sk-ant-api03-...' is not a valid integer.` with the key in clear, and so did `-T`,
@@ -325,6 +325,13 @@ the file, schema copy, build or pipeline it names.
   nothing to run: ...`; an Anthropic key in a fleet endpoint or a `--family` is called "a
   credential format" (a UUID is still an identifier); and a credential variable that is not set or
   holds only blanks is named as such, not as a credential shorter than 8 characters.
+- **Breaking** (the heading's label added 2026-10-16, u01/u12 A-83 item 1; the body above already
+  said it): a click error that is not a usage error, and an abort, exit 3 where they exited 1 or
+  their own code; the report schema (`dottore schema export --name report`) refuses a report that
+  lacks a required key or holds a value of the wrong type, a v0.1.0 report included; `new-spec
+  --family` refuses a control or format character and a value shaped like a key (`--family
+  sk-ant-api03-...` exited 0 on `d526747e`, the commit before this entry, and exits 3 since), and
+  `--id` is checked under `--stdout` too.
 
 ### Fixed (what the sixth pre-merge audit, of `31cf86bf`, found in A-77, before it landed)
 
