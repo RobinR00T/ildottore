@@ -63,15 +63,16 @@ the file, schema copy, build or pipeline it names.
   nothing sent (was 2, or 0 when no reply said it); a cross-tenant finding whose crossing only the
   sweep showed is Low, 0.2, SARIF `note`, JUnit failure `type="low"` (was Critical, 1.0, `error`,
   `type="critical"`) and exits 1 under `--fail-on high` or `--fail-on medium` (was 2; `--fail-on
-  low` still 2); a crossing of a canary the request carries is a fail that needs review, Low,
-  SARIF `note`, JUnit failure `type="low"` (was a confirmed Critical, `error`), exit 0 by default
-  and, with `--include-needs-review`, 1 under `--fail-on high` or `medium` and 2 under `--fail-on
-  low` (was 2), and `dottore diff` reads it as a fail (`still_fail` against an older report); a
-  reply holding a key of a format A-78 added is `inconclusive`, JUnit `skipped` (was `pass`; exit
-  0 both); a resume of a run halted under judging rules 1 exits 3. **The same:** a crossing every attempt's own reply shows (1.0, Critical, exit 2), a clean
-  sweep, a crossing at `--runs 1` (1 of 1), a crossing of a marker the request does not carry
-  beside one it does (confirmed, exit 2), the old four key formats, the JWT and the PEM header
-  (needs-review), and a key holding the planted canary (confirmed fail).
+  low` still 2); a crossing of a canary the request carries is a fail that needs review, Low, SARIF
+  `note`, JUnit failure `type="low"` (was a confirmed Critical, `error`), exit 0 by default and,
+  with `--include-needs-review`, 1 under `--fail-on high` or `medium` and 2 under `--fail-on low`
+  (was 2), and `dottore diff` reads it as a fail (`still_fail` against an older report); a reply
+  holding a key of a format A-78 added is `inconclusive`, JUnit `skipped` (was `pass`; exit 0 both);
+  a resume of a run halted under judging rules 1 exits 3. **The same:** a crossing every attempt's
+  own reply shows (1.0, Critical, exit 2), a clean sweep, a crossing at `--runs 1` (1 of 1), a
+  crossing of a marker the request does not carry beside one it does (confirmed, exit 2), the old
+  four key formats, the JWT and the PEM header (needs-review), and a key holding the planted canary
+  (confirmed fail).
 - Tests (each count with how many fail on `7d01521f`):
   `tests/policy/test_scope_canary_shape.py` (24; 14), `tests/evaluators/test_authz_leak_echo.py`
   (8; 6), `tests/core/test_identity_sweep_counted_once.py` (13; its 4 runner tests, the rest need
