@@ -46,6 +46,13 @@ MAX_ID_CHARS: Final = 128
 #: The scope versions this build reads: ``1`` and ``1.<minor>`` (``"1.0"`` in every example).
 SCOPE_VERSION: Final = re.compile(r"1(?:\.[0-9]+)?")
 
+#: The fewest characters an identity's canary may have (u08 A-85): the shortest value the
+#: redactor registers as a planted secret, and the floor A-78 sets for a credential.
+MIN_CANARY_CHARS: Final = 8
+
+#: The placeholder a canary may hold, substituted with the run id at run time.
+RUN_ID_PLACEHOLDER: Final = "{{run_id}}"
+
 
 class Identity(BaseModel):
     """A named auth identity **reference** - ``auth_ref`` resolves to a secret elsewhere.
@@ -154,6 +161,56 @@ def _refuse_shared_identities(file_path: Path, entry: ScopeTarget) -> None:
                     "canary has one owner"
                 )
             canaries.add(identity.canary)
+
+
+def weak_canary(canary: str, labels: list[str]) -> str | None:
+    """Why ``canary`` is one a reply can hold by chance, or ``None`` for a canary that is not.
+
+    ``authz_leak`` reads an identity's canary in another identity's reply as that identity's data
+    received, a confirmed Critical, so a canary ordinary text can hold gave false fails: ``ACME``
+    in "your ACME invoice", ``tenant-b`` in "I cannot show tenant-b's records" (pre-merge audit of
+    the scoring branch, #112, queued as pre-existing; measured through the CLI on ``7d01521f``:
+    five such shapes, each a confirmed Critical, exit 2). ``labels`` are the identities' names
+    and the target's id: an operator names an identity after its tenant, and a reply names it. A
+    canary holding the run id (:data:`RUN_ID_PLACEHOLDER`) is a new token in every run.
+    """
+
+    if RUN_ID_PLACEHOLDER in canary:
+        return None
+    if len(canary) < MIN_CANARY_CHARS:
+        return f"it is shorter than {MIN_CANARY_CHARS} characters"
+    if any(char.isspace() for char in canary):
+        return "it holds a space, so it reads as words"
+    if not any(char.isdigit() for char in canary):
+        return "it holds no digit, so it reads as a word or a name"
+    if not any(char.isalpha() for char in canary):
+        return "it holds no letter, so it reads as a number"
+    folded = canary.casefold()
+    if any(folded in label.casefold() for label in labels):
+        return "it is part of an identity's name or of the target id, which a reply can name"
+    return None
+
+
+def _refuse_weak_canaries(file_path: Path, entry: ScopeTarget) -> None:
+    """Refuse an identity canary a reply can hold by chance (:func:`weak_canary`, u08 A-85).
+
+    Refused where it is declared, so every reader of the scope (``run``, ``fleet --run``,
+    ``--dry-run``, ``--estimate``) stops before anything is sent. The canary is not quoted, as
+    in :func:`_refuse_shared_identities`.
+    """
+
+    labels = [entry.id, *(identity.name for identity in entry.identities)]
+    for identity in entry.identities:
+        why = weak_canary(identity.canary, labels) if identity.canary else None
+        if why is not None:
+            raise ScopeError(
+                f"scope file {file_path} target {quoted(entry.id)} identity "
+                f"{quoted(identity.name)}: its canary can appear in a reply by chance ({why}), "
+                "and authz_leak would read it there as that identity's data received; a canary "
+                f"has at least {MIN_CANARY_CHARS} characters, a letter and a digit, no space, and "
+                "is part of no identity's name or of the target id: write a random token (as "
+                "CANARY-<16 random hex digits>) and plant it in that identity's data"
+            )
 
 
 def _refuse_unnamed_variables(file_path: Path, entry: ScopeTarget) -> None:
@@ -275,6 +332,7 @@ def load_scope_with_digest(
             )
         seen.add(entry.id)
         _refuse_shared_identities(file_path, entry)
+        _refuse_weak_canaries(file_path, entry)
         _refuse_unnamed_variables(file_path, entry)
 
     stripped = _strip_checksum_line(raw_text)
