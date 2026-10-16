@@ -2435,6 +2435,15 @@ def credential_patterns() -> list[Pattern]:
     ]
 
 
+def key_format_patterns() -> list[Pattern]:
+    """The documented key formats and the JWT (A-78) without the UUID: the one list both the
+    redactor's late pass and the ``secret_shape`` evaluator read (u08 A-85), so a format added
+    there is detected wherever it is masked. A UUID names a tenant or a record, not a key.
+    """
+
+    return [pattern for pattern in _late_patterns() if pattern is not _UUID_PATTERN]
+
+
 def report_identity(value: str) -> str:
     """How a report names a target: by the rules before u01 A-78, with the fixed identity salt.
 
