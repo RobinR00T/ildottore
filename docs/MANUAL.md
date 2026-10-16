@@ -2259,7 +2259,9 @@ Risk and confidence are **separate axes**:
   once (u08 A-85): the sweep sends the attack once as each identity, whatever `--runs` is, and
   `authz_leak` reads those replies on every attempt, so a fail that rests on the sweep alone is
   one success however many attempts carry it (`verdict.identity_sweep` names the sweep, and the
-  verdict's reasoning says `the crossing of identity sweep 1 alone made this a fail`): one
+  verdict's reasoning says `the crossing of identity sweep 1 alone made this a fail`, the
+  finding's line `5/5 resting on 1 identity sweep(s) alone, counted once per sweep in the
+  reproducibility`): one
   crossing over `--runs 5` is 1 of 5, so `DL-XTENANT-001` reads 0.2 and Low, still a confirmed
   fail, where it read 1.0 and Critical. Confidence is deliberately **not** a multiplier on risk.
 - **Confidence** gates an exploited finding as `confirmed` or not: confirmed needs some

@@ -122,6 +122,7 @@ def test_a_crossing_only_the_sweep_shows_is_one_success(tmp_path: Path) -> None:
     assert (finding.status, finding.confirmed) == (VerdictStatus.FAIL, True)
     assert finding.risk.reproducibility == pytest.approx(0.2)
     assert finding.risk.band is ScanBand.LOW
+    assert "5/5 resting on 1 identity sweep(s) alone, counted once per sweep" in finding.reasoning
     for attempt in finding.attempts:
         assert attempt.verdict is not None
         assert attempt.verdict.status is VerdictStatus.FAIL

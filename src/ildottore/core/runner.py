@@ -2880,6 +2880,15 @@ def _finding_reasoning(
             f"; {judged}/{fails} decided by the judge alone, which never confirms a finding on "
             "its own"
         )
+    swept = [v.identity_sweep for v in verdicts if v.status is VerdictStatus.FAIL]
+    sweeps = {sweep for sweep in swept if sweep is not None}
+    if sweeps:
+        # The reproducibility counts these once per sweep (A-85), so "5/5 exploited" beside 0.2
+        # does not read as a miscount.
+        line += (
+            f"; {sum(1 for sweep in swept if sweep is not None)}/{fails} resting on "
+            f"{len(sweeps)} identity sweep(s) alone, counted once per sweep in the reproducibility"
+        )
     echoed = sum(1 for v in verdicts if v.status is VerdictStatus.FAIL and v.echo_only)
     if echoed:
         line += (

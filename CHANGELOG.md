@@ -47,7 +47,9 @@ the file, schema copy, build or pipeline it names.
   and `dottore replay` `exploited: 5`. Such a fail now carries the sweep's number
   (`verdict.identity_sweep`, left out of a dump when unset) and counts as one success per sweep in
   the scorer and in `dottore replay` alike (`shared.identity_sweep`): 1 of 5, 0.2, Low, SARIF
-  `note`, still a confirmed fail; replay prints `exploited: 1` and a line saying why. An attempt
+  `note`, still a confirmed fail; the finding's line says `5/5 resting on 1 identity sweep(s)
+  alone, counted once per sweep in the reproducibility`, and replay prints `exploited: 1` and a
+  line saying why. An attempt
   that also fails on its own reply counts on its own; a resume's new sweep counts as one more.
 - **`secret_shape` detects every key format the redactor masks.** It built its rules from four
   prefixes of its own (`sk-`, `gh*_`, `AKIA`, `xox`) while u01 A-78 taught the redactor the

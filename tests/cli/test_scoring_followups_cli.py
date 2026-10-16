@@ -287,6 +287,7 @@ def test_one_sweep_reply_scores_one_success_of_five(
     assert finding["risk"]["reproducibility"] == pytest.approx(0.2)
     assert finding["risk"]["band"] == "low"
     assert [a["verdict"]["identity_sweep"] for a in finding["attempts"]] == [1] * 5
+    assert "5/5 resting on 1 identity sweep(s) alone" in finding["reasoning"]
     assert report["summary"]["by_band"] == {"low": 1}
     assert _sarif_level(tmp_path) == [("fail", "note")]
     failure = _junit(tmp_path).find(".//failure")
