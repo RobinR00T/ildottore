@@ -1009,9 +1009,9 @@ target file's key is tenant A's, so the attempts and A's sweep send get A's repl
    attempts, and `dottore replay` marks them `(needs review: a canary the request carries)`. Not a
    pass, because the same occurrence is what a real leak of the named record shows: dropping a
    carried canary would let whoever writes the request hide a leak by naming it, the attacker's
-   case (`echo-real-leak`: A receives B's record). A crossing
-   canary the request does not carry still confirms the leak beside it (`echo-real-leak-second-
-   marker`: the spec's own canary in B's record, exit 2, confirmed, on both versions). The request
+   case (`echo-real-leak`: A receives B's record). A crossing canary the request does not carry
+   still confirms the leak beside it (`echo-real-leak-second-marker`: the spec's own canary in B's
+   record, exit 2, confirmed, on both versions). The request
    is the text the scanner wrote: the prompt, the system prompt, an image's `render_text` and a
    `system`, `developer` or `user` message; an `assistant` or `tool` message is not, so a target
    cannot make its own leak an echo. Not taken: drop a carried canary (the attacker's case passes);
