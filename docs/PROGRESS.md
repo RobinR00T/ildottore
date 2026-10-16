@@ -38,18 +38,18 @@ neighbouring entries can interleave (an older branch merged later sits above a n
   the sweep helpers moved from the runner to `shared`); a run halted on `7d01521f` is refused by
   this branch's resume, exit 3, naming rules 1 and 2. `JUDGING_RULES_SINCE` stays 2026-10-15.
 - CI results that change, and the controls, are listed in the CHANGELOG entry (breaking).
-- Tests: `make --no-print-directory gates` on `c10cf8e3` (16/10/2026 22:16 to 22:25 CEST,
-  `PYTHONPATH` at the worktree's `src`, `TMPDIR` the system default): 7333 passed and 1 skipped
-  (7108 collected on `7d01521f`, 226 new: `test_secret_shape_key_formats.py` 169,
-  `test_scope_canary_shape.py` 24, `test_identity_sweep_counted_once.py` 13,
-  `test_scoring_followups_cli.py` 12, `test_authz_leak_echo.py` 7, one resume test), 97.71%
-  coverage (`shared/identity_sweep.py`, `evaluators/secret_shape.py`, `scoring/risk.py` and
-  `shared/combination.py` 100%, `evaluators/authz_leak.py` and `policy/scope.py` 99%,
-  `core/runner.py` 98%), ruff, format, mypy strict on 168 files, four import contracts kept, 75
-  specs lint OK, self-scan 0 high/critical, bandit and pip-audit clean. The CLI suite and the
-  touched tests (2637) with `GITHUB_ACTIONS=true CI=true`, and against typer 0.27.3: 2636 passed
-  and 1 skipped each time. The docs commit after `c10cf8e3` changes no code; the three test files
-  that read the MANUAL pass on it.
+- Tests: `make --no-print-directory gates` on `3cfda904` (16/10/2026 22:41 to 22:51 CEST,
+  `PYTHONPATH` at the worktree's `src`, `TMPDIR` the system default): 7339 passed and 1 skipped
+  (7108 collected on `7d01521f`, 232 new: `test_secret_shape_key_formats.py` 169,
+  `test_scope_canary_shape.py` 24, `test_scoring_followups_cli.py` 15,
+  `test_identity_sweep_counted_once.py` 13, `test_authz_leak_echo.py` 8,
+  `test_echo_never_confirms.py` 2, one resume test), 97.71% coverage (`shared/identity_sweep.py`,
+  `shared/combination.py`, `evaluators/secret_shape.py`, `scoring/confidence.py` 100%,
+  `evaluators/authz_leak.py` and `policy/scope.py` 99%, `core/runner.py` 98%), ruff, format, mypy
+  strict on 168 files, four import contracts kept, 75 specs lint OK, self-scan 0 high/critical,
+  bandit and pip-audit clean. The CLI suite and the touched tests (2754) with
+  `GITHUB_ACTIONS=true CI=true`, and against typer 0.27.3: 2753 passed and 1 skipped each time.
+  The commits after `3cfda904` touch the CHANGELOG, the u08 contract and this file only.
 - Left open: a word with a digit (`COVID-19`) passes the canary shape; a spec's own
   `setup.canaries` are not shape-checked; the sweep's replies are not stored as evidence, so a
   fail resting on them cites none (pre-existing); an identity canary is not registered with the
