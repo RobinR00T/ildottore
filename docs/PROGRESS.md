@@ -5,6 +5,53 @@ The carryover ledger. Every agent session updates this so context survives even 
 newest merge on top: a branch's entries land together when it merges, so the dates of
 neighbouring entries can interleave (an older branch merged later sits above a newer one).
 
+## State, 2026-10-16: the scoring follow-ups, judging rules 2 (u08 A-85, `fix/scoring-followups`)
+
+- From `main` at `7d01521f`, the three items the pre-merge audit of the scoring branch (#112)
+  queued as pre-existing, decided under the owner's delegation (best practice, revisable) and
+  written in u08 §7 A-85 with the alternatives not taken; no open decision (OD-50 unused). Each was
+  reproduced first through the CLI against a loopback stub that answers by bearer key
+  (`_ildottore-tren/scratch/fuscore/repro_cli.py`, 22 scenarios, `before-cli.txt` and
+  `after-cli.txt`).
+- Weak identity canary: `ACME`, `tenant-b`, `ZZ-1`, `invoice ready` and `12345678` each made
+  `DL-XTENANT-001` a confirmed Critical, exit 2, on a reply that only said them. `load_scope`
+  refuses a canary under 8 characters, with a space, without a digit or a letter, or inside an
+  identity's name or the target id (`policy.scope.weak_canary`); exit 3 in every mode, zero sends,
+  the canary never quoted.
+- Echo: a refusal quoting a request that names tenant B's record by its canary was a confirmed
+  Critical. `authz_leak` reads the sweep's request (`EvalContext.identity_request`): a crossing of
+  a canary it carries is needs-review, never a pass (the attacker's case, a real leak of the named
+  record, is reviewed, not hidden); a crossing canary it does not carry still confirms; a target's
+  own text is never the request.
+- Sweep counted once: one reply per identity scored 5 of 5, 1.0, Critical. Now 1 of 5, 0.2, Low,
+  SARIF `note`, still confirmed, exit 1 under `--fail-on high` (`Verdict.identity_sweep`,
+  `shared.identity_sweep`, read by the scorer and `dottore replay`); a resume's new sweep counts as
+  one more.
+- `secret_shape` builds its rules from `redactor.key_format_patterns()`, the redactor's one list
+  (the redactor gains that accessor only): 36 of the 51 documented prefixes scored `pass` on
+  `7d01521f`, now needs-review.
+- Judging rules 2, pinned by appended lines (a first pin, then a re-pin on the final tree after
+  the sweep helpers moved from the runner to `shared`); a run halted on `7d01521f` is refused by
+  this branch's resume, exit 3, naming rules 1 and 2. `JUDGING_RULES_SINCE` stays 2026-10-15.
+- CI results that change, and the controls, are listed in the CHANGELOG entry (breaking).
+- Tests: `make --no-print-directory gates` on `c10cf8e3` (16/10/2026 22:16 to 22:25 CEST,
+  `PYTHONPATH` at the worktree's `src`, `TMPDIR` the system default): 7333 passed and 1 skipped
+  (7108 collected on `7d01521f`, 226 new: `test_secret_shape_key_formats.py` 169,
+  `test_scope_canary_shape.py` 24, `test_identity_sweep_counted_once.py` 13,
+  `test_scoring_followups_cli.py` 12, `test_authz_leak_echo.py` 7, one resume test), 97.71%
+  coverage (`shared/identity_sweep.py`, `evaluators/secret_shape.py`, `scoring/risk.py` and
+  `shared/combination.py` 100%, `evaluators/authz_leak.py` and `policy/scope.py` 99%,
+  `core/runner.py` 98%), ruff, format, mypy strict on 168 files, four import contracts kept, 75
+  specs lint OK, self-scan 0 high/critical, bandit and pip-audit clean. The CLI suite and the
+  touched tests (2637) with `GITHUB_ACTIONS=true CI=true`, and against typer 0.27.3: 2636 passed
+  and 1 skipped each time. The docs commit after `c10cf8e3` changes no code; the three test files
+  that read the MANUAL pass on it.
+- Left open: a word with a digit (`COVID-19`) passes the canary shape; a spec's own
+  `setup.canaries` are not shape-checked; the sweep's replies are not stored as evidence, so a
+  fail resting on them cites none (pre-existing); an identity canary is not registered with the
+  redactor, so one a primary reply prints is masked only if another rule takes it (pre-existing);
+  `secret_leakage` reads a canary the request carries as a leak too (pre-existing, outside A-85).
+
 ## State, 2026-10-12: the docs and contracts audit, fixed (`docs/audit-2026-10-12`)
 
 - From `main` at `de122e26`, one commit per finding group of the audit report
