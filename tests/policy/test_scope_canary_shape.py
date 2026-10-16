@@ -106,3 +106,19 @@ def test_no_canary_and_an_empty_one_still_load(tmp_path: Path) -> None:
     assert load_scope(path).target("acme") is not None
     path.write_text(path.read_text().replace('        canary: ""\n', ""))
     assert load_scope(path).target("acme") is not None
+
+
+def test_the_templates_commented_tenant_identity_loads(tmp_path: Path) -> None:
+    """``specs/scope.example.yaml`` shows a second identity with a canary: uncommented, it loads."""
+
+    template = Path(__file__).resolve().parents[2] / "specs" / "scope.example.yaml"
+    lines = template.read_text(encoding="utf-8").splitlines()
+    start = lines.index("      # - name: tenant-b")
+    block = [line.replace("# ", "", 1) for line in lines[start : start + 3]]
+    text = "\n".join(lines[:start] + block + lines[start + 3 :]) + "\n"
+    path = tmp_path / "scope.yaml"
+    path.write_text(text, encoding="utf-8")
+    target = load_scope(path).target("openai-gpt-x-staging")
+    assert target is not None
+    assert [i.name for i in target.identities] == ["default", "tenant-b"]
+    assert target.identities[1].canary == "CANARY-B-3f9c1e7a5b2d8064"

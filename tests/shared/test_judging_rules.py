@@ -90,11 +90,19 @@ PIN_HISTORY: tuple[tuple[int, str, str], ...] = (
         "a docstring of cli.run), from docs/audit-2026-10-12 stacked on e92a7541; no verdict can "
         "change; version 1 is not released",
     ),
+    (
+        2,
+        "69d8b855dc421934ba2d003d32f28900e837700ce6eca9379804425f48bd268e",
+        "2026-10-16: u08 A-85 (fix/scoring-followups on 7d01521f): a crossing of a canary the "
+        "identity sweep's request carries is needs-review, a sweep's crossing counts once, "
+        "secret_shape reads the redactor's key formats; the stacked landing re-pins it",
+    ),
 )
 
 #: The digest each version is pinned to now: the last line of :data:`PIN_HISTORY` for it.
 PINNED: dict[int, str] = {
     1: "dbfbedd793b731ab385a0c2bae7e9bc9e85c795a1230eeaf0814c83038335d0c",
+    2: "69d8b855dc421934ba2d003d32f28900e837700ce6eca9379804425f48bd268e",
 }
 
 #: One ``<version> <digest>`` line per pin, appended to and never edited: the history must start

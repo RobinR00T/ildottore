@@ -94,6 +94,7 @@ from ildottore.shared.enums import (
     VerdictStatus,
 )
 from ildottore.shared.error_text import error_text
+from ildottore.shared.identity_sweep import next_sweep, review_note, stamped, sweep_note
 from ildottore.shared.media import MediaError, media_digests
 from ildottore.shared.models import (
     AttackSpec,
@@ -1086,7 +1087,7 @@ class CampaignRunner:
             # Numbered after the sweeps a prior part of the run made for this spec, whose fails
             # its stored attempts carry, so a resume's new sweep is counted as one more (A-85).
             sweep = (
-                _Sweep(number=_next_sweep(attempts), request=sweep_request)
+                _Sweep(number=next_sweep(attempts), request=sweep_request)
                 if identities_map is not None and sweep_request is not None
                 else None
             )
@@ -1950,9 +1951,9 @@ class CampaignRunner:
             )
             try:
                 verdicts.append(
-                    _swept_by(
+                    stamped(
                         _authz_beside_filtered(await evaluator.evaluate(ctx), filtered_identities),
-                        sweep,
+                        sweep.number if sweep is not None else None,
                     )
                 )
             except BudgetExhausted as exc:
@@ -2497,7 +2498,7 @@ def _combine_verdicts(
     """
 
     combined = _combine_with_authz(verdicts, spec, swept=swept)
-    return _sweep_note(_authz_review_note(combined, verdicts))
+    return sweep_note(review_note(combined, verdicts))
 
 
 def _combine_with_authz(
@@ -2522,32 +2523,6 @@ def _combine_with_authz(
     else:
         combined = combine_verdicts([v for v in verdicts if not _uncompared_authz_leak(v, spec)])
         note = "authz_leak set aside: no identity sweep ran"
-    return combined.model_copy(update={"reasoning": f"{combined.reasoning}; {note}"})
-
-
-def _authz_review_note(combined: Verdict, verdicts: list[Verdict]) -> Verdict:
-    """An ``inconclusive`` aggregate, quoting the ``authz_leak`` review that kept it so.
-
-    Only the aggregate is stored, and "1 evaluator(s) inconclusive" did not say that a canary the
-    request carries surfaced in another identity's reply, or that two identities' replies share
-    a line (needs-review, u08 A-85): the reviewer is told what to look at.
-    """
-
-    if combined.status is not VerdictStatus.INCONCLUSIVE:
-        return combined
-    review = next(
-        (
-            v
-            for v in verdicts
-            if v.evaluator_type == EvaluatorType.AUTHZ_LEAK.value
-            and v.status is VerdictStatus.INCONCLUSIVE
-            and v.inconclusive_reason is None
-        ),
-        None,
-    )
-    if review is None:
-        return combined
-    note = f"authz_leak: {review.reasoning}"
     return combined.model_copy(update={"reasoning": f"{combined.reasoning}; {note}"})
 
 
@@ -2651,43 +2626,6 @@ def _swept_note(verdict: Verdict, spec: AttackSpec, filtered: _LeftOut | None) -
         return verdict
     return verdict.model_copy(
         update={"reasoning": f"{verdict.reasoning}; {_filtered_note(filtered)}"}
-    )
-
-
-def _swept_by(verdict: Verdict, sweep: _Sweep | None) -> Verdict:
-    """``authz_leak``'s fail, stamped with the identity sweep it read (u08 A-85)."""
-
-    if (
-        sweep is None
-        or verdict.evaluator_type != EvaluatorType.AUTHZ_LEAK.value
-        or verdict.status is not VerdictStatus.FAIL
-    ):
-        return verdict
-    return verdict.model_copy(update={"identity_sweep": sweep.number})
-
-
-def _sweep_note(verdict: Verdict) -> Verdict:
-    """The aggregate, saying so when one identity sweep's crossing alone made it a fail.
-
-    The reproducibility counts such a fail once per sweep (``shared.identity_sweep``), so the
-    report's ``k / N`` would read as a miscount of the attempts it lists as fails without it.
-    """
-
-    if verdict.identity_sweep is None:
-        return verdict
-    note = (
-        f"the crossing of identity sweep {verdict.identity_sweep} alone made this a fail; the "
-        "sweep sent one reply per identity, so the reproducibility counts it once, not once per "
-        "attempt"
-    )
-    return verdict.model_copy(update={"reasoning": f"{verdict.reasoning}; {note}"})
-
-
-def _next_sweep(attempts: Sequence[Attempt]) -> int:
-    """The number of a spec's next identity sweep: one more than any its stored fails carry."""
-
-    return 1 + max(
-        (a.verdict.identity_sweep or 0 for a in attempts if a.verdict is not None), default=0
     )
 
 

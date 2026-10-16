@@ -15,6 +15,13 @@ targets:
     identities:                       # >=1; auth by reference only, never a secret value
       - name: default
         auth_ref: "env://OPENAI_API_KEY"
+      # A cross-tenant scan (multi_identity) lists >=2 identities, each with the canary planted
+      # in its tenant's data. Write a random token: one a reply can hold by chance (under 8
+      # characters, a space, no digit or no letter, part of an identity name or the target id)
+      # is refused, and name it in no attack prompt.
+      # - name: tenant-b
+      #   auth_ref: "env://TENANT_B_KEY"
+      #   canary: "CANARY-B-3f9c1e7a5b2d8064"
 # checksum: "<sha256 of the body above>"   # optional integrity check, not a signature (OD-2)
 #
 # Policy-gated specs (those declaring `requires_policy`, e.g. PII elicitation or the
