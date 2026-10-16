@@ -2586,6 +2586,9 @@ def identity_masks(value: str) -> tuple[str, ...]:
 # records, each string masked on its own: joining every list read the `type` of a transcript's
 # frames as `auth_oksessiondeltaping...`, one high-entropy token, and masked every frame's type.
 
+#: A mask, with the openers of masks a later pass of the CLI rewrote glued before it
+#: (`«REDACTED:«REDACTED:url_password»`: the URL rule read `«REDACTED` as a URL's user).
+_MASK_AFTER_OPENERS: Final = re.compile("(?:«REDACTED:)*" + _ALREADY_MASKED.pattern)
 #: The mask a piece shows when the redactor masked its stream's joined text and where it masked
 #: could not be placed: every piece of that stream shows it.
 _FRAGMENT_MASK: Final = _MASK_TEMPLATE.format(type="fragment")
@@ -2721,7 +2724,9 @@ def split_texts(obj: object, *, alternatives: bool = False) -> Iterator[str]:
                 yield "".join(text for _, _, text in stream)
 
 
-def _placed_masks(text: str, redacted: str) -> list[tuple[int, int, str]] | None:
+def _placed_masks(
+    text: str, redacted: str, *, tolerant: bool = False
+) -> list[tuple[int, int, str]] | None:
     """Where in ``text`` each mask of ``redacted`` may stand, or None when that cannot be said.
 
     ``redacted`` is ``text`` with stretches replaced by masks, so it reads ``L0 M1 L1 ... Mn Ln``
@@ -2732,16 +2737,25 @@ def _placed_masks(text: str, redacted: str) -> list[tuple[int, int, str]] | None
     starts at the latest, and that span holds it in any placement. A character outside every
     span is in a literal in every placement: it is text the redacted copy shows. A literal not
     found means ``redacted`` is not of that form, and None sends the caller to mask everything.
+
+    ``tolerant`` reads a literal between two masks that is not found, in order, as part of the
+    masked stretch: the two masks stand as one for what lies between the literals around them, and
+    the literal is not shown (u01 A-83). The CLI masks in passes, and a later one can rewrite part
+    of a mask an earlier one wrote (`«REDACTED:«REDACTED:url_password»@`), so its output holds text
+    the message does not. Shown with the masks, the literal showed text of the message that this
+    reading left readable and the other reading masked (differential fuzz of A-83).
     """
 
     literals: list[str] = []
     masks: list[str] = []
     cursor = 0
-    for match in _ALREADY_MASKED.finditer(redacted):
+    for match in (_MASK_AFTER_OPENERS if tolerant else _ALREADY_MASKED).finditer(redacted):
         literals.append(redacted[cursor : match.start()])
         masks.append(match.group(0))
         cursor = match.end()
     literals.append(redacted[cursor:])
+    if tolerant and masks:
+        literals, masks = _found_in_order(text, literals, masks)
     count = len(masks)
     if not count or not text.startswith(literals[0]) or not text.endswith(literals[-1]):
         return None
@@ -2781,11 +2795,33 @@ def read_both_ways(redact: Callable[[str], str], text: str) -> str:
     visible = visible_stash_delimiters(text)
     pieces: list[str] = []
     cursor = 0
-    for start, end, shown in _spans_both_ways(redact, text):
+    for start, end, shown in _spans_both_ways(redact, text, tolerant=True):
         pieces += (visible[cursor:start], "".join(shown))
         cursor = end
     pieces.append(visible[cursor:])
     return "".join(pieces)
+
+
+def _found_in_order(
+    text: str, literals: list[str], masks: list[str]
+) -> tuple[list[str], list[str]]:
+    """``literals`` and ``masks`` with each middle literal ``text`` does not hold, in order,
+    dropped, and the masks on either side of it shown as one (``_placed_masks``, ``tolerant``)."""
+
+    # An end that is not the text's own is part of the mask beside it, and not shown.
+    kept, shown = [literals[0] if text.startswith(literals[0]) else ""], [masks[0]]
+    last = literals[-1] if text.endswith(literals[-1]) else ""
+    cursor = len(kept[0])
+    for index in range(1, len(masks)):
+        found = text.find(literals[index], cursor + 1)
+        if found == -1:
+            shown[-1] += masks[index]
+            continue
+        kept.append(literals[index])
+        shown.append(masks[index])
+        cursor = found + len(literals[index])
+    kept.append(last)
+    return kept, shown
 
 
 def _mask_spans(redactor: _RedactsText, joined: str) -> list[tuple[int, int, tuple[str, ...]]]:
@@ -2799,7 +2835,7 @@ def _mask_spans(redactor: _RedactsText, joined: str) -> list[tuple[int, int, tup
 
 
 def _spans_both_ways(
-    redact: Callable[[str], str], text: str
+    redact: Callable[[str], str], text: str, *, tolerant: bool = False
 ) -> list[tuple[int, int, tuple[str, ...]]]:
     """The stretches of ``text`` that ``redact`` masks, merged, with the masks each shows.
 
@@ -2820,7 +2856,8 @@ def _spans_both_ways(
         redacted = redact(form)
         if redacted == form:
             continue
-        for start, end, mask in _placed_masks(form, redacted) or [(0, len(form), _FRAGMENT_MASK)]:
+        placed = _placed_masks(form, redacted, tolerant=tolerant)
+        for start, end, mask in placed or [(0, len(form), _FRAGMENT_MASK)]:
             if positions is not None:
                 start, end = positions.at(start), positions.at(end - 1) + 1
             spans.append((start, end, mask))
