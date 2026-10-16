@@ -614,6 +614,12 @@ _SHA256 = re.compile(r"[0-9a-f]{64}")
 # `/`, `]`, `@` or the `»` that closes a mask, so a URL's path is not one, after an IPv6 host,
 # credentials or a masked host included).
 _ABS_PATH = re.compile(r"(?<![\w:/\]@»\ue000])/[^\s'\"()\[\],;]+")
+#: Where main's rule ends a path it reads (``_ABS_PATH``).
+_ABS_PATH_STOP = re.compile(r"[\s'\"()\[\],;]")
+#: A run of the characters the entropy rule joins into a token.
+_TOKEN_RUN = re.compile(r"[A-Za-z0-9+/_=-]+")
+#: Names that are no directory's own: past one, main's rule keeps nothing (`Path` drops them).
+_NOT_A_NAME = frozenset({"", ".", ".."})
 #: Longer tokens are not checked (PATH_MAX): each parent costs a filesystem lookup.
 _MAX_PATH_LEN = 4096
 # Where a WHOLE path can start (A-38): an absolute one as above, and not right after `+`, `=` or
@@ -698,61 +704,92 @@ def _existing_prefixes(text: str) -> list[str]:
     return prefixes
 
 
-def _whole_path_end(text: str, start: int, limit: int, lookup: _Lookups) -> tuple[int, int]:
-    """Where an existing path written whole from ``text[start]`` ends, and how far the walk read.
+def _whole_path_end(text: str, start: int, limit: int, lookup: _Lookups) -> tuple[int, int, int]:
+    """Where an existing path written whole from ``text[start]`` ends, how far the walk read, and
+    where the existing part of the path it read through proper names ends.
 
     The end is ``start`` when there is none. Directory by directory from its first name, so a
     directory holding a space or a bracket is read whole; the last name is the longest that
     exists and is followed by no character the entropy rule joins into a token, so
-    `{path}: ...` and `{path}.` keep the path and the `:` or `.` is the message's.
+    `{path}: ...` and `{path}.` keep the path and the `:` or `.` is the message's. The existing
+    part is what main's rule keeps of a path it reads whole: up to the last name before a `/` that
+    exists, a file's included (`<file>/x`), and no further than the first empty, `.` or `..`
+    name (`//`, `/./`), past which main's rule keeps nothing (u12 A-83).
     """
 
     head = start + 1 if text.startswith("/", start) else start
+    existing = start
+    proper = True
     while True:
         bound = min(limit, head + _MAX_NAME_LEN)
         stop = _NAME_STOP.search(text, head, bound)
         name_end = stop.start() if stop else bound
+        proper = proper and text[head:name_end] not in _NOT_A_NAME
         if stop and text[name_end] == "/" and lookup(text[start:name_end], directory=True):
+            existing = name_end if proper else existing
             head = name_end + 1
             continue
+        if (
+            proper
+            and stop
+            and text[name_end] == "/"
+            and lookup(text[start:name_end], directory=False)
+        ):
+            existing = name_end
         for end in range(name_end, head, -1):
             if end < len(text) and _TOKEN_CHAR.match(text, end):
                 continue
             if lookup(text[start:end], directory=False):
-                return end, end
-        return start, name_end
+                return end, end, existing
+        return start, name_end, existing
 
 
-def _whole_path_spans(text: str, lookup: _Lookups) -> list[tuple[int, int]]:
-    """Where ``text`` writes, whole, a path that exists on this machine (A-38).
+def _whole_path_spans(text: str, lookup: _Lookups) -> list[tuple[int, int, int]]:
+    """Where ``text`` writes, whole, a path that exists on this machine (A-38), and where the
+    existing part of a path that does not exist ends when main's rule could not read it (A-83):
+    ``(start, end, checked_to)``, the kept text being ``text[start:end]`` and ``checked_to`` how far
+    the check for a registered credential's part reads.
 
     `_existing_prefixes` reads an absolute path up to the first space, quote or bracket and
     keeps the part of it that exists, so a report named after a commit SHA lost its name when
     the message wrote it before a colon, when it was relative, or when a directory on the way
     held a space or one of ``()[],;'"`` (audits of PR #61). A whole path starts and ends between
     characters the entropy rule does not join into a token, so keeping it changes how nothing
-    else in the message is read: each attempt to keep more than that (the existing directories
-    of a path that does not exist, the name an `OSError` quotes) printed a key that main masked
-    (pre-commit, delta and pre-merge audits). A relative path is one word, from the working
-    directory.
+    else in the message is read. Keeping the name an `OSError` quotes printed keys that main
+    masked, and was withdrawn (OD-25). The existing part of a missing path is kept here only
+    where main's rule stopped short of it in a directory's name (u12 A-83): a missing file under
+    "AI projects" was masked with every directory after the space, which main's rule keeps under
+    any other directory. What follows the kept part is then read as main reads what follows the
+    part it keeps, from its `/` on, and the token there is checked for a registered credential's
+    part with it: judged alone, 16 characters of one printed (pre-merge audit of A-38). A
+    relative path is one word, from the working directory.
     """
 
     starts = [(m.start(), len(text)) for m in _WHOLE_ABS_START.finditer(text)]
     starts += [
         (m.start(), m.end()) for m in _RELATIVE_WORD.finditer(text) if _ENTROPY_RUN.search(m[0])
     ]
-    spans: list[tuple[int, int]] = []
+    spans: list[tuple[int, int, int]] = []
     read = 0
     for start, limit in sorted(starts):
         # Not from inside what a walk already read: `/./././...//` kept nothing and was walked
         # again from each of its `/`, at a cost that grew with the square of its length.
         if start < read:
             continue
-        end, read = _whole_path_end(text, start, limit, lookup)
+        end, read, existing = _whole_path_end(text, start, limit, lookup)
         if lookup.spent:
             break
         if end > start:
-            spans.append((start, end))
+            spans.append((start, end, end))
+        elif _ABS_PATH_STOP.search(text, start, existing):
+            # The existing part of a path that does not exist, where main's rule stopped at a
+            # space or one of `'"()[],;` in a directory's name and the entropy rule read the rest
+            # of the directories as one token with the missing name (u12 A-83). What follows is
+            # judged from its `/` on, as main judges the rest of a path whose directories it
+            # reads; the token there is checked with the kept text for a registered credential's
+            # part (as the pre-merge audit of A-38 found one, judged alone, printed).
+            token = _TOKEN_RUN.match(text, existing)
+            spans.append((start, existing, token.end() if token else existing))
     return spans
 
 
@@ -890,7 +927,9 @@ def _masked(exc: BaseException) -> str:
 
     spans = [m.span() for m in keep.finditer(text)]
     whole = _whole_path_spans(text, _Lookups())
-    spans += [s for s in whole if not holds_secret(text[s[0] : s[1]])]
+    spans += [
+        (start, end) for start, end, checked in whole if not holds_secret(text[start:checked])
+    ]
     merged: list[list[int]] = []
     for start, end in sorted(spans):
         # Overlapping spans only: two that touch are two parts, each judged on its own as main
