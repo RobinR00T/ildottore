@@ -455,7 +455,8 @@ a random token, as `CANARY-<16 random hex digits>`. A canary may contain another
 (`CANARY-7f3a91c2`, `CANARY-7f3a91c2-b`): `authz_leak` does not count an occurrence that a
 longer canary's occurrence covers. Avoid it all the same: A's `CANARY-7f3a91c2` leaking into
 B's reply right before `-b` reads as B's own canary. Do not name a canary in an attack prompt
-either: a canary the request carries is no proof of a crossing (§8). Plain `http` is allowed only to loopback hosts; everything
+either: a canary the request carries is no proof of a crossing (§9). Plain `http` is allowed
+only to loopback hosts; everything
 else must be `https`. Template: [`../specs/scope.example.yaml`](../specs/scope.example.yaml).
 
 `version` is `"1.0"` (`"1"` and `"1.<minor>"` are read too); another value, `"2.0"` or `"latest"`,
@@ -2265,7 +2266,12 @@ Risk and confidence are **separate axes**:
   least one of those fails decided by a deterministic evaluator: a fail the judge alone
   reported is never confirmed (OD-19, since 2026-10-11, §8). A format-valid secret/PII hit
   without corroboration is never a confirmed leak: its verdict is `inconclusive` by design
-  (`docs/11 §4`).
+  (`docs/11 §4`). Nor is a crossing of a canary the identity sweep's request carries (u08 A-85):
+  a spec that names tenant B's record by B's canary gets it back in tenant A's refusal, and a
+  real leak of that record holds it too, so the verdict is `inconclusive` and quotes why
+  (`authz_leak: 1 tenant-scoped canary(ies) surfaced in a non-owner identity, and the request
+  every identity was sent carries each of them ...`), never a pass. A crossing canary the request
+  does not carry still confirms the leak.
 
 Every report puts each finding in one of four **states** (the HTML report's sections, the
 `state` property of a SARIF result, the summary's `confirmed_count` and `needs_review_count`):
