@@ -3160,18 +3160,23 @@ def answered_attempt_ids(run: TestRun | None) -> set[str]:
 
 
 def resume_progress(run: TestRun | None) -> tuple[int, int]:
-    """``(answered, to_resend)``: attempt ids a resume keeps and ids it sends again."""
+    """``(answered, to_resend)``: attempt ids a resume keeps and ids it sends again.
+
+    An identity sweep's trial is kept, never sent again under its id (u08 A-87): it counts among
+    the kept ones, and a resume of its spec, with attempts left, sends a sweep of its own.
+    """
 
     if run is None:
         return (0, 0)
     answered = _completed_attempt_ids(run)
-    seen = {
+    seen = {a.attempt_id for finding in run.findings for a in finding.attempts}
+    trials = {
         a.attempt_id
         for finding in run.findings
         for a in finding.attempts
-        if a.mutation != IDENTITY_SWEEP  # never sent again under its id (u08 A-87)
+        if a.mutation == IDENTITY_SWEEP
     }
-    return (len(answered), len(seen - answered))
+    return (len(answered | trials), len(seen - answered - trials))
 
 
 def unjudged_attempt_ids(run: TestRun | None) -> set[str]:
