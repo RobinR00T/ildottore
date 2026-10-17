@@ -216,16 +216,14 @@ schema's description, is unchanged; the reason is a comment. Checked by
 `tests/cli/test_non_finite_values.py`, `tests/cli/test_credential_variables.py` and
 `tests/cli/test_cli_messages_read_right.py`.
 
-**A-85 (u08's clause; this unit's half, added 2026-10-16).** `Verdict` gains `identity_sweep`,
-the number of the identity sweep whose crossing alone made a fail (the runner stamps
-`authz_leak`'s fail, `shared.combination` keeps it on the aggregate only when no other verdict would
-fail the attempt), left out of a dump when unset, so every other verdict is stored, reported and
-hashed as before; `EvalContext` gains `identity_request`, the request the sweep sent every identity,
-which `authz_leak` reads to tell a canary a reply echoes from that request from one it received.
-`Verdict` gains `echo_only` too, a fail resting only on a canary the identity sweep's request
-carries, which never confirms a finding on its own (`shared.combination.never_confirms`), left out
-of a dump when false. All optional, behaviour-free. `shared/identity_sweep.py` holds the one
-counting rule the scorer and the replay read (`count_successes`: one success per sweep).
+**A-85 (u08's clause; this unit's half, added 2026-10-16, amended 2026-10-17).** `Verdict` gains
+`echo_only`, a fail resting only on a canary the identity sweep's request carries, which never
+confirms a finding on its own (`shared.combination.never_confirms`), left out of a dump when false,
+so every other verdict is stored, reported and hashed as before; `EvalContext` gains
+`identity_request`, the request the sweep sent every identity, which `authz_leak` reads to tell a
+canary a reply echoes from that request from one it received. Both optional, behaviour-free. The
+first version's `Verdict.identity_sweep` (the sweep's own count) was dropped with that count
+(u08 A-85, item 3).
 
 ## §8 Out of scope / forbidden
 - MUST NOT import any other `ildottore` package or any provider SDK / httpx / Jinja / Typer.

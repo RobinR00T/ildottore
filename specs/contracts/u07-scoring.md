@@ -89,13 +89,6 @@ and the SARIF level is mapped by the SARIF reporter.)
   exactly (multi-target suite → correct `spec × target` cells + category rollups).
 - `ruff check`, `ruff format --check`, `mypy src/ildottore/scoring` clean; `lint-imports` green.
 
-**A-85 (u08's clause; this unit's half, added 2026-10-16).** `reproducibility_from_attempts`
-counts an identity sweep's crossing once: of the successes, the attempts whose fail rests on one
-sweep alone (`Verdict.identity_sweep`) count as one success per sweep
-(`shared.identity_sweep.count_successes`, the rule `dottore replay` reads too). One crossing over
-`--runs 5` is 0.2, so `DL-XTENANT-001` reads Low, where it read 1.0 and Critical for one reply per
-identity. Confidence and `confirmed` are unchanged.
-
 ## §8 Out of scope / forbidden
 - MUST NOT multiply confidence into risk (ADR-0003): hard fence.
 - MUST NOT call LLMs, providers, or evaluators (consumes their `Verdict` output only).

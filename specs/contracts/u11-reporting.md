@@ -332,13 +332,12 @@ validates, and the pre-merge audit's 184. `reporting.report_schema()` returns it
 `dottore schema export --name report` prints. Checked by
 `tests/cli/test_report_and_file_versions.py` and `tests/reporting/test_json_reporter.py`.
 
-**A-85 (u08's clause; this unit's half, added 2026-10-16).** No reporter changes: each reads a
-finding's reproducibility, band and verdicts, so a cross-tenant finding whose crossing only the
-identity sweep showed is Low, SARIF `note`, JUnit failure `type="low"`, where it was Critical,
-`error`, `type="critical"`, and an attempt's verdict holds `identity_sweep` (the report schema keeps
-a verdict's fields open). A crossing of a canary the request carries is a fail that needs review
-(`echo_only`): every report states it `needs_review` from `confirmed`, SARIF keeps a needs-review
-fail at most `warning` without `--include-needs-review`, and JUnit lists it as a failure.
+**A-85 (u08's clause; this unit's half, added 2026-10-16, amended 2026-10-17).** No reporter
+changes: each reads a finding's state, band and verdicts. A crossing of a canary the request carries
+is a fail that needs review (`echo_only` on its verdicts): every report states it `needs_review`
+from `confirmed`, SARIF keeps it at most `warning` without `--include-needs-review`, and JUnit lists
+it as a failure of its band. The report schema keeps a verdict's fields open; an older build
+refuses such a run in `diff` and `replay`.
 
 ## §8 Out of scope / forbidden
 - MUST NOT compute risk scores, bands, or confirmed/needs-review state (that is u07): only read.

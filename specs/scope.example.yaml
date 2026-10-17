@@ -17,8 +17,9 @@ targets:
         auth_ref: "env://OPENAI_API_KEY"
       # A cross-tenant scan (multi_identity) lists >=2 identities, each with the canary planted
       # in its tenant's data. Write a random token: one a reply can hold by chance (under 8
-      # characters, a space, no digit or no letter, part of an identity name or the target id)
-      # is refused, and name it in no attack prompt.
+      # characters, a space, holding or part of an identity name or the target id, only letters
+      # or only digits under 16 characters, too few distinct characters) is refused, and name it
+      # in no attack prompt.
       # - name: tenant-b
       #   auth_ref: "env://TENANT_B_KEY"
       #   canary: "CANARY-B-3f9c1e7a5b2d8064"
