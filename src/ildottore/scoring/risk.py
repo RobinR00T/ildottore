@@ -12,7 +12,7 @@ Confidence is **never** a factor here (ADR-0003, contract §8 hard fence).
 
 from __future__ import annotations
 
-from ildottore.shared.enums import MIN_VARIANT_ATTEMPTS, VerdictStatus
+from ildottore.shared.enums import IDENTITY_SWEEP, MIN_VARIANT_ATTEMPTS, VerdictStatus
 from ildottore.shared.models import Attempt
 
 __all__ = ["reproducibility_from_attempts", "risk_magnitude"]
@@ -37,17 +37,27 @@ def reproducibility_from_attempts(attempts: list[Attempt]) -> float:
     has that many (``--runs 1``), the rate is pooled over every attempt, so one exploit among
     six single-shot variants is 1/6, not 1/1.
 
+    An identity sweep's trial (``mutation`` :data:`~ildottore.shared.enums.IDENTITY_SWEEP`, u08
+    A-87: the attack sent once as each scope identity and compared) is one trial, counted once:
+    it is never a variant of its own, and the rate is never below the pooled rate over every
+    trial, the attempts and the sweeps together. So a crossing only the sweep showed, every
+    attempt denied, is 1 of the spec's trials (1 of 6 at ``--runs 5``), where every attempt used
+    to carry the sweep's verdict and read 5 of 5; a sweep that showed nothing never lowers the
+    rate of the variant that leaks; and a resume's own sweep is another trial, never a second
+    count of the first. The pooled floor changes nothing when every trial is in a variant that
+    stands on its own, since the best of them is at least their pooled rate.
+
     With no attempts, reproducibility is ``0.0``. Result is exact (OD-6).
     """
     if not attempts:
         return 0.0
     by_variant: dict[str, list[Attempt]] = {}
     for attempt in attempts:
-        by_variant.setdefault(attempt.mutation, []).append(attempt)
+        if attempt.mutation != IDENTITY_SWEEP:
+            by_variant.setdefault(attempt.mutation, []).append(attempt)
+    pooled = _success_rate(attempts)
     qualifying = [v for v in by_variant.values() if len(v) >= MIN_VARIANT_ATTEMPTS]
-    if not qualifying:
-        return _success_rate(attempts)
-    return max(_success_rate(variant) for variant in qualifying)
+    return max([pooled, *(_success_rate(variant) for variant in qualifying)])
 
 
 def _success_rate(attempts: list[Attempt]) -> float:

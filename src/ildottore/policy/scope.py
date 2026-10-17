@@ -26,6 +26,7 @@ from ildottore.policy.errors import ScopeChecksumError, ScopeError
 from ildottore.shared.config_errors import quoted, validation_problems, yaml_problem
 from ildottore.shared.credential_refs import ENV_NAME_RULE, env_name_of, is_env_name
 from ildottore.shared.files import read_failure, read_text_capped
+from ildottore.shared.folding import folded
 
 
 class Endpoint(BaseModel):
@@ -156,7 +157,10 @@ def _refuse_shared_identities(file_path: Path, entry: ScopeTarget) -> None:
     second response replaced the first: two identities read as one and ``authz_leak`` had no
     pair to compare, and with three, two merged (pre-merge audit of PR #45). A canary maps back
     to the identity that owns it, so two owners of one canary made each one's own canary read
-    as the other's leak. The canary is not quoted: it is a marker the target must not learn.
+    as the other's leak. ``authz_leak`` reads a canary case-folded, with its format characters
+    removed (``shared.folding``, u08 A-87), so two canaries that differ only there are one
+    canary to it, and are refused alike. The canary is not quoted: it is a marker the target
+    must not learn.
     """
 
     names: set[str] = set()
@@ -169,13 +173,15 @@ def _refuse_shared_identities(file_path: Path, entry: ScopeTarget) -> None:
             )
         names.add(identity.name)
         if identity.canary:  # the runner ignores an empty one
-            if identity.canary in canaries:
+            form = folded(identity.canary)
+            if form in canaries:
                 raise ScopeError(
                     f"scope file {file_path} target {quoted(entry.id)}: identity "
-                    f"{quoted(identity.name)} declares the canary of another identity; each "
-                    "canary has one owner"
+                    f"{quoted(identity.name)} declares the canary of another identity (or one "
+                    "that differs from it only in letter case or invisible characters, which "
+                    "authz_leak reads as the same); each canary has one owner"
                 )
-            canaries.add(identity.canary)
+            canaries.add(form)
 
 
 def weak_canary(canary: str, labels: list[str]) -> str | None:

@@ -764,6 +764,12 @@ class EvalContext(_Frozen):
     # of every one of them, so ``authz_leak`` can tell a canary a reply echoes from that request
     # from one it received. ``None`` when nothing was swept.
     identity_request: ModelRequest | None = None
+    # The scope identities the reply under evaluation was received as (u08 A-87): set on every
+    # attempt of a spec the identity sweep compares, so ``authz_leak`` reads that attempt's own
+    # reply against ``canary_owners`` (the attempts are sent with the target file's credential,
+    # which the scope must give one of its identities); empty when that credential is none of
+    # theirs. ``None`` for the sweep's own comparison of every identity's reply, or no sweep.
+    reply_identities: list[str] | None = None
     # Tool names a seeded deployment grants beyond the spec's scene (OD-18 B,
     # ``seeded_setup.granted_tools``): a call to one is not unauthorized. Empty off a deployment.
     granted_tools: list[str] = Field(default_factory=list)

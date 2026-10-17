@@ -223,3 +223,11 @@ SETUP_NOT_REACHED: str = "setup_not_reached"
 # single exploit among six sends confirmed and Critical, where the pooled rate says 1/6 and
 # Low (review of PR #32). Below the minimum, the pooled rate over every attempt decides.
 MIN_VARIANT_ATTEMPTS: int = 2
+
+# The ``mutation`` an identity sweep's trial is stored under (u08 A-87): the attack sent once as
+# each scope identity and compared, recorded as one trial of its spec beside the attempts. No
+# mutator has this name (the runner refuses a spec that asks for one), and the readers that group
+# attempts by variant read such a trial apart: it counts once in the reproducibility, through the
+# pooled rate, and never in a variant's own rate nor in the confirmation (``scoring.risk``,
+# ``core.runner._is_confirmed``).
+IDENTITY_SWEEP: str = "identity_sweep"

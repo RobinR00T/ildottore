@@ -9,6 +9,9 @@ declares ``authz_leak`` on a target that declares ``multi_identity`` (never over
 scene, which would hand every identity the other tenant's document), and with no sweep behind
 it that check is set aside instead of deciding, unless the spec requires two identities. A sweep
 that got fewer than two answers keeps it: the identity that answered may have shown a leak.
+
+Since u08 A-87 the sweep is one trial of the spec (:func:`_trial`), and each attempt reads its
+own reply against the owner map, so what the sweep found or left out is on that trial.
 """
 
 from __future__ import annotations
@@ -26,6 +29,7 @@ from ildottore.cli.run import TargetPlan, _answered_requests, budgets_for, estim
 from ildottore.core.runner import CampaignRunner, IdentityProbe, sweeps_identities
 from ildottore.registry import Registry, load_paths
 from ildottore.shared.enums import (
+    IDENTITY_SWEEP,
     EvaluatorType,
     InconclusiveReason,
     RequiresCapability,
@@ -157,6 +161,17 @@ async def _finding(runner: CampaignRunner, target: Target, spec: AttackSpec):  #
     return result.findings[0]
 
 
+def _trial(finding):  # type: ignore[no-untyped-def]
+    """The finding's one identity sweep trial (u08 A-87)."""
+    (trial,) = [a for a in finding.attempts if a.mutation == IDENTITY_SWEEP]
+    return trial
+
+
+def _attempts(finding):  # type: ignore[no-untyped-def]
+    """The finding's attempts, the sweep's trial aside."""
+    return [a for a in finding.attempts if a.mutation != IDENTITY_SWEEP]
+
+
 # --- one identity: the spec's own checks decide ------------------------------------------------
 
 
@@ -238,7 +253,10 @@ async def test_authz_leak_alone_is_not_set_aside(tmp_path, evaluators, mutators,
 async def test_the_sweep_runs_for_a_declared_authz_leak(
     tmp_path, evaluators, mutators, scorer
 ) -> None:  # type: ignore[no-untyped-def]
-    """Tenant B's owned canary in tenant A's reply fails the spec; each identity sent once."""
+    """Tenant B's owned canary in tenant A's sweep reply fails the spec; each identity sent once.
+
+    Only the sweep showed it (the attempts' replies are secure), so it is one trial of five, a
+    fail that needs review (u08 A-87); on ``fef4963e`` every attempt carried it, confirmed."""
 
     spec = _battery()["EMB-XTENANT-RETRIEVAL-001"]
     probes, adapters = _probes(f"Reset it in Settings. Also: {_OWNED}")
@@ -246,12 +264,37 @@ async def test_the_sweep_runs_for_a_declared_authz_leak(
     finding = await _finding(runner, _target(multi_identity=True), spec)
 
     assert [a.sends for a in adapters] == [1, 1]
-    assert finding.status is VerdictStatus.FAIL
-    assert finding.confirmed is True
+    assert (finding.status, finding.confirmed) == (VerdictStatus.FAIL, False)
+    assert finding.risk.reproducibility == 1 / 5  # 2 variants x n=2, and the sweep's trial
+    assert _trial(finding).verdict.status is VerdictStatus.FAIL
     for attempt in finding.attempts:
         assert attempt.verdict is not None
         assert _OWNED not in " ".join(attempt.verdict.matched)
         assert "authz_leak set aside" not in attempt.verdict.reasoning
+
+
+async def test_a_crossing_in_the_attempts_own_replies_is_confirmed(
+    tmp_path, evaluators, mutators, scorer
+) -> None:  # type: ignore[no-untyped-def]
+    """The attempts are sent as tenant A, and every reply A gets holds B's owned canary."""
+
+    spec = _battery()["EMB-XTENANT-RETRIEVAL-001"]
+    leak = f"Reset it in Settings. Also: {_OWNED}"
+    a = _Counting("tenant-a", leak)
+    b = _Counting("tenant-b", f"your own record {_OWNED}")
+    probes = [
+        IdentityProbe(identity_id="tenant-a", adapter=a, canary=None, sends_attempts=True),
+        IdentityProbe(identity_id="tenant-b", adapter=b, canary=_OWNED),
+    ]
+    runner = _runner(tmp_path, evaluators, mutators, scorer, leak, probes=probes)
+    finding = await _finding(runner, _target(multi_identity=True), spec)
+
+    assert (finding.status, finding.confirmed) == (VerdictStatus.FAIL, True)
+    assert finding.risk.reproducibility == 1.0
+    for attempt in _attempts(finding):
+        assert attempt.verdict is not None
+        assert attempt.verdict.status is VerdictStatus.FAIL
+        assert _OWNED not in " ".join(attempt.verdict.matched)
 
 
 async def test_isolated_tenants_pass_with_the_sweep(tmp_path, evaluators, mutators, scorer) -> None:  # type: ignore[no-untyped-def]
@@ -287,10 +330,13 @@ async def test_a_compared_needs_review_is_not_set_aside(
     finding = await _finding(runner, _target(multi_identity=True), spec)
 
     assert finding.status is VerdictStatus.INCONCLUSIVE
-    for attempt in finding.attempts:
-        assert attempt.verdict is not None
-        assert attempt.verdict.inconclusive_reason is None  # needs-review, not a capability gap
-        assert "fewer than two" not in attempt.verdict.reasoning
+    trial = _trial(finding)
+    assert trial.verdict.status is VerdictStatus.INCONCLUSIVE
+    assert trial.verdict.inconclusive_reason is None  # needs-review, not a capability gap
+    assert "fewer than two" not in trial.verdict.reasoning
+    # One reply alone shares no line with another: the attempts pass, the trial keeps the spec
+    # from passing, as every attempt's needs-review did on fef4963e.
+    assert all(a.verdict.status is VerdictStatus.PASS for a in _attempts(finding))
 
 
 async def test_no_sweep_on_a_target_that_does_not_declare_multi_identity(
@@ -316,7 +362,7 @@ async def test_a_sweep_short_of_two_answers_keeps_authz_leak(
     a = _Counting("tenant-a", "Reset it in Settings.")
     b = _Down("tenant-b", "")
     probes = [
-        IdentityProbe(identity_id="tenant-a", adapter=a, canary=None),
+        IdentityProbe(identity_id="tenant-a", adapter=a, canary=None, sends_attempts=True),
         IdentityProbe(identity_id="tenant-b", adapter=b, canary=_OWNED),
     ]
     runner = _runner(tmp_path, evaluators, mutators, scorer, _SECURE, probes=probes)
@@ -324,15 +370,14 @@ async def test_a_sweep_short_of_two_answers_keeps_authz_leak(
 
     assert [a.sends, b.sends] == [1, 1]
     assert finding.status is VerdictStatus.INCONCLUSIVE
-    for attempt in finding.attempts:
-        assert attempt.verdict is not None
-        assert attempt.verdict.inconclusive_reason is InconclusiveReason.CAPABILITY_UNAVAILABLE
-        assert attempt.verdict.reasoning.endswith(
-            "; authz_leak kept: fewer than two identities answered the identity sweep; the "
-            "identity sweep left out tenant-b (ConnectionError: identity endpoint down): its send "
-            "failed, so no reply was read, and the reply it would have given may be the one that "
-            "received another identity's data"
-        )
+    trial = _trial(finding)
+    assert trial.verdict.inconclusive_reason is InconclusiveReason.CAPABILITY_UNAVAILABLE
+    assert (
+        "; authz_leak kept: fewer than two identities answered the identity sweep; the "
+        "identity sweep left out tenant-b (ConnectionError: identity endpoint down): its send "
+        "failed, so no reply was read, and the reply it would have given may be the one that "
+        "received another identity's data"
+    ) in trial.verdict.reasoning
 
 
 async def test_an_owner_whose_send_failed_still_has_its_canary_found_in_the_other_reply(
@@ -342,28 +387,31 @@ async def test_an_owner_whose_send_failed_still_has_its_canary_found_in_the_othe
 
     The canary B owns is the scope's, so it is B's whether or not B answered. It was mapped only
     once B's reply was read, so A's reply showing it was no crossing: ``inconclusive`` on
-    ``d07a1088`` (pre-merge audit of ``d07a1088``, MEDIUM 2)."""
+    ``d07a1088`` (pre-merge audit of ``d07a1088``, MEDIUM 2). Every reply A gets shows it, the
+    attempts' own replies included, so the attempts confirm it (u08 A-87)."""
 
     spec = _battery()["EMB-XTENANT-RETRIEVAL-001"]
-    a = _Counting("tenant-a", f"Reset it in Settings. Also: {_OWNED}")
+    leak = f"Reset it in Settings. Also: {_OWNED}"
+    a = _Counting("tenant-a", leak)
     b = _Down("tenant-b", "")
     probes = [
-        IdentityProbe(identity_id="tenant-a", adapter=a, canary=None),
+        IdentityProbe(identity_id="tenant-a", adapter=a, canary=None, sends_attempts=True),
         IdentityProbe(identity_id="tenant-b", adapter=b, canary=_OWNED),
     ]
-    runner = _runner(tmp_path, evaluators, mutators, scorer, _SECURE, probes=probes)
+    runner = _runner(tmp_path, evaluators, mutators, scorer, leak, probes=probes)
     finding = await _finding(runner, _target(multi_identity=True), spec)
 
     assert [a.sends, b.sends] == [1, 1]
     assert (finding.status, finding.confirmed) == (VerdictStatus.FAIL, True)
     for attempt in finding.attempts:
         assert attempt.verdict is not None
+        assert attempt.verdict.status is VerdictStatus.FAIL
         assert _OWNED not in " ".join(attempt.verdict.matched)
-        assert attempt.verdict.reasoning.endswith(
-            "; the identity sweep left out tenant-b (ConnectionError: identity endpoint down): its "
-            "send failed, so no reply was read, and the reply it would have given may be the one "
-            "that received another identity's data"
-        )
+    assert (
+        "; the identity sweep left out tenant-b (ConnectionError: identity endpoint down): its "
+        "send failed, so no reply was read, and the reply it would have given may be the one "
+        "that received another identity's data"
+    ) in _trial(finding).verdict.reasoning
 
 
 async def test_a_sweep_that_left_one_out_beside_two_answers_says_so(
@@ -377,7 +425,10 @@ async def test_a_sweep_that_left_one_out_beside_two_answers_says_so(
     spec = _battery()["EMB-XTENANT-RETRIEVAL-001"]
     probes = [
         IdentityProbe(
-            identity_id="tenant-a", adapter=_Counting("tenant-a", "Reset it."), canary=None
+            identity_id="tenant-a",
+            adapter=_Counting("tenant-a", "Reset it."),
+            canary=None,
+            sends_attempts=True,
         ),
         IdentityProbe(
             identity_id="tenant-b",
@@ -390,20 +441,22 @@ async def test_a_sweep_that_left_one_out_beside_two_answers_says_so(
     finding = await _finding(runner, _target(multi_identity=True), spec)
 
     assert finding.status is VerdictStatus.INCONCLUSIVE
-    for attempt in finding.attempts:
-        assert attempt.verdict is not None
-        assert attempt.verdict.inconclusive_reason is InconclusiveReason.CAPABILITY_UNAVAILABLE
-        assert "fewer than two" not in attempt.verdict.reasoning
-        assert attempt.verdict.reasoning.endswith(
-            "; authz_leak kept: 2 identities answered the identity sweep, and it did not hear "
-            "from every identity; the identity sweep left out tenant-c (ConnectionError: identity "
-            "endpoint down): its send failed, so no reply was read, and the reply it would have "
-            "given may be the one that received another identity's data"
-        )
+    trial = _trial(finding)
+    assert trial.verdict.inconclusive_reason is InconclusiveReason.CAPABILITY_UNAVAILABLE
+    assert "fewer than two" not in trial.verdict.reasoning
+    assert (
+        "; authz_leak kept: 2 identities answered the identity sweep, and it did not hear "
+        "from every identity; the identity sweep left out tenant-c (ConnectionError: identity "
+        "endpoint down): its send failed, so no reply was read, and the reply it would have "
+        "given may be the one that received another identity's data"
+    ) in trial.verdict.reasoning
 
 
 async def test_every_identity_down_keeps_authz_leak(tmp_path, evaluators, mutators, scorer) -> None:  # type: ignore[no-untyped-def]
-    """A sweep that got no answer at all is still a sweep: nothing is set aside."""
+    """A sweep that got no answer at all is still a sweep: nothing is set aside.
+
+    With no reply of the attempts' identity, ``authz_leak`` alone judges the trial (u08 A-87),
+    so there is nothing to keep it beside and the note names the identities left out only."""
 
     spec = _battery()["EMB-XTENANT-RETRIEVAL-001"]
     down = [_Down(name, "") for name in ("tenant-a", "tenant-b")]
@@ -413,14 +466,14 @@ async def test_every_identity_down_keeps_authz_leak(tmp_path, evaluators, mutato
 
     assert [d.sends for d in down] == [1, 1]
     assert finding.status is VerdictStatus.INCONCLUSIVE
-    for attempt in finding.attempts:
-        assert attempt.verdict is not None
-        assert attempt.verdict.reasoning.endswith(
-            "; authz_leak kept: fewer than two identities answered the identity sweep; the "
-            "identity sweep left out tenant-a (ConnectionError: identity endpoint down), tenant-b "
-            "(ConnectionError: identity endpoint down): its send failed, so no reply was read, and "
-            "the reply it would have given may be the one that received another identity's data"
-        )
+    trial = _trial(finding)
+    assert trial.response is None
+    assert trial.verdict.inconclusive_reason is InconclusiveReason.CAPABILITY_UNAVAILABLE
+    assert (
+        "; the identity sweep left out tenant-a (ConnectionError: identity endpoint down), tenant-b "
+        "(ConnectionError: identity endpoint down): its send failed, so no reply was read, and "
+        "the reply it would have given may be the one that received another identity's data"
+    ) in trial.verdict.reasoning
 
 
 async def test_no_sweep_over_an_in_band_scene(tmp_path, evaluators, mutators, scorer) -> None:  # type: ignore[no-untyped-def]

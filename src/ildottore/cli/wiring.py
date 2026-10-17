@@ -1670,11 +1670,17 @@ def build_identity_probes(scope: Scope, target: Target) -> list[IdentityProbe]:
     identity. Fewer than two identities yields an empty list (authz_leak stays
     capability_unavailable). The credentials come from the scope's own identity records, so no
     unauthorized env var is read (S6).
+
+    Each probe also says whether the attempts are sent as that identity (``sends_attempts``, u08
+    A-87): the target file's ``auth_ref`` is the identity's, which :func:`_authorized_api_key`
+    requires of any credential the target file names, or neither names one (no ``auth_ref``, or
+    ``env://NONE``). The runner reads every attempt's reply as received by those identities.
     """
 
     scope_target = scope.target(target.id)
     if scope_target is None or len(scope_target.identities) < 2:
         return []
+    attempts_as = _credential_of(target.auth_ref)
     allowlist = EndpointAllowlist(scope_target.endpoints)
     commands = tuple(scope_target.commands)
     probes: list[IdentityProbe] = []
@@ -1691,8 +1697,21 @@ def build_identity_probes(scope: Scope, target: Target) -> list[IdentityProbe]:
             authorized_commands=commands,
             retry=NO_ADAPTER_RETRIES,
         )
-        probes.append(IdentityProbe(identity_id=ident.name, adapter=adapter, canary=ident.canary))
+        probes.append(
+            IdentityProbe(
+                identity_id=ident.name,
+                adapter=adapter,
+                canary=ident.canary,
+                sends_attempts=_credential_of(ident.auth_ref) == attempts_as,
+            )
+        )
     return probes
+
+
+def _credential_of(auth_ref: str | None) -> str | None:
+    """The credential reference ``auth_ref`` sends, ``None`` for none (no ref, ``env://NONE``)."""
+
+    return None if auth_ref is None or auth_ref == NO_CREDENTIAL else auth_ref
 
 
 # --- target.yaml -------------------------------------------------------------------
