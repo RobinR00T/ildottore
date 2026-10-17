@@ -38,7 +38,8 @@ python3 -m venv .venv && .venv/bin/python -m pip install .
 ```
 
 `<commit>` is a full commit SHA of `main` from the change that put the battery in the package
-(CHANGELOG, `[Unreleased]`) on. An older one, the `v0.1.0` tag included, builds a wheel that
+(`5edeb0a7`, #119, CHANGELOG `[Unreleased]`) on; the CI example pins `fef4963e`, `main` on
+2026-10-17. An older one, the `v0.1.0` tag included, builds a wheel that
 carries neither the battery nor the schema: from outside a checkout `dottore run --dry-run` and
 `registry ls` exit 3 (`spec path not found: specs`), and `lint <checkout>/specs` exits 3 on the
 missing `schemas/attack-spec.schema.json` (`unexpected FileNotFoundError`; measured on `7d01521f`,
