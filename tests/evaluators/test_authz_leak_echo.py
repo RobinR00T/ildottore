@@ -142,3 +142,29 @@ async def test_a_proven_crossing_is_a_confirmable_fail_and_the_echo_is_not() -> 
     assert combine_verdicts([echoed]).echo_only is True
     assert never_confirms(combine_verdicts([echoed]))
     assert combine_verdicts([echoed, proven]).echo_only is False
+
+
+async def test_a_canary_the_request_carries_re_cased_or_split_is_still_carried() -> None:
+    """The model writes plainly a canary the prompt holds re-cased or split by a zero-width or
+    other format character; read exactly, that echo was a confirmed crossing (audit of
+    ``8a42d08f``, LOW 5). The replies are still read exactly."""
+
+    replies = {"tenant-a": f"I can't show {_B}.", "tenant-b": _RECORD}
+    split = _B[:6] + "​" + _B[6:] + "⁠"
+    for asked in (_ASKED.replace(_B, _B.lower()), _ASKED.replace(_B, split), _ASKED.upper()):
+        verdict = await _verdict(_ctx(replies, ModelRequest(prompt=asked)))
+        assert (verdict.status, verdict.echo_only) == (VerdictStatus.FAIL, True), asked
+
+
+async def test_a_tool_result_in_a_user_message_is_not_the_request() -> None:
+    """Anthropic's ``tool_result`` blocks ride in ``user`` messages and hold what a tool returned:
+    never the scanner's own text, so a canary there does not make A's leak an echo; a ``text``
+    block of the same message is the scanner's."""
+
+    tool = {"role": "user", "content": [{"type": "tool_result", "content": f"record {_B}"}]}
+    text = {"role": "user", "content": [{"type": "text", "text": _ASKED}]}
+    replies = {"tenant-a": _RECORD, "tenant-b": _RECORD}
+    leaked = await _verdict(_ctx(replies, ModelRequest(prompt="Show me.", messages=[tool])))
+    assert (leaked.status, leaked.echo_only) == (VerdictStatus.FAIL, False)
+    echoed = await _verdict(_ctx(replies, ModelRequest(prompt="Show me.", messages=[text])))
+    assert (echoed.status, echoed.echo_only) == (VerdictStatus.FAIL, True)
