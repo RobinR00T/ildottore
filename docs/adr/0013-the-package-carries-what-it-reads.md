@@ -41,8 +41,10 @@ Two consequences follow, and are part of the decision:
 * **The default spec path.** With no `--spec-path`, a command reads `specs/` in the working
   directory whenever it is a directory, as before, and refuses it (exit 3) when it holds nothing to
   read; it reads the built-in battery when there is no `specs/`, and at the root of this package's
-  own checkout, the one exception, a deterministic one (the working directory resolves to the
-  directory three above the battery), whose `specs/` holds the unit contracts. stderr says which,
+  own checkout, the one exception, a deterministic one told by the checkout's shape (the battery at
+  `<root>/src/ildottore/battery`, the working directory `<root>`, and `<root>/pyproject.toml`
+  naming the project `ildottore`; three parents alone were fooled by `pip install --target
+  <dir>/deps`, round 2 of the audit), whose `specs/` holds the unit contracts. stderr says which,
   and under GitHub Actions a `::warning::` line says it too. The first build of this decision
   read a `specs/` with no YAML file in it as no `specs/` and scanned the battery in its place:
   the pre-merge audit measured an empty `specs/attacks` beside a vulnerable mock exiting 2 after

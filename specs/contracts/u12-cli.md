@@ -1821,8 +1821,11 @@ every job installs the newest releases.
 * **The default spec path, fail closed.** `specs/` in the working directory is read whenever it
   is a directory, as before (A-80), and refused, exit 3, when it holds nothing to read; with no
   `specs/` the built-in battery is read. The one exception is the root of this package's own
-  checkout, whose `specs/` holds the unit contracts (`wiring.is_own_checkout`: the working
-  directory resolves to `BATTERY.resolve().parents[2]`, which no installed wheel is beside). The
+  checkout, whose `specs/` holds the unit contracts (`wiring.is_own_checkout`, by the checkout's
+  shape: the battery at `<root>/src/ildottore/battery`, the working directory resolving to
+  `<root>`, and `<root>/pyproject.toml`, read capped, naming the project `ildottore`; the working
+  directory at the battery's `parents[2]` alone was fooled by `pip install --target <dir>/deps`,
+  which ran the built-in 75 from `<dir>` under a false note, round 2 of the audit, HIGH 1). The
   note says which (`there is no specs/ directory here` or `this is Il Dottore's own checkout,
   whose specs/ holds the unit contracts`, then `so this reads the built-in battery inside the
   installed package: <path> (pass --spec-path to read another)`), and with

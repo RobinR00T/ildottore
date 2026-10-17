@@ -55,17 +55,19 @@ the file, schema copy, build or pipeline it names.
   the working directory whenever it is a directory, as before, and refuse it (exit 3) when it holds
   nothing to read: it is never replaced by the built-in battery. With no `specs/` they read the
   battery inside the installed package, which a wheel now carries; so they do at the root of Il
-  Dottore's own checkout, whose `specs/` holds the unit contracts (the working directory resolves
-  to the directory three above the battery). stderr says which: `note: there is no specs/
-  directory here, so this reads the built-in battery inside the installed package: <path> (pass
-  --spec-path to read another)`, or `note: this is Il Dottore's own checkout, whose specs/ holds
-  the unit contracts, so ...`; with `GITHUB_ACTIONS=true` the same text follows as a `::warning
-  title=dottore spec path::` line, so a pipeline that gates on the default battery sees it in its
-  annotations. The first build of this change read a `specs/` holding no YAML file as no `specs/`
-  and scanned the battery in its place (an empty `specs/attacks` beside a vulnerable mock exited 2
-  after 18 built-in specs, a `specs/` reaching its pack through a link exited 0 on all 75): the
-  pre-merge audit's HIGH 2, fixed before landing. An explicit way to name the built-in battery
-  (`--spec-path builtin`) is OD-51, open.
+  Dottore's own checkout, whose `specs/` holds the unit contracts (told by its shape: the battery
+  at `<root>/src/ildottore/battery`, the working directory `<root>`, and `<root>/pyproject.toml`
+  naming the project `ildottore`; a package installed with `pip install --target <dir>/deps` is
+  no checkout, and from `<dir>` the operator's `specs/` is read). stderr says which: `note: there is
+  no specs/ directory here, so this reads the built-in battery inside the installed package: <path>
+  (pass --spec-path to read another)`, or
+  `note: this is Il Dottore's own checkout, whose specs/ holds the unit contracts, so ...`; with
+  `GITHUB_ACTIONS=true` the same text follows as a `::warning title=dottore spec path::` line, so a
+  pipeline that gates on the default battery sees it in its annotations. The first build of this
+  change read a `specs/` holding no YAML file as no `specs/` and scanned the battery in its place
+  (an empty `specs/attacks` beside a vulnerable mock exited 2 after 18 built-in specs, a `specs/`
+  reaching its pack through a link exited 0 on all 75): the pre-merge audit's HIGH 2, fixed before
+  landing. An explicit way to name the built-in battery (`--spec-path builtin`) is OD-51, open.
 
 ### Changed (breaking for a halted run: a resume across this change is refused, and so is one after any edit of a built-in spec, u12 A-84)
 
