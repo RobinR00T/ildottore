@@ -66,7 +66,8 @@ _OWN_MASK_TYPES: Final = frozenset(
     {
         *("credential", "url_password", "labeled_secret", "high_entropy"),
         *("canary", "shared_line", "tool_arg_injection", "ip", "private_key"),
-        # A piece of a list's joined text masked where its mask could not be placed (A-77).
+        # A piece of a list's joined text masked where its mask could not be placed (A-77), and
+        # an alternative of a token with more masks than an alternative shows (A-86).
         "fragment",
     }
 )
@@ -2602,10 +2603,17 @@ def identity_masks(value: str) -> tuple[str, ...]:
 #: (`«REDACTED:«REDACTED:url_password»`: the URL rule read `«REDACTED` as a URL's user).
 _MASK_AFTER_OPENERS: Final = re.compile("(?:«REDACTED:)*" + _ALREADY_MASKED.pattern)
 #: The mask a piece shows when the redactor masked its stream's joined text and where it masked
-#: could not be placed: every piece of that stream shows it.
+#: could not be placed: every piece of that stream shows it. Each alternative of a token with more
+#: masks than :data:`_ALTERNATIVE_MASKS` shows it too (A-86).
 _FRAGMENT_MASK: Final = _MASK_TEMPLATE.format(type="fragment")
 #: How many passes a value gets at most, as ``redact_text`` reads a text to a fixed point.
 _SPLIT_ROUNDS: Final = 4
+#: The most masks an alternative of a masked token shows (u01 A-86). A token past it lies where
+#: many masks merged into one stretch (secrets glued together, or read both ways), and each of its
+#: alternatives shows ``«REDACTED:fragment»`` alone: every alternative of every token there showed
+#: every mask of the stretch, so the output grew as tokens times masks (64 KiB of `ghp_` keys glued
+#: by U+0000 in 4-character tokens, one alternative each, wrote 840 MB, pre-merge audit of A-83).
+_ALTERNATIVE_MASKS: Final = 4
 #: A logprob item's token and its figure (ADR-0005 ``TokenLogprob``, and OpenAI's wire shape).
 _TOKEN: Final = "token"  # noqa: S105 - a field name, not a credential
 _LOGPROB: Final = "logprob"
@@ -2976,12 +2984,18 @@ def _mask_alternatives(item: object, token: str, shown: str, masks: tuple[str, .
     for that same piece: other pieces of the secret, often, which no join of them reads whole. An
     alternative written as the token was shows what the token shows now (``shown``); any other
     shows the token's masks. Called once an item's every edit is made, so nothing written after
-    undoes it (pre-merge audit of c4bd2012, MEDIUM 2).
+    undoes it (pre-merge audit of c4bd2012, MEDIUM 2). A token with more masks than
+    :data:`_ALTERNATIVE_MASKS` has every alternative show one ``«REDACTED:fragment»``, whatever it
+    was written as, so what an alternative shows is bounded and never more than it showed before
+    (u01 A-86).
     """
 
     if not isinstance(item, dict):  # pragma: no cover - a thawed logprob item is a dict
         return
-    stands_for = "".join(masks)
+    if len(masks) > _ALTERNATIVE_MASKS:
+        shown = stands_for = _FRAGMENT_MASK
+    else:
+        stands_for = "".join(masks)
     pairs = item.get("top")
     if isinstance(pairs, list):
         for pair in pairs:
