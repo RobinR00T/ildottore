@@ -166,6 +166,39 @@ OTHER_CODES = {
         'typer.Exit(ValueError("halt " + REGISTERED[:6] + "\\t" + REGISTERED[6:]))',
         "ValueError 'halt ",
     ),
+    # A mapping's keys and values and a set's items, read as a tuple's are (u01 A-86 item 2:
+    # ``str()`` of a dict or a set writes each item's ``repr``, and printed the credential whole).
+    "dict value with LF": (
+        'SystemExit({"halt": REGISTERED[:6] + "\\n" + REGISTERED[6:]})',
+        "dict 'halt ",
+    ),
+    "dict key with U+0000": (
+        'SystemExit({"halt " + REGISTERED[:6] + "\\x00" + REGISTERED[6:]: 1})',
+        "dict 'halt ",
+    ),
+    "set with TAB": (
+        'typer.Exit({"halt " + REGISTERED[:6] + "\\t" + REGISTERED[6:]})',
+        "set 'halt ",
+    ),
+    "frozenset with U+0001": (
+        'SystemExit(frozenset({"halt " + REGISTERED[:6] + "\\x01" + REGISTERED[6:]}))',
+        "frozenset 'halt ",
+    ),
+    "list of dicts with LF": (
+        'SystemExit(["halt", {"at": (REGISTERED[:6] + "\\n" + REGISTERED[6:]).encode()}])',
+        "list 'halt at ",
+    ),
+    # An exception with two arguments and a deque, which ``str()`` wrote as their items' ``repr``
+    # (pre-merge audit of A-86, MEDIUM 1).
+    "exception with two arguments and LF": (
+        'SystemExit(ValueError("halt", REGISTERED[:6] + "\\n" + REGISTERED[6:]))',
+        "ValueError 'halt ",
+    ),
+    "deque with LF": (
+        'SystemExit(__import__("collections").deque('
+        '["halt", REGISTERED[:6] + "\\n" + REGISTERED[6:]]))',
+        "deque 'halt ",
+    ),
 }
 
 

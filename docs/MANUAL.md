@@ -1283,9 +1283,11 @@ Typer raises from or from a click installed beside it that a plugin raises from)
 masked as a usage error is, so are its `Aborted!` (`error: aborted`), an exit a library asks
 for with status 1 or 2 or with a message, and an exit a command asks for with a code that is no
 exit status (a text, a bool, a number outside 0 to 255; `typer.Exit("<text>")` exited 0 until
-A-83): `error: unexpected exit with status <code> ...`, the code masked as every error is. A broken
-output pipe (`dottore ... | head`, or a reader that closes early) is `3` with `error: the output
-stream closed before the command finished (broken pipe)` on stderr: until 2026-10-12 it exited 1,
+A-83): `error: unexpected exit with status <code> ...`, the code masked as every error is, a code
+that holds text (bytes, a list, a tuple, a set, a mapping's keys and values, a deque, an
+exception's arguments, since A-86 for the last four) as the text it holds. A broken output pipe
+(`dottore ... | head`, or a reader that closes early) is `3` with `error: the output stream closed before the command finished (broken
+pipe)` on stderr: until 2026-10-12 it exited 1,
 a scan with findings whose progress lines met the closed pipe included. Ctrl-C and SIGTERM are
 `130` (below). Options that can only be wrong are
 refused (exit 3) before anything is sent: `--fail-on bogus`, `--timeout 0`, `--concurrency 0`,
@@ -2664,7 +2666,11 @@ whose every attempt was cut with a canary in each exits 2, not 3.
   are joined and redacted once; the first piece a mask covers shows it and the others lose the
   text under it, so, joined, the pieces show each mask once and never more than `response.text`
   shows (a few show less, when a literal between two masks could stand in more than one place),
-  and a masked token's alternatives and `bytes` are masked with it. A key streamed in three deltas
+  and a masked token's alternatives and `bytes` are masked with it: an alternative written as the
+  token shows what the token shows, any other the token's masks, and a token with more than four
+  masks (where secrets glued together merge into one masked stretch) has each alternative show one
+  `«REDACTED:fragment»`, so what the alternatives show grows with the reply, not with its square
+  (A-86: 64 KiB of such a stream wrote 840 MB of evidence before). A key streamed in three deltas
   is stored as `«REDACTED:high_entropy:<digest>»`, `""`, `""`; a refusal is stored as it came. The
   figures, the token count and the frames' protocol fields are kept, so `dottore replay` and the
   membership evaluator read the same run. The evidence store refuses a write in which a joined text

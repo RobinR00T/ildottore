@@ -7,6 +7,41 @@ the file, schema copy, build or pipeline it names.
 
 ## [Unreleased]
 
+### Changed (breaking for a reader of a hostile logprob stream's alternatives: u01 A-86)
+
+- **An alternative of a masked token shows at most four masks, past them one `«REDACTED:fragment»`**
+  (OD-52, decided under the owner's delegation). A-77 had each alternative of a masked token show
+  every mask of the stretches the token lies in; on a reply of secrets glued together (`ghp_` keys
+  glued by U+0000, in 4-character tokens with one alternative each, which an OpenAI target answering
+  with `top_logprobs` can send) every alternative showed every mask of the reply, and the output
+  grew as the square of the reply: 8, 16 and 32 KiB wrote 14.2, 56.2 and 223.5 MB on `fef4963e` (64
+  KiB 840 MB and 2.1 GB of memory in the audit, about 6 GB written near the 4 MiB reply cap). Now
+  0.22, 0.44 and 0.87 MB, and at the reply cap 1.40 s, 114 MB of memory and 4.89 MB written. Through
+  the CLI against a stub, the evidence of one spec's three attempts at such an 8 KiB reply took 42
+  MB on `fef4963e` and 456 KB now (at a clean reply of the same size: 348 KB). What changes: in the
+  evidence and in every report, such an alternative's `token` (OpenAI's shape) or text (the stored
+  `top` pairs) reads `«REDACTED:fragment»` where it read a run of five masks or more, or the token's
+  own text where it was written as the token. Differential against `fef4963e` over 60,000
+  comparisons: every difference is such an alternative, none shows a run of 8 characters main hides,
+  and replies of prose with a secret here and there do not change (0 of 30,000). No verdict,
+  finding, score or exit code changes: no CI result changes.
+- **Fixed: a dict, a set, a deque or an exception as an exit code printed
+  a split credential whole.** `SystemExit({"k": "<credential split by a newline>"})` reached the
+  stray-exit line through `str()`, which writes each item's `repr`; a mapping is read as its keys'
+  and values' texts, any sequence (a deque too) or set as its items' texts and an exception as its
+  arguments' texts now, as a tuple was (u12's half; 7 cases through the console entry point, on
+  typer 0.26.8 and 0.27.3).
+- **Tests:** `test_a_token_of_glued_uuids_takes_linear_time` times its two sizes in the process's
+  CPU time, in turn, best of five (in wall time it read ratios of 1.8 to 8.7 against a bound of 8
+  with twice as many busy processes as cores, and failed once on a loaded runner); its 120 s ceiling
+  goes. A failure of `tests/cli/test_usage_figures.py` under load was not reproduced (8 runs under
+  45 CPU loops on 15 cores) and the test is unchanged. Found on the way and left to its own change:
+  a campaign's target adapter keeps an HTTP timeout of 30 s that `--timeout` and the `-T` templates
+  do not reach, so a reply after 30 s is resent (measured: a stub whose first reply came 33 s late
+  with `--timeout 120` served 4 requests for 3 attempts).
+- **Judging rules 2, re-pinned** by two appended lines (`8ef34497`, `06bb22a2`): masking only, no verdict can
+  change.
+
 ### Changed (the CI example installs a pinned commit of `main`, no longer a placeholder; docs only)
 
 - `examples/ci-github-actions.yml` pins `ILDOTTORE_COMMIT` to `fef4963e` (`main` on 2026-10-17,

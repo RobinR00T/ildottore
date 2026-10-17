@@ -2044,6 +2044,41 @@ above says so). A scope with a weak identity canary exits 3 in every mode (u01's
 `dottore replay` marks a fail resting on a canary the request carries
 (`tests/cli/test_scoring_followups_cli.py`).
 
+**A-86 (u01's clause; this unit's half, items 2 and 4, added 2026-10-17).** *2. A dict or a set as
+an exit code.* `cli.app._status_text` read a code that holds text but is none (A-83 item 3) as
+bytes, a tuple or a list, and anything else through `str()`, which writes each item of a dict or a
+set as its `repr`: a NUL, a newline or a tab inside a registered credential became an escape the
+redactor did not know, and `SystemExit({"k": "<credential split by LF>"})` printed it whole. A
+mapping is read as its keys' and values' texts in order and a set (a frozenset too) as its items'
+texts, as a tuple is, nested containers included, then masked and quoted with the type in front
+(`dict 'halt «REDACTED:credential:...»'`). The pre-merge audit found two more read through
+`str()`: an exception with more than one argument (or a `KeyError`, whose `str` is its
+argument's `repr`) and a sequence that is no tuple or list (a
+`collections.deque`). Any `Sequence` is now read as its items' texts and an exception with
+arguments as its arguments' texts. Seven cases in
+`tests/cli/test_exit_status.py::test_a_code_that_holds_text_is_masked_as_that_text` (a dict's value
+with LF, a dict's key with U+0000, a set with TAB, a frozenset with U+0001, a list of dicts holding
+bytes, an exception with two arguments and LF, a deque with LF), through the console entry point:
+the first five fail on `fef4963e`, the last two on this branch before the audit's fix, and the file
+passes on typer 0.26.8 and 0.27.3.
+
+*4. A failure of `tests/cli/test_usage_figures.py` under load, not reproduced.* The audit's
+hypothesis was a send past the per-attempt timeout, resent, so the stub serves more requests than
+the run sends (`served == sends`). Eight runs of the file with 45 CPU loops on 15 cores passed (the
+first six under the whole load, 59 to 93 s each), as the audit's ten did, so the test is left as it
+is. What was found on the way: the target adapter of a campaign has an HTTP timeout of its own,
+`RetryConfig.timeout_s` (30 s, which `wiring.NO_ADAPTER_RETRIES` keeps), that neither `--timeout`
+nor a `-T` template reaches. Measured with that stub, its first reply 33 s late, `--timeout 120`:
+the run took 31.2 s, the stub served 4 requests for 3 attempts, exit 0. So a send past 30 s breaks
+`served == sends`, and the audit's proposed `--timeout 600` in the test would not prevent it. From
+the code, not measured: a target that always answers after 30 s is sent four times per attempt
+(`RetryPolicy`) and its attempts come back inconclusive, whatever `-T0` (120 s) or `--timeout` says.
+That changes what a slow target's run reports, so it is left to a change of its own.
+
+*Judging rules.* Items 1 to 4 change no stored verdict: the redactor decides what the evidence and
+the reports keep, the evaluators judge the raw reply, and the exit status printed is that of an exit
+no command raises. Version 2 is re-pinned by an appended line (u12 A-81).
+
 ## §8 Out of scope / forbidden
 - MUST NOT implement attack/mutation/evaluation/scoring/reporting/fingerprint logic (u05-u11,
   u13): only wire and call them. MUST NOT own `cli/lint.py` (u02) or edit any spec YAML.
