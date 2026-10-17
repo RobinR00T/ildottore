@@ -98,11 +98,18 @@ PIN_HISTORY: tuple[tuple[int, str, str], ...] = (
         "endpoint URL's user registered; the redactor decides what is stored and printed, the "
         "evaluators judge the raw reply, so no verdict can change; version 1 is not released",
     ),
+    (
+        1,
+        "8c14612b7877025ed3350055d51dbcf0c239b4185ee224ede6e29825f66a18e3",
+        "re-pin 2026-10-17: the fixes of the pre-merge audit of 4f1b28db (an ordered set for a "
+        "merged stretch's masks and A-77's pieces, a text exit code masked as itself, late typed "
+        "a frozenset), masking and speed only; no verdict can change; version 1 is not released",
+    ),
 )
 
 #: The digest each version is pinned to now: the last line of :data:`PIN_HISTORY` for it.
 PINNED: dict[int, str] = {
-    1: "ce74f59ffe475a510cabae443bc2980dd199342d238138d7bc74ab4a7ebb064f",
+    1: "8c14612b7877025ed3350055d51dbcf0c239b4185ee224ede6e29825f66a18e3",
 }
 
 #: One ``<version> <digest>`` line per pin, appended to and never edited: the history must start
