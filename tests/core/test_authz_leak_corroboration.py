@@ -470,8 +470,9 @@ async def test_every_identity_down_keeps_authz_leak(tmp_path, evaluators, mutato
     assert trial.response is None
     assert trial.verdict.inconclusive_reason is InconclusiveReason.CAPABILITY_UNAVAILABLE
     assert (
-        "; the identity sweep left out tenant-a (ConnectionError: identity endpoint down), tenant-b "
-        "(ConnectionError: identity endpoint down): its send failed, so no reply was read, and "
+        "; the identity sweep left out tenant-a (ConnectionError: identity endpoint down), "
+        "tenant-b (ConnectionError: identity endpoint down): its send failed, so no reply was "
+        "read, and "
         "the reply it would have given may be the one that received another identity's data"
     ) in trial.verdict.reasoning
 

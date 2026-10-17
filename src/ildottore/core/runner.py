@@ -1589,10 +1589,11 @@ class CampaignRunner:
             if receiver is not None
             else "no reply of the identity the attempts are sent as"
         )
+        judged_apart = any(c.type is EvaluatorType.SEMANTIC_JUDGE for c in spec.evaluators)
         note = (
-            f"identity sweep: the attack sent once as each of {len(every)} "
-            f"scope identities and compared, {whose}; one trial of the spec, counted once, never "
-            "in the confirmation; the judge is not consulted on it"
+            f"identity sweep: the attack sent once as each of {len(every)} scope identities and "
+            f"compared, {whose}; one trial of the spec, counted once, never in the confirmation"
+            + ("; the judge is not consulted on it" if judged_apart else "")
         )
         return trial.model_copy(
             update={

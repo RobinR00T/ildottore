@@ -16,6 +16,8 @@ tech-debt):
   for corroboration.
 * :func:`shannon_entropy` - stdlib Shannon entropy over a string (bits/char), used by
   ``secret_shape`` and the PII entropy heuristic.
+* :func:`foldable` - whether a canary is one ``authz_leak`` and ``secret_leakage`` look for
+  case-folded, with its format characters removed (u08 A-87).
 
 Deterministic evaluators emit confidence ``1.0`` on a clear match and force
 ``inconclusive`` (confidence ``0.0``) on ambiguity (``docs/04 §3``, contract §4 KEEP).
@@ -26,7 +28,9 @@ from __future__ import annotations
 import math
 from collections import Counter
 from collections.abc import Iterable, Mapping
+from functools import lru_cache
 
+from ildottore.policy.scope import weak_canary
 from ildottore.redactor import Redactor, visible_stash_delimiters
 from ildottore.shared.enums import InconclusiveReason, VerdictStatus
 from ildottore.shared.models import EvalContext, Verdict
@@ -34,6 +38,7 @@ from ildottore.shared.toolcalls import call_arguments, call_name
 
 __all__ = [
     "BaseEvaluator",
+    "foldable",
     "mask_value",
     "mask_values",
     "shannon_entropy",
@@ -56,6 +61,22 @@ def shannon_entropy(text: str) -> float:
     counts = Counter(text)
     length = len(text)
     return -sum((c / length) * math.log2(c / length) for c in counts.values())
+
+
+@lru_cache(maxsize=4096)
+def foldable(canary: str) -> bool:
+    """True for a canary looked for case-folded, with its format characters removed (u08 A-87).
+
+    One the scope's floors accept for an identity canary (:func:`ildottore.policy.scope.
+    weak_canary`: 16 characters or more, no space, 36 bits of character entropy), so no ordinary
+    text holds it in any case: 900 random ones, the battery's ``ZYNAP_CANARY_<run id>`` among
+    them, were in none of 2,852 benign files, exactly or folded. An identity canary always is
+    (the scope refuses a weaker one). A spec's own canary below the floors (nothing shape-checks
+    it) is read exactly, as before: folded, a word such as ``TOKEN`` or ``Secret`` was in six
+    times more of those files (73 to 420, 39 to 234), each one more false fail.
+    """
+
+    return weak_canary(canary, []) is None
 
 
 def tool_name(call: Mapping[str, object]) -> str:
