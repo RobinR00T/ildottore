@@ -34,11 +34,12 @@ jobs:
       - name: Install Il Dottore at a pinned commit
         env:
           # Pinned to a full commit SHA so a pipeline gate cannot change meaning under you
-          # between runs. pin: the commit of main you have reviewed. It must be the one that put
-          # the battery in the package (CHANGELOG.md, [Unreleased]) or a later one: a wheel of an
-          # earlier commit, the only tag v0.1.0 (2026-09-03) included, carries no battery and
-          # every scan exits 3 (`spec path not found: specs`).
-          ILDOTTORE_COMMIT: "<full commit SHA>"
+          # between runs. pin: fef4963e (main on 2026-10-17, judging rules 2); replace it with the
+          # commit of main you have reviewed, this one or a later one. It must be 5edeb0a7 (#119,
+          # the change that put the battery in the package) or later: a wheel of an earlier
+          # commit, the only tag v0.1.0 (2026-09-03) included, carries no battery and every scan
+          # exits 3 (`spec path not found: specs`).
+          ILDOTTORE_COMMIT: "fef4963eea25ae85dfeabdf6a6ea827d3bbfd712"
           # v0.1.0 also predates most of what these gates rely on, as USAGE.md and
           # docs/MANUAL.md describe them; CHANGELOG.md ([Unreleased]) has each change:
           # - exit codes: a run that did not finish (budget halt, unreachable target, a target
@@ -77,10 +78,16 @@ jobs:
           #   on a live run, a `--timeout` under 1 s and a report without `schema_version` are
           #   not refused;
           # - resume (A-81): there is no `--resume`; here a resume is refused when the code that
-          #   judged the halted half differs.
-        # The placeholder fails here, before anything is installed or scanned, with an annotation
-        # that says what to set; so does a tag, a branch, a short SHA or a SHA with a second line,
-        # which can move. bash's own match tests the whole value, not each line of it.
+          #   judged the halted half differs;
+          # - masking (A-83): a stray exit prints its text in clear, and a credential written as
+          #   an endpoint URL's user is not masked by value;
+          # - packaging (A-84): the wheel carries no battery (above);
+          # - identity canaries and key formats (A-85, judging rules 2): a weak identity canary
+          #   is not refused, a reply that only echoes a canary the request carries is a
+          #   confirmed fail, and secret_shape knows four key formats of the documented ones.
+        # A tag, a branch, a short SHA or a SHA with a second line, which can move, fails here,
+        # before anything is installed or scanned, with an annotation that says what to set.
+        # bash's own match tests the whole value, not each line of it.
         shell: bash
         run: |
           if [[ ! "$ILDOTTORE_COMMIT" =~ ^[0-9a-f]{40}$ ]]; then

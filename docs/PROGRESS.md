@@ -5,6 +5,22 @@ The carryover ledger. Every agent session updates this so context survives even 
 newest merge on top: a branch's entries land together when it merges, so the dates of
 neighbouring entries can interleave (an older branch merged later sits above a newer one).
 
+## State, 2026-10-17: the CI example pinned (`docs/pin-ci-example`)
+
+- **What.** The CI example (`examples/ci-github-actions.yml`) installs `fef4963e`, `main` after
+  #119, #120 and #121, where #119 left a placeholder its own guard refused (a commit cannot carry
+  its own SHA). Its v0.1.0 caveat list gains A-83, A-84 and A-85; INSTALL names `5edeb0a7` (#119).
+  The A-85 text in the MANUAL, the CHANGELOG and u08 no longer says the stored verdict names the
+  carried canaries: only `authz_leak`'s own verdict does (audit LOW A). A comment in
+  `policy/scope.py` gives the 3-character label case of the canary floor (audit LOW B); comments
+  are outside the judging digest, so judging rules 2 stays pinned as it is.
+- **Left open, each for its own branch.** The identity sweep's reproducibility (read every
+  attempt's reply against the owner map, count each trial once; the A-85 audit's design); replies
+  read exactly (a re-cased or zero-width-split identity canary in a reply hides the crossing);
+  what an alternative of a logprob piece shows is unbounded (A-77; before a release); a dict or
+  set exit code prints a split credential; the glued-UUID timing test can flake on a loaded
+  runner; one unexplained failure of `tests/cli/test_usage_figures.py` under load.
+
 ## State, 2026-10-17: the scoring follow-ups, judging rules 2 (u08 A-85, `fix/scoring-followups`)
 
 - From `main` at `7d01521f`, the items the pre-merge audit of the scoring branch (#112) queued as

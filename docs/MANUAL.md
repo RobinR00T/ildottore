@@ -2300,9 +2300,11 @@ Risk and confidence are **separate axes**:
   `echo_only: true`), the finding's line counts it (`resting on a canary the request carries,
   which never confirms a finding on its own`), and `dottore replay` lists the attempt as
   `fail (needs review: a canary the request carries)`. A crossing canary the request does not
-  carry still confirms the leak, and the verdict lists every canary that crossed, masked, naming
-  the ones the request carries (`... the request every identity was sent carries 1 of them
-  («REDACTED:canary:...»), which a reply may only echo, and the others confirm the leak`).
+  carry still confirms the leak, and the stored verdict lists every canary that crossed, masked.
+  `authz_leak`'s own verdict also names the ones the request carries (`... the request every
+  identity was sent carries 1 of them («REDACTED:canary:...»), which a reply may only echo, and
+  the others confirm the leak`); the attempt's stored verdict, the reports and `dottore replay`
+  show the confirmed fail with its masked matches, not that naming.
 
 Every report puts each finding in one of four **states** (the HTML report's sections, the
 `state` property of a SARIF result, the summary's `confirmed_count` and `needs_review_count`):
