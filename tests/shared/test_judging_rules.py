@@ -197,12 +197,20 @@ PIN_HISTORY: tuple[tuple[int, str, str], ...] = (
         "(.yaml and .wav under src/ildottore/battery) and A-83's masking; version 2 is not "
         "released",
     ),
+    (
+        2,
+        "8ef344979b038047c1c6e78120685c7c88cebe8b80dfbeeb9c9b2aec27546dc0",
+        "re-pin 2026-10-17: u01 A-86 (fix/stream-bounds on fef4963e): an alternative of a token "
+        "past four masks shows one fragment, a dict or a set exit code is masked as its items' "
+        "texts; masking only, the evaluators judge the raw reply, no verdict can change; version "
+        "2 is not released",
+    ),
 )
 
 #: The digest each version is pinned to now: the last line of :data:`PIN_HISTORY` for it.
 PINNED: dict[int, str] = {
     1: "eea242b76899ce22c68bc80c4c6b51a92c22cd39d4763bc373f3cd8a612e9dec",
-    2: "06c484bf2ab4a62cd519d8981920682bf121b5372701c14675e08cf1506b9b66",
+    2: "8ef344979b038047c1c6e78120685c7c88cebe8b80dfbeeb9c9b2aec27546dc0",
 }
 
 #: One ``<version> <digest>`` line per pin, appended to and never edited: the history must start
