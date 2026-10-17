@@ -41,7 +41,17 @@ neighbouring entries can interleave (an older branch merged later sits above a n
   halted on `7d01521f` is refused by this branch's resume, exit 3, naming rules 1 and 2.
   `JUDGING_RULES_SINCE` stays 2026-10-15, and u12 and the pin test now say what it means.
 - CI results that change, and the controls, are listed in the CHANGELOG entry (breaking).
-- Tests: GATES_FIGURES
+- Tests: `make --no-print-directory gates` on `c2d2a6b2` (17/10/2026 10:07 to 10:16 CEST,
+  `PYTHONPATH` at the worktree's `src`, `TMPDIR` the system default): 7338 passed and 1 skipped
+  (7108 collected on `7d01521f`, 231 new: `test_secret_shape_key_formats.py` 169,
+  `test_scope_canary_shape.py` 31, `test_scoring_followups_cli.py` 18, `test_authz_leak_echo.py`
+  10, `test_echo_never_confirms.py` 2, one resume test), 97.71% coverage
+  (`evaluators/secret_shape.py`, `shared/combination.py`, `scoring/confidence.py` 100%,
+  `evaluators/authz_leak.py` and `policy/scope.py` 99%, `core/runner.py` 98%), ruff, format, mypy
+  strict on 167 files, four import contracts kept, 75 specs lint OK, self-scan 0 high/critical,
+  bandit and pip-audit clean. The same wall with `GITHUB_ACTIONS=true CI=true` (10:16 to 10:25):
+  green, 7338 passed and 1 skipped, 97.71%. The CLI suite and the touched tests against typer
+  0.27.3: 2752 passed and 1 skipped.
 - Left open: a long word without a space passes the canary shape; a spec's own `setup.canaries`
   are not shape-checked; the sweep's own count (its own branch); the sweep's replies are not
   stored as evidence, so a fail resting on them cites none (pre-existing); an identity canary is
