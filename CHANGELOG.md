@@ -7,6 +7,17 @@ the file, schema copy, build or pipeline it names.
 
 ## [Unreleased]
 
+### Changed (the CI example installs a pinned commit of `main`, no longer a placeholder; docs only)
+
+- `examples/ci-github-actions.yml` pins `ILDOTTORE_COMMIT` to `fef4963e` (`main` on 2026-10-17,
+  with A-83, A-84 and A-85), where it held a placeholder that its install step refused until a
+  commit of `main` carried the battery; its guard still refuses a tag, a branch or a short SHA.
+  Its list of what v0.1.0 predates names A-83, A-84 and A-85 too, and INSTALL names `5edeb0a7`
+  (#119) as the first commit whose wheel carries the battery. The MANUAL, the A-85 entry below and
+  u08 A-85 now say that `authz_leak`'s own verdict names the canaries the request carries and that
+  the stored verdict, the reports and `dottore replay` do not (pre-merge audit of the stacked
+  `48a000d4`, LOW A).
+
 ### Changed (breaking for a scope with a weak identity canary, a pipeline that gates on a cross-tenant or secret-shape finding, an older build reading the run, and a run halted under judging rules 1: judging rules 2, u08 A-85)
 
 - **Judging rules 2.** `shared.judging_rules.JUDGING_RULES_VERSION` is 2: the changes below alter
@@ -45,7 +56,8 @@ the file, schema copy, build or pipeline it names.
   fail. Never a pass, since the same occurrence is what a real leak of the named record shows
   (dropping it would let whoever writes the request hide a leak by naming the canary). A crossing
   of the spec's own canary, which the request does not carry, still confirms the leak beside it,
-  and the verdict lists both, masked, as `7d01521f` does, naming the one the request carries.
+  and the stored verdict lists both, masked, as `7d01521f` does (`authz_leak`'s own verdict
+  names the one the request carries; the reports and `dottore replay` do not show that naming).
   Only text the scanner wrote counts as the request (prompt, system prompt, image text, a
   `system`, `developer` or `user` message by its text, never a `tool_result` block); a target's
   own reply never does. The stored aggregate quotes the `authz_leak` review, the finding's line

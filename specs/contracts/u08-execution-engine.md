@@ -1030,9 +1030,11 @@ file's key is tenant A's, so the attempts and A's sweep send get A's reply).
    a real leak of the named record shows: dropping a carried canary would let whoever writes the
    request hide a leak by naming it, the attacker's case (A receives B's record). A crossing of a
    canary the request does not carry (the spec's own, planted in B's record) still confirms the
-   leak beside it, exit 2, on both versions, and the verdict lists every canary that crossed,
-   masked, as `7d01521f` does, naming the ones the request carries (the version audited at
-   `bc5ddcb1` listed only the proven one, LOW 6). The request is the text the scanner wrote: the
+   leak beside it, exit 2, on both versions, and the stored verdict lists every canary that
+   crossed, masked, as `7d01521f` does (the version audited at `bc5ddcb1` listed only the proven
+   one, LOW 6); `authz_leak`'s own verdict names the ones the request carries, which the stored
+   aggregate, the reports and `dottore replay` do not quote (audit of the stacked `48a000d4`,
+   LOW A). The request is the text the scanner wrote: the
    prompt, the system prompt, an image's `render_text` and the text of a `system`, `developer` or
    `user` message (a string, or its `text` blocks: a `tool_result` block rides in a `user`
    message in Anthropic's shape and holds what a tool returned); an `assistant` or `tool` message
