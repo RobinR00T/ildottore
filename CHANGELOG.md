@@ -18,8 +18,9 @@ the file, schema copy, build or pipeline it names.
   `--fail-on`). No command of this tool raises one; it is the closure of A-9.
 - **The stray-exit line is masked.** `SystemExit("<text>")` in a command printed its text in clear
   on that line since #114: a registered credential and a key now print as masks, one split by
-  U+0000, U+0001, a newline or a tab included (a text code is masked as itself, never as its
-  `repr`, which writes those characters as escapes the redactor read as text).
+  U+0000, U+0001, a newline or a tab included (a code is masked as the text it holds, never as its
+  `repr`, which writes those characters as escapes the redactor read as text; bytes are read as
+  Latin-1, a tuple as its items, an exception as its message, each named by its type).
 - **A UUID in a CLI error is masked as a report masks it.** `tenant 3f2a9c1d-6819-4748-...` printed
   `tenant 3f2a9c1d-«REDACTED:phone»«REDACTED:high_entropy:...»`, its first group in clear, and a
   UUID no number rule reads was `«REDACTED:high_entropy:...»`; both are `«REDACTED:uuid:...»`
@@ -38,9 +39,10 @@ the file, schema copy, build or pipeline it names.
   the characters show as `␀` and `␁` whether or not anything is masked (they were dropped whenever
   something was). A CLI error is read both ways too, so an existing path written right after a word
   a delimiter glues to it is masked with that word (no value shows that was hidden). A text without
-  them is masked exactly as before. A text holding them takes up to about 6 times main's time on
-  the worst shapes measured, linearly (4 MiB of digit-group UUIDs glued by U+0000: 4.7 s, main 0.8
-  s); a first version took up to 243 times main's (177 s on 4 MiB of 32-hex runs glued by U+0000).
+  them is masked exactly as before. A text holding them takes up to about 9 times main's time on
+  the worst shapes measured, linearly (4 MiB of card numbers glued by U+0000: 3.0 s, main 0.32 s;
+  of digit-group UUIDs glued by U+0001 about 6 times); a first version took up to 243 times main's
+  (177 s on 4 MiB of 32-hex runs glued by U+0000).
 - **A credential written as an endpoint URL's user is masked by value.** `https://<token>@host` and
   `https://<token>:@host` registered nothing, so a reply quoting the token kept it readable in the
   evidence and every report; the user is registered when it is all the user info says, and each
@@ -50,9 +52,9 @@ the file, schema copy, build or pipeline it names.
   `dottore diff` against a baseline written before refuses it as another target (exit 3):
   regenerate such a baseline, or write a plain user name beside a password or in `auth_ref`.
 - **The A-82 "Fixed" heading below says whom it breaks**, as this file's rule asks.
-- Checked by `tests/cli/test_exit_status.py` (39 tests, 23 fail on `7d01521f`; typer 0.26.8 and
+- Checked by `tests/cli/test_exit_status.py` (42 tests, 26 fail on `7d01521f`; typer 0.26.8 and
   0.27.3), `tests/cli/test_uuid_in_cli_errors.py` (45, 36), `tests/cli/test_paths_with_spaces.py`
-  (32, 21), `tests/test_redactor_stash_delimiters_both_ways.py` (35, 13),
+  (32, 21), `tests/test_redactor_stash_delimiters_both_ways.py` (36, 14),
   `tests/cli/test_masked_both_ways.py` (5, 1) and `tests/cli/test_endpoint_user_credential.py` (9;
   3 of its 4 end-to-end cases fail on `7d01521f`, where the module does not import), and by
   differential fuzzes against `7d01521f` (contract u01 and u12 A-83). The judging rules keep

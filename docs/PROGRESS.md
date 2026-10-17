@@ -28,13 +28,20 @@ neighbouring entries can interleave (an older branch merged later sits above a n
   code is masked as itself, not its `repr` (a credential split by a NUL, a newline or a tab printed
   whole); a user-only user info renames a target id in the reports, listed as breaking; the new
   tests read the battery through `specs_dir`; `late` is a bool or a frozenset; figures corrected.
+- Its round 2 (MERGE-READY at `85da7f8f`), applied: a piece inside one stretch shares its mask
+  tuple (memory grew as pieces times masks, 4.19 GB on 256 KiB of a logprob stream; 41 MiB now); an
+  exit code holding text (bytes, a tuple, an exception) is masked as that text, named by its type;
+  the speed is "up to about 9 times main" (card numbers glued by U+0000).
 - Found closed: the all-digit run id (A-61) and the exception class names (A-63).
 - Open, found by this branch and left: a hex run inside a token-level JWT match followed by a
   letter outside ASCII is printed by the redactor (on `7d01521f` too); a registered credential is
   masked whole, not by its parts, so a part of one inside a path a CLI error does not keep prints
   (on `7d01521f` too); the CLI types a key the entropy pass masks whole as `high_entropy` where a
   report names its format; a URL user beside a non-empty password (`<token>:x-oauth-basic@`) is
-  not registered; a user-only credential under 8 characters is neither registered nor refused.
+  not registered; a user-only credential under 8 characters is neither registered nor refused;
+  what a logprob token's alternatives show is every mask of the stretch it lies in, which can be
+  thousands on a hostile stream (A-77's output): bounding it changes that output and goes to its
+  own branch, with an open decision.
 - Judging rules: version 1 re-pinned by appended lines (`ce74f59f`, "masking only", then
   `8c14612b` after the audit's fixes, masking and speed only):
   the redactor decides what is stored and printed, the evaluators judge the raw reply, and

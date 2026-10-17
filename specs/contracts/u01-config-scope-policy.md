@@ -1069,7 +1069,7 @@ A-77's `_mask_spans` already used for a joined stream, now shared); the result i
 which only adds masks, unless the visible reading alone is the result, and is a fixed point. Two
 names that differ only by a delimiter stay two keys, and a delimiter shows in the output whether or
 not anything is masked (it was dropped whenever something was). A text without one is read
-exactly as before. `tests/test_redactor_stash_delimiters_both_ways.py` (35 tests, 13 fail on
+exactly as before. `tests/test_redactor_stash_delimiters_both_ways.py` (36 tests, 14 fail on
 `7d01521f`): six secrets one reading hides, each with four unrelated masked values before it, the
 delimiters shown, a property over 300 texts of fixed points, and linear time (a ratio).
 
@@ -1096,8 +1096,10 @@ output is a fixed point. The auditors' own criterion, which counts a mask copied
 as text, flags 316 of the 500,000: in each, a mask this adds stands beside one the input held,
 where main showed the glue between them. Time against main on the same inputs: prose, keys and
 labels, UUIDs cut by numbers, emails and phones, hostile runs and 24,000 short texts, all without
-a delimiter, 0.96 to 1.01 times (best of five). With one, linear, the worst shapes measured at 4
-MiB (one run each): UUIDs whose groups are digits, glued by U+0000, 4.73 s (main 0.81 s, 5.8
+a delimiter, 0.96 to 1.01 times (best of five). With one, linear, up to about 9 times main's:
+the worst shapes measured at 4 MiB (one run each, on a loaded machine): card numbers glued by
+U+0000 2.99 s (main 0.32 s, 9.4 times; 9.0 in the round-2 audit); UUIDs whose groups are digits,
+glued by U+0001, 4.83 s (0.81 s, 6.0; 6.5 in the audit), glued by U+0000 4.73 s (0.81 s, 5.8
 times); 32-hex runs glued by U+0000 3.89 s (0.69 s, 5.6); one hex run with U+0000 every 40
 characters 3.55 s (0.71 s, 5.0); `ghp_` keys glued by U+0000 2.60 s (0.59 s, 4.4); labelled keys
 and one U+0000 3.84 s (1.51 s, 2.5); prose 1.06 s (1.05 s); each about four times its 1 MiB time.
@@ -1109,9 +1111,16 @@ logprob streams through `mask_split`), and four times the text takes under six t
 (`test_merging_many_masks_into_one_stretch_stays_linear`). A-77's `_masked_pieces` had the same
 search, on a list, for every piece a stretch covers, pre-existing and cubic: 32 KiB of `ghp_` keys
 glued by U+0000 as a logprob stream of 4-character tokens took 22.9 s on `7d01521f`, 0.33 s now.
-It stays quadratic in that shape (64 KiB 1.2 s, 256 KiB 21.6 s), because each piece lists every
-mask of the stretch it lies in, which its alternatives show: that is A-77's output, left for its
-own change.
+It also held, for every piece, its own copy of the masks of the stretch it lies in, so memory grew
+as pieces times masks: 256 KiB of that stream took 4.19 GB, and a target that returns logprobs
+reaches it (round 2 of the audit, MEDIUM 1). A piece inside one stretch shares the stretch's
+tuple now, and only a piece across several builds one: 16 KiB and 64 KiB peak at 2.6 and 9.9 MiB
+(15.3 and 210.5 before), 256 KiB at 41 MiB in 2.8 s, the output unchanged on 24,000 streams
+(logprob lists with and without alternatives, and transcripts), and four times the stream takes
+under eight times the peak memory (`test_a_logprob_stream_s_memory_grows_with_its_length`). What a
+piece's alternatives show is still every mask of its stretch, which is A-77's output: bounding it
+(one mask, or `«REDACTED:fragment»` past a count) changes that output and is left for its own
+change.
 
 *Placing a reading back.* `read_both_ways` places a reading's masks with `tolerant=True`: the CLI
 masks in passes, and a later pass can read an earlier one's mask as a URL's user and rewrite it

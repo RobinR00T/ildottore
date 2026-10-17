@@ -1822,7 +1822,7 @@ to 255 (`cli.app._exit_status`); any other code is what no command of this tool 
 in the root group's guard of a stray `SystemExit` and for a separately installed click's `Exit`.
 Not taken: exit 1 for a text, Python's own rule (1 is findings below `--fail-on` here); keep 0
 (a clean scan for an internal error); reading a bool as its integer (no command means one).
-`tests/cli/test_exit_status.py` (39 tests, 23 fail on `7d01521f`): 15 codes through the console
+`tests/cli/test_exit_status.py` (42 tests, 26 fail on `7d01521f`): 15 codes through the console
 entry point in a process of its own and through the test runner, typer 0.26.8 and 0.27.3.
 
 *3. The stray-exit line, masked.* ``error: unexpected exit with status <code> (an internal error,
@@ -1833,7 +1833,12 @@ first version masked a text's `repr` too, which writes U+0000, U+0001, a newline
 escapes, so a registered credential split by one was text the redactor did not know and printed
 whole: with U+0000 on `7d01521f` as here, with a newline as new on this branch, where main printed
 nothing (pre-merge audit of A-83, MEDIUM 1). The four split forms are tested, as `SystemExit` and
-as `typer.Exit` (8 cases, all fail on that version).
+as `typer.Exit` (8 cases, all fail on that version). A code that holds text but is none went
+through `repr` still, so bytes with a NUL, a tuple with a newline and an exception with a tab
+printed the split credential whole, as on main (round 2, LOW 1): bytes are read as Latin-1, a tuple
+or a list as its items' texts, anything else as `str()`, the text masked and quoted, its type named
+in front (`bytes 'halt «REDACTED:credential:...»'`); an integer or a bool is written as it is (3
+cases, all fail on `85da7f8f`).
 
 *4. A UUID in a CLI error.* The redactor masks a UUID whole (u01 A-78), but the CLI masks an error
 in two passes, every rule but the entropy fallback first and the entropy fallback on what it does

@@ -323,9 +323,10 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   depended on whether anything else in the text was masked, so a value after `x\x01credential:`
   was shown once a UUID elsewhere was masked. A CLI error is read both ways too, so an existing path
   written right after a word a delimiter glues to it is masked with that word (nothing hidden
-  shows). Such a text takes up to about 6 times main's time on the worst shapes measured, linearly
-  (4 MiB of UUIDs whose groups are digits, glued by U+0000: 4.7 s, main 0.8 s; 32-hex runs glued
-  the same way: 3.9 s, main 0.7 s); one without them, main's. Each costs some time on a
+  shows). Such a text takes up to about 9 times main's time on the worst shapes measured, linearly
+  (4 MiB of card numbers glued by U+0000: 3.0 s, main 0.32 s; UUIDs whose groups are digits, glued
+  by U+0001: 4.8 s, main 0.81 s; 32-hex runs glued by U+0000: 3.9 s, main 0.7 s); one without
+  them, main's. Each costs some time on a
   text full of them: about 2.3 times main's time on 4 MB of UUIDs whose groups are all digits
   (which main left mostly readable), 1.4 times when they are glued into one token by `_`, 1.2 to
   1.3 times on prose and base64 (the ratios hold on the two machines measured; the seconds do
