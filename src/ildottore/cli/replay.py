@@ -103,6 +103,8 @@ def render_replay(result: ReplayResult) -> str:
             status = f"{status} (unreadable_reply)"
         if _declared(attempt):  # OD-43: the target file's word, not the tool's judgement
             status = f"{status} (operator declaration)"
+        if attempt.verdict is not None and attempt.verdict.echo_only:  # A-85: never confirms
+            status = f"{status} (needs review: a canary the request carries)"
         # Read back from the evidence tree, written out as every other stored text is.
         fields = visible_controls(f"{attempt.attempt_id}  {attempt.spec_id}  {attempt.mutation}")
         lines.append(f"  {fields}  {status}")

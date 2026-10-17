@@ -22,7 +22,7 @@ path and report options\fR]
 .B dottore --version
 prints the package version and the version of the rules that judge a reply, which a resume is
 bound to:
-.BR "dottore 0.1.0 (judging rules 1)" .
+.BR "dottore 0.1.0 (judging rules 2)" .
 .PP
 There is no default command: always type the subcommand.
 .PP
@@ -120,6 +120,8 @@ or
 .BR "inconclusive (provider_filter_side_unknown)" ,
 counted the same way; replies that could not be read as
 .BR "inconclusive (unreadable_reply)" .
+A fail resting only on a canary the request carries is listed as
+.BR "fail (needs review: a canary the request carries)" .
 .TP
 .B diff
 Compare a run against a baseline of the same target and surface regressions (CI-gateable);
@@ -352,7 +354,7 @@ Before the command: print the traceback of an internal error (exit 3), for any c
 also prints the resolved plan. A counter, repeatable (-vv).
 .TP
 .B --version
-Print the version and the judging rules (dottore 0.1.0 (judging rules 1)) and exit.
+Print the version and the judging rules (dottore 0.1.0 (judging rules 2)) and exit.
 .TP
 .B --help
 Show the help of dottore or of the command it follows, and exit.

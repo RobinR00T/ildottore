@@ -1454,8 +1454,10 @@ are the same class.
   and note. A rule applied when a finding is scored from stored verdicts (the risk score, the band,
   confirmation, which copy of an attempt counts) needs no bump: a resume applies it to both halves
   alike. Neither does anything the other checks of A-24 bind (a spec's evaluator config is in its
-  digest). `JUDGING_RULES_SINCE` is the day the version took its value, the one place the docs name
-  for it.
+  digest). `JUDGING_RULES_SINCE` is the day runs began to record their rules (version 1 took its
+  value), the one place the docs name for it, and it stays when the version is bumped: every reader
+  means that day (the refusal of a run that records no rules); a later version's day is its
+  CHANGELOG line's (u08 A-85).
 * **The code that judges, bound by its digest (deny by default).** `shared.judging_rules.
   judging_digest` is a SHA-256 over every file of the package but `ildottore.testing`, the one
   module `JUDGING_EXEMPT` names: Python sources normalized (comments, docstrings and blank lines
@@ -2032,6 +2034,15 @@ file named in clear through the CLI), `tests/shared/test_protected_namespaces.py
 warns on the floor's pydantic: `WebSocketResponse.model_path`, which the `floors` job of #119 found
 on 2.6.0, protects only `model_validate` and `model_dump`).
 Both test files fail on `7d01521f`: `ildottore.shared.package_data` does not exist there.
+
+**A-85 (u08's clause; this unit's half, added 2026-10-16, amended 2026-10-17).**
+`JUDGING_RULES_VERSION` is 2, pinned by appended lines: a run halted under version 1 is refused by
+its resume before anything is sent, naming both (`tests/cli/test_resume_judging_rules.py`, and
+measured with a run halted on `7d01521f`), and `dottore --version` prints `dottore 0.1.0 (judging
+rules 2)`. `JUDGING_RULES_SINCE` stays the day runs began to record their rules (the A-81 text
+above says so). A scope with a weak identity canary exits 3 in every mode (u01's half), and
+`dottore replay` marks a fail resting on a canary the request carries
+(`tests/cli/test_scoring_followups_cli.py`).
 
 ## §8 Out of scope / forbidden
 - MUST NOT implement attack/mutation/evaluation/scoring/reporting/fingerprint logic (u05-u11,

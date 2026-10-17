@@ -148,11 +148,61 @@ PIN_HISTORY: tuple[tuple[int, str, str], ...] = (
         "mask tuple, an exit code holding text masked as that text); masking, speed and "
         "packaging only, no verdict can change; version 1 is not released",
     ),
+    (
+        2,
+        "69d8b855dc421934ba2d003d32f28900e837700ce6eca9379804425f48bd268e",
+        "2026-10-16: u08 A-85 (fix/scoring-followups on 7d01521f): a crossing of a canary the "
+        "identity sweep's request carries is needs-review, a sweep's crossing counts once, "
+        "secret_shape reads the redactor's key formats; the stacked landing re-pins it",
+    ),
+    (
+        2,
+        "4c5168fd528e31dc7cd65a59bdd094bf60bad1360ad9887d794e4f9a05a9d204",
+        "re-pin 2026-10-16: the sweep's stamp, numbering and notes moved from core.runner to "
+        "shared.identity_sweep after the first pin; no verdict changes; version 2 is not "
+        "released",
+    ),
+    (
+        2,
+        "fbbeaeb07e7ef5a8c5c8e46559308705495a68acc544185de9458464bf258442",
+        "re-pin 2026-10-16: a crossing of a canary the request carries is a fail that needs "
+        "review (echo_only, never confirmed) rather than inconclusive, amended by the "
+        "coordinator before the audit; version 2 is not released",
+    ),
+    (
+        2,
+        "0ade18400ad1421207d796522b453d3f59ed507b37db24e7b868bf7aa52ad729",
+        "re-pin 2026-10-16: a finding's line counts the fails resting on an identity sweep "
+        "alone (report text only, no verdict changes); version 2 is not released",
+    ),
+    (
+        2,
+        "4e5605bbc29a776978a30c4bbfa4c60266a89379180ac15f4ba0a73fde28d334",
+        "re-pin 2026-10-17: the sweep's own count dropped (pre-merge audit of 8a42d08f, HIGH 1), "
+        "the canary rule by label, class and entropy, the echo read case-folded; version 2 is "
+        "not released",
+    ),
+    (
+        2,
+        "923035a7357858c11b6294e98de9e22c8c5815d1fcf3d3941d7f200a13559461",
+        "re-pin 2026-10-17: round 2 of the branch's audit, the canary floor at 16 characters and "
+        "a label taken out before the rest is judged (LOW 2, LOW 4), every crossing canary "
+        "listed (LOW 6); version 2 is not released",
+    ),
+    (
+        2,
+        "06c484bf2ab4a62cd519d8981920682bf121b5372701c14675e08cf1506b9b66",
+        "re-pin 2026-10-17: fix/scoring-followups stacked on fix/masking-followups (#120, "
+        "388c6c18, which holds main 5edeb0a7, #119): the digest now covers the built-in battery "
+        "(.yaml and .wav under src/ildottore/battery) and A-83's masking; version 2 is not "
+        "released",
+    ),
 )
 
 #: The digest each version is pinned to now: the last line of :data:`PIN_HISTORY` for it.
 PINNED: dict[int, str] = {
     1: "eea242b76899ce22c68bc80c4c6b51a92c22cd39d4763bc373f3cd8a612e9dec",
+    2: "06c484bf2ab4a62cd519d8981920682bf121b5372701c14675e08cf1506b9b66",
 }
 
 #: One ``<version> <digest>`` line per pin, appended to and never edited: the history must start
@@ -245,8 +295,9 @@ def test_the_judging_code_is_the_code_its_version_was_pinned_for() -> None:
         "the code that judges (shared.judging_rules.judging_digest: the whole package but "
         f"JUDGING_EXEMPT) is not the code JUDGING_RULES_VERSION {JUDGING_RULES_VERSION} was "
         "pinned for. If this change can alter the verdict stored for an attempt, bump "
-        f"JUDGING_RULES_VERSION to {JUDGING_RULES_VERSION + 1} (and JUDGING_RULES_SINCE), write "
-        f"its CHANGELOG line and append ({JUDGING_RULES_VERSION + 1}, {current!r}, '<why>') to "
+        f"JUDGING_RULES_VERSION to {JUDGING_RULES_VERSION + 1}, write its CHANGELOG line (with "
+        "its date: JUDGING_RULES_SINCE is the day runs began to record their rules and stays) "
+        f"and append ({JUDGING_RULES_VERSION + 1}, {current!r}, '<why>') to "
         "PIN_HISTORY, judging_pins.frozen and PINNED. If it cannot (a message, a refactor), "
         f"append ({JUDGING_RULES_VERSION}, {current!r}, 're-pin <date>: <why>') instead. Never "
         "edit an existing line. A run halted on other code is refused by its resume either way, "

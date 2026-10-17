@@ -683,6 +683,14 @@ class Verdict(_Frozen):
     runner on the attempt's aggregate, beside the note in ``reasoning``, and the reports count
     from it, never from the text, which a judge or a tool's name can echo. Empty, it is left out
     of a dump, so every other verdict is stored, reported and hashed byte for byte as before.
+
+    ``echo_only`` marks a fail that rests only on a canary the identity sweep's request carries
+    (u08 A-85): the reply may only quote the request, or may hold the other identity's data, so
+    the fail is reported, counted and gated with ``--include-needs-review``, and never confirms a
+    finding on its own, as a fail the judge alone reported (u08 A-79). ``authz_leak`` sets it,
+    the aggregate keeps it when every deterministic fail it combined has it. ``False`` is left
+    out of a dump, as an empty ``operator_cleared`` is, so every other verdict is stored,
+    reported and hashed as before.
     """
 
     status: VerdictStatus
@@ -692,14 +700,17 @@ class Verdict(_Frozen):
     evaluator_type: str
     inconclusive_reason: InconclusiveReason | None = None
     operator_cleared: list[str] = Field(default_factory=list)
+    echo_only: bool = False
 
     @model_serializer(mode="wrap")
     def _without_an_empty_clearing(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
-        """The dump as before OD-43 when the operator's declaration cleared nothing."""
+        """The dump as before OD-43 and A-85 when neither field says anything."""
 
         dumped: dict[str, Any] = handler(self)
         if not dumped.get("operator_cleared"):
             dumped.pop("operator_cleared", None)
+        if not dumped.get("echo_only"):
+            dumped.pop("echo_only", None)
         return dumped
 
     def model_post_init(self, _context: object) -> None:
@@ -749,6 +760,10 @@ class EvalContext(_Frozen):
     # surfaces in a NON-owner identity's response (A receiving B-only data), not just a canary
     # that crosses >=2 identities. Empty = fall back to the strict >=2-crossing check.
     canary_owners: dict[str, str] = Field(default_factory=dict)
+    # The request the identity sweep sent each identity (u08 A-85): what the scanner put in front
+    # of every one of them, so ``authz_leak`` can tell a canary a reply echoes from that request
+    # from one it received. ``None`` when nothing was swept.
+    identity_request: ModelRequest | None = None
     # Tool names a seeded deployment grants beyond the spec's scene (OD-18 B,
     # ``seeded_setup.granted_tools``): a call to one is not unauthorized. Empty off a deployment.
     granted_tools: list[str] = Field(default_factory=list)

@@ -5,6 +5,73 @@ The carryover ledger. Every agent session updates this so context survives even 
 newest merge on top: a branch's entries land together when it merges, so the dates of
 neighbouring entries can interleave (an older branch merged later sits above a newer one).
 
+## State, 2026-10-17: the scoring follow-ups, judging rules 2 (u08 A-85, `fix/scoring-followups`)
+
+- From `main` at `7d01521f`, the items the pre-merge audit of the scoring branch (#112) queued as
+  pre-existing, decided under the owner's delegation (best practice, revisable) and written in u08
+  §7 A-85 with the alternatives not taken; no open decision (OD-50 unused). Each was reproduced
+  first through the CLI against a loopback stub that answers by bearer key
+  (`tests/cli/test_scoring_followups_cli.py`).
+- Weak identity canary: `ACME`, `tenant-b`, `ZZ-1`, `invoice ready` and `12345678` each made
+  `DL-XTENANT-001` a confirmed Critical, exit 2, on a reply that only said them. `load_scope`
+  refuses a canary under 16 characters, with a space, part of an identity's name or the target
+  id, holding one with what is left under these floors, or under 36 bits of character entropy
+  (`policy.scope.weak_canary`); exit 3 in every mode, zero sends, the canary never quoted. The
+  first version asked for a digit and a letter (it took `tenant-b-2026`, refused a random 16-digit
+  number: audit of `8a42d08f`, LOW 4); the second had a floor of 8 that the entropy floor made
+  impossible below 11 and refused any canary holding a label (audit of `bc5ddcb1`, LOW 2 and
+  LOW 4). At 16, a random 16-digit number is refused about once in 200 draws, a random 16-hex
+  token once in 15,000 (a million draws each).
+- Echo: a refusal quoting a request that names tenant B's record by its canary was a confirmed
+  Critical. `authz_leak` reads the sweep's request (`EvalContext.identity_request`), case-folded
+  and through format characters, the scanner's text only (never a `tool_result` block): a crossing
+  of a canary it carries is a fail that needs review (`echo_only`), never confirmed and never a
+  pass, gated only with `--include-needs-review`, as A-79's judge-only fail on cut text (amended so
+  on 2026-10-16 by the coordinator under the owner's delegation; the first version was
+  `inconclusive`, which no gate takes). The refusal and the attacker's case (a real leak of the
+  named record) exit 0 by default and 2 with `--include-needs-review`; a crossing canary the
+  request does not carry still confirms, and the verdict lists every canary that crossed, naming
+  the carried ones (LOW 6 of the audit of `bc5ddcb1`). An older build refuses to `diff` or
+  `replay` such a run.
+- The identity sweep's own count was tried and dropped (audit of `8a42d08f`, HIGH 1): counting the
+  sweep's crossing once scored a leak on every reply of tenant A as 1 of 5, Low, exit 1, since no
+  attempt's own reply was read against the owner map. Its fix needs the CLI wiring and a
+  trial-based denominator, so it goes to a branch of its own; this branch counts as `7d01521f`
+  does (every attempt carries the sweep's verdict: over-counts, fails closed), held by CLI
+  controls at `--runs 1`, 5 and 10 and across a halt and resume.
+- `secret_shape` builds its rules from `redactor.key_format_patterns()`, the redactor's one list
+  (the redactor gains that accessor only): 36 of the 51 documented prefixes scored `pass` on
+  `7d01521f`, now needs-review.
+- Judging rules 2, pinned by appended lines (a first pin, then re-pins on each final tree); a run
+  halted on `7d01521f` is refused by this branch's resume, exit 3, naming rules 1 and 2.
+  `JUDGING_RULES_SINCE` stays 2026-10-15, and u12 and the pin test now say what it means.
+- CI results that change, and the controls, are listed in the CHANGELOG entry (breaking).
+- Tests: `make --no-print-directory gates` with `GITHUB_ACTIONS=true CI=true` on `11d1d97a`, the
+  tree of round 2's fixes (17/10/2026 11:30 to 11:39 CEST, `PYTHONPATH` at the worktree's `src`,
+  `TMPDIR` the system default): 7353 passed and 1 skipped (7108 collected on `7d01521f`, 246 new:
+  `test_secret_shape_key_formats.py` 169, `test_scope_canary_shape.py` 45,
+  `test_scoring_followups_cli.py` 18, `test_authz_leak_echo.py` 11, `test_echo_never_confirms.py`
+  2, one resume test), 97.71% coverage (`evaluators/secret_shape.py`, `shared/combination.py`,
+  `scoring/confidence.py` 100%, `evaluators/authz_leak.py` and `policy/scope.py` 99%,
+  `core/runner.py` 98%), ruff, format, mypy strict on 167 files, four import contracts kept, 75
+  specs lint OK, self-scan 0 high/critical, bandit and pip-audit clean. The CLI suite and the
+  touched tests against typer 0.27.3 (11:30 to 11:37): 2767 passed and 1 skipped. Before round 2,
+  on `c2d2a6b2`: the same wall plain and in CI mode, 7338 passed and 1 skipped each.
+- Left open: the canary shape check catches obvious shapes only, so a structured id
+  (`invoice-2026-0001`), an email address, a version, a timestamp or a long word of 16 characters or
+  more passes, and a per-tenant sequential id can collide across tenants into a confirmed crossing
+  (the docs recommend a random canary; audit of `bc5ddcb1`, LOW 3); a spec's own `setup.canaries`
+  are not shape-checked; the case fold of the request lets a spec author mark an echo with a
+  different value that folds to the canary (`ß`, the Kelvin sign, the long s, the `fi` ligature; the
+  target gains nothing; a lint warning, or NFKC with non-ASCII folds refused, on a branch of its
+  own: LOW 5); the replies are read exactly, so a canary a target writes re-cased or split by a
+  zero-width character hides the leak (`inconclusive` on `7d01521f` and here, pre-existing, its own
+  branch: LOW 7); the sweep's own count (its own branch); the sweep's replies are not stored as
+  evidence, so a fail resting on them cites none (pre-existing); an identity canary is not
+  registered with the redactor, so one a primary reply prints is masked only if another rule takes
+  it (pre-existing); `secret_leakage` reads a canary the request carries as a leak too
+  (pre-existing, outside A-85).
+
 ## State, 2026-10-16: masking follow-ups of the train (`fix/masking-followups`, u01/u12 A-83)
 
 - From `main` at `7d01521f`, the items the pre-merge audits of the train queued for after it,
@@ -108,7 +175,6 @@ neighbouring entries can interleave (an older branch merged later sits above a n
   and pip-audit clean; the same with `GITHUB_ACTIONS=true CI=true`; the CLI suite and the touched
   tests (2,613) green on typer 0.27.3, plain and with those variables. `7d01521f` collects 7,108
   tests (40 new here).
-
 
 ## State, 2026-10-12: the docs and contracts audit, fixed (`docs/audit-2026-10-12`)
 
