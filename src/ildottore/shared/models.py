@@ -421,6 +421,12 @@ class WebSocketResponse(_Frozen):
     and a seeded spec judged on its tool trace is not sent (OD-18 B).
     """
 
+    # `model_path` starts with `model_`, which pydantic before 2.10 protects by default and warns
+    # about at import, on every command (the `floors` CI job, pydantic 2.6.0: a subprocess printed
+    # the warning before its output; u12 A-84). Only the two prefixes 2.10 protects are protected
+    # here, so every supported pydantic is quiet and `model_validate*`/`model_dump*` stay guarded.
+    model_config = ConfigDict(protected_namespaces=("model_validate", "model_dump"))
+
     text_path: Annotated[str, Field(min_length=1)]
     final_path: Annotated[str, Field(min_length=1)]
     final_value: str | int | float | bool | None = None
