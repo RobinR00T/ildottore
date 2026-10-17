@@ -282,9 +282,7 @@ four states: **confirmed** (a decisive exploit at or above the confidence thresh
 gate counts), **needs review** (an unconfirmed exploit, or a spec that was sent and could not
 be decided: a format-valid PII/secret hit without corroboration is *inconclusive*, never a
 confirmed leak), **not exploited** (passed) and **not tested** (nothing sent). An unconfirmed
-exploit prints `FAIL (<band>, needs review)` on its progress line. A cross-tenant crossing
-only the identity sweep showed counts once over `--runs` (the sweep sends one reply per
-identity): a confirmed fail at 0.2 over five runs, not 1.0. Every finding carries
+exploit prints `FAIL (<band>, needs review)` on its progress line. Every finding carries
 evidence (prompt, response, tool traces, the aggregate verdict and its reasoning), and
 `dottore replay` re-derives a run from stored evidence. See
 [`docs/05-scoring-model.md`](docs/05-scoring-model.md).
