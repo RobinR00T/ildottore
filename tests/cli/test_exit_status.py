@@ -32,7 +32,6 @@ from ildottore.redactor import register_known_secret
 #: Registered credentials are process-wide: none from an earlier test changes a mask here.
 pytestmark = pytest.mark.usefixtures("no_known_secrets")
 
-REPO = Path(__file__).resolve().parents[2]
 #: A credential the process registers, and a key it masks by its shape only.
 REGISTERED = "Qm7vX2pL9kR4tN8w"
 KEY = "sk-ant-api03-Z8xC2vB6nM1qW5eR9tY3uI7oP4aS0dF-GhJkLzXcVbNmQwEr"
@@ -82,16 +81,20 @@ def _assert_said(code: int, stderr: str, expected: int, said: bool) -> None:
         assert fragment not in stderr, stderr
 
 
-@pytest.mark.parametrize("case", sorted(CASES))
-def test_the_console_entry_point(case: str) -> None:
-    raised, expected, said = CASES[case]
-    result = subprocess.run(  # noqa: S603 - this interpreter running this CLI
-        [sys.executable, "-c", _DRIVER, REGISTERED, KEY, raised, str(REPO / "specs")],
+def _entry_point(raised: str, specs_dir: Path) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(  # noqa: S603 - this interpreter running this CLI
+        [sys.executable, "-c", _DRIVER, REGISTERED, KEY, raised, str(specs_dir)],
         capture_output=True,
         text=True,
         timeout=120,
         check=False,
     )
+
+
+@pytest.mark.parametrize("case", sorted(CASES))
+def test_the_console_entry_point(case: str, specs_dir: Path) -> None:
+    raised, expected, said = CASES[case]
+    result = _entry_point(raised, specs_dir)
     _assert_said(result.returncode, result.stderr, expected, said)
     if case.endswith("-text"):
         assert "«REDACTED:credential:" in result.stderr, result.stderr
@@ -99,7 +102,7 @@ def test_the_console_entry_point(case: str) -> None:
 
 
 @pytest.mark.parametrize("case", sorted(CASES))
-def test_the_test_runner(case: str, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_the_test_runner(case: str, monkeypatch: pytest.MonkeyPatch, specs_dir: Path) -> None:
     raised, expected, said = CASES[case]
     register_known_secret(REGISTERED)
     namespace = {"typer": typer, "TEXT": TEXT}
@@ -108,12 +111,12 @@ def test_the_test_runner(case: str, monkeypatch: pytest.MonkeyPatch) -> None:
         raise eval(raised, namespace)  # noqa: S307 - the table above, not input
 
     monkeypatch.setattr(registry_mod, "render_spec_rows", boom)
-    result = CliRunner().invoke(app, ["registry", "ls", "--spec-path", str(REPO / "specs")])
+    result = CliRunner().invoke(app, ["registry", "ls", "--spec-path", str(specs_dir)])
     _assert_said(result.exit_code, result.stderr, expected, said)
 
 
 def test_a_status_whose_repr_fails_is_still_an_internal_error(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, specs_dir: Path
 ) -> None:
     class Unprintable:
         def __repr__(self) -> str:
@@ -123,6 +126,26 @@ def test_a_status_whose_repr_fails_is_still_an_internal_error(
         raise typer.Exit(Unprintable())  # type: ignore[arg-type]
 
     monkeypatch.setattr(registry_mod, "render_spec_rows", boom)
-    result = CliRunner().invoke(app, ["registry", "ls", "--spec-path", str(REPO / "specs")])
+    result = CliRunner().invoke(app, ["registry", "ls", "--spec-path", str(specs_dir)])
     assert result.exit_code == 3
     assert "unexpected exit with status <unprintable status>" in result.stderr
+
+
+#: A character that splits the registered credential: the two the redactor reserves, a newline and
+#: a tab. ``repr`` writes each as an escape, which the redactor read as text (pre-merge audit of
+#: A-83, MEDIUM 1: the credential printed whole, on main too for U+0000 and as new for a newline).
+SPLITTERS = {"nul": "\\x00", "soh": "\\x01", "lf": "\\n", "tab": "\\t"}
+
+
+@pytest.mark.parametrize("kind", ["SystemExit", "typer.Exit"])
+@pytest.mark.parametrize("splitter", sorted(SPLITTERS))
+def test_a_registered_credential_split_in_a_text_code_is_masked(
+    kind: str, splitter: str, specs_dir: Path
+) -> None:
+    raised = f'{kind}("halt " + REGISTERED[:6] + "{SPLITTERS[splitter]}" + REGISTERED[6:])'
+    result = _entry_point(raised, specs_dir)
+    assert result.returncode == 3, result.stderr
+    assert "error: unexpected exit with status 'halt " in result.stderr, result.stderr
+    assert "«REDACTED:credential:" in result.stderr, result.stderr
+    for half in (REGISTERED[:6], REGISTERED[6:]):
+        assert half not in result.stderr, result.stderr

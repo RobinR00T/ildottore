@@ -217,11 +217,18 @@ def _say_unexpected_exit(code: object) -> None:
 
     The code is quoted through the CLI's mask, as every other error is (u12 A-83): a text code is
     any message at all, and ``SystemExit("<text>")`` printed a registered credential in clear on
-    this line since #114 (A-80).
+    this line since #114 (A-80). A text is masked as itself and then quoted, never as its
+    ``repr``: ``repr`` writes a NUL, a newline or a tab as an escape, so a registered credential
+    split by one was text the redactor did not know, and printed whole (pre-merge audit of A-83,
+    MEDIUM 1); ``_masked`` writes the control characters out itself.
     """
 
     try:
-        said = _masked(RuntimeError(repr(code)))
+        said = (
+            f"'{_masked(RuntimeError(code))}'"
+            if isinstance(code, str)
+            else _masked(RuntimeError(repr(code)))
+        )
     except Exception:  # a code whose repr cannot even be read
         said = "<unprintable status>"
     _echo_err(

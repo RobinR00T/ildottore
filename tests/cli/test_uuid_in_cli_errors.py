@@ -26,7 +26,6 @@ from ildottore.redactor import Redactor
 #: Registered credentials are process-wide: none from an earlier test changes a mask here.
 pytestmark = pytest.mark.usefixtures("no_known_secrets")
 
-REPO = Path(__file__).resolve().parents[2]
 CUT = "3f2a9c1d-6819-4748-9c2d-1234567890ab"  # two groups a phone number to the number rules
 DIGITS = "12345678-1234-1234-1234-123456789012"  # every group, one number
 LETTERS = "8edfde5b-3c4a-4e1f-9b2d-7a6c5e4f3a2b"  # no number rule reads it
@@ -94,10 +93,10 @@ def test_a_spec_file_name_holding_such_a_uuid_is_kept() -> None:
     assert f"cannot load {name}: bad YAML" == shown, shown
 
 
-def test_through_the_cli() -> None:
+def test_through_the_cli(specs_dir: Path) -> None:
     """``describe`` quotes the id it did not find, through the CLI's mask."""
 
-    result = CliRunner().invoke(app, ["describe", DIGITS, "--spec-path", str(REPO / "specs")])
+    result = CliRunner().invoke(app, ["describe", DIGITS, "--spec-path", str(specs_dir)])
     assert result.exit_code == 3
     assert result.stderr.startswith("error: spec '«REDACTED:uuid:"), result.stderr
     assert "«REDACTED:phone»" not in result.stderr

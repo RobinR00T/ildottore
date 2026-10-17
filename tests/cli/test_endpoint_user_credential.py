@@ -31,7 +31,6 @@ from ildottore.cli.wiring import _endpoint_credentials
 #: Registered credentials are process-wide: none from an earlier test changes a mask here.
 pytestmark = pytest.mark.usefixtures("no_known_secrets")
 
-REPO = Path(__file__).resolve().parents[2]
 #: Shaped like an identifier, so no shape rule of the redactor masks it: only its value can.
 TOKEN = "deploy-token-alpha-2026"
 
@@ -90,7 +89,7 @@ def _outputs(root: Path) -> str:
     ids=["user", "user-empty-password", "user-encoded", "password"],
 )
 def test_the_credential_in_an_endpoint_url_is_masked_in_every_output(
-    tmp_path: Path, port: int, userinfo: str, secret: str
+    tmp_path: Path, port: int, userinfo: str, secret: str, specs_dir: Path
 ) -> None:
     scope = tmp_path / "scope.yaml"
     scope.write_text(
@@ -110,7 +109,7 @@ def test_the_credential_in_an_endpoint_url_is_masked_in_every_output(
         app,
         [
             *("run", "-t", str(target), "--scope", str(scope)),
-            *("--spec-path", str(REPO / "specs"), "--spec", "PI-DIRECT-001", "--runs", "1"),
+            *("--spec-path", str(specs_dir), "--spec", "PI-DIRECT-001", "--runs", "1"),
             *("--evidence-root", str(tmp_path / "ev"), "--run-db", str(tmp_path / "r.sqlite")),
             *("-oA", str(out / "report"), "-v"),
         ],
