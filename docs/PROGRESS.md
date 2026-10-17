@@ -58,13 +58,13 @@ neighbouring entries can interleave (an older branch merged later sits above a n
   a placeholder until `main` carries this change), README, USAGE, MANUAL, FAQ, `dottore(1)`,
   `dottore-scope(5)`, examples, CONTRIBUTING, AGENTS, RELEASING, ROADMAP, `docs/03`, `06`, `07`,
   `08`, `09`, `11`, `12`, ADR-0004, 0006, 0007 and 0013, the unit contracts and the index.
-- Gates on this branch after both audit rounds' fixes (`make gates`, `PYTHONPATH` at the
-  worktree): 7,145 tests, 7,142 passed and 3 skipped (the two hatchling tests, which run in the
-  `package` job, and one of before), 97.70% coverage, 75 specs, 14 suites and 1 pack lint OK, four
-  import contracts kept, mypy and ruff clean, self-scan 0 high/critical, bandit and pip-audit
-  clean; the same with `GITHUB_ACTIONS=true CI=true`; the CLI suite and the touched tests (2,591)
-  green on typer 0.27.3, plain and with those variables. `7d01521f` collects 7,108 tests (37 new
-  here).
+- Gates on this branch after the audit rounds' and the floors job's fixes (`make gates`,
+  `PYTHONPATH` at the worktree): 7,148 tests, 7,145 passed and 3 skipped (the two hatchling tests,
+  which run in the `package` job, and one of before), 97.70% coverage, 75 specs, 14 suites and 1
+  pack lint OK, four import contracts kept, mypy and ruff clean, self-scan 0 high/critical, bandit
+  and pip-audit clean; the same with `GITHUB_ACTIONS=true CI=true`; the CLI suite and the touched
+  tests (2,613) green on typer 0.27.3, plain and with those variables. `7d01521f` collects 7,108
+  tests (40 new here).
 
 
 ## State, 2026-10-12: the docs and contracts audit, fixed (`docs/audit-2026-10-12`)
