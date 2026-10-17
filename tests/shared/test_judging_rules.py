@@ -117,12 +117,19 @@ PIN_HISTORY: tuple[tuple[int, str, str], ...] = (
         "re-pin 2026-10-16: a finding's line counts the fails resting on an identity sweep "
         "alone (report text only, no verdict changes); version 2 is not released",
     ),
+    (
+        2,
+        "4e5605bbc29a776978a30c4bbfa4c60266a89379180ac15f4ba0a73fde28d334",
+        "re-pin 2026-10-17: the sweep's own count dropped (pre-merge audit of 8a42d08f, HIGH 1), "
+        "the canary rule by label, class and entropy, the echo read case-folded; version 2 is "
+        "not released",
+    ),
 )
 
 #: The digest each version is pinned to now: the last line of :data:`PIN_HISTORY` for it.
 PINNED: dict[int, str] = {
     1: "dbfbedd793b731ab385a0c2bae7e9bc9e85c795a1230eeaf0814c83038335d0c",
-    2: "0ade18400ad1421207d796522b453d3f59ed507b37db24e7b868bf7aa52ad729",
+    2: "4e5605bbc29a776978a30c4bbfa4c60266a89379180ac15f4ba0a73fde28d334",
 }
 
 #: One ``<version> <digest>`` line per pin, appended to and never edited: the history must start
