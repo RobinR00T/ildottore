@@ -154,6 +154,75 @@ def test_a_directory_that_only_looks_like_the_checkout_reads_its_own_specs(
     assert wiring.default_spec_paths() == [Path("specs")]
 
 
+def _operators_pack(root: Path) -> None:
+    """A one-spec pack in ``root/specs``, the operator's own."""
+
+    (root / "specs" / "attacks").mkdir(parents=True)
+    (root / "specs" / "pack.yaml").write_text("id: mine\npack_version: '1.0'\nname: mine\n")
+    (root / "specs" / "attacks" / "PI-DIRECT-001.yaml").write_bytes(
+        (BATTERY / "attacks" / "PI-DIRECT-001.yaml").read_bytes()
+    )
+
+
+@pytest.mark.parametrize("vendor", ["deps", "vendor", "package", "lib"])
+def test_a_package_installed_with_target_beside_the_operators_specs_reads_them(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, vendor: str
+) -> None:
+    """Round 2 of the audit, HIGH 1: with `pip install --target <dir>/deps`, the battery's
+    parents[2] is `<dir>`, so from there the operator's specs/ went unread and the built-in 75
+    ran under an "own checkout" note. The checkout's shape is required now."""
+
+    battery = tmp_path / vendor / "ildottore" / "battery"
+    battery.mkdir(parents=True)
+    _operators_pack(tmp_path)
+    monkeypatch.setattr(wiring, "PACKAGED_SPEC_PATH", battery)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+    assert not wiring.is_own_checkout()
+    assert wiring.default_spec_paths() == [Path("specs")]
+    result = runner.invoke(app, ["registry", "ls"])
+    assert result.exit_code == 0, result.output
+    assert result.stdout.splitlines() and len(result.stdout.splitlines()) == 1
+    assert "own checkout" not in result.stderr and "note:" not in result.stderr
+
+
+@pytest.mark.parametrize(
+    "pyproject",
+    [None, '[project]\nname = "someone-else"\n', "[project\nname = ildottore", "x" * 10],
+    ids=["none", "another-project", "not-toml", "no-project-table"],
+)
+def test_a_src_layout_that_is_not_ildottore_reads_its_own_specs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, pyproject: str | None
+) -> None:
+    battery = tmp_path / "src" / "ildottore" / "battery"
+    battery.mkdir(parents=True)
+    if pyproject is not None:
+        (tmp_path / "pyproject.toml").write_text(pyproject)
+    _operators_pack(tmp_path)
+    monkeypatch.setattr(wiring, "PACKAGED_SPEC_PATH", battery)
+    monkeypatch.chdir(tmp_path)
+    assert not wiring.is_own_checkout()
+    assert wiring.default_spec_paths() == [Path("specs")]
+
+
+def test_a_checkout_of_ildottore_reads_the_battery(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The positive control of the shape: src/ildottore/battery and a pyproject.toml naming the
+    project, run from its root (and only from its root)."""
+
+    battery = tmp_path / "src" / "ildottore" / "battery"
+    battery.mkdir(parents=True)
+    (tmp_path / "pyproject.toml").write_text('[project]\nname = "ildottore"\n')
+    _operators_pack(tmp_path)
+    monkeypatch.setattr(wiring, "PACKAGED_SPEC_PATH", battery)
+    monkeypatch.chdir(tmp_path)
+    assert wiring.is_own_checkout()
+    assert wiring.default_spec_paths() == [battery]
+    monkeypatch.chdir(tmp_path / "specs")
+    assert not wiring.is_own_checkout()
+
+
 def test_the_repository_specs_directory_holds_no_yaml() -> None:
     """Its specs/ holds the unit contracts only, and schemas/ is gone."""
 

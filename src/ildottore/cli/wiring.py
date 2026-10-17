@@ -256,15 +256,30 @@ def is_own_checkout() -> bool:
 
     Its ``specs/`` holds the unit contracts, not attack specs, since the battery moved into the
     package (u12 A-84), so with no spec path the commands read the built-in battery there. The
-    one exception to reading ``specs/`` whenever it is here, and a deterministic one: the
-    working directory resolves to the directory three above the battery (``<root>/src/ildottore/
-    battery``), which no installed wheel is beside.
+    one exception to reading ``specs/`` whenever it is here, and a deterministic one, on the
+    checkout's shape: the battery is ``<root>/src/ildottore/battery``, the working directory
+    resolves to ``<root>``, and ``<root>/pyproject.toml`` names the project ``ildottore``. The
+    working directory three above the battery alone was fooled by ``pip install --target
+    <dir>/deps``: from ``<dir>`` the operator's ``specs/`` went unread and the built-in 75 ran
+    under an "own checkout" note (round 2 of the pre-merge audit of A-84, HIGH 1).
     """
 
+    import tomllib
+
     try:
-        return Path.cwd().resolve() == PACKAGED_SPEC_PATH.resolve().parents[2]
-    except (OSError, RuntimeError):  # the working directory was removed, or a link loop
+        battery = PACKAGED_SPEC_PATH.resolve()
+        package, src = battery.parent, battery.parent.parent
+        if battery.name != "battery" or package.name != "ildottore" or src.name != "src":
+            return False
+        root = src.parent
+        if Path.cwd().resolve() != root:
+            return False
+        project = tomllib.loads(read_text_capped(root / "pyproject.toml")).get("project")
+    except (OSError, RuntimeError, tomllib.TOMLDecodeError):
+        # The working directory was removed, a link loop, no pyproject.toml or one that is not
+        # TOML: not the checkout.
         return False
+    return isinstance(project, dict) and project.get("name") == "ildottore"
 
 
 def default_spec_paths() -> list[Path]:
