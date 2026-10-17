@@ -1284,9 +1284,9 @@ masked as a usage error is, so are its `Aborted!` (`error: aborted`), an exit a 
 for with status 1 or 2 or with a message, and an exit a command asks for with a code that is no
 exit status (a text, a bool, a number outside 0 to 255; `typer.Exit("<text>")` exited 0 until
 A-83): `error: unexpected exit with status <code> ...`, the code masked as every error is, a code
-that holds text (bytes, a list, a tuple, a set, a mapping's keys and values, since A-86 for the
-last two) as the text it holds. A broken output pipe (`dottore ... | head`, or a reader that
-closes early) is `3` with `error: the output stream closed before the command finished (broken
+that holds text (bytes, a list, a tuple, a set, a mapping's keys and values, a deque, an
+exception's arguments, since A-86 for the last four) as the text it holds. A broken output pipe
+(`dottore ... | head`, or a reader that closes early) is `3` with `error: the output stream closed before the command finished (broken
 pipe)` on stderr: until 2026-10-12 it exited 1,
 a scan with findings whose progress lines met the closed pipe included. Ctrl-C and SIGTERM are
 `130` (below). Options that can only be wrong are

@@ -1156,9 +1156,10 @@ before anything is sent, naming the identity and the reason, never the canary
 sentence above that the evaluator "keeps its own rules" held until A-85.
 
 **A-86 (added 2026-10-17; items 2 and 4 are u12's half) What an alternative of a masked token shows
-is bounded, a dict or a set exit code is masked as its items' texts, and the glued-UUID timing test
-reads CPU time.** Follow-ups the pre-merge audits of A-83 (#120, rounds 2 and 3) queued, each
-reproduced on `fef4963e`; decided under the owner's delegation (best practice, revisable), OD-52.
+is bounded, an exit code that holds text (a dict, a set, a deque, an exception's arguments) is
+masked as that text, and the glued-UUID timing test reads CPU time.** Follow-ups the pre-merge
+audits of A-83 (#120, rounds 2 and 3) queued, the first three reproduced on `fef4963e` and the
+fourth not (item 4); decided under the owner's delegation (best practice, revisable), OD-52.
 
 *1. An alternative past four masks shows one fragment (OD-52).* A-77 masks the alternatives of a
 token a mask covers: one written as the token shows what the token shows, any other the token's

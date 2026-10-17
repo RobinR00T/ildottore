@@ -5,6 +5,28 @@ The carryover ledger. Every agent session updates this so context survives even 
 newest merge on top: a branch's entries land together when it merges, so the dates of
 neighbouring entries can interleave (an older branch merged later sits above a newer one).
 
+## State, 2026-10-17: the stream bounds (u01 A-86, OD-52, `fix/stream-bounds`)
+
+- **What.** Four items the A-83 audits of #120 queued and #122's entry left open. (1) An
+  alternative of a masked token with more than four masks shows one `«REDACTED:fragment»`
+  (`redactor.py`, OD-52, decided under the owner's delegation and revisable): a reply of glued
+  secrets in one-alternative tokens wrote 14.2, 56.2 and 223.5 MB at 8, 16 and 32 KiB on
+  `fef4963e`, now 0.22, 0.44 and 0.87 MB, and 4.89 MB at the 4 MiB reply cap; no verdict,
+  finding, score or exit code changes. (2) An exit code that holds text but is no tuple or list
+  (a dict, a set, a deque, an exception) is masked as the text it holds,
+  not through `str()`, which wrote a split credential whole (`cli/app.py`, u12; the deque and the
+  exception came from the pre-merge audit). (3) The glued-UUID timing test reads CPU time, its
+  sizes in turn, best of five. (4) The `test_usage_figures.py` failure under load did not
+  reproduce (8 runs under 45 CPU loops) and that test is unchanged. Judging rules 2 re-pinned by
+  appended lines (`8ef34497`, `06bb22a2`, masking only).
+- **Checks.** `make gates` green on the branch merged with `main` (`620095b5`): coverage 97.66%
+  against the 85% floor.
+- **Left open, each for its own branch.** The identity sweep's reproducibility (read every
+  attempt's reply against the owner map, count each trial once); replies read exactly (a re-cased
+  or zero-width-split identity canary in a reply hides the crossing); a campaign's target adapter
+  keeps its own 30 s HTTP timeout, which `--timeout` and the `-T` templates do not reach, so a
+  reply after 30 s is resent.
+
 ## State, 2026-10-17: the CI example pinned (`docs/pin-ci-example`)
 
 - **What.** The CI example (`examples/ci-github-actions.yml`) installs `fef4963e`, `main` after

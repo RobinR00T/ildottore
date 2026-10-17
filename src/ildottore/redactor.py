@@ -2986,8 +2986,8 @@ def _mask_alternatives(item: object, token: str, shown: str, masks: tuple[str, .
     shows the token's masks. Called once an item's every edit is made, so nothing written after
     undoes it (pre-merge audit of c4bd2012, MEDIUM 2). A token with more masks than
     :data:`_ALTERNATIVE_MASKS` has every alternative show one ``«REDACTED:fragment»``, whatever it
-    was written as, so what an alternative shows is bounded and never more than it showed before
-    (u01 A-86).
+    was written as, so what an alternative shows is bounded and shows no text the token's masks
+    hide (u01 A-86).
     """
 
     if not isinstance(item, dict):  # pragma: no cover - a thawed logprob item is a dict

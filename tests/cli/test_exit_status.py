@@ -188,6 +188,17 @@ OTHER_CODES = {
         'SystemExit(["halt", {"at": (REGISTERED[:6] + "\\n" + REGISTERED[6:]).encode()}])',
         "list 'halt at ",
     ),
+    # An exception with two arguments and a deque, which ``str()`` wrote as their items' ``repr``
+    # (pre-merge audit of A-86, MEDIUM 1).
+    "exception with two arguments and LF": (
+        'SystemExit(ValueError("halt", REGISTERED[:6] + "\\n" + REGISTERED[6:]))',
+        "ValueError 'halt ",
+    ),
+    "deque with LF": (
+        'SystemExit(__import__("collections").deque('
+        '["halt", REGISTERED[:6] + "\\n" + REGISTERED[6:]]))',
+        "deque 'halt ",
+    ),
 }
 
 

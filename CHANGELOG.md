@@ -25,11 +25,12 @@ the file, schema copy, build or pipeline it names.
   comparisons: every difference is such an alternative, none shows a run of 8 characters main hides,
   and replies of prose with a secret here and there do not change (0 of 30,000). No verdict,
   finding, score or exit code changes: no CI result changes.
-- **Fixed: a dict or a set exit code printed a split credential whole.** `SystemExit({"k":
-  "<credential split by a newline>"})` reached the stray-exit line through `str()`, which writes
-  each item's `repr`; a mapping is read as its keys' and values' texts and a set as its items' texts
-  now, as a tuple was (u12's half; 5 cases through the console entry point, on typer 0.26.8 and
-  0.27.3).
+- **Fixed: a dict, a set, a deque or an exception as an exit code printed
+  a split credential whole.** `SystemExit({"k": "<credential split by a newline>"})` reached the
+  stray-exit line through `str()`, which writes each item's `repr`; a mapping is read as its keys'
+  and values' texts, any sequence (a deque too) or set as its items' texts and an exception as its
+  arguments' texts now, as a tuple was (u12's half; 7 cases through the console entry point, on
+  typer 0.26.8 and 0.27.3).
 - **Tests:** `test_a_token_of_glued_uuids_takes_linear_time` times its two sizes in the process's
   CPU time, in turn, best of five (in wall time it read ratios of 1.8 to 8.7 against a bound of 8
   with twice as many busy processes as cores, and failed once on a loaded runner); its 120 s ceiling
@@ -38,7 +39,7 @@ the file, schema copy, build or pipeline it names.
   a campaign's target adapter keeps an HTTP timeout of 30 s that `--timeout` and the `-T` templates
   do not reach, so a reply after 30 s is resent (measured: a stub whose first reply came 33 s late
   with `--timeout 120` served 4 requests for 3 attempts).
-- **Judging rules 2, re-pinned** by an appended line (`8ef34497`): masking only, no verdict can
+- **Judging rules 2, re-pinned** by two appended lines (`8ef34497`, `06bb22a2`): masking only, no verdict can
   change.
 
 ### Changed (the CI example installs a pinned commit of `main`, no longer a placeholder; docs only)

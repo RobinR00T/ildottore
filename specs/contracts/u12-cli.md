@@ -2051,11 +2051,16 @@ set as its `repr`: a NUL, a newline or a tab inside a registered credential beca
 redactor did not know, and `SystemExit({"k": "<credential split by LF>"})` printed it whole. A
 mapping is read as its keys' and values' texts in order and a set (a frozenset too) as its items'
 texts, as a tuple is, nested containers included, then masked and quoted with the type in front
-(`dict 'halt «REDACTED:credential:...»'`). Five cases in
+(`dict 'halt «REDACTED:credential:...»'`). The pre-merge audit found two more read through
+`str()`: an exception with more than one argument (or a `KeyError`, whose `str` is its
+argument's `repr`) and a sequence that is no tuple or list (a
+`collections.deque`). Any `Sequence` is now read as its items' texts and an exception with
+arguments as its arguments' texts. Seven cases in
 `tests/cli/test_exit_status.py::test_a_code_that_holds_text_is_masked_as_that_text` (a dict's value
 with LF, a dict's key with U+0000, a set with TAB, a frozenset with U+0001, a list of dicts holding
-bytes), through the console entry point: all five fail on `fef4963e`, and the file passes on typer
-0.26.8 and 0.27.3.
+bytes, an exception with two arguments and LF, a deque with LF), through the console entry point:
+the first five fail on `fef4963e`, the last two on this branch before the audit's fix, and the file
+passes on typer 0.26.8 and 0.27.3.
 
 *4. A failure of `tests/cli/test_usage_figures.py` under load, not reproduced.* The audit's
 hypothesis was a send past the per-attempt timeout, resent, so the stub serves more requests than
