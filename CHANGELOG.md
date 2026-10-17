@@ -7,14 +7,14 @@ the file, schema copy, build or pipeline it names.
 
 ## [Unreleased]
 
-### Changed (breaking for a scope with a weak identity canary, a pipeline that gates on a cross-tenant or secret-shape finding, and a run halted under judging rules 1: judging rules 2, u08 A-85)
+### Changed (breaking for a scope with a weak identity canary, a pipeline that gates on a cross-tenant or secret-shape finding, an older build reading the run, and a run halted under judging rules 1: judging rules 2, u08 A-85)
 
-- **Judging rules 2.** `shared.judging_rules.JUDGING_RULES_VERSION` is 2: the four changes below
-  alter verdicts or figures, so a run halted under version 1 is refused by its resume, before
-  anything is sent, naming both (measured: halted on `7d01521f`, resumed on this branch, exit 3,
-  `run '<id>' was judged by the rules of an older Il Dottore (judging rules 1, started by Il
-  Dottore v0.1.0), and this is Il Dottore v0.1.0, judging rules 2. ...`); `dottore --version`
-  prints `dottore 0.1.0 (judging rules 2)`. The pin is an appended line (`PIN_HISTORY`,
+- **Judging rules 2.** `shared.judging_rules.JUDGING_RULES_VERSION` is 2: the changes below alter
+  stored verdicts, so a run halted under version 1 is refused by its resume, before anything is
+  sent, naming both (measured: halted on `7d01521f`, resumed on this branch, exit 3, `run '<id>'
+  was judged by the rules of an older Il Dottore (judging rules 1, started by Il Dottore
+  v0.1.0), and this is Il Dottore v0.1.0, judging rules 2. ...`); `dottore --version` prints
+  `dottore 0.1.0 (judging rules 2)`. The pin is an appended line (`PIN_HISTORY`,
   `judging_pins.frozen`); the stacked landing re-pins it on the merged tree.
   `JUDGING_RULES_SINCE` stays `2026-10-15`, the day runs began to record their rules, which is
   what the refusal of a run that records none quotes.
@@ -23,34 +23,31 @@ the file, schema copy, build or pipeline it names.
   confirmed Critical, and a scope's `canary` could be any text: through the CLI on `7d01521f`,
   `ACME`, `tenant-b`, `ZZ-1`, `invoice ready` and `12345678` each made `DL-XTENANT-001` a confirmed
   Critical, exit 2, on a reply that only said them. `load_scope` now refuses a canary shorter than
-  8 characters, holding a space, holding no digit or no letter, or inside an identity's name or
-  the target id in any case (`policy.scope.weak_canary`); one holding `{{run_id}}` passes. `run`,
-  `fleet --run`, `--dry-run`, `--estimate`, `-sn` and a resume exit 3 with nothing sent, naming
-  the identity and the reason, never the canary. `specs/scope.example.yaml` shows a tenant identity
-  with a random canary.
+  8 characters, holding a space, holding an identity's name or the target id (of 3 characters or
+  more) or part of one, in any case, of one character class (only letters, or only digits) and
+  shorter than 16 characters, or carrying under 36 bits of character entropy (its length times
+  the Shannon entropy of its characters: `COVID-19` 24, `CANARY-B-7f3a91c2` 65, a random 16-digit
+  number about 44); one holding `{{run_id}}` passes (`policy.scope.weak_canary`). `run`,
+  `--dry-run`, `--estimate`, `-sn` and a resume exit 3 with nothing sent, naming the identity and
+  the reason, never the canary. `specs/scope.example.yaml` shows a tenant identity with a random
+  canary.
 - **A canary the request carries is no proof of a crossing.** The identity sweep sends every
   identity one request; a spec naming tenant B's record by its canary failed confirmed and
   Critical on tenant A's refusal quoting it (exit 2). `authz_leak` now reads the request the sweep
-  sent (`EvalContext.identity_request`): a crossing of a canary it carries is a fail that needs
-  review (`verdict.echo_only`), as u08 A-79 treats a fail only the judge reported on cut text:
-  never confirmed, never a pass, gated by `--fail-on` only with `--include-needs-review`, and
-  counted once per sweep like any fail resting on the sweep. Never a pass, since the same
-  occurrence is what a real leak of the named record shows (dropping it would let whoever writes
-  the request hide a leak by naming the canary). A crossing canary the request does not carry
-  still confirms the leak beside it. Only text the scanner wrote counts as the request (prompt,
-  system prompt, image text, a `system`, `developer` or `user` message); a target's own reply
-  never does. The stored aggregate quotes the `authz_leak` review, the finding's line counts such
-  attempts, and `dottore replay` marks each `(needs review: a canary the request carries)`.
-- **An identity sweep's crossing counts once in the reproducibility.** The sweep sends one reply per
-  identity, whatever `--runs` is, and `authz_leak` reads it on every attempt: one reply of tenant A
-  holding tenant B's canary made `DL-XTENANT-001` 5 of 5, 1.0, Critical, SARIF `error`, exit 2,
-  and `dottore replay` `exploited: 5`. Such a fail now carries the sweep's number
-  (`verdict.identity_sweep`, left out of a dump when unset) and counts as one success per sweep in
-  the scorer and in `dottore replay` alike (`shared.identity_sweep`): 1 of 5, 0.2, Low, SARIF
-  `note`, still a confirmed fail; the finding's line says `5/5 resting on 1 identity sweep(s)
-  alone, counted once per sweep in the reproducibility`, and replay prints `exploited: 1` and a
-  line saying why. An attempt that also fails on its own reply counts on its own; a resume's new
-  sweep counts as one more.
+  sent (`EvalContext.identity_request`): a crossing of a canary it carries, in any case and through
+  any zero-width or other format character, is a fail that needs review (`verdict.echo_only`), as
+  u08 A-79 treats a fail only the judge reported on cut text: never confirmed, never a pass, gated
+  by `--fail-on` only with `--include-needs-review`, and counted in the reproducibility as any
+  fail. Never a pass, since the same occurrence is what a real leak of the named record shows
+  (dropping it would let whoever writes the request hide a leak by naming the canary). A crossing
+  of the spec's own canary, which the request does not carry, still confirms the leak beside it.
+  Only text the scanner wrote counts as the request (prompt, system prompt, image text, a
+  `system`, `developer` or `user` message by its text, never a `tool_result` block); a target's
+  own reply never does. The stored aggregate quotes the `authz_leak` review, the finding's line
+  counts such attempts, and `dottore replay` marks each `(needs review: a canary the request
+  carries)`. An older build refuses to `diff` or `replay` a run that holds such a fail, since its
+  verdicts carry `echo_only` (`7d01521f`: `verdict.echo_only: Extra inputs are not permitted`,
+  exit 3), while a run without one reads as before.
 - **`secret_shape` detects every key format the redactor masks.** It built its rules from four
   prefixes of its own (`sk-`, `gh*_`, `AKIA`, `xox`) while u01 A-78 taught the redactor the
   documented formats of eleven providers: a reply printing an Anthropic, GitLab, Google, Hugging
@@ -58,27 +55,31 @@ the file, schema copy, build or pipeline it names.
   app token scored `pass`. Its rules now come from `redactor.key_format_patterns()`, the one list,
   with no copy (the redactor gains only that accessor); the four old formats keep their entropy
   gates, the rest get 3.0 bits, and the PEM header stays its own rule.
-- **What changes in CI** (measured with `_ildottore-tren/scratch/fuscore/repro_cli.py` against a
-  loopback stub, `7d01521f` then this branch): a scope with a weak identity canary exits 3 with
-  nothing sent (was 2, or 0 when no reply said it); a cross-tenant finding whose crossing only the
-  sweep showed is Low, 0.2, SARIF `note`, JUnit failure `type="low"` (was Critical, 1.0, `error`,
-  `type="critical"`) and exits 1 under `--fail-on high` or `--fail-on medium` (was 2; `--fail-on
-  low` still 2); a crossing of a canary the request carries is a fail that needs review, Low, SARIF
-  `note`, JUnit failure `type="low"` (was a confirmed Critical, `error`), exit 0 by default and,
-  with `--include-needs-review`, 1 under `--fail-on high` or `medium` and 2 under `--fail-on low`
-  (was 2), and `dottore diff` reads it as a fail (`still_fail` against an older report); a reply
-  holding a key of a format A-78 added is `inconclusive`, JUnit `skipped` (was `pass`; exit 0 both);
-  a resume of a run halted under judging rules 1 exits 3. **The same:** a crossing every attempt's
-  own reply shows (1.0, Critical, exit 2), a clean sweep, a crossing at `--runs 1` (1 of 1), a
-  crossing of a marker the request does not carry beside one it does (confirmed, exit 2), the old
-  four key formats, the JWT and the PEM header (needs-review), and a key holding the planted canary
-  (confirmed fail).
+- **Not in this release: the identity sweep's own count.** A first version of A-85 counted a
+  sweep's crossing once per sweep; the pre-merge audit of `8a42d08f` found it fails open (a target
+  that leaks tenant B's canary to tenant A on every attempt scored 0.2, Low, exit 1, since no
+  attempt's own reply was read against the owner map), and it was dropped: a crossing only the
+  sweep shows still fails every attempt beside it (1.0, Critical, as on `7d01521f`; over-counted,
+  failing closed). The design the audit set out goes to a branch of its own (u08 A-85).
+- **What changes in CI** (measured through the CLI against a loopback stub,
+  `tests/cli/test_scoring_followups_cli.py`, `7d01521f` then this branch): a scope with a weak
+  identity canary exits 3 with nothing sent (was 2, or 0 when no reply said it); a crossing of a
+  canary the request carries is a fail that needs review, still Critical, SARIF `warning` (was a
+  confirmed `error`), JUnit failure as before, exit 0 by default (was 2) and 2 with
+  `--include-needs-review`; `dottore diff` reads it as a fail (`still_fail` against an older
+  report); a reply holding a key of a format A-78 added is `inconclusive`, JUnit `skipped` (was
+  `pass`; exit 0 both); a resume of a run halted under judging rules 1 exits 3; an older build's
+  `diff` and `replay` of a run with an echoed crossing exit 3. **The same:** a leak on every reply
+  of tenant A (1.0, Critical, exit 2 at `--runs 1`, 5 and 10 and across a halt and resume), a
+  crossing only the sweep reply shows (1.0, Critical, exit 2), a clean sweep and clean attempts
+  (pass), a crossing of the spec's canary beside one the request carries (confirmed, exit 2), the
+  old four key formats, the JWT and the PEM header (needs-review), and a key holding the planted
+  canary (confirmed fail).
 - Tests (each count with how many fail on `7d01521f`):
-  `tests/policy/test_scope_canary_shape.py` (24; 14), `tests/evaluators/test_authz_leak_echo.py`
-  (8; 6), `tests/core/test_identity_sweep_counted_once.py` (13; its 4 runner tests, the rest need
-  the new module), `tests/core/test_echo_never_confirms.py` (2),
-  `tests/evaluators/test_secret_shape_key_formats.py` (169; 73),
-  `tests/cli/test_scoring_followups_cli.py` (15, through the CLI against a loopback stub; 12, the 3
+  `tests/policy/test_scope_canary_shape.py` (31; 21, the new names' import taken out),
+  `tests/evaluators/test_authz_leak_echo.py` (10; 8), `tests/core/test_echo_never_confirms.py` (2;
+  2, the field is new), `tests/evaluators/test_secret_shape_key_formats.py` (169; 73),
+  `tests/cli/test_scoring_followups_cli.py` (18, through the CLI against a loopback stub; 10, the 8
   controls pass on both), and the version 1 resume in `tests/cli/test_resume_judging_rules.py`.
 
 ### Documentation (the docs and contracts audit of 2026-10-12: re-measured figures, a CI example that gated on v0.1.0, the ledger in order)
