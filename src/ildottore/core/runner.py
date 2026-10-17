@@ -84,7 +84,12 @@ from ildottore.core.setup_delivery import (
     trace_gap,
 )
 from ildottore.redactor import Redactor, withhold_split
-from ildottore.shared.combination import combine_verdicts, decided_by_judge_alone, never_confirms
+from ildottore.shared.combination import (
+    combine_verdicts,
+    decided_by_judge_alone,
+    never_confirms,
+    review_note,
+)
 from ildottore.shared.combination import union_matched as _union_matched
 from ildottore.shared.enums import (
     MIN_VARIANT_ATTEMPTS,
@@ -94,7 +99,6 @@ from ildottore.shared.enums import (
     VerdictStatus,
 )
 from ildottore.shared.error_text import error_text
-from ildottore.shared.identity_sweep import next_sweep, review_note, stamped, sweep_note
 from ildottore.shared.media import MediaError, media_digests
 from ildottore.shared.models import (
     AttackSpec,
@@ -194,12 +198,9 @@ _LeftOut = dict[str, tuple[str, str]]
 
 @dataclass(frozen=True)
 class _Sweep:
-    """One identity sweep of a spec (u08 A-85): which of the spec's sweeps in the run it is, and
-    the request it sent every identity. ``authz_leak``'s fail is stamped with the number, so the
-    reproducibility counts the sweep once (``shared.identity_sweep``), and reads the request, so a
-    canary a reply only echoes from it is not a crossing."""
+    """One identity sweep of a spec (u08 A-85): the request it sent every identity, which
+    ``authz_leak`` reads, so a canary a reply only echoes from it is not a confirmed crossing."""
 
-    number: int
     request: ModelRequest
 
 
@@ -1084,10 +1085,8 @@ class CampaignRunner:
                 mutators=mutators,
                 completed=completed,
             )
-            # Numbered after the sweeps a prior part of the run made for this spec, whose fails
-            # its stored attempts carry, so a resume's new sweep is counted as one more (A-85).
             sweep = (
-                _Sweep(number=next_sweep(attempts), request=sweep_request)
+                _Sweep(request=sweep_request)
                 if identities_map is not None and sweep_request is not None
                 else None
             )
@@ -1479,8 +1478,8 @@ class CampaignRunner:
     ) -> Verdict:
         """Run the spec's evaluator pipeline over one attempt and combine.
 
-        ``sweep`` is the identity sweep ``identities`` came from (u08 A-85): ``authz_leak``'s fail
-        is stamped with its number and reads the request it sent.
+        ``sweep`` is the identity sweep ``identities`` came from (u08 A-85): ``authz_leak`` reads
+        the request it sent.
 
         An env-errored attempt (no response) is ``inconclusive`` without touching an
         evaluator - env-vs-product, never a fabricated fail (contract §4 KEEP).
@@ -1892,9 +1891,7 @@ class CampaignRunner:
     ) -> list[Verdict]:
         """Evaluate one response with each of the spec's configured evaluators.
 
-        ``sweep`` (u08 A-85): every context carries the request the identity sweep sent, and an
-        ``authz_leak`` fail carries the sweep's number, since it reads the sweep's replies and not
-        this attempt's.
+        ``sweep`` (u08 A-85): every context carries the request the identity sweep sent.
 
         ``target`` gives every evaluator's context what a seeded deployment's file says of its
         own tools: the ones it grants beyond the spec's scene (OD-18 B) and the ones it declares
@@ -1951,10 +1948,7 @@ class CampaignRunner:
             )
             try:
                 verdicts.append(
-                    stamped(
-                        _authz_beside_filtered(await evaluator.evaluate(ctx), filtered_identities),
-                        sweep.number if sweep is not None else None,
-                    )
+                    _authz_beside_filtered(await evaluator.evaluate(ctx), filtered_identities)
                 )
             except BudgetExhausted as exc:
                 refused = refused or exc
@@ -2498,7 +2492,7 @@ def _combine_verdicts(
     """
 
     combined = _combine_with_authz(verdicts, spec, swept=swept)
-    return sweep_note(review_note(combined, verdicts))
+    return review_note(combined, verdicts)
 
 
 def _combine_with_authz(
@@ -2879,15 +2873,6 @@ def _finding_reasoning(
         line += (
             f"; {judged}/{fails} decided by the judge alone, which never confirms a finding on "
             "its own"
-        )
-    swept = [v.identity_sweep for v in verdicts if v.status is VerdictStatus.FAIL]
-    sweeps = {sweep for sweep in swept if sweep is not None}
-    if sweeps:
-        # The reproducibility counts these once per sweep (A-85), so "5/5 exploited" beside 0.2
-        # does not read as a miscount.
-        line += (
-            f"; {sum(1 for sweep in swept if sweep is not None)}/{fails} resting on "
-            f"{len(sweeps)} identity sweep(s) alone, counted once per sweep in the reproducibility"
         )
     echoed = sum(1 for v in verdicts if v.status is VerdictStatus.FAIL and v.echo_only)
     if echoed:

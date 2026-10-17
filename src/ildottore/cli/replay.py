@@ -131,13 +131,6 @@ def render_replay(result: ReplayResult) -> str:
         f"pooled rate: {result.reproducibility():.2f} (every attempt of the run; a report's "
         "reproducibility is per spec, best variant)"
     )
-    swept, sweeps = result.sweep_fails()
-    if swept:
-        # Said, so a listing of N fails beside "exploited: 1" is not read as a miscount (A-85).
-        lines.append(
-            f"  {swept} attempt(s) fail on the crossing of {sweeps} identity sweep(s) alone, "
-            "counted once per sweep: a sweep sends one reply per identity, whatever --runs is"
-        )
     blocked = result.blocked_by_provider_filter()
     if blocked:
         lines.append(

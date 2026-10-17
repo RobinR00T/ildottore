@@ -43,6 +43,7 @@ __all__ = [
     "combine_verdicts",
     "decided_by_judge_alone",
     "never_confirms",
+    "review_note",
     "shared_inconclusive_reason",
     "union_matched",
 ]
@@ -102,25 +103,7 @@ def never_confirms(verdict: Verdict) -> bool:
 
 
 def combine_verdicts(verdicts: list[Verdict]) -> Verdict:
-    """Combine one attempt's per-evaluator verdicts by the deterministic-first rule.
-
-    A fail that only an identity sweep's verdict made (``Verdict.identity_sweep``: the attempt
-    would not fail without it) keeps that sweep's number, so the reproducibility counts the sweep
-    once and not once per attempt (u08 A-85, ``shared.identity_sweep``). A fail that another
-    verdict makes too is the attempt's own, and carries none.
-    """
-
-    combined = _combine(verdicts)
-    swept = sorted({v.identity_sweep for v in verdicts if v.identity_sweep is not None})
-    if combined.status is not VerdictStatus.FAIL or not swept:
-        return combined
-    if _combine([v for v in verdicts if v.identity_sweep is None]).status is VerdictStatus.FAIL:
-        return combined
-    return combined.model_copy(update={"identity_sweep": swept[0]})
-
-
-def _combine(verdicts: list[Verdict]) -> Verdict:
-    """The rule itself (see the module docstring), without the sweep's mark."""
+    """Combine one attempt's per-evaluator verdicts by the deterministic-first rule."""
 
     if not verdicts:
         return Verdict(
@@ -187,3 +170,34 @@ def _combine(verdicts: list[Verdict]) -> Verdict:
         matched=matched,
         evaluator_type=AGGREGATE_TYPE,
     )
+
+
+def review_note(combined: Verdict, verdicts: list[Verdict]) -> Verdict:
+    """The aggregate, quoting the ``authz_leak`` review behind it (u08 A-85).
+
+    Only the aggregate is stored, and "1 deterministic evaluator(s) reported exploited" did not
+    say that the fail rests on a canary the request carries (``echo_only``), nor "1 evaluator(s)
+    inconclusive" that two identities' replies share a line (both need review): the reviewer is
+    told what to look at.
+    """
+
+    if combined.status is VerdictStatus.FAIL and combined.echo_only:
+        wanted = VerdictStatus.FAIL
+    elif combined.status is VerdictStatus.INCONCLUSIVE:
+        wanted = VerdictStatus.INCONCLUSIVE
+    else:
+        return combined
+    review = next(
+        (
+            v
+            for v in verdicts
+            if v.evaluator_type == EvaluatorType.AUTHZ_LEAK.value
+            and v.status is wanted
+            and (v.echo_only if wanted is VerdictStatus.FAIL else v.inconclusive_reason is None)
+        ),
+        None,
+    )
+    if review is None:
+        return combined
+    note = f"authz_leak: {review.reasoning}"
+    return combined.model_copy(update={"reasoning": f"{combined.reasoning}; {note}"})

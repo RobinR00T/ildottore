@@ -678,19 +678,13 @@ class Verdict(_Frozen):
     from it, never from the text, which a judge or a tool's name can echo. Empty, it is left out
     of a dump, so every other verdict is stored, reported and hashed byte for byte as before.
 
-    ``identity_sweep`` numbers the identity sweep whose crossing alone made this a fail (u08 A-85):
-    ``authz_leak`` reads the sweep's replies, one per identity, sent once for the spec, so every
-    attempt evaluated beside one sweep carries the same fail, and the reproducibility counts it
-    once per sweep (``shared.identity_sweep``), not once per attempt. Set on ``authz_leak``'s own
-    fail by the runner and kept on the aggregate only when no other verdict would fail the attempt
-    (``shared.combination``). ``None`` is left out of a dump, as an empty ``operator_cleared`` is.
-
     ``echo_only`` marks a fail that rests only on a canary the identity sweep's request carries
     (u08 A-85): the reply may only quote the request, or may hold the other identity's data, so
     the fail is reported, counted and gated with ``--include-needs-review``, and never confirms a
     finding on its own, as a fail the judge alone reported (u08 A-79). ``authz_leak`` sets it,
     the aggregate keeps it when every deterministic fail it combined has it. ``False`` is left
-    out of a dump.
+    out of a dump, as an empty ``operator_cleared`` is, so every other verdict is stored,
+    reported and hashed as before.
     """
 
     status: VerdictStatus
@@ -700,7 +694,6 @@ class Verdict(_Frozen):
     evaluator_type: str
     inconclusive_reason: InconclusiveReason | None = None
     operator_cleared: list[str] = Field(default_factory=list)
-    identity_sweep: Annotated[int, Field(ge=1)] | None = None
     echo_only: bool = False
 
     @model_serializer(mode="wrap")
@@ -710,8 +703,6 @@ class Verdict(_Frozen):
         dumped: dict[str, Any] = handler(self)
         if not dumped.get("operator_cleared"):
             dumped.pop("operator_cleared", None)
-        if dumped.get("identity_sweep") is None:
-            dumped.pop("identity_sweep", None)
         if not dumped.get("echo_only"):
             dumped.pop("echo_only", None)
         return dumped
