@@ -97,7 +97,7 @@ dottore fleet fleet.yaml --run
 dottore registry ls [--category .. --owasp .. --suite .. --tag ..]
 dottore coverage [--framework owasp|atlas|iopc|aisvs] [--suite ..] [--json]   # what the battery tests, nothing sent
 dottore describe PI-DIRECT-001
-dottore lint specs/          # exit 0 clean, 1 a spec fails lint, 3 a path that holds nothing
+dottore lint mine/           # exit 0 clean, 1 a spec fails lint, 3 a path that holds nothing
 dottore new-spec --id PI-XYZ-001 --family prompt_injection
 dottore schema export --name report   # the JSON report's schema (also suite, pack, test-plan, attack-spec)
 dottore replay <run-id> --evidence-root .dottore/evidence --run-db .dottore/runs.sqlite   # reproduce a past run, checked against the run store
@@ -136,7 +136,7 @@ dottore calibrate report.json labels.yaml
 | `-oJ/-oH/-oS/-oX/-oA` | JSON / HTML / SARIF / JUnit / all four to `<prefix>.json`, `.html`, `.sarif`, `.xml` (`-oA report.v2` keeps its name: `report.v2.json`; `-oA report.json` is not doubled: `report.json`, `report.html`, ...). Two formats pointed at the same file are refused before anything is sent, and so is a report path that is an input of the run (the scope, a target, the judge, the fleet file, the run store, a spec file; through a symlink or a hard link too) |
 | `--fail-on <band>` | CI gate on confirmed findings (`info\|low\|medium\|high\|critical`, default `high`; `info` gates on any confirmed finding) |
 | `--include-needs-review` | also gate unconfirmed exploits (an unconfirmed `fail`, a fail only the judge reported among them); an `inconclusive` result never gates. Without the flag such a fail is at most a `warning` in the SARIF, whatever its band; with it, it gates, and keeps its band's level (`error` for critical or high) |
-| `--spec-path` | spec search path (default `specs/` in the working directory, else the battery beside the installed package, said on stderr when a command falls back; `lint` never falls back) |
+| `--spec-path` | spec search path (default `specs/` in the working directory when there is one, refused when it holds no spec, else the built-in battery inside the installed package, said on stderr when a command reads it; `lint` never falls back) |
 | `--evidence-root` / `--run-db` | evidence store root (default `.dottore/evidence`) and run store (default `.dottore/runs.sqlite`). Checked before anything is sent, writing nothing in `--dry-run`/`--estimate`/`-sn`: a directory as the store, a file that is not SQLite, a root that is a regular file, or a path under one, is refused (exit 3), and a sending run opens both before its first request. Runs may share one store (a lock is waited for up to 30 s, said on stderr, and Ctrl-C stops the wait) |
 | `-v` | prints the resolved plan, then runs (`-vv`: the skipped and blocked ids too); like the root `dottore -v <command>`, it also prints an internal error's traceback |
 
@@ -227,10 +227,10 @@ dottore fleet fleet.yaml --run -oJ fleet.json --run-db fleet.sqlite   # run's st
 
 `fleet` takes `--spec-path`, `--evidence-root`, `--run-db` and `-oJ/-oH/-oS/-oX/-oA` with `run`'s
 meaning (without `--run` they are carried into the `dottore run` line it prints), and reads the
-same default spec path as `run`: `specs/` in the working directory, else the battery beside the
-installed package. From a source checkout or an editable install it therefore runs from any
-directory (saying on stderr which battery it read); a wheel ships neither the battery nor the
-schemas, so pass `--spec-path` there and expect the schema to be missing too.
+same default spec path as `run`: `specs/` in the working directory when there is one, else the
+built-in battery inside the installed package. It therefore runs from any directory that has no
+`specs/` of its own, from an installed wheel as from a source checkout (saying on stderr which
+battery it read).
 
 The judge goes in the fleet file too, as a `judge:` block (`id`, `endpoint`, `model`,
 `api_key_env`), because the generated scope is built from that file alone: `fleet` writes it
@@ -254,7 +254,7 @@ is accepted only with `--judge` naming that hand-written file, matching the `jud
 and no `judge.yaml` is written for it. A `kind: mcp`
 entry routes to the read-only MCP adapter, which discovers a Model Context Protocol server's
 advertised tool/resource/prompt metadata (it never calls a tool); point the `mcp` suite at it.
-See [`specs/fleet.example.yaml`](specs/fleet.example.yaml).
+See [`examples/fleet.example.yaml`](examples/fleet.example.yaml).
 
 An MCP server reachable over the wire uses `provider: mcp` with an `endpoint`; a local one
 uses `transport: stdio` + `command` and is launched as a subprocess only if the scope target's
@@ -292,6 +292,8 @@ evidence (prompt, response, tool traces, the aggregate verdict and its reasoning
 
 The product's whole point is extensibility. A new attack is usually just YAML:
 `dottore new-spec …` → fill `attack`, `expected_secure_behavior`, `evaluators`, and golden
-`fixtures` (vulnerable ⇒ scanner must flag; hardened ⇒ must pass) → `dottore lint specs/` →
-reference it from a suite. Details in [`CONTRIBUTING.md`](CONTRIBUTING.md) and
+`fixtures` (vulnerable ⇒ scanner must flag; hardened ⇒ must pass) → `dottore lint <its dir>` →
+reference it from a suite (a spec of the built-in battery goes in `src/ildottore/battery/attacks/`
+of a clone and is linted with `dottore lint src/ildottore/battery`). Details in
+[`CONTRIBUTING.md`](CONTRIBUTING.md) and
 [`docs/06-extensibility-suites.md`](docs/06-extensibility-suites.md).

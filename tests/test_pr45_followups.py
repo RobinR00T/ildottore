@@ -15,6 +15,7 @@ from typer.testing import CliRunner
 
 from ildottore.cli.app import app
 from ildottore.policy.scope import ScopeError, load_scope_with_digest
+from ildottore.shared.package_data import BATTERY
 
 _TARGET = (
     'version: "1.0"\ntargets:\n  - id: t\n    base_url: "https://a.example.com/v1"\n'
@@ -64,7 +65,7 @@ def test_distinct_identities_still_load(tmp_path: Path) -> None:
 
 @pytest.fixture
 def broken_spec_dir(tmp_path: Path) -> Path:
-    source = Path(__file__).resolve().parent.parent / "specs" / "attacks" / "AC-BOLA-001.yaml"
+    source = BATTERY / "attacks" / "AC-BOLA-001.yaml"
     folder = tmp_path / "specs"
     folder.mkdir()
     (folder / "AC-BOLA-001.yaml").write_text(source.read_text() + "severity: high\n")
@@ -87,7 +88,7 @@ def test_describe_says_a_spec_file_failed_to_load(broken_spec_dir: Path) -> None
 
 
 def test_registry_ls_on_the_repository_warns_about_nothing() -> None:
-    specs = Path(__file__).resolve().parent.parent / "specs"
+    specs = BATTERY
     result = CliRunner().invoke(app, ["registry", "ls", "--spec-path", str(specs)])
     assert result.exit_code == 0 and "warning" not in result.stderr
 

@@ -29,6 +29,7 @@ import pytest
 from ildottore import redactor as redactor_mod
 from ildottore.adapters.mock import MockScenario, MockTarget
 from ildottore.shared.models import Capabilities
+from ildottore.shared.package_data import BATTERY
 
 # --------------------------------------------------------------------------------------------
 # Path discovery
@@ -53,10 +54,10 @@ def fixtures_dir() -> Path:
 
 
 @pytest.fixture(scope="session")
-def specs_dir(repo_root: Path) -> Path:
-    """Absolute path to the shipped ``specs/`` tree (attacks + suites)."""
+def specs_dir() -> Path:
+    """Absolute path to the built-in battery inside the package (attacks + suites, u12 A-84)."""
 
-    return repo_root / "specs"
+    return BATTERY
 
 
 @pytest.fixture

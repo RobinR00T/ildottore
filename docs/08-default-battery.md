@@ -177,6 +177,6 @@ code. (These are our differentiator for EU/regulated buyers.)
 
 **Status:** only `owasp:llm` resolves (to `owasp-llm-top10`), and it is not the default. The
 alias table in `cli/flags.py` maps `mitre:atlas`, `nist:ai`, `eu:ai-act`, `dora` and
-`iso:42001` to suite ids that no file in `specs/suites/` defines, so each exits 3 ("is not
+`iso:42001` to suite ids that no file in the battery's `suites/` defines, so each exits 3 ("is not
 registered"); `gdpr` is not in the table at all. **(not built)** for all six. The framework view
 that exists is `dottore coverage` (OWASP, ATLAS, IoPC, AISVS).

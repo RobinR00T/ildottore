@@ -18,6 +18,7 @@ from ildottore.registry import LintCode, lint
 from ildottore.registry.linter import _check_oracle_markers
 from ildottore.shared import EvaluatorType
 from ildottore.shared.models import AttackSpec, EvaluatorConfig, Setup
+from ildottore.shared.package_data import BATTERY
 
 # --- F-20 ---------------------------------------------------------------------------------
 
@@ -412,9 +413,6 @@ def test_a_new_report_is_readable_by_its_owner_only(tmp_path: Path) -> None:
 # --- pre-merge audit of #39 ----------------------------------------------------------------
 
 
-REPO = Path(__file__).resolve().parents[1]
-
-
 def _open_descriptors() -> int:
     return len(os.listdir("/dev/fd"))
 
@@ -425,7 +423,7 @@ def test_a_spec_linked_and_named_directly_loads_clean(tmp_path: Path) -> None:
     from ildottore.registry import load_path
 
     real = tmp_path / "PI-DIRECT-001.yaml"
-    real.write_text((REPO / "specs" / "attacks" / "PI-DIRECT-001.yaml").read_text())
+    real.write_text((BATTERY / "attacks" / "PI-DIRECT-001.yaml").read_text())
     link = tmp_path / "link.yaml"
     link.symlink_to(real)
     result = load_path(link)

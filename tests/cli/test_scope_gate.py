@@ -16,6 +16,7 @@ import ildottore.cli.wiring as wiring
 from ildottore.cli.exit_codes import ExitCode
 from ildottore.cli.main import app
 from ildottore.cli.run import RunOptions, ScopeRequiredError, execute_run
+from ildottore.shared.package_data import BATTERY
 
 from .conftest import CountingAdapter, make_spec, write_scope, write_spec_tree, write_target
 
@@ -36,7 +37,7 @@ def test_run_without_scope_raises_before_any_adapter(monkeypatch: pytest.MonkeyP
 
     opts = RunOptions(targets=[Path("target.yaml")], scope=None)
     with pytest.raises(ScopeRequiredError):
-        execute_run(opts, [Path("specs")])
+        execute_run(opts, [BATTERY])
     assert adapter.sends == 0
 
 

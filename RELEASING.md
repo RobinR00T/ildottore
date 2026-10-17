@@ -12,7 +12,9 @@ package yet. This is the process for cutting a tagged, GPG-signed release on Git
 ## Pre-release checklist
 
 1. `make gates` is green locally (the full wall: ruff, `ruff format --check`, mypy --strict,
-   import-linter, `dottore lint specs`, pytest + coverage >=85%, self-scan, bandit, pip-audit).
+   import-linter, `dottore lint src/ildottore/battery`, pytest + coverage >=85%, self-scan,
+   bandit, pip-audit), and the `floors` and `package` CI jobs are green (the declared lowest
+   dependency versions, and a hatchling wheel and sdist run from outside the checkout).
 2. `CHANGELOG.md` has an entry for the version under `## [Unreleased]`; rename it to the version and
    date.
 3. Docs and counts are accurate (README / MANUAL spec+suite counts, `ROADMAP.md`).

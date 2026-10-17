@@ -27,10 +27,11 @@ from ildottore.registry import LintCode, lint
 from ildottore.registry.fixtures_engine import DEFAULT_STUB_TABLE, evaluate_fixture
 from ildottore.registry.schema import validate_attack_spec_schema
 from ildottore.shared import AttackSpec, FixtureCase, VerdictStatus
+from ildottore.shared.package_data import BATTERY
 
 runner = CliRunner()
 
-_ATTACKS = Path(__file__).resolve().parents[2] / "specs" / "attacks"
+_ATTACKS = BATTERY / "attacks"
 _SELFCORRECT = "AG-AUTONOMY-SELFCORRECT-001"
 _ARGSMUGGLE = "FUNCALL-ARGSMUGGLE-001"
 _TOOLCHAIN = "AG-TOOLCHAIN-EXFIL-001"

@@ -25,13 +25,14 @@ from ildottore.cli.exit_codes import ExitCode
 from ildottore.cli.main import app
 from ildottore.cli.wiring import load_target
 from ildottore.shared.models import Capabilities
+from ildottore.shared.package_data import BATTERY
 
 from .conftest import write_scope
 
 runner = CliRunner()
 
 REPO = Path(__file__).resolve().parents[2]
-SPEC = REPO / "specs" / "attacks" / "PI-DIRECT-001.yaml"
+SPEC = BATTERY / "attacks" / "PI-DIRECT-001.yaml"
 
 #: Shaped like a key pasted in the wrong place, as in ``test_target_file_validation``.
 PASTED = "Zq8LmPw3" * 8  # low entropy and no hex run, so the CLI redactor leaves it (A-78)
@@ -349,7 +350,7 @@ def test_every_target_file_and_fleet_in_the_repository_still_loads(tmp_path: Pat
     fleets = [(where, text) for where, text, doc in documents if _is_fleet(doc)]
     # Not vacuous: the shipped examples and the target blocks of the docs are among them.
     names = {Path(where.split(" block ")[0]).name for where, _, _ in targets}
-    shipped = {"target.local.yaml", "target.app.yaml", "example-openai.yaml"}
+    shipped = {"target.local.yaml", "target.app.yaml", "target.example-openai.yaml"}
     assert shipped | {"MANUAL.md", "USAGE.md", "dottore-scope.5"} <= names, names
     assert len(fleets) >= 3, [where for where, _ in fleets]
 

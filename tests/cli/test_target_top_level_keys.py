@@ -25,6 +25,7 @@ from ildottore.cli import wiring
 from ildottore.cli.app import _masked
 from ildottore.cli.main import app
 from ildottore.shared.models import Target
+from ildottore.shared.package_data import BATTERY
 from tests.cli.test_target_file_validation import dry_run, pieces, refusal
 
 runner = CliRunner()
@@ -172,7 +173,7 @@ def test_a_live_run_with_a_misspelled_endpoint_is_refused_not_run_on_the_mock(
 
     _, value, where = BAD_FILES["misspelled endpoint"]
     target = write_file(tmp_path, "misspelled endpoint")
-    spec = REPO / "specs" / "attacks" / "PI-DIRECT-001.yaml"
+    spec = BATTERY / "attacks" / "PI-DIRECT-001.yaml"
 
     args = ["-t", str(target), "--scope", str(write_scope(tmp_path)), "--spec-path", str(spec)]
     stores = ["--evidence-root", str(tmp_path / "ev"), "--run-db", str(tmp_path / "run.db")]
@@ -436,7 +437,7 @@ def test_every_target_file_in_the_repository_still_loads(tmp_path: Path) -> None
         "target.judge.yaml",
         "target.mcp.yaml",
         "target.openai.yaml",
-        "example-openai.yaml",
+        "target.example-openai.yaml",
     }
     assert shipped | {"MANUAL.md", "USAGE.md", "dottore-scope.5"} <= names, names
 
@@ -450,7 +451,7 @@ def test_every_target_file_in_the_repository_still_loads(tmp_path: Path) -> None
         assert set(doc) <= LEGAL, where
 
 
-@pytest.mark.parametrize("fleet", ["examples/fleet.yaml", "specs/fleet.example.yaml"])
+@pytest.mark.parametrize("fleet", ["examples/fleet.yaml", "examples/fleet.example.yaml"])
 def test_every_target_file_fleet_writes_loads(tmp_path: Path, fleet: str) -> None:
     """``dottore fleet`` writes target files for ``run`` to read: every key it writes is one
     the reader takes."""

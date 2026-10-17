@@ -21,13 +21,13 @@ from ildottore.cli.app import _masked
 from ildottore.cli.exit_codes import ExitCode
 from ildottore.cli.main import app
 from ildottore.cli.wiring import load_target
+from ildottore.shared.package_data import BATTERY
 
 from .conftest import write_scope
 
 runner = CliRunner()
 
-REPO = Path(__file__).resolve().parents[2]
-SPEC = REPO / "specs" / "attacks" / "PI-DIRECT-001.yaml"
+SPEC = BATTERY / "attacks" / "PI-DIRECT-001.yaml"
 
 #: Shaped like a key pasted in the wrong place: pydantic quoted it in full when it was short
 #: and kept its start and its tail when it truncated it in the middle.

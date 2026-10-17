@@ -17,8 +17,7 @@ import pytest
 from ildottore.registry import LintCode, Severity, lint
 from ildottore.registry.loader import load_paths
 from ildottore.shared.enums import EvaluatorLogic
-
-_REPO = Path(__file__).resolve().parents[2]
+from ildottore.shared.package_data import BATTERY
 
 
 def _spec(logic_line: str, weight_line: str = "") -> str:
@@ -83,7 +82,7 @@ def test_a_weight_is_read_by_nothing_and_is_a_warning(tmp_path: Path) -> None:
 
 
 def test_every_shipped_spec_names_the_rule() -> None:
-    result = load_paths([_REPO / "specs" / "attacks"])
+    result = load_paths([BATTERY / "attacks"])
     specs = [spec for pack in result.packs for spec in pack.specs]
     assert len(specs) == 75
     for spec in specs:

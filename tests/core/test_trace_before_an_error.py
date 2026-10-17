@@ -52,12 +52,13 @@ from ildottore.shared.models import (
     ModelResponse,
     Target,
 )
+from ildottore.shared.package_data import BATTERY
 from ildottore.shared.unreadable import UNREADABLE_MARK, UNREADABLE_REPLY_KEY
 from ildottore.store.evidence_fs import FsEvidenceStore
 from ildottore.store.run_sqlite import SqliteRunStore
 from tests.core.conftest import AllowAllPolicy, make_spec, make_target, no_sleep
 
-_SPECS = Path(__file__).resolve().parents[2] / "specs" / "attacks"
+_SPECS = BATTERY / "attacks"
 
 
 class _Env(Exception):

@@ -161,7 +161,7 @@ Judge model target.yaml (LLM-as-judge for the semantic_judge evaluator on live s
 .SS Selection
 .TP
 .B --suite \fITEXT\fR
-Suite id (the files in specs/suites/) or alias: owasp-llm-top10 (aliases owasp:llm and
+Suite id (a file in a spec path's suites/) or alias: owasp-llm-top10 (aliases owasp:llm and
 baseline), quick, multi-turn, access-control, agentic-owasp2026, obfuscation-enhancers,
 embeddings, agentic-extortion (alias agentic), mcp, responsible-ai, guardrail-evasion,
 multimodal, structured-output, nova-iopc. The aliases mitre:atlas, nist:ai, eu:ai-act, dora
@@ -324,12 +324,16 @@ it gives up ("stayed locked by another process"). A report inside a run director
 store is refused.
 .TP
 .B --spec-path \fIPATH\fR
-Spec search path. Default: specs/ in the working directory when it is a directory, else the
-battery beside the installed package (a source checkout or an editable install), which run,
-fleet --run, registry ls, describe, coverage and render-media say on stderr when they fall back
-to; lint does not fall back. With none given, a default that is not there is "spec path not
-found: <path>. Pass --spec-path <dir>; ..."; a path given that does not exist or holds nothing
-is "a spec path gives nothing to run" (or to list, to describe, to measure), exit 3 either way.
+Spec search path. Default: specs/ in the working directory when there is one (refused, exit 3,
+when it holds no spec), else the built-in battery inside the installed package (ildottore/battery,
+which a wheel carries as a source checkout does; read too at the root of Il Dottore's own
+checkout), which run, fleet --run, registry ls, describe, coverage and render-media say on
+stderr, and as a ::warning:: line under GitHub Actions; lint does not fall back. A path of the
+layout before the battery moved into the package (specs/attacks, specs/suites, a specs/ that
+held the battery) is refused naming where it is now. With none given, a default that is not
+there is "spec path not found: <path>. Pass --spec-path <dir>; ..."; a path given that does not
+exist or holds nothing is "a spec path gives nothing to run" (or to list, to describe, to
+measure), exit 3 either way.
 .TP
 .B --no-color
 Disable colour output.
@@ -357,8 +361,8 @@ As each
 .B dottore \fICOMMAND\fR --help
 prints them. A
 .B --spec-path
-that is left out is specs/ in the working directory when it is a directory, else the battery
-beside the installed package, as for run; lint does not fall back.
+that is left out is specs/ in the working directory when there is one, else the built-in battery
+inside the installed package, as for run; lint does not fall back.
 .SS "fleet \fIfleet.yaml\fR"
 .TP
 .B --out \fIPATH\fR
@@ -581,6 +585,10 @@ endpoint, model, auth_ref, capabilities; a websocket block for provider websocke
 .I fleet.yaml
 Many targets in one file; expanded by
 .B dottore fleet.
+.TP
+.I ildottore/battery/
+The built-in battery inside the installed package (pack.yaml, attacks/, suites/); in a source
+checkout, src/ildottore/battery. Lint it by its path.
 .TP
 .I .dottore/
 Evidence store and run database (runtime artifacts; do not commit). Attempt files, a new run

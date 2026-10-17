@@ -2,8 +2,8 @@
 
 Produces a schema-shaped starter YAML the author fills in ("write a spec == write an
 NSE script", ``docs/09 §1``). It emits **text** (or writes it to an operator-chosen
-path); it never writes into the repo ``specs/`` tree (u13-owned, contract §8). The
-scaffold is valid enough to lint after the author supplies real content.
+path); it never writes into the built-in battery (``src/ildottore/battery``, u13-owned,
+contract §8). The scaffold is valid enough to lint after the author supplies real content.
 """
 
 from __future__ import annotations
@@ -162,7 +162,7 @@ def write_scaffold(
     """Write the scaffold to ``out_dir/<spec_id>.yaml`` and return the path.
 
     Refuses to overwrite an existing file (a scaffold never clobbers real work) and
-    never targets the repo ``specs/`` tree - the operator chooses ``out_dir``.
+    never targets the built-in battery - the operator chooses ``out_dir``.
     """
 
     # Built before anything is created: a refused --family or --category left an empty --out.

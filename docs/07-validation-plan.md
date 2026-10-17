@@ -82,7 +82,8 @@ validates **the scanner**, not the targets.
 
 ## 5. CI pipeline (ordered gates)
 
-1. `lint specs/` (schema + static). 2. import-boundary contract. 3. unit + property.
+1. `lint src/ildottore/battery` (schema + static; the battery was `specs/` until u12 A-84). 2.
+   import-boundary contract. 3. unit + property.
 4. adapter contract (cassettes). 5. **golden-target detection-accuracy** (hard gate).
 6. evaluator P/R gate. 7. judge-robustness gate. 8. determinism replay. 9. reporting/schema
 (SARIF/JUnit valid). 10. E2E CLI. 11. self-scan (SARIF): fail on any high/critical finding

@@ -1,6 +1,6 @@
 """Shared StrEnums for Il Dottore.
 
-Values are byte-identical to ``schemas/attack-spec.schema.json`` enums and to
+Values are byte-identical to ``registry/schemas/attack-spec.schema.json`` enums and to
 ``docs/04-05``/``docs/10``. A drift between an enum here and the schema is a test
 failure, not a choice (contract §4 KEEP).
 """
@@ -145,7 +145,7 @@ class RequiresCapability(StrEnum):
 
     Deliberately distinct from ``Capability``: the schema's ``requires`` enum carries
     ``system_prompt`` (a setup prerequisite) but **not** ``seed``. A drift between this
-    enum and ``schemas/attack-spec.schema.json`` is a test failure (contract §4 KEEP).
+    enum and ``registry/schemas/attack-spec.schema.json`` is a test failure (contract §4 KEEP).
     """
 
     RAG = "rag"

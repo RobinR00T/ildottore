@@ -1,10 +1,14 @@
 # CI - the merge gate for Il Dottore (docs/07 §5, contract u14 §7).
 #
-# TWO jobs. `static` (fast, parallel) runs lint/format/type/import-boundary. `validate` runs
+# FOUR jobs. `static` (fast, parallel) runs lint/format/type/import-boundary. `validate` runs
 # the 12 ORDERED detection gates as discrete steps - GitHub Actions stops a job at the first
 # failing step, so the pipeline is fail-closed: a later gate never runs green over an earlier
 # red (contract §4 KEEP). No live API keys: adapters are exercised only via cassettes, and the
 # autouse no-live-socket guard in tests/conftest.py fails any test that opens a real socket.
+# Both install the NEWEST release of every dependency (no lock file). `floors` installs the
+# LOWEST versions pyproject.toml allows and runs the suite, so a floor that no longer works is
+# caught; `package` builds the wheel and the sdist with hatchling and runs the installed wheel
+# from outside the checkout (u12 A-84).
 #
 # Thresholds (coverage ≥85% in aggregate, OD-13; evaluator P/R, golden accuracy, judge
 # flips) are docs/07 §3 and MUST NOT be relaxed to go green - a red gate is escalated to its
@@ -68,11 +72,11 @@ jobs:
         run: python -m pip install -e ".[dev]"
 
       # ---- Gate 1 - spec lint: schema + static checks (layers 1-2) -------------------------
-      # The shipped spec pack must lint clean end-to-end (u02 §7 / u14 §7). `specs/` resolves
-      # as a pack via `specs/pack.yaml`, so discovery loads attacks/ + suites/ and skips the
-      # loose scope/target example YAMLs.
+      # The shipped spec pack must lint clean end-to-end (u02 §7 / u14 §7). The built-in battery
+      # is inside the package since u12 A-84 (it was specs/); it resolves as a pack via its
+      # pack.yaml, so discovery loads attacks/ + suites/.
       - name: "Gate 1 · spec lint (schema + static)"
-        run: dottore lint specs/
+        run: dottore lint src/ildottore/battery
 
       # ---- Gate 2 - import-boundary contract (layer 14) ------------------------------------
       - name: "Gate 2 · import-boundary contract"
@@ -140,3 +144,52 @@ jobs:
           name: ci-reports
           path: reports/
           if-no-files-found: warn
+
+  # ---- The declared floors (u12 A-84) ------------------------------------------------------
+  # Every direct dependency (runtime and the dev extra) pinned to the version after its `>=`,
+  # what they pull in resolved to the newest release each allows (pip has no lowest mode), on
+  # the requires-python floor. A dependency that drops below what the code uses fails here, not
+  # on an operator's install. The test suite only: lint and type checks are the static job's,
+  # and an old ruff or mypy reads the same code differently.
+  floors:
+    name: floors (the lowest dependency versions pyproject.toml allows)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Pin every direct dependency to its declared floor
+        run: |
+          python scripts/dependency_floors.py > floors.txt
+          cat floors.txt
+      - name: Install (editable + dev, at the floors)
+        run: python -m pip install -c floors.txt -e ".[dev]"
+      - name: Installed versions
+        run: python -m pip freeze
+      - name: Full test suite at the floors
+        run: pytest -q
+
+  # ---- The wheel and the sdist (u12 A-84) --------------------------------------------------
+  # tests/test_packaging.py builds both with hatchling (the build backend pyproject.toml names),
+  # installs the wheel into a directory of its own and compares what it prints, run from
+  # outside the checkout, with the checkout's. Its hatchling tests skip where hatchling is not
+  # installed (every other job); DOTTORE_REQUIRE_HATCHLING makes a missing backend a failure.
+  package:
+    name: package (the wheel and the sdist carry what the program reads)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install (editable + dev) and the build backend
+        run: python -m pip install -e ".[dev]" hatchling
+      - name: Build, install and run the wheel; build the sdist and a wheel from it
+        env:
+          DOTTORE_REQUIRE_HATCHLING: "1"
+        run: pytest -q -rs tests/test_packaging.py

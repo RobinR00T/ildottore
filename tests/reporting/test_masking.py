@@ -80,7 +80,7 @@ def test_shipped_spec_ids_survive_mask_findings(specs_dir: Path) -> None:
     """
 
     ids = sorted(spec.id for spec in Registry.from_packs(load_paths([specs_dir]).packs).list())
-    assert ids, "the shipped specs/ tree loaded no specs"
+    assert ids, "the built-in battery loaded no specs"
 
     masked = mask_findings([make_finding(spec_id=spec_id) for spec_id in ids], default_redactor())
 

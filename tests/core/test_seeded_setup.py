@@ -39,10 +39,11 @@ from ildottore.shared.models import (
     SeededSetup,
     Target,
 )
+from ildottore.shared.package_data import BATTERY
 
 from .conftest import AllowAllPolicy, no_sleep
 
-_SPECS = Path(__file__).resolve().parents[2] / "specs" / "attacks"
+_SPECS = BATTERY / "attacks"
 _ALL = Capabilities(tools=True, rag=True, memory=True, multimodal=True)
 
 

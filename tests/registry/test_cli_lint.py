@@ -13,6 +13,7 @@ from ildottore.cli.lint import (
     run_lint,
 )
 from ildottore.cli.lint import lint as cli_lint
+from ildottore.shared.package_data import BATTERY
 
 
 def test_run_lint_exit_zero_on_good(packs_root: Path) -> None:
@@ -46,8 +47,8 @@ def test_render_helpers_directly(packs_root: Path) -> None:
 
 
 def test_cli_lint_specs_tree_exits_zero() -> None:
-    # The shipped repo specs/ tree (if present) must lint clean; skip gracefully if absent.
-    specs_dir = Path(__file__).resolve().parents[2] / "specs" / "attacks"
+    # The built-in battery must lint clean; skip gracefully if absent.
+    specs_dir = BATTERY / "attacks"
     if not specs_dir.is_dir():
         return
     code, _ = run_lint([specs_dir])

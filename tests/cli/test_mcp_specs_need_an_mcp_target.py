@@ -32,13 +32,14 @@ from ildottore.registry import load_paths
 from ildottore.shared.digest import target_digest
 from ildottore.shared.enums import RequiresCapability, TargetType, VerdictStatus
 from ildottore.shared.models import Capabilities, Target
+from ildottore.shared.package_data import BATTERY
 
 REPO = Path(__file__).resolve().parents[2]
 EXAMPLES = REPO / "examples"
 
 
 def _specs() -> list:  # type: ignore[type-arg]
-    result = load_paths([REPO / "specs" / "attacks"])
+    result = load_paths([BATTERY / "attacks"])
     return [spec for pack in result.packs for spec in pack.specs]
 
 
@@ -235,7 +236,7 @@ def test_a_chat_model_that_explains_the_markers_is_not_scored_as_an_mcp_server(
             evidence_root=tmp_path / "ev",
             run_db=tmp_path / "runs.sqlite",
         ),
-        [REPO / "specs"],
+        [BATTERY],
     )
     by_id = {f.spec_id: f for f in outcome.findings}
     mcp = by_id["MCP-TOOLPOISON-001"]

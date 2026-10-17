@@ -18,7 +18,9 @@ As built (note added 2026-10-04): the import-linter contracts live in the standa
 file, deliberately not duplicated in `pyproject.toml` (both would define the root package twice);
 the layout also has a `testing` package (the golden harness) and three leaf modules, `config.py`,
 `redactor.py` and `safe_yaml.py` (added 2026-10-05); `pyproject.toml` installs the CLI as both
-`dottore` and `dott`.
+`dottore` and `dott`. Since 2026-10-16 (ADR-0013, u12 A-84) the package also holds the data it
+reads, the built-in battery (`battery/`) and the attack-spec schema (`registry/schemas/`), so the
+one distribution is installable as a wheel with no checkout beside it.
 
 ## Consequences
 - (+) Standard, installable (`pip install -e .`), PyPI-ready, simple imports.

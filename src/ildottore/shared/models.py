@@ -1,6 +1,6 @@
 """Dependency-free Pydantic v2 models for Il Dottore.
 
-These mirror ``schemas/attack-spec.schema.json`` (author-facing spec format) and the
+These mirror ``registry/schemas/attack-spec.schema.json`` (author-facing spec format) and the
 runtime wire/persistence shapes in ``docs/01 §3``, ``docs/04-05``, ``docs/10`` and
 ADR-0005/0006. Models are frozen and JSON-serializable; they carry **no behavior** -
 no scoring math (u07), no evaluation (u06), no I/O. ``extra="forbid"`` mirrors the
@@ -61,7 +61,7 @@ class _Frozen(BaseModel):
 
 
 class _SchemaMirror(_Frozen):
-    """Base for models that mirror ``schemas/attack-spec.schema.json`` 1:1.
+    """Base for models that mirror ``registry/schemas/attack-spec.schema.json`` 1:1.
 
     The hand-authored JSON Schema types every optional field with its bare type and
     **no null union** (e.g. ``test_only: boolean``, ``attack.carrier: string``). A plain
@@ -84,7 +84,7 @@ class _SchemaMirror(_Frozen):
 
 
 # =============================================================================
-# AttackSpec + nested models - 1:1 with schemas/attack-spec.schema.json
+# AttackSpec + nested models - 1:1 with registry/schemas/attack-spec.schema.json
 # =============================================================================
 
 
@@ -95,7 +95,7 @@ class MitreAtlas(_SchemaMirror):
     technique: str | None = None
 
 
-# The IoPC code shapes, mirrored from ``schemas/attack-spec.schema.json``.
+# The IoPC code shapes, mirrored from ``registry/schemas/attack-spec.schema.json``.
 # ANCHOR NOTE, do not "fix" this to match the JSON file: pydantic validates with rust-regex,
 # where ``$`` already means end-of-haystack, while the JSON schema is validated by Python
 # ``jsonschema`` (``re``), where ``$`` also matches BEFORE a trailing newline and therefore
@@ -421,6 +421,12 @@ class WebSocketResponse(_Frozen):
     and a seeded spec judged on its tool trace is not sent (OD-18 B).
     """
 
+    # `model_path` starts with `model_`, which pydantic before 2.10 protects by default and warns
+    # about at import, on every command (the `floors` CI job, pydantic 2.6.0: a subprocess printed
+    # the warning before its output; u12 A-84). Only the two prefixes 2.10 protects are protected
+    # here, so every supported pydantic is quiet and `model_validate*`/`model_dump*` stay guarded.
+    model_config = ConfigDict(protected_namespaces=("model_validate", "model_dump"))
+
     text_path: Annotated[str, Field(min_length=1)]
     final_path: Annotated[str, Field(min_length=1)]
     final_value: str | int | float | bool | None = None
@@ -521,7 +527,7 @@ class Target(_Frozen):
 
     ``provider``/``endpoint``/``model``/``auth_ref``/``sampling_defaults`` are the
     optional **live-target** fields a real ``target.yaml`` declares (``docs/09``,
-    ``specs/targets/example-openai.yaml``) so the u12 composition root can route a
+    ``examples/target.example-openai.yaml``) so the u12 composition root can route a
     non-mock target to the correct over-the-wire adapter (u04) without a second
     parse of the file. ``auth_ref`` is a reference (e.g. ``env://NAME``), never an
     inline secret (S6); it is resolved to a value only at send time, in ``cli``.

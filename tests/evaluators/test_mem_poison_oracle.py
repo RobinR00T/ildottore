@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import re
 import signal
-from pathlib import Path
 
 import pytest
 
@@ -20,10 +19,11 @@ from ildottore import safe_yaml
 from ildottore.evaluators.regex import RegexAbsenceEvaluator
 from ildottore.shared.enums import EvaluatorType, VerdictStatus
 from ildottore.shared.models import AttackSpec
+from ildottore.shared.package_data import BATTERY
 
 from .conftest import make_ctx
 
-_SPEC = Path(__file__).resolve().parents[2] / "specs" / "attacks" / "MEM-POISON-001.yaml"
+_SPEC = BATTERY / "attacks" / "MEM-POISON-001.yaml"
 
 #: The two live replies (2026-10-06, `llama3.2:3b`), cut where nothing more is at stake.
 _LIVE_FULL_PASS = (

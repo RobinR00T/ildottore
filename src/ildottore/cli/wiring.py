@@ -136,6 +136,7 @@ from ildottore.shared.models import (
     Target,
     WebSocketSpec,
 )
+from ildottore.shared.package_data import BATTERY
 from ildottore.shared.protocols import Reporter, TargetAdapter
 from ildottore.store import FsEvidenceStore, SqliteRunStore
 
@@ -244,23 +245,63 @@ def build_registry(spec_paths: list[Path]) -> Registry:
     return load_registry(spec_paths)[0]
 
 
-#: The battery of a source checkout or an editable install, ``<repo>/specs``, found from the
-#: package itself (``<repo>/src/ildottore/cli/wiring.py``), as ``registry.schema`` finds
-#: ``<repo>/schemas``. A wheel built from this repository ships neither.
-PACKAGED_SPEC_PATH = Path(__file__).resolve().parents[3] / "specs"
+#: The built-in battery, inside the package (``ildottore/battery``), where a source checkout, an
+#: editable install and an installed wheel all have it (u12 A-84). It was ``<repo>/specs``, found
+#: three directories above this file, which a wheel does not have.
+PACKAGED_SPEC_PATH = BATTERY
+
+
+def is_own_checkout() -> bool:
+    """Whether the working directory is the root of the source checkout this package runs from.
+
+    Its ``specs/`` holds the unit contracts, not attack specs, since the battery moved into the
+    package (u12 A-84), so with no spec path the commands read the built-in battery there. The
+    one exception to reading ``specs/`` whenever it is here, and a deterministic one, on the
+    checkout's shape: the battery is ``<root>/src/ildottore/battery``, the working directory
+    resolves to ``<root>``, and ``<root>/pyproject.toml`` names the project ``ildottore``. The
+    working directory three above the battery alone was fooled by ``pip install --target
+    <dir>/deps``: from ``<dir>`` the operator's ``specs/`` went unread and the built-in 75 ran
+    under an "own checkout" note (round 2 of the pre-merge audit of A-84, HIGH 1).
+    """
+
+    import tomllib
+
+    try:
+        battery = PACKAGED_SPEC_PATH.resolve()
+        package, src = battery.parent, battery.parent.parent
+        if battery.name != "battery" or package.name != "ildottore" or src.name != "src":
+            return False
+        root = src.parent
+        if Path.cwd().resolve() != root:
+            return False
+        pyproject = root / "pyproject.toml"
+        # A regular file only: opening a FIFO waits for a writer, and a command would hang there
+        # (round 3 of the pre-merge audit of A-84, LOW).
+        if not pyproject.is_file():
+            return False
+        project = tomllib.loads(read_text_capped(pyproject)).get("project")
+    except (OSError, RuntimeError, tomllib.TOMLDecodeError):
+        # The working directory was removed, a link loop, no pyproject.toml or one that is not
+        # TOML: not the checkout.
+        return False
+    return isinstance(project, dict) and project.get("name") == "ildottore"
 
 
 def default_spec_paths() -> list[Path]:
-    """Where every command reads specs when it is given no spec path (u12 A-80).
+    """Where every command reads specs when it is given no spec path (u12 A-80, A-84).
 
-    ``specs/`` in the working directory when it is a directory (the repository root, or a
-    project that keeps its own pack there, as before), else the battery beside the installed
-    package, else ``specs/`` (whose absence the commands report). ``fleet --run`` had no
+    ``specs/`` in the working directory when it is a directory (a project that keeps its own pack
+    or specs there, as before), else the built-in battery inside the installed package, else
+    ``specs/`` (whose absence the commands report). A ``specs/`` here that holds nothing to read
+    is read all the same and refused, exit 3, as before: it is never replaced by the battery, so
+    a pack that lost its files, or one ``specs/`` reaches only through a link, fails a pipeline
+    instead of passing it on another battery (pre-merge audit of A-84, HIGH 2). The root of this
+    package's own checkout (:func:`is_own_checkout`) reads the battery. ``fleet --run`` had no
     ``--spec-path`` and read ``specs/`` only, so it worked from the repository root only.
     """
 
     local = Path("specs")
-    if local.is_dir():
+    if local.is_dir() and not is_own_checkout():
         return [local]
     if PACKAGED_SPEC_PATH.is_dir():
         return [PACKAGED_SPEC_PATH]
@@ -356,8 +397,8 @@ def refuse_spec_paths_that_hold_nothing(
         names = ", ".join(e.message.removeprefix(PATH_NOT_FOUND_TEXT) for e in found)
         raise ValueError(
             f"spec path not found: {names}. Pass {flag}; without it {reader} reads specs/ in the "
-            "working directory, else the battery beside the installed package when that is a "
-            "source checkout."
+            "working directory when there is one, else the built-in battery inside the installed "
+            "package, which this installation lacks."
         )
     raise ValueError(f"a spec path gives nothing to {to}: {'; '.join(e.message for e in found)}")
 
@@ -790,7 +831,7 @@ def resolve_auth_ref(auth_ref: str | None) -> str | None:
     """Resolve a target's ``auth_ref`` **reference** to its secret value (S6).
 
     Only the ``env://NAME`` scheme is supported in MVP-1 (matches every
-    ``auth_ref`` in ``specs/targets/``); the environment is read here, at send-time
+    ``auth_ref`` in ``examples/target.*.yaml``); the environment is read here, at send-time
     construction - never earlier, and the resolved value is never logged (the
     caller passes it straight into the adapter's ``api_key``, which itself never
     appears in evidence: the redactor masks ``raw_ids``, and the value never enters
@@ -900,7 +941,7 @@ def build_real_adapter(
     template-driven :class:`WebSocketAdapter` (its wire shape is the target file's
     ``websocket:`` block), anything else → the
     generic :class:`RestAdapter` (the long-tail escape hatch, ADR-0002). ``target.endpoint``
-    is the **full** request URL (``specs/targets/example-openai.yaml``); its origin
+    is the **full** request URL (``examples/target.example-openai.yaml``); its origin
     becomes the adapter's ``base_url`` and its path is either the adapter's own
     fixed ``_endpoint_path`` (openai/anthropic) or the ``RestTemplate.path`` (rest) -
     either way ``adapter._full_url()`` reconstructs the declared endpoint exactly, so
@@ -1765,7 +1806,7 @@ def load_target(path: Path) -> Target:
 
     The file declares ``id``/``type`` and an optional ``capabilities`` map, plus the
     optional **live-target** fields ``provider``/``endpoint``/``model``/``auth_ref``/
-    ``sampling_defaults`` (``specs/targets/example-openai.yaml``) that
+    ``sampling_defaults`` (``examples/target.example-openai.yaml``) that
     :func:`real_adapter_factory` routes on. ``auth_ref`` is carried as the bare
     reference string (e.g. ``env://NAME``) - the secret itself is **never** read
     here (S6); it is resolved only at send time via :func:`resolve_auth_ref`.

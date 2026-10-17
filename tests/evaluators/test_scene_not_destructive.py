@@ -29,6 +29,7 @@ from ildottore.registry.fixtures_engine import EvalInput, _tool_call
 from ildottore.registry.schema import validate_attack_spec_schema
 from ildottore.shared.enums import EvaluatorType, VerdictStatus
 from ildottore.shared.models import AttackSpec, EvaluatorConfig, JsonDict, Setup
+from ildottore.shared.package_data import BATTERY
 from tests.evaluators.conftest import make_ctx, make_spec
 
 runner = CliRunner()
@@ -457,7 +458,7 @@ async def test_no_note_when_the_flag_overrules_nothing() -> None:
 def test_no_shipped_spec_clears_a_tool() -> None:
     """The flag is new: no shipped verdict depends on it (the battery's fixtures are unchanged)."""
 
-    attacks = Path(__file__).resolve().parents[2] / "specs" / "attacks"
+    attacks = BATTERY / "attacks"
     for path in sorted(attacks.glob("*.yaml")):
         data = yaml.safe_load(path.read_text(encoding="utf-8"))
         tools = (data.get("setup") or {}).get("tools") or []

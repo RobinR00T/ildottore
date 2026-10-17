@@ -34,7 +34,7 @@ class LoadedPack(BaseModel):
     specs: list[AttackSpec] = Field(default_factory=list)
     suites: list[Suite] = Field(default_factory=list)
     #: The file each of ``specs`` was read from, in the same order, as the search path reaches
-    #: it (``specs/attacks/PI-DIRECT-001.yaml``); empty for a pack built in code. An id
+    #: it (``battery/attacks/PI-DIRECT-001.yaml``); empty for a pack built in code. An id
     #: collision names both files from it (u12 A-82).
     spec_files: list[str] = Field(default_factory=list)
 

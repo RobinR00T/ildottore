@@ -4,7 +4,7 @@ It read `specs/` in the working directory and had no option to change it, so it 
 repository root only ("path not found: specs"), and it had no `--evidence-root`, `--run-db` or
 `-o*`: its stores went to `.dottore/` wherever it was started and it wrote no report. `run` and
 every other command share one default spec path now: `specs/` in the working directory when
-there is one, else the battery beside the installed package.
+there is one, else the built-in battery inside the installed package (u12 A-84).
 """
 
 from __future__ import annotations
@@ -19,8 +19,7 @@ from ildottore.cli import run as run_mod
 from ildottore.cli import wiring
 from ildottore.cli.app import app
 from ildottore.cli.exit_codes import ExitCode
-
-REPO = Path(__file__).resolve().parents[2]
+from ildottore.shared.package_data import BATTERY
 
 _FLEET = (
     'version: "1"\ntargets:\n  - id: local\n    endpoint: '
@@ -32,7 +31,7 @@ def test_the_default_spec_path_outside_the_repository_is_the_packaged_battery(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.chdir(tmp_path)
-    assert wiring.default_spec_paths() == [REPO / "specs"]
+    assert wiring.default_spec_paths() == [BATTERY]
     (tmp_path / "specs").mkdir()
     assert wiring.default_spec_paths() == [Path("specs")]  # a local pack still comes first
 
@@ -98,7 +97,7 @@ def test_fleet_run_from_outside_the_repository_uses_the_shared_default(
     monkeypatch.chdir(tmp_path)
     result = CliRunner().invoke(app, ["fleet", "fleet.yaml", "--out", "o", "--run"])
     assert result.exit_code == 0, result.output
-    assert [spec_paths for _, spec_paths in captured] == [[REPO / "specs"]]
+    assert [spec_paths for _, spec_paths in captured] == [[BATTERY]]
 
 
 def test_fleet_run_passes_the_run_options_through(
@@ -181,7 +180,7 @@ def test_fleet_run_writes_its_report_and_stores_where_it_is_told(tmp_path: Path)
             "-p",
             "pi",
             "--spec-path",
-            str(REPO / "specs"),
+            str(BATTERY),
             "--evidence-root",
             str(tmp_path / "ev"),
             "--run-db",
@@ -243,8 +242,8 @@ def test_a_command_that_falls_back_says_which_tree_it_read(
     result = CliRunner().invoke(app, argv)
     assert result.exit_code == 0, result.output
     assert (
-        "note: there is no specs/ directory here, so this reads the battery beside the installed "
-        f"package: {REPO / 'specs'} (pass --spec-path to read another)"
+        "note: there is no specs/ directory here, so this reads the built-in battery inside the "
+        f"installed package: {BATTERY} (pass --spec-path to read another)"
     ) in result.stderr
 
 
@@ -262,7 +261,7 @@ def test_run_says_which_tree_it_read_when_it_falls_back(
         app, ["run", "target.yaml", "--scope", "scope.yaml", "--dry-run", "-q", "--no-color"]
     )
     assert result.exit_code == 0, result.output
-    assert "reads the battery beside the installed package" in result.stderr
+    assert "reads the built-in battery inside the installed package" in result.stderr
 
 
 def test_no_note_when_specs_is_here(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
