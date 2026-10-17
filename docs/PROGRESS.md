@@ -15,12 +15,19 @@ neighbouring entries can interleave (an older branch merged later sits above a n
   3 with the stray-exit line, which is masked now (`typer.Exit("<text>")` exited 0;
   `SystemExit("<text>")` printed its text in clear); a UUID in an error is masked as a report masks
   it (`redactor.UuidCuts`); a missing file under a directory holding a space keeps its existing
-  part (15 tests of the suite failed on `7d01521f` with `TMPDIR` under "AI projects"); an error
+  part (8 to 15 tests of the suite failed on `7d01521f` with `TMPDIR` under "AI projects",
+  depending on the path); an error
   holding U+0000 or U+0001 is read both ways; an endpoint URL's user is registered when it is the
   credential. The A-82 "Fixed" heading is labelled breaking.
 - The redactor: a text holding U+0000 or U+0001 is read with them dropped and with them shown, and
   what either reading masks is masked (F2 of the A-78 audits, open since then); a text without
-  them reads as before (differential fuzz against `7d01521f`: no difference in 360,000 texts).
+  them reads as before (differential fuzz against `7d01521f`: no difference in 300,000 texts).
+- The pre-merge audit of `4f1b28db` (NOT READY), fixed: the merge of a stretch's masks was
+  quadratic (4 MiB of 32-hex runs glued by U+0000 took 177 s, main 0.73 s; now about 4 s, linear),
+  and A-77's `_masked_pieces`, cubic on a logprob stream, is quadratic now (its output); a text exit
+  code is masked as itself, not its `repr` (a credential split by a NUL, a newline or a tab printed
+  whole); a user-only user info renames a target id in the reports, listed as breaking; the new
+  tests read the battery through `specs_dir`; `late` is a bool or a frozenset; figures corrected.
 - Found closed: the all-digit run id (A-61) and the exception class names (A-63).
 - Open, found by this branch and left: a hex run inside a token-level JWT match followed by a
   letter outside ASCII is printed by the redactor (on `7d01521f` too); a registered credential is

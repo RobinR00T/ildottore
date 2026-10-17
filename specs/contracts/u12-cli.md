@@ -1822,11 +1822,18 @@ to 255 (`cli.app._exit_status`); any other code is what no command of this tool 
 in the root group's guard of a stray `SystemExit` and for a separately installed click's `Exit`.
 Not taken: exit 1 for a text, Python's own rule (1 is findings below `--fail-on` here); keep 0
 (a clean scan for an internal error); reading a bool as its integer (no command means one).
+`tests/cli/test_exit_status.py` (39 tests, 23 fail on `7d01521f`): 15 codes through the console
+entry point in a process of its own and through the test runner, typer 0.26.8 and 0.27.3.
 
 *3. The stray-exit line, masked.* ``error: unexpected exit with status <code> (an internal error,
 ...)`` quoted the code raw since #114 (A-80): `SystemExit("<text>")` printed a registered credential
-and a key in clear. The code's `repr` goes through `_masked`, as every other error line does
-(`_say_unexpected_exit`; an unreadable `repr` is `<unprintable status>`).
+and a key in clear. A text code goes through `_masked` as itself and is then quoted; any other
+code's `repr` does (`_say_unexpected_exit`; an unreadable `repr` is `<unprintable status>`). The
+first version masked a text's `repr` too, which writes U+0000, U+0001, a newline and a tab as
+escapes, so a registered credential split by one was text the redactor did not know and printed
+whole: with U+0000 on `7d01521f` as here, with a newline as new on this branch, where main printed
+nothing (pre-merge audit of A-83, MEDIUM 1). The four split forms are tested, as `SystemExit` and
+as `typer.Exit` (8 cases, all fail on that version).
 
 *4. A UUID in a CLI error.* The redactor masks a UUID whole (u01 A-78), but the CLI masks an error
 in two passes, every rule but the entropy fallback first and the entropy fallback on what it does
@@ -1838,12 +1845,14 @@ characters; a UUID no number rule reads was `«REDACTED:high_entropy:...»` wher
 `«REDACTED:uuid:...»`. The two passes now share the redactor's stand-ins (`redactor.UuidCuts`,
 u01 A-83): the first leaves them in its output, the second masks each UUID they are in whole with
 the pieces main masked around it, as the redactor's entropy rule does, and any other as `uuid`
-(`late=("uuid",)`); the key formats still run after it, on what it shows. What `_masked` keeps is
+(`late=frozenset({"uuid"})`: `late` is a bool or a frozenset of types, never a string, whose
+substrings a type test would match, LOW 4); the key formats still run after it, on what it
+shows. What `_masked` keeps is
 found with the stand-ins read back, so an existing path or a spec file name holding a UUID whose
 groups a number rule reads is kept whole, as one holding any other UUID was since A-78 L5 (main
 masked the number in it, so the path no longer existed). For 13 contexts of three UUIDs (digit
 groups, all digits, none) the CLI's mask is the redactor's
-(`tests/cli/test_uuid_in_cli_errors.py`, 44 tests, 35 fail on `7d01521f`). Not taken: reading the
+(`tests/cli/test_uuid_in_cli_errors.py`, 45 tests, 36 fail on `7d01521f`). Not taken: reading the
 first pass's stand-ins back as digits, which judged a token whole where main judged it in pieces
 and showed a value glued before a cut UUID that main masked; typing every key format in the
 entropy pass as a report does (`«REDACTED:openai_key»` where the CLI writes
@@ -1855,7 +1864,8 @@ covered*), so the CLI keeps masking the run.
 an absolute path that exists, read up to the first whitespace or one of `'"()[],;` (main's rule),
 and a path that exists written whole (A-38). A missing file under a directory holding a space was
 neither, so the entropy rule read every directory after the space with the missing name as one
-token: with `TMPDIR` under "AI projects", 15 tests of the suite failed on `7d01521f` (`cannot
+token: with `TMPDIR` under "AI projects", 8 to 15 tests of the suite failed on `7d01521f`,
+depending on the path (15 with this branch's, 12 with the auditor's; `cannot
 write evidence under /Users/.../AI «REDACTED:high_entropy:...»: ... is not a directory`). The
 whole-path walk now also reports the existing part of a path that does not exist, up to the last
 name before a `/` that exists, a file's included, and it is kept when main's rule stopped short of
@@ -1879,7 +1889,10 @@ and no secret can be told from one by its shape; the filesystem says which direc
 *6. A message holding U+0000 or U+0001.* `_masked` runs its passes on the message read with them
 dropped and with them made visible, and masks what either reading masks (`redactor.read_both_ways`,
 as `redact_text` reads a text, u01 A-83): its entropy pass read only what its first pass gave it,
-so the joined reading's glued tokens went unread. Its masks are placed back tolerantly (u01 A-83,
+so the joined reading's glued tokens went unread. The cost to readability: an existing path written
+right after a word a delimiter glues to it is masked with that word, as the joined reading reads
+one token there (`abcdefgh\x00/usr/share/man/...` showed its directories on `7d01521f`); nothing
+hidden shows (pre-merge audit of A-83, LOW 3). Its masks are placed back tolerantly (u01 A-83,
 *Placing a reading back*): a later pass can rewrite an earlier one's mask, and placed strictly,
 about 1% of the fuzz's messages were masked whole as `«REDACTED:fragment»`
 (`tests/cli/test_masked_both_ways.py`, 5 tests).
@@ -1897,7 +1910,13 @@ stub echoing the credentials it was sent, through `run -oA`, 3 of
 case passes there too). Not covered: a user beside a non-empty password that is in fact the token
 (`https://<token>:x-oauth-basic@host`, GitHub's form), and a user-only credential under 8
 characters, which is not registered (the floor) and which the adapters, refusing a short password
-(u04 A-78), do not refuse: refusing it would refuse `https://bob@host`.
+(u04 A-78), do not refuse: refusing it would refuse `https://bob@host`. A consequence, found by
+the pre-merge audit (MEDIUM 2): a user-only user info is the credential, so a target id holding
+that user is masked in every report (`deploybot-prod` with `http://deploybot@host/...` reads
+`«REDACTED:credential:...»-prod`), and `dottore diff` against a baseline written before refuses it
+as another target (exit 3). Kept, as it fails closed; the CHANGELOG lists it as breaking (regenerate
+such a baseline), and the MANUAL says a plain user name belongs beside a password or in
+`auth_ref`.
 
 *8. Two items found closed.* A run id of 12 decimal digits is drawn again (A-61, `new_run_id`),
 and every exception class the package defines keeps its name through the redactor, a walk over

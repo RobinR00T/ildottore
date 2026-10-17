@@ -225,7 +225,9 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
 - **Redact-at-rest.** Secrets and PII are masked in logs, evidence and reports. Every
   credential the tool reads (an `env://` key, a password in an endpoint URL, or the URL's user
   when it is all the user info says, `https://<token>@host`, since A-83; each as written and
-  percent-decoded) is registered and
+  percent-decoded; a user-only user info is treated as the credential, so a plain user name belongs
+  beside a password or in `auth_ref`, and a target id holding it is masked in the reports) is
+  registered and
   masked **by value** wherever it appears, also in the escaped form an HTTP library quotes it
   in its error message, and stripped of surrounding whitespace before use (a key with a
   trailing CR from a Windows-edited `.env` used to be quoted, in clear, by the transport error
@@ -319,8 +321,11 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   them dropped (a key split by one is whole again) and with them shown as `␀` and `␁` (a word one
   ends stays a word), and what either reading masks is masked (A-83): before, the reading kept
   depended on whether anything else in the text was masked, so a value after `x\x01credential:`
-  was shown once a UUID elsewhere was masked. Such a text takes about 2.3 to 3.2 times main's time
-  (two readings); one without them, main's. Each costs some time on a
+  was shown once a UUID elsewhere was masked. A CLI error is read both ways too, so an existing path
+  written right after a word a delimiter glues to it is masked with that word (nothing hidden
+  shows). Such a text takes up to about 6 times main's time on the worst shapes measured, linearly
+  (4 MiB of UUIDs whose groups are digits, glued by U+0000: 4.7 s, main 0.8 s; 32-hex runs glued
+  the same way: 3.9 s, main 0.7 s); one without them, main's. Each costs some time on a
   text full of them: about 2.3 times main's time on 4 MB of UUIDs whose groups are all digits
   (which main left mostly readable), 1.4 times when they are glued into one token by `_`, 1.2 to
   1.3 times on prose and base64 (the ratios hold on the two machines measured; the seconds do

@@ -1069,16 +1069,17 @@ A-77's `_mask_spans` already used for a joined stream, now shared); the result i
 which only adds masks, unless the visible reading alone is the result, and is a fixed point. Two
 names that differ only by a delimiter stay two keys, and a delimiter shows in the output whether or
 not anything is masked (it was dropped whenever something was). A text without one is read
-exactly as before. `tests/test_redactor_stash_delimiters_both_ways.py` (34 tests, 13 fail on
+exactly as before. `tests/test_redactor_stash_delimiters_both_ways.py` (35 tests, 13 fail on
 `7d01521f`): six secrets one reading hides, each with four unrelated masked values before it, the
 delimiters shown, a property over 300 texts of fixed points, and linear time (a ratio).
 
 *Shared stand-ins.* `UuidCuts(text)` chooses the block of stand-ins (A-78's `_Cuts`) from the text
 a first pass reads; two redactors given it share them: the first, built without the entropy rule,
 leaves them in its output; the second, with it, masks each UUID they are in whole with the pieces
-main masked around it and masks any stand-in left as the number main masked there. `late` takes the
-types of the late patterns to run as well as `True` and `False`. The CLI uses both (u12 A-83 item
-4); a redactor built without `uuid_cuts` is unchanged.
+main masked around it and masks any stand-in left as the number main masked there. `late` is
+`True`, `False` or a frozenset of the types of the late patterns to run (a string is refused: a
+type test on it matched substrings, LOW 4). The CLI uses both (u12 A-83 item 4); a redactor built
+without `uuid_cuts` is unchanged.
 
 *An endpoint URL's user.* `cli.wiring._endpoint_credentials` registers the password of a target
 file's endpoint, or the user when it is all the user info says, as written and percent-decoded
@@ -1093,12 +1094,24 @@ without the entropy rule, with registered credentials and through the identity m
 every difference holds a delimiter (20,319, 21,750 and 21,792), none shows a run main hides; every
 output is a fixed point. The auditors' own criterion, which counts a mask copied from the input
 as text, flags 316 of the 500,000: in each, a mask this adds stands beside one the input held,
-where main showed the glue between them. Time against main on the same inputs, best of five:
-prose, keys and labels, UUIDs cut by numbers, emails and phones, hostile runs and 24,000 short
-texts, all without a delimiter, 0.96 to 1.01 times; one U+0000 in 1 MB of prose 1.01, in 1 MB of
-keys 2.28 (two readings), a delimiter every 40 characters 3.21 (two readings and the last pass),
-and U+0000 after every character of 200 KB 30 times main's 0.003 s, which returned the joined
-reading at once: 0.10 s, the cost of reading those 200 KB once more.
+where main showed the glue between them. Time against main on the same inputs: prose, keys and
+labels, UUIDs cut by numbers, emails and phones, hostile runs and 24,000 short texts, all without
+a delimiter, 0.96 to 1.01 times (best of five). With one, linear, the worst shapes measured at 4
+MiB (one run each): UUIDs whose groups are digits, glued by U+0000, 4.73 s (main 0.81 s, 5.8
+times); 32-hex runs glued by U+0000 3.89 s (0.69 s, 5.6); one hex run with U+0000 every 40
+characters 3.55 s (0.71 s, 5.0); `ghp_` keys glued by U+0000 2.60 s (0.59 s, 4.4); labelled keys
+and one U+0000 3.84 s (1.51 s, 2.5); prose 1.06 s (1.05 s); each about four times its 1 MiB time.
+The first version merged a stretch's masks into a tuple rebuilt and searched for each mask merged
+into it, in time in the square of their number: 4 MiB of glued 32-hex runs took 177 s, 243 times
+main's (pre-merge audit of A-83, HIGH 1). They are an ordered set now (a dict's keys, the same
+order: 20,000 texts of the grammar give the same output as before, through `redact_text` and as
+logprob streams through `mask_split`), and four times the text takes under six times the time
+(`test_merging_many_masks_into_one_stretch_stays_linear`). A-77's `_masked_pieces` had the same
+search, on a list, for every piece a stretch covers, pre-existing and cubic: 32 KiB of `ghp_` keys
+glued by U+0000 as a logprob stream of 4-character tokens took 22.9 s on `7d01521f`, 0.33 s now.
+It stays quadratic in that shape (64 KiB 1.2 s, 256 KiB 21.6 s), because each piece lists every
+mask of the stretch it lies in, which its alternatives show: that is A-77's output, left for its
+own change.
 
 *Placing a reading back.* `read_both_ways` places a reading's masks with `tolerant=True`: the CLI
 masks in passes, and a later pass can read an earlier one's mask as a URL's user and rewrite it
