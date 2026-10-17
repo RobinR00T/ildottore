@@ -1047,11 +1047,15 @@ by `tests/cli/test_credential_variables.py` and `tests/cli/test_report_and_file_
 
 **A-85 (u08's clause; this unit's half, added 2026-10-16, amended 2026-10-17).** `load_scope`
 refuses an identity `canary` a reply can hold by chance (`policy.scope.weak_canary`): shorter than
-`MIN_CANARY_CHARS` (8), holding a space, holding an identity's name or the target id (of
-`MIN_LABEL_CHARS`, 3, or more) or part of one, in any case, of one character class under
-`MIN_SINGLE_CLASS_CHARS` (16), or under `MIN_CANARY_BITS` (36) of character entropy; one holding
-`{{run_id}}` passes. Refused where it is declared, so every reader of the scope exits 3 before
-anything is sent, naming the identity and the reason, never the canary
+`MIN_CANARY_CHARS` (16, the floor the docs state as "at least 16 random characters"; at 8, the
+entropy floor made every 8 to 10 character canary impossible and refused 46% of random 12-hex
+ones, audit of `bc5ddcb1`, LOW 2), holding a space, part of an identity's name or the target id,
+in any case, holding one (of `MIN_LABEL_CHARS`, 3, or more) when what is left without it, read
+case-folded, falls under these floors (refusing every canary that held one refused random ones,
+LOW 4), or under `MIN_CANARY_BITS` (36) of character entropy; one holding `{{run_id}}` passes. A
+heuristic for obvious shapes: a structured id, an address, a version or a timestamp of 16
+characters or more passes. Refused where it is declared, so every reader of the scope exits 3
+before anything is sent, naming the identity and the reason, never the canary
 (`tests/policy/test_scope_canary_shape.py`). The redactor gains one accessor,
 `key_format_patterns()` (the late patterns without the UUID), which `secret_shape` reads: the A-78
 sentence above that the evaluator "keeps its own rules" held until A-85.

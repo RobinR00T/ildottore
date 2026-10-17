@@ -23,14 +23,18 @@ the file, schema copy, build or pipeline it names.
   confirmed Critical, and a scope's `canary` could be any text: through the CLI on `7d01521f`,
   `ACME`, `tenant-b`, `ZZ-1`, `invoice ready` and `12345678` each made `DL-XTENANT-001` a confirmed
   Critical, exit 2, on a reply that only said them. `load_scope` now refuses a canary shorter than
-  8 characters, holding a space, holding an identity's name or the target id (of 3 characters or
-  more) or part of one, in any case, of one character class (only letters, or only digits) and
-  shorter than 16 characters, or carrying under 36 bits of character entropy (its length times
-  the Shannon entropy of its characters: `COVID-19` 24, `CANARY-B-7f3a91c2` 65, a random 16-digit
-  number about 44); one holding `{{run_id}}` passes (`policy.scope.weak_canary`). `run`,
-  `--dry-run`, `--estimate`, `-sn` and a resume exit 3 with nothing sent, naming the identity and
-  the reason, never the canary. `specs/scope.example.yaml` shows a tenant identity with a random
-  canary.
+  16 characters (a canary is at least 16 random characters), holding a space, part of an identity's
+  name or the target id, in any case, holding one (of 3 characters or more) when what is left
+  without it falls under these floors (`tenant-b-2026-10-16` is refused,
+  `CANARY-TENANT-B-3f9c1e7a5b2d8064` passes), or carrying under 36 bits of character entropy (its
+  length times the Shannon entropy of its characters: `abababababababab` 16, `CANARY-B-7f3a91c2` 65,
+  a random 16-digit number about 44, refused about once in 200 draws, a random 16-hex token once in
+  15,000); one holding `{{run_id}}` passes (`policy.scope.weak_canary`). It catches obvious shapes
+  only: a structured id (`invoice-2026-0001`), an address, a version, a timestamp or a long word of
+  16 characters or more passes, and a per-tenant sequential id can be another tenant's id as well,
+  so plant a random canary. `run`, `--dry-run`, `--estimate`, `-sn` and a resume exit 3 with nothing
+  sent, naming the identity and the reason, never the canary. `specs/scope.example.yaml` shows a
+  tenant identity with a random canary.
 - **A canary the request carries is no proof of a crossing.** The identity sweep sends every
   identity one request; a spec naming tenant B's record by its canary failed confirmed and
   Critical on tenant A's refusal quoting it (exit 2). `authz_leak` now reads the request the sweep
@@ -40,7 +44,8 @@ the file, schema copy, build or pipeline it names.
   by `--fail-on` only with `--include-needs-review`, and counted in the reproducibility as any
   fail. Never a pass, since the same occurrence is what a real leak of the named record shows
   (dropping it would let whoever writes the request hide a leak by naming the canary). A crossing
-  of the spec's own canary, which the request does not carry, still confirms the leak beside it.
+  of the spec's own canary, which the request does not carry, still confirms the leak beside it,
+  and the verdict lists both, masked, as `7d01521f` does, naming the one the request carries.
   Only text the scanner wrote counts as the request (prompt, system prompt, image text, a
   `system`, `developer` or `user` message by its text, never a `tool_result` block); a target's
   own reply never does. The stored aggregate quotes the `authz_leak` review, the finding's line
@@ -76,8 +81,8 @@ the file, schema copy, build or pipeline it names.
   old four key formats, the JWT and the PEM header (needs-review), and a key holding the planted
   canary (confirmed fail).
 - Tests (each count with how many fail on `7d01521f`):
-  `tests/policy/test_scope_canary_shape.py` (31; 21, the new names' import taken out),
-  `tests/evaluators/test_authz_leak_echo.py` (10; 8), `tests/core/test_echo_never_confirms.py` (2;
+  `tests/policy/test_scope_canary_shape.py` (45; 25, the new names' import taken out),
+  `tests/evaluators/test_authz_leak_echo.py` (11; 9), `tests/core/test_echo_never_confirms.py` (2;
   2, the field is new), `tests/evaluators/test_secret_shape_key_formats.py` (169; 73),
   `tests/cli/test_scoring_followups_cli.py` (18, through the CLI against a loopback stub; 10, the 8
   controls pass on both), and the version 1 resume in `tests/cli/test_resume_judging_rules.py`.

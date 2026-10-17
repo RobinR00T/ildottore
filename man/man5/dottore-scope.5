@@ -80,14 +80,18 @@ to the tenant-scoped marker it owns; authz_leak flags that canary reaching anoth
 The runner sends the attack once as each identity for a spec that requires multi_identity and,
 when the target declares multi_identity, for one that declares authz_leak (never over a scene
 sent in-band to a type: model target); the estimate counts those sends.
-Two identities of one target with the same name, or the same canary, are refused. So is a canary a
-reply can hold by chance: shorter than 8 characters, holding a space, holding an identity's name or
-the target id (of 3 characters or more) or part of one, in any case, only letters or only digits
-under 16 characters, or with too few distinct characters (under 36 bits of character entropy); a
-long random token of one class passes, and so does a canary holding {{run_id}}, a new token in every
-run. The refusal names the identity, never the canary. Plant a random token (CANARY-<16 random hex
-digits>) in the identity's data, and name it in no attack prompt: a canary the request carries is,
-when it crosses, a fail that needs review, never confirmed (gated only with --include-needs-review).
+Two identities of one target with the same name, or the same canary, are refused. A canary is at
+least 16 random characters, and one a reply can hold by chance is refused: shorter than 16
+characters, holding a space, part of an identity's name or the target id, in any case, holding one
+(of 3 characters or more) when what is left without it falls under these floors, or with too few
+distinct characters (under 36 bits of character entropy, which a random 16-digit number misses
+about once in 200 draws); a random canary holding a label passes, and so does a canary holding
+{{run_id}}, a new token in every run. The refusal names the identity, never the canary. The check
+catches obvious shapes only: a structured id (invoice-2026-0001), an address, a version, a
+timestamp or a long word of 16 characters or more passes, and a per-tenant sequential id can be
+another tenant's id as well. Plant a random token (CANARY-<16 random hex digits>) in the identity's
+data, and name it in no attack prompt: a canary the request carries is, when it crosses, a fail
+that needs review, never confirmed (gated only with --include-needs-review).
 After
 env://, an auth_ref names an environment variable: letters, digits and _, not starting with a
 digit, or the scope is refused without the value being quoted. An identity that carries no

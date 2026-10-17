@@ -53,12 +53,14 @@ design, with no spec yet. The design ids of the unbuilt rows are placeholders, n
   missing, so it is never scored (u04 §7 A-39).
 - **multi-identity scope**: `scope.yaml` may declare ≥2 auth identities for the same target so
   cross-tenant/authz specs can run. Each identity's `canary` is the marker planted in its data,
-  and the scope refuses one a reply can hold by chance (u08 A-85): shorter than 8 characters,
-  with a space, holding or part of an identity's name or the target id, only letters or only
-  digits under 16 characters, or with too few distinct characters (`ACME`, `tenant-b`, `ZZ-1`,
-  `invoice ready` and `12345678` each failed `DL-XTENANT-001` confirmed and Critical on a reply
-  that only said them). One holding `{{run_id}}` is new in
-  every run. Write a random token (`CANARY-<16 random hex digits>`). Absent ⇒ those specs skip
+  at least 16 random characters, and the scope refuses one a reply can hold by chance (u08
+  A-85): shorter than 16 characters, with a space, part of an identity's name or the target id,
+  holding one with what is left under these floors, or with too few distinct characters (`ACME`,
+  `tenant-b`, `ZZ-1`, `invoice ready` and `12345678` each failed `DL-XTENANT-001` confirmed and
+  Critical on a reply that only said them). One holding `{{run_id}}` is new in every run. The
+  check catches obvious shapes only (a structured id, an address, a version or a timestamp of 16
+  characters or more passes, and a per-tenant sequential id can be another tenant's too): write
+  a random token (`CANARY-<16 random hex digits>`). Absent ⇒ those specs skip
   (logged, not silent). A spec that only declares `authz_leak` to corroborate
   (`EMB-XTENANT-RETRIEVAL-001`, which requires `rag`) runs either way: on a target that declares
   `multi_identity` with ≥2 scope identities the

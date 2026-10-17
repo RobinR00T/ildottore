@@ -306,7 +306,8 @@ aggregate verdict; no per-evaluator verdict and nothing of the judge's exchange 
 the request the identity sweep sent (`EvalContext.identity_request`): a crossing of a canary it
 carries, read case-folded and through format characters, is a fail that needs review
 (`echo_only`), never confirmed and never a pass, as u08 A-79's judge-only fail on cut text, and
-one crossing canary the request does not carry still confirms the leak; only text the scanner
+one crossing canary the request does not carry still confirms the leak, the verdict listing every
+canary that crossed and naming (masked) the ones the request carries; only text the scanner
 wrote is the request (an `assistant` or `tool` message, or a `tool_result` block, is not).
 `secret_shape` builds its rules from `redactor.key_format_patterns()`, the documented key formats
 and the JWT the redactor masks, with no copy of its own; the four formats it had keep their

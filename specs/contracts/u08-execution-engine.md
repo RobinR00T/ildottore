@@ -982,23 +982,35 @@ file's key is tenant A's, so the attempts and A's sweep send get A's reply).
    any text as a canary. `ACME`, `tenant-b`, `ZZ-1`, `invoice ready` and `12345678`, each with
    `DL-XTENANT-001`, failed confirmed and Critical (reproducibility 1.0, exit 2) on a reply that
    only said them. Now `policy.scope.weak_canary`, called by `load_scope` where the canary is
-   declared, refuses one shorter than 8 characters (`MIN_CANARY_CHARS`, the floor A-78 sets for a
-   credential), holding a space, holding an identity's name or the target id (a label of 3
-   characters or more, `MIN_LABEL_CHARS`) or part of one, in any case (an operator names an
-   identity after its tenant, and a reply names the tenant: `tenant-b-2026`), of one character
-   class (only letters, or only digits) under 16 characters (`MIN_SINGLE_CLASS_CHARS`: a word, a
-   name, a year), or carrying under 36 bits of character entropy (`MIN_CANARY_BITS`, its length
-   times the Shannon entropy of its characters: `COVID-19` 24, `canary-1` 22, a random 16-digit
-   number about 44, `CANARY-B-7f3a91c2` 65); one holding `{{run_id}}` is a new token in every run
-   and passes. The first version asked for a digit and a letter, so it took `tenant-b-2026` and
-   refused a random 16-digit number or all-letter token (audit of `8a42d08f`, LOW 4). Every reader
+   declared, refuses one shorter than 16 characters (`MIN_CANARY_CHARS`; the docs say a canary is
+   at least 16 random characters), holding a space, part of an identity's name or the target id,
+   in any case (an operator names an identity after its tenant, and a reply names the tenant),
+   holding one (a label of 3 characters or more, `MIN_LABEL_CHARS`) when what is left without it,
+   read case-folded, falls under these floors (`tenant-b-2026-10-16` is refused,
+   `CANARY-TENANT-B-3f9c1e7a5b2d8064` passes), or carrying under 36 bits of character entropy
+   (`MIN_CANARY_BITS`, its length times the Shannon entropy of its characters:
+   `abababababababab` 16, a random 16-digit number about 44, `CANARY-B-7f3a91c2` 65); one holding
+   `{{run_id}}` is a new token in every run and passes. The first version asked for a digit and a
+   letter, so it took `tenant-b-2026` and refused a random 16-digit number or all-letter token
+   (audit of `8a42d08f`, LOW 4). The second set the floor at 8 (A-78's for a credential) beside
+   the entropy floor, which `n` distinct characters reach only from 11 (`n * log2(n)`: 24 to
+   33.2 bits for 8 to 10), so every 8 to 10 character canary and 46% of random 12-hex ones were
+   refused while the refusal and the docs promised 8, and it refused every canary that held a
+   label, random ones included (audit of `bc5ddcb1`, LOW 2 and LOW 4). Measured at 16 (a million
+   draws each): a random 16-digit number is refused about once in 200 (4,819), a random 16-hex
+   token once in 15,000 (68), a lowercase one twice in a million, and no letters-and-digits one
+   of 100,000. Every reader
    of the scope stops before anything is sent (`run`, `--dry-run`, `--estimate`, `-sn`, a resume:
    exit 3, zero sends; `fleet --run` writes no canary), naming the identity and the reason, never
    the canary. Why refuse, not warn: the false fail is confirmed and gates CI, so a warning would
    let every run carry it, and A-78 refuses a short credential the same way. Not taken: a warning;
    a dictionary of words (bound to languages and never complete); a check at evaluation time
-   (after the plan and the estimate priced a run whose canary cannot be read). Left: a long word
-   without a space (`Internationalization`) passes; a spec's own `setup.canaries` are u02's.
+   (after the plan and the estimate priced a run whose canary cannot be read). Left: the check
+   catches obvious shapes only, and the docs say so and ask for a random canary: a structured id
+   (`invoice-2026-0001`), an address (`admin@example.com`), a version, a timestamp or a long word
+   of 16 characters or more passes, and a per-tenant sequential id can be another tenant's id as
+   well, in whose reply it is a confirmed crossing (audit of `bc5ddcb1`, LOW 3); a spec's own
+   `setup.canaries` are u02's.
 2. *A canary the request carries (u06's half).* The sweep sends every identity one request, and
    a spec that names tenant B's record by its canary failed confirmed and Critical on tenant A's
    refusal quoting it (exit 2). The runner hands `authz_leak` the request the sweep sent
@@ -1018,7 +1030,9 @@ file's key is tenant A's, so the attempts and A's sweep send get A's reply).
    a real leak of the named record shows: dropping a carried canary would let whoever writes the
    request hide a leak by naming it, the attacker's case (A receives B's record). A crossing of a
    canary the request does not carry (the spec's own, planted in B's record) still confirms the
-   leak beside it, exit 2, on both versions. The request is the text the scanner wrote: the
+   leak beside it, exit 2, on both versions, and the verdict lists every canary that crossed,
+   masked, as `7d01521f` does, naming the ones the request carries (the version audited at
+   `bc5ddcb1` listed only the proven one, LOW 6). The request is the text the scanner wrote: the
    prompt, the system prompt, an image's `render_text` and the text of a `system`, `developer` or
    `user` message (a string, or its `text` blocks: a `tool_result` block rides in a `user`
    message in Anthropic's shape and holds what a tool returned); an `assistant` or `tool` message
@@ -1083,8 +1097,8 @@ Critical, exit 2), a clean sweep and clean attempts, a crossing of the spec's ca
 the request carries (confirmed, exit 2), the old four key formats, the JWT and the PEM header,
 and a key holding the canary (confirmed fail).
 
-*Checks.* `tests/policy/test_scope_canary_shape.py` (31 tests; 21 fail on `7d01521f`, with the new
-names' import taken out), `tests/evaluators/test_authz_leak_echo.py` (10; 8 fail),
+*Checks.* `tests/policy/test_scope_canary_shape.py` (45 tests; 25 fail on `7d01521f`, with the new
+names' import taken out), `tests/evaluators/test_authz_leak_echo.py` (11; 9 fail),
 `tests/core/test_echo_never_confirms.py` (2; both, the field is new),
 `tests/evaluators/test_secret_shape_key_formats.py` (169; 73 fail, with the accessor shimmed),
 `tests/cli/test_scoring_followups_cli.py` (18, through the CLI against the stub; 10 fail, the

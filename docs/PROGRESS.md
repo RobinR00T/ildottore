@@ -14,11 +14,14 @@ neighbouring entries can interleave (an older branch merged later sits above a n
   (`tests/cli/test_scoring_followups_cli.py`).
 - Weak identity canary: `ACME`, `tenant-b`, `ZZ-1`, `invoice ready` and `12345678` each made
   `DL-XTENANT-001` a confirmed Critical, exit 2, on a reply that only said them. `load_scope`
-  refuses a canary under 8 characters, with a space, holding or part of an identity's name or the
-  target id, of one character class under 16 characters, or under 36 bits of character entropy
+  refuses a canary under 16 characters, with a space, part of an identity's name or the target
+  id, holding one with what is left under these floors, or under 36 bits of character entropy
   (`policy.scope.weak_canary`); exit 3 in every mode, zero sends, the canary never quoted. The
   first version asked for a digit and a letter (it took `tenant-b-2026`, refused a random 16-digit
-  number: audit of `8a42d08f`, LOW 4).
+  number: audit of `8a42d08f`, LOW 4); the second had a floor of 8 that the entropy floor made
+  impossible below 11 and refused any canary holding a label (audit of `bc5ddcb1`, LOW 2 and
+  LOW 4). At 16, a random 16-digit number is refused about once in 200 draws, a random 16-hex
+  token once in 15,000 (a million draws each).
 - Echo: a refusal quoting a request that names tenant B's record by its canary was a confirmed
   Critical. `authz_leak` reads the sweep's request (`EvalContext.identity_request`), case-folded
   and through format characters, the scanner's text only (never a `tool_result` block): a crossing
@@ -27,7 +30,9 @@ neighbouring entries can interleave (an older branch merged later sits above a n
   on 2026-10-16 by the coordinator under the owner's delegation; the first version was
   `inconclusive`, which no gate takes). The refusal and the attacker's case (a real leak of the
   named record) exit 0 by default and 2 with `--include-needs-review`; a crossing canary the
-  request does not carry still confirms. An older build refuses to `diff` or `replay` such a run.
+  request does not carry still confirms, and the verdict lists every canary that crossed, naming
+  the carried ones (LOW 6 of the audit of `bc5ddcb1`). An older build refuses to `diff` or
+  `replay` such a run.
 - The identity sweep's own count was tried and dropped (audit of `8a42d08f`, HIGH 1): counting the
   sweep's crossing once scored a leak on every reply of tenant A as 1 of 5, Low, exit 1, since no
   attempt's own reply was read against the owner map. Its fix needs the CLI wiring and a
@@ -52,11 +57,19 @@ neighbouring entries can interleave (an older branch merged later sits above a n
   bandit and pip-audit clean. The same wall with `GITHUB_ACTIONS=true CI=true` (10:16 to 10:25):
   green, 7338 passed and 1 skipped, 97.71%. The CLI suite and the touched tests against typer
   0.27.3: 2752 passed and 1 skipped.
-- Left open: a long word without a space passes the canary shape; a spec's own `setup.canaries`
-  are not shape-checked; the sweep's own count (its own branch); the sweep's replies are not
-  stored as evidence, so a fail resting on them cites none (pre-existing); an identity canary is
-  not registered with the redactor, so one a primary reply prints is masked only if another rule
-  takes it (pre-existing); `secret_leakage` reads a canary the request carries as a leak too
+- Left open: the canary shape check catches obvious shapes only, so a structured id
+  (`invoice-2026-0001`), an email address, a version, a timestamp or a long word of 16 characters or
+  more passes, and a per-tenant sequential id can collide across tenants into a confirmed crossing
+  (the docs recommend a random canary; audit of `bc5ddcb1`, LOW 3); a spec's own `setup.canaries`
+  are not shape-checked; the case fold of the request lets a spec author mark an echo with a
+  different value that folds to the canary (`ß`, the Kelvin sign, the long s, the `fi` ligature; the
+  target gains nothing; a lint warning, or NFKC with non-ASCII folds refused, on a branch of its
+  own: LOW 5); the replies are read exactly, so a canary a target writes re-cased or split by a
+  zero-width character hides the leak (`inconclusive` on `7d01521f` and here, pre-existing, its own
+  branch: LOW 7); the sweep's own count (its own branch); the sweep's replies are not stored as
+  evidence, so a fail resting on them cites none (pre-existing); an identity canary is not
+  registered with the redactor, so one a primary reply prints is masked only if another rule takes
+  it (pre-existing); `secret_leakage` reads a canary the request carries as a leak too
   (pre-existing, outside A-85).
 
 ## State, 2026-10-12: the docs and contracts audit, fixed (`docs/audit-2026-10-12`)

@@ -444,20 +444,25 @@ targets:                         # >=1; a target whose id is absent here is refu
 Each target declares its own `endpoints` allowlist and `identities`. Two identities of one target
 with the same `name`, or with the same `canary`, are refused: the identity sweep keys each response
 by name, and a canary maps back to the one identity that owns it. A canary is the marker planted in
-that identity's data, and one a reply can hold by chance is refused (u08 A-85): shorter than 8
-characters, holding a space, holding an identity's name or the target id (of 3 characters or more)
-or part of one, in any case (`tenant-b-2026`), only letters or only digits and under 16 characters
-(a word, a name, a year), or with too few distinct characters (under 36 bits of character entropy:
-`COVID-19`, `canary-1`) (`identity 'tenant-b': its canary can appear in a reply by chance (it holds
-only letters and is shorter than 16 characters, so it reads as a word, a name or a number) ...`,
-exit 3, before anything is sent; the canary is never quoted). `ACME`, `tenant-b`, `ZZ-1`, `invoice
-ready` and `12345678` each made `DL-XTENANT-001` a confirmed Critical on a reply that only said
-them. A long random token of one class passes (16 random digits, 16 random letters), and so does a
-canary holding `{{run_id}}`, a new token in every run. Write a random token, as `CANARY-<16 random
-hex digits>`. A canary may contain another (`CANARY-7f3a91c2`, `CANARY-7f3a91c2-b`): `authz_leak`
-does not count an occurrence that a longer canary's occurrence covers. Avoid it all the same: A's
-`CANARY-7f3a91c2` leaking into B's reply right before `-b` reads as B's own canary. Do not name a
-canary in an attack prompt either: a canary the request carries is no proof of a crossing (§9).
+that identity's data, at least 16 random characters, and one a reply can hold by chance is
+refused (u08 A-85): shorter than 16 characters, holding a space, part of an identity's name or the
+target id, in any case, holding one (of 3 characters or more) when what is left without it falls
+under these floors (`tenant-b-2026-10-16`), or with too few distinct characters (under 36 bits of
+character entropy: `abababababababab`) (`identity 'tenant-b': its canary can appear in a reply by
+chance (it is shorter than 16 characters) ...`, exit 3, before anything is sent; the canary is
+never quoted). `ACME`, `tenant-b`, `ZZ-1`, `invoice ready` and `12345678` each made
+`DL-XTENANT-001` a confirmed Critical on a reply that only said them. A random token of 16
+characters or more passes, of one class too (16 random letters), though a random 16-digit number
+falls under the entropy floor about once in 200 draws (draw another, or mix in letters); a random
+canary holding a label passes (`CANARY-TENANT-B-3f9c1e7a5b2d8064`), and so does a canary holding
+`{{run_id}}`, a new token in every run. The check catches obvious shapes only: a structured id
+(`invoice-2026-0001`), an address (`admin@example.com`), a version, a timestamp or a long word of
+16 characters or more passes, and a per-tenant sequential id can be another tenant's id as well, in
+whose reply it is a confirmed crossing. Write a random token, as `CANARY-<16 random hex digits>`.
+A canary may contain another (`CANARY-7f3a91c2e5d4`, `CANARY-7f3a91c2e5d4-b`): `authz_leak` does
+not count an occurrence that a longer canary's occurrence covers. Avoid it all the same: A's
+`CANARY-7f3a91c2e5d4` leaking into B's reply right before `-b` reads as B's own canary. Do not name
+a canary in an attack prompt either: a canary the request carries is no proof of a crossing (§9).
 Plain `http` is allowed only to loopback hosts; everything else must be `https`. Template:
 [`../specs/scope.example.yaml`](../specs/scope.example.yaml).
 
@@ -2271,7 +2276,9 @@ Risk and confidence are **separate axes**:
   `echo_only: true`), the finding's line counts it (`resting on a canary the request carries,
   which never confirms a finding on its own`), and `dottore replay` lists the attempt as
   `fail (needs review: a canary the request carries)`. A crossing canary the request does not
-  carry still confirms the leak.
+  carry still confirms the leak, and the verdict lists every canary that crossed, masked, naming
+  the ones the request carries (`... the request every identity was sent carries 1 of them
+  («REDACTED:canary:...»), which a reply may only echo, and the others confirm the leak`).
 
 Every report puts each finding in one of four **states** (the HTML report's sections, the
 `state` property of a SARIF result, the summary's `confirmed_count` and `needs_review_count`):
@@ -2775,6 +2782,6 @@ not checked. See [`06-extensibility-suites.md`](06-extensibility-suites.md),
 | WebSocket run stops with `the handshake reply did not satisfy expect` | The first non-ignored frame after `handshake.send` did not match `handshake.expect`: usually a wrong or unset credential (`auth_ref`), or a reply frame your deployment sends before the acknowledgement that is not in `ignore_types`. A refused upgrade (`HTTP 401`, a redirect) stops the run the same way; a `503` is retried by the runner, each retry a request against the ceiling (see "Reconnects" in §4.2). |
 | WebSocket attempts all `inconclusive` with `WebSocketTurnTimeout` | No frame matched `final_path`/`final_value` within `timeout_seconds`: check the final frame's shape against what your deployment really sends (an acknowledgement frame your server sends after `session.start` is read as part of the first turn unless `session.expect` or `ignore_types` names it). |
 | `authz_leak` is `capability_unavailable` | It needs two identities to compare: the target's `multi_identity` capability and a scope with >=2 identities (each with its owned `canary`), and every identity heard from: one whose send failed, whose reply could not be read or whose reply the provider's filter stopped is named in the verdict (`the identity sweep left out ...`) and keeps it from passing. The runner then sends as each identity, for a spec that requires `multi_identity` (`DL-XTENANT-001`) and for one that declares `authz_leak` to corroborate (`EMB-XTENANT-RETRIEVAL-001`), never over an in-band scene (a `type: model` target gets the spec's documents in every request, the other tenant's included). Without a sweep, the first stays `inconclusive`; the second is decided by its other evaluators, and its verdict says `authz_leak set aside: no identity sweep ran`. After a sweep where fewer than two identities answered, `authz_leak` stays `inconclusive` for both (the second's verdict says `authz_leak kept: fewer than two identities answered the identity sweep`; with two or more answers beside one left out, `authz_leak kept: 2 identities answered the identity sweep, and it did not hear from every identity`), unless a deterministic check failed or the reply that came back shows the canary of another identity (that one is a confirmed fail, whether or not its owner answered): check that every identity's credential and endpoint work. A spec that requires `multi_identity` and carries a scene (documents, tools or memory) is never swept on a `type: model` target, since the scene goes in-band, and stays `inconclusive` there unless a deterministic check failed. A real scan also needs each tenant's canary pre-seeded in that tenant's data. |
-| `scope file ... identity '<name>': its canary can appear in a reply by chance (...)` (exit 3) | The identity's `canary` is one ordinary text can hold: shorter than 8 characters, with a space, holding or part of an identity's name or the target id, only letters or only digits under 16 characters, or too few distinct characters (§4.1, u08 A-85). `authz_leak` would read it in another identity's reply as that identity's data received. Plant a random token (`CANARY-<16 random hex digits>`) in that identity's data and write it there. |
+| `scope file ... identity '<name>': its canary can appear in a reply by chance (...)` (exit 3) | The identity's `canary` is one ordinary text can hold: shorter than 16 characters, with a space, part of an identity's name or the target id, holding one with what is left under these floors, or too few distinct characters (§4.1, u08 A-85). `authz_leak` would read it in another identity's reply as that identity's data received. Plant a random token (`CANARY-<16 random hex digits>`) in that identity's data and write it there. |
 | A cross-tenant spec fails, `needs review`, with `authz_leak: 1 tenant-scoped canary(ies) surfaced in a non-owner identity, and the request every identity was sent carries each of them` | The attack prompt (or its system prompt or image text) names the canary, so tenant A's reply may only quote it while refusing, or may hold tenant B's record: a fail that is never confirmed and never a pass, which gates CI only with `--include-needs-review` (u08 A-85). Give the identity a canary the request does not name, or plant a second marker in the record (the spec's own `setup.canaries`): a crossing of one the request does not carry still confirms the leak. |
 | `error: <target>: exhausted 1 attempt(s) to <path>: HTTP 503` after a `-sV` probe was sent three times | The probe adapter has no retries of its own: the layer above it retries twice and the adapter's error reports its own single send. On a resume, the `resume: the -sV probe pass ... stopped after N request(s)` line before it gives the count of sends, retries included, and says whether the run store added them to the run's spend. |
