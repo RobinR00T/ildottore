@@ -7,6 +7,59 @@ the file, schema copy, build or pipeline it names.
 
 ## [Unreleased]
 
+### Fixed (breaking for a CI gate and for a baseline report of a target whose endpoint has a user and no password: an exit whose code is no exit status exits 3; what the CLI and the redactor write is masked as every other error and text is, u01/u12 A-83)
+
+- **An exit whose code is no exit status is an internal error, exit 3.** A command raising
+  `typer.Exit("<text>")` exited 0 with nothing said (1, with the text in clear, before A-82), a bool
+  code exited 0 and a number past 255 reached `sys.exit`, which POSIX cuts to its low 8 bits (256
+  is 0). Any code but `None` and an integer from 0 to 255 now prints `error: unexpected exit with
+  status <code> (an internal error, not a scan result; ...)` and exits 3, as a stray `SystemExit`
+  did. **Breaking for a CI gate:** such an exit was 0 (a clean scan) or 1 (findings below
+  `--fail-on`). No command of this tool raises one; it is the closure of A-9.
+- **The stray-exit line is masked.** `SystemExit("<text>")` in a command printed its text in clear
+  on that line since #114: a registered credential and a key now print as masks, one split by
+  U+0000, U+0001, a newline or a tab included (a code is masked as the text it holds, never as its
+  `repr`, which writes those characters as escapes the redactor read as text; bytes are read as
+  Latin-1, a tuple as its items, an exception as its message, each named by its type).
+- **A UUID in a CLI error is masked as a report masks it.** `tenant 3f2a9c1d-6819-4748-...` printed
+  `tenant 3f2a9c1d-«REDACTED:phone»«REDACTED:high_entropy:...»`, its first group in clear, and a
+  UUID no number rule reads was `«REDACTED:high_entropy:...»`; both are `«REDACTED:uuid:...»`
+  now, with what the reports mask around them. An existing path or a spec file name holding a UUID
+  whose groups are digits is kept whole, as one holding any other UUID was.
+- **A missing file under a directory holding a space keeps its directories.** With `TMPDIR` under
+  "AI projects", `cannot write evidence under /Users/.../AI «REDACTED:high_entropy:...»` (8 to 15
+  tests of the suite failed on `7d01521f`, depending on the path): the existing part of such a path
+  is kept where main's rule stopped at a space or one of `'"()[],;` in a directory's name, the
+  missing name is judged as text as before (OD-25), and a path holding `//` or `/./` keeps
+  nothing, as main's rule keeps nothing of one.
+- **A text holding U+0000 or U+0001 is masked the same whatever else it holds.** The redactor kept
+  the reading with those two characters dropped whenever it masked anything, and the one with them
+  shown otherwise, so `x\x01credential: '<value>'` showed its value once a UUID elsewhere in the
+  text was masked (F2 of the A-78 audits). Both readings are made and what either masks is masked;
+  the characters show as `␀` and `␁` whether or not anything is masked (they were dropped whenever
+  something was). A CLI error is read both ways too, so an existing path written right after a word
+  a delimiter glues to it is masked with that word (no value shows that was hidden). A text without
+  them is masked exactly as before. A text holding them takes up to about 9 times main's time on
+  the worst shapes measured, linearly (4 MiB of card numbers glued by U+0000: 3.0 s, main 0.32 s;
+  of digit-group UUIDs glued by U+0001 about 6 times); a first version took up to 243 times main's
+  (177 s on 4 MiB of 32-hex runs glued by U+0000).
+- **A credential written as an endpoint URL's user is masked by value.** `https://<token>@host` and
+  `https://<token>:@host` registered nothing, so a reply quoting the token kept it readable in the
+  evidence and every report; the user is registered when it is all the user info says, and each
+  credential as written and percent-decoded. **Breaking for a baseline report:** a user-only user
+  info is treated as the credential, so a target id holding that user is masked in every report
+  (`deploybot-prod` with `http://deploybot@host/...` reads `«REDACTED:credential:...»-prod`), and
+  `dottore diff` against a baseline written before refuses it as another target (exit 3):
+  regenerate such a baseline, or write a plain user name beside a password or in `auth_ref`.
+- **The A-82 "Fixed" heading below says whom it breaks**, as this file's rule asks.
+- Checked by `tests/cli/test_exit_status.py` (42 tests, 26 fail on `7d01521f`; typer 0.26.8 and
+  0.27.3), `tests/cli/test_uuid_in_cli_errors.py` (45, 36), `tests/cli/test_paths_with_spaces.py`
+  (32, 21), `tests/test_redactor_stash_delimiters_both_ways.py` (36, 14),
+  `tests/cli/test_masked_both_ways.py` (5, 1) and `tests/cli/test_endpoint_user_credential.py` (9;
+  3 of its 4 end-to-end cases fail on `7d01521f`, where the module does not import), and by
+  differential fuzzes against `7d01521f` (contract u01 and u12 A-83). The judging rules keep
+  version 1, re-pinned: the redactor decides what is stored and printed, never a verdict.
+
 ### Changed (breaking for a pipeline, a checkout or a doc link that names a path of the old layout: the built-in battery, the attack-spec schema and three example files moved, u12 A-84)
 
 - **Every old path and its new one.** The battery and the schema moved into the package, so a
@@ -421,7 +474,7 @@ the file, schema copy, build or pipeline it names.
   document with no `findings` list are each refused (exit 3) on a line that says which. Add
   `"schema_version": "1.0"` to a report built by hand, or pass a bare list of findings.
 
-### Fixed (CLI input validation, from the full CLI audit of 2026-10-11; u12 A-82)
+### Fixed (breaking for a CI gate, a report checked against the exported schema and a `new-spec` call: CLI input validation, from the full CLI audit of 2026-10-11; u12 A-82)
 
 - **A usage error no longer prints a secret.** `dottore run --runs "$KEY"` printed `Invalid value
   for '--runs': 'sk-ant-api03-...' is not a valid integer.` with the key in clear, and so did `-T`,
@@ -453,6 +506,13 @@ the file, schema copy, build or pipeline it names.
   nothing to run: ...`; an Anthropic key in a fleet endpoint or a `--family` is called "a
   credential format" (a UUID is still an identifier); and a credential variable that is not set or
   holds only blanks is named as such, not as a credential shorter than 8 characters.
+- **Breaking** (the heading's label added 2026-10-16, u01/u12 A-83 item 1; the body above already
+  said it): a click error that is not a usage error, and an abort, exit 3 where they exited 1 or
+  their own code; the report schema (`dottore schema export --name report`) refuses a report that
+  lacks a required key or holds a value of the wrong type, a v0.1.0 report included; `new-spec
+  --family` refuses a control or format character and a value shaped like a key (`--family
+  sk-ant-api03-...` exited 0 on `d526747e`, the commit before this entry, and exits 3 since), and
+  `--id` is checked under `--stdout` too.
 
 ### Fixed (what the sixth pre-merge audit, of `31cf86bf`, found in A-77, before it landed)
 

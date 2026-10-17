@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
-from urllib.parse import urlsplit
+from urllib.parse import SplitResult, unquote, urlsplit
 
 from pydantic import ConfigDict, StrictStr, ValidationError, create_model
 
@@ -1847,6 +1847,21 @@ def _mcp_capability(
     return caps
 
 
+def _endpoint_credentials(parts: SplitResult) -> list[str]:
+    """The credentials an endpoint URL's user info carries, as written and percent-decoded.
+
+    The password, when it has one; the user, when it is all the user info says (``https://<token>@``
+    or ``https://<token>:@``, the form a token takes as a URL's user, which an HTTP client sends as
+    Basic credentials). Beside a password, the user is a name, which the reports keep readable, as
+    pip redacts a URL (``user:****@host``, but ``****@host``). Each form is listed, so the value
+    the client sends, decoded, is masked as well as the one the file writes (u01/u12 A-83).
+    """
+
+    user, password = parts.username, parts.password
+    found = [password] if password else [user] if user else []
+    return [form for value in found for form in dict.fromkeys((value, unquote(value)))]
+
+
 def _target_from(path: Path, raw: dict[str, Any]) -> Target:
     """The :class:`Target` a parsed ``target.yaml`` declares (:func:`load_target`)."""
 
@@ -1874,9 +1889,10 @@ def _target_from(path: Path, raw: dict[str, Any]) -> Target:
             raise ValueError(
                 f"target file {path} 'endpoint' is not a URL that can be read (its host)"
             ) from exc
-        # A password in the endpoint URL is a credential the process now holds: mask it by
-        # value everywhere, not only where it still sits inside a URL (SEC-02).
-        register_known_secret(parts.password)
+        # A credential in the endpoint URL is one the process now holds: mask it by value
+        # everywhere, not only where it still sits inside a URL (SEC-02, u01/u12 A-83).
+        for credential in _endpoint_credentials(parts):
+            register_known_secret(credential)
     # Required, as the manual says: it defaulted to `model`, and since OD-18 a `model` target
     # gets a spec's documents, tools and memory in-band, so a deployed application's file
     # without the line was sent a synthetic scene and labelled so (pre-merge audit of #50).

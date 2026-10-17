@@ -1030,12 +1030,22 @@ def test_an_interrupted_campaign_whose_spend_cannot_be_written_still_raises_the_
 
 
 def test_a_path_longer_than_path_max_is_not_walked(tmp_path: Path) -> None:
+    import re
+
     from ildottore.cli.app import _existing_prefixes
 
-    token = str(tmp_path) + "/x" * 2100
+    # Main's rule reads a path up to a space or one of `'"()[],;`: a temporary directory holding
+    # one ("AI projects") cut the token short of the cap. The test reads from the deepest
+    # directory above it that holds none (u12 A-83).
+    base = next(
+        path
+        for path in (tmp_path, *tmp_path.parents)
+        if not re.search(r"[\s'\"()\[\],;]", str(path))
+    )
+    token = str(base) + "/x" * 2100
     assert len(token) > 4096
     assert _existing_prefixes(f"cannot write {token}") == []
-    assert _existing_prefixes(f"cannot write {tmp_path}/x") == [str(tmp_path)]
+    assert _existing_prefixes(f"cannot write {base}/x") == ([str(base)] if str(base) != "/" else [])
 
 
 def test_an_interrupted_report_write_leaves_no_truncated_report(

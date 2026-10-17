@@ -469,8 +469,9 @@ Clean: no gated finding at or above --fail-on.
 .TP
 .B 1
 Findings present but all below --fail-on (for lint, lint findings). Nothing else exits 1: an
-internal error, an error or abort of the command-line library, a stray exit with status 1 and a
-broken output pipe are 3.
+internal error, an error or abort of the command-line library, a stray exit with status 1, an exit
+whose code is no exit status (a text, a bool, a number outside 0 to 255) and a broken output pipe
+are 3.
 .TP
 .B 2
 At least one gated finding at or above --fail-on.

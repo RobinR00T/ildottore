@@ -52,9 +52,11 @@ from ildottore.policy.errors import PolicyError
 from ildottore.redactor import (
     CREDENTIAL_MASK,
     Redactor,
+    UuidCuts,
     holds_known_secret_part,
     known_secret_parts,
     log_safe_json,
+    read_both_ways,
     visible_controls,
 )
 from ildottore.reporting import report_schema
@@ -156,30 +158,27 @@ class OperationalErrorGroup(TyperGroup):
             raise typer.Exit(int(ExitCode.ERROR)) from exc
         except SystemExit as exc:
             # A stray exit: rich's answer to a broken pipe is SystemExit(1) (pre-merge audit of
-            # e6a1ab9b, MEDIUM 2 and LOW 5). 1 and 2 are the findings' codes here, and a text
-            # code exits 1, so those are exit 3; 0 and a code from 3 up keep their meaning.
-            if exc.code is None or (isinstance(exc.code, int) and exc.code not in (1, 2)):
+            # e6a1ab9b, MEDIUM 2 and LOW 5). 1 and 2 are the findings' codes here, and a code
+            # that is no exit status (a text, a bool, a number past 255) is an internal error
+            # (`_exit_status`), so those are exit 3; 0 and a code from 3 to 255 keep their meaning.
+            status = _exit_status(exc.code)
+            if status is not None and status not in (1, 2):
                 raise
             context = exc.__context__
             if isinstance(context, OSError) and context.errno == errno.EPIPE:
                 _say_broken_pipe()
             else:
-                _echo_err(
-                    f"error: unexpected exit with status {exc.code!r} (an internal error, not a "
-                    "scan result; rerun as `dottore -v ...` for the traceback)"
-                )
+                _say_unexpected_exit(exc.code)
             raise typer.Exit(int(ExitCode.ERROR)) from exc
         except Exception as exc:
             kind = _installed_click_kind(exc)
             if kind == "exit":
                 # As a stray SystemExit: 1 and 2 are the findings' codes here.
                 code = getattr(exc, "exit_code", 0)
-                if code not in (1, 2):
-                    raise typer.Exit(code) from exc
-                _echo_err(
-                    f"error: unexpected exit with status {code!r} (an internal error, not a "
-                    "scan result; rerun as `dottore -v ...` for the traceback)"
-                )
+                status = _exit_status(code)
+                if status is not None and status not in (1, 2):
+                    raise typer.Exit(status) from exc
+                _say_unexpected_exit(code)
             elif kind == "abort":
                 _echo_err("error: aborted")
             elif kind == "error":
@@ -189,6 +188,69 @@ class OperationalErrorGroup(TyperGroup):
             else:
                 _report_unexpected(exc, verbose=int(ctx.meta.get(_VERBOSE_KEY, 0) or 0))
             raise typer.Exit(int(ExitCode.ERROR)) from exc
+
+
+#: The largest exit status a process can report: POSIX keeps the low 8 bits of what it is given,
+#: so ``sys.exit(256)`` ends the process with 0, a clean scan to a CI gate.
+_MAX_EXIT_STATUS = 255
+
+
+def _exit_status(code: object) -> int | None:
+    """The status an exit asked for with ``code`` ends the process with, or None for a code that
+    is no exit status (u12 A-83).
+
+    ``None`` is 0, as ``sys.exit(None)`` is; an integer from 0 to 255 is itself (an ``ExitCode``
+    included). Anything else is what no command of this tool raises: a text, which Python prints
+    and exits 1 on, a bool, which it reads as 0 or 1, and a number it would cut to its low 8 bits.
+    Each would read as a scan result to a CI gate (1, findings below ``--fail-on``; 0, clean), so
+    the caller says it is an internal error and exits 3 (A-9).
+    """
+
+    if code is None:
+        return 0
+    if isinstance(code, int) and not isinstance(code, bool) and 0 <= code <= _MAX_EXIT_STATUS:
+        return int(code)
+    return None
+
+
+def _status_text(code: object) -> str:
+    """The text a code that is no integer stands for, as written: bytes read as Latin-1 (every
+    byte one character), a tuple or a list as its items' texts, anything else as ``str``."""
+
+    if isinstance(code, str):
+        return code
+    if isinstance(code, (bytes, bytearray)):
+        return bytes(code).decode("latin-1")
+    if isinstance(code, (tuple, list)):
+        return " ".join(_status_text(item) for item in code)
+    return str(code)
+
+
+def _say_unexpected_exit(code: object) -> None:
+    """Say on stderr that the command exited with ``code`` where it had no business to.
+
+    The code is quoted through the CLI's mask, as every other error is (u12 A-83): a text code is
+    any message at all, and ``SystemExit("<text>")`` printed a registered credential in clear on
+    this line since #114 (A-80). A code is masked as the text it holds and then quoted, never as
+    its ``repr``: ``repr`` writes a NUL, a newline or a tab as an escape, so a registered credential
+    split by one was text the redactor did not know, and printed whole (pre-merge audit of A-83,
+    MEDIUM 1; for bytes, a tuple and an exception as the code, round 2, LOW 1). A code that is not a
+    text is named by its type in front; an integer or a bool is written as it is.
+    """
+
+    try:
+        if isinstance(code, int):  # a bool included: no text in it
+            said = _masked(RuntimeError(repr(code)))
+        else:
+            said = f"'{_masked(RuntimeError(_status_text(code)))}'"
+            if not isinstance(code, str):
+                said = f"{_masked(RuntimeError(type(code).__name__))} {said}"
+    except Exception:  # a code whose text cannot even be read
+        said = "<unprintable status>"
+    _echo_err(
+        f"error: unexpected exit with status {said} (an internal error, not a scan result; rerun "
+        "as `dottore -v ...` for the traceback)"
+    )
 
 
 def _report_unexpected(exc: Exception, *, verbose: int) -> None:
@@ -346,6 +408,12 @@ def run_masked(call: Callable[[], Any]) -> NoReturn:
     masked and exits 3, and an abort says ``error: aborted`` and exits 3, as the root group's
     guard says one raised in a command (A-9's closure, u12 A-80). Ctrl-C keeps 130, which a
     command returns as its code. The classes are Typer's public ones (``_typer_error``).
+
+    A command ends with nothing, or with the code of the ``typer.Exit`` it raises, which
+    non-standalone mode returns. A code that is no exit status (``_exit_status``: a text, a bool,
+    a number past 255) is said, masked, on the line a stray ``SystemExit`` gets, and exits 3:
+    ``typer.Exit("<text>")`` exited 0 here, with nothing said, and 1 with the text in clear before
+    A-82, which is how Python's own ``sys.exit`` reads a text (u12 A-83).
     """
 
     try:
@@ -364,7 +432,11 @@ def run_masked(call: Callable[[], Any]) -> NoReturn:
         _echo_err("error: aborted")
         sys.exit(int(ExitCode.ERROR))
     # A command returns nothing or raises `typer.Exit(code)`, which non-standalone mode returns.
-    sys.exit(code if isinstance(code, int) and not isinstance(code, bool) else 0)
+    status = _exit_status(code)
+    if status is None:
+        _say_unexpected_exit(code)
+        status = int(ExitCode.ERROR)
+    sys.exit(status)
 
 
 class _MaskedGroup(OperationalErrorGroup):
@@ -578,6 +650,14 @@ _SHA256 = re.compile(r"[0-9a-f]{64}")
 # `/`, `]`, `@` or the `»` that closes a mask, so a URL's path is not one, after an IPv6 host,
 # credentials or a masked host included).
 _ABS_PATH = re.compile(r"(?<![\w:/\]@»\ue000])/[^\s'\"()\[\],;]+")
+#: Where main's rule ends a path it reads (``_ABS_PATH``).
+_ABS_PATH_STOP = re.compile(r"[\s'\"()\[\],;]")
+#: A run of the characters the entropy rule joins into a token.
+_TOKEN_RUN = re.compile(r"[A-Za-z0-9+/_=-]+")
+#: Names that are no directory's own: past one, main's rule keeps nothing (`Path` drops them).
+#: A `//` or a `/./` inside a path, which `Path` drops.
+_DROPPED_STEP = re.compile(r"/\.?/")
+_NOT_A_NAME = frozenset({"", ".", ".."})
 #: Longer tokens are not checked (PATH_MAX): each parent costs a filesystem lookup.
 _MAX_PATH_LEN = 4096
 # Where a WHOLE path can start (A-38): an absolute one as above, and not right after `+`, `=` or
@@ -662,61 +742,97 @@ def _existing_prefixes(text: str) -> list[str]:
     return prefixes
 
 
-def _whole_path_end(text: str, start: int, limit: int, lookup: _Lookups) -> tuple[int, int]:
-    """Where an existing path written whole from ``text[start]`` ends, and how far the walk read.
+def _whole_path_end(text: str, start: int, limit: int, lookup: _Lookups) -> tuple[int, int, int]:
+    """Where an existing path written whole from ``text[start]`` ends, how far the walk read, and
+    where the existing part of the path it read through proper names ends.
 
     The end is ``start`` when there is none. Directory by directory from its first name, so a
     directory holding a space or a bracket is read whole; the last name is the longest that
     exists and is followed by no character the entropy rule joins into a token, so
-    `{path}: ...` and `{path}.` keep the path and the `:` or `.` is the message's.
+    `{path}: ...` and `{path}.` keep the path and the `:` or `.` is the message's. The existing
+    part is what main's rule keeps of a path it reads whole: up to the last name before a `/` that
+    exists, a file's included (`<file>/x`), and no further than the first empty, `.` or `..`
+    name (`//`, `/./`), past which main's rule keeps nothing (u12 A-83).
     """
 
     head = start + 1 if text.startswith("/", start) else start
+    existing = start
+    proper = True
     while True:
         bound = min(limit, head + _MAX_NAME_LEN)
         stop = _NAME_STOP.search(text, head, bound)
         name_end = stop.start() if stop else bound
+        proper = proper and text[head:name_end] not in _NOT_A_NAME
         if stop and text[name_end] == "/" and lookup(text[start:name_end], directory=True):
+            existing = name_end if proper else existing
             head = name_end + 1
             continue
+        if (
+            proper
+            and stop
+            and text[name_end] == "/"
+            and lookup(text[start:name_end], directory=False)
+        ):
+            existing = name_end
         for end in range(name_end, head, -1):
             if end < len(text) and _TOKEN_CHAR.match(text, end):
                 continue
             if lookup(text[start:end], directory=False):
-                return end, end
-        return start, name_end
+                return end, end, existing
+        return start, name_end, existing
 
 
-def _whole_path_spans(text: str, lookup: _Lookups) -> list[tuple[int, int]]:
-    """Where ``text`` writes, whole, a path that exists on this machine (A-38).
+def _whole_path_spans(text: str, lookup: _Lookups) -> list[tuple[int, int, int]]:
+    """Where ``text`` writes, whole, a path that exists on this machine (A-38), and where the
+    existing part of a path that does not exist ends when main's rule could not read it (A-83):
+    ``(start, end, checked_to)``, the kept text being ``text[start:end]`` and ``checked_to`` how far
+    the check for a registered credential's part reads.
 
     `_existing_prefixes` reads an absolute path up to the first space, quote or bracket and
     keeps the part of it that exists, so a report named after a commit SHA lost its name when
     the message wrote it before a colon, when it was relative, or when a directory on the way
     held a space or one of ``()[],;'"`` (audits of PR #61). A whole path starts and ends between
     characters the entropy rule does not join into a token, so keeping it changes how nothing
-    else in the message is read: each attempt to keep more than that (the existing directories
-    of a path that does not exist, the name an `OSError` quotes) printed a key that main masked
-    (pre-commit, delta and pre-merge audits). A relative path is one word, from the working
-    directory.
+    else in the message is read. Keeping the name an `OSError` quotes printed keys that main
+    masked, and was withdrawn (OD-25). The existing part of a missing path is kept here only
+    where main's rule stopped short of it in a directory's name (u12 A-83): a missing file under
+    "AI projects" was masked with every directory after the space, which main's rule keeps under
+    any other directory. What follows the kept part is then read as main reads what follows the
+    part it keeps, from its `/` on, and the token there is checked for a registered credential's
+    part with it: judged alone, 16 characters of one printed (pre-merge audit of A-38). A
+    relative path is one word, from the working directory.
     """
 
     starts = [(m.start(), len(text)) for m in _WHOLE_ABS_START.finditer(text)]
     starts += [
         (m.start(), m.end()) for m in _RELATIVE_WORD.finditer(text) if _ENTROPY_RUN.search(m[0])
     ]
-    spans: list[tuple[int, int]] = []
+    spans: list[tuple[int, int, int]] = []
     read = 0
     for start, limit in sorted(starts):
         # Not from inside what a walk already read: `/./././...//` kept nothing and was walked
         # again from each of its `/`, at a cost that grew with the square of its length.
         if start < read:
             continue
-        end, read = _whole_path_end(text, start, limit, lookup)
+        end, read, existing = _whole_path_end(text, start, limit, lookup)
         if lookup.spent:
             break
         if end > start:
-            spans.append((start, end))
+            spans.append((start, end, end))
+        elif _ABS_PATH_STOP.search(text, start, existing):
+            # The existing part of a path that does not exist, where main's rule stopped at a
+            # space or one of `'"()[],;` in a directory's name and the entropy rule read the rest
+            # of the directories as one token with the missing name (u12 A-83). What follows is
+            # judged from its `/` on, as main judges the rest of a path whose directories it
+            # reads; the token there is checked with the kept text for a registered credential's
+            # part (as the pre-merge audit of A-38 found one, judged alone, printed). A `//` or a
+            # `/./` in what main's rule would have read of the path keeps nothing, as main's rule
+            # keeps nothing of such a path (`Path` drops them, and no parent is then its prefix).
+            stop = _ABS_PATH_STOP.search(text, existing)
+            if _DROPPED_STEP.search(text, existing, stop.start() if stop else len(text)):
+                continue
+            token = _TOKEN_RUN.match(text, existing)
+            spans.append((start, existing, token.end() if token else existing))
     return spans
 
 
@@ -786,11 +902,11 @@ def _masked(exc: BaseException) -> str:
     # value, is read as text by `entropy`, which then masks the value, as it did). What is kept
     # (a digest, an existing path) is kept from them too: run over the whole message, they
     # masked a UUID directory of an existing evidence root (pre-merge audit of A-78, L5).
-    # Without the late patterns, `plain` masks the number rules' numbers inside a UUID as
-    # before A-78, so the paths it leaves to keep are the ones it left before.
-    plain = Redactor(entropy_threshold=math.inf, late=False)
-    entropy = Redactor(patterns=[], late=False)
-    late = Redactor(patterns=[], entropy_threshold=math.inf)
+    # A UUID is masked as the reports mask it (u01/u12 A-83): what a number rule of `plain` reads
+    # inside one is left in stand-ins (`UuidCuts`), so the paths it leaves to keep are the ones
+    # it left before, and `entropy` masks each such UUID whole with the pieces main masked around
+    # it, as the redactor's own entropy rule does; it masks any other UUID as `uuid`, the one late
+    # pattern it runs. The cut UUID read `3f2a9c1d-«REDACTED:phone»...` before.
     # A bare digest stays readable only when the error itself carries it as one this tool
     # computed (`digests` on ScopeChecksumError and TamperError): the redactor cannot tell a
     # sha256 from a 64-hex key, so keeping every bare 64-hex printed a raw key pasted as an
@@ -820,65 +936,85 @@ def _masked(exc: BaseException) -> str:
     # credentials are set aside.
     raw = _os_error_text(exc)
     parts = known_secret_parts()
-    # The loopback host stands aside while the rules run, unless a registered credential holds
-    # it (the rule below for a kept token), and comes back after the last of them.
-    loopback = (
-        "127.0.0.1"
-        if _LOOPBACK_MARK not in raw and not holds_known_secret_part("127.0.0.1", parts)
-        else None
-    )
-    if loopback is not None:
-        raw = _LOOPBACK_IN_URL.sub(_LOOPBACK_MARK, raw)
-    text = plain.redact_text(raw)
-    paths = sorted({re.escape(p) for p in _existing_prefixes(text)}, key=len, reverse=True)
-    keep = re.compile(
-        r"(\b(?:"
-        + "|".join([_ARTIFACT_NAME, *carried])
-        + r")\b"
-        + "".join(f"|{p}(?![^/\\s'\"()\\[\\],;])" for p in paths)
-        + "".join(f"|(?<![\\w+/=-]){n}(?![\\w+/=-])" for n in names)
-        + ")"
-    )
-    # A kept token holding 8 consecutive characters of a registered credential is masked:
-    # `sk-<64 hex>` and `<64 hex>-v2` contain one (re-audit of the digest change), and so does
-    # `<dir>/report-<part of the key>.json`, which the old test, "inside the key or holding it
-    # whole", missed (delta audit of A-38). Outright, because the entropy rule passes an
-    # id-shaped spec file name and a low-entropy hex run. Judged on its own when main's rule
-    # kept it; a whole path holding one is not kept at all, so that stretch of the message is
-    # read exactly as without A-38 (kept and judged whole, a long path diluted the part). What is
-    # kept is decided where the pattern matched, in context: re-matching each piece of a split
-    # on its own let a piece equal to a name pass with the token it was glued to before it
-    # (pre-commit audit of the spec file names).
-    held: dict[str, bool] = {}
 
-    def holds_secret(kept: str) -> bool:
-        if kept not in held:
-            held[kept] = holds_known_secret_part(kept, parts)
-        return held[kept]
+    def one_reading(raw: str) -> str:
+        """The message masked, its control characters as they are."""
 
-    spans = [m.span() for m in keep.finditer(text)]
-    whole = _whole_path_spans(text, _Lookups())
-    spans += [s for s in whole if not holds_secret(text[s[0] : s[1]])]
-    merged: list[list[int]] = []
-    for start, end in sorted(spans):
-        # Overlapping spans only: two that touch are two parts, each judged on its own as main
-        # judged them, or a digest glued to a long kept path was diluted below the threshold.
-        if merged and start < merged[-1][1]:
-            merged[-1][1] = max(merged[-1][1], end)
-        else:
-            merged.append([start, end])
-    shown: list[str] = []
-    done = 0
-    for start, end in merged:
-        kept = text[start:end]
-        shown.append(late.redact_late(_entropy_masked(entropy, text[done:start])))
-        shown.append(CREDENTIAL_MASK if holds_secret(kept) else kept)
-        done = end
-    shown.append(late.redact_late(_entropy_masked(entropy, text[done:])))
-    joined = "".join(shown)
-    if loopback is not None:
-        joined = joined.replace(_LOOPBACK_MARK, loopback)
-    return visible_controls(joined)
+        # The loopback host stands aside while the rules run, unless a registered credential holds
+        # it (the rule below for a kept token), and comes back after the last of them.
+        loopback = (
+            "127.0.0.1"
+            if _LOOPBACK_MARK not in raw and not holds_known_secret_part("127.0.0.1", parts)
+            else None
+        )
+        if loopback is not None:
+            raw = _LOOPBACK_IN_URL.sub(_LOOPBACK_MARK, raw)
+        cuts = UuidCuts(raw)
+        plain = Redactor(entropy_threshold=math.inf, late=False, uuid_cuts=cuts)
+        entropy = Redactor(patterns=[], late=frozenset({"uuid"}), uuid_cuts=cuts)
+        late = Redactor(patterns=[], entropy_threshold=math.inf)
+        text = plain.redact_text(raw)
+        # What is kept is found in the text with the stand-ins read back: a UUID a number rule read
+        # inside an existing path or a spec file name is the operator's or the tree's, kept whole as
+        # one no number rule reads (A-38, A-78 L5); the rest, stand-ins included, is `entropy`'s.
+        seen = cuts.read_back(text)
+        paths = sorted({re.escape(p) for p in _existing_prefixes(seen)}, key=len, reverse=True)
+        keep = re.compile(
+            r"(\b(?:"
+            + "|".join([_ARTIFACT_NAME, *carried])
+            + r")\b"
+            + "".join(f"|{p}(?![^/\\s'\"()\\[\\],;])" for p in paths)
+            + "".join(f"|(?<![\\w+/=-]){n}(?![\\w+/=-])" for n in names)
+            + ")"
+        )
+        # A kept token holding 8 consecutive characters of a registered credential is masked:
+        # `sk-<64 hex>` and `<64 hex>-v2` contain one (re-audit of the digest change), and so does
+        # `<dir>/report-<part of the key>.json`, which the old test, "inside the key or holding it
+        # whole", missed (delta audit of A-38). Outright, because the entropy rule passes an
+        # id-shaped spec file name and a low-entropy hex run. Judged on its own when main's rule
+        # kept it; a whole path holding one is not kept at all, so that stretch of the message is
+        # read exactly as without A-38 (kept and judged whole, a long path diluted the part). What
+        # is kept is decided where the pattern matched, in context: re-matching each piece of a
+        # split on its own let a piece equal to a name pass with the token it was glued to before it
+        # (pre-commit audit of the spec file names).
+        held: dict[str, bool] = {}
+
+        def holds_secret(kept: str) -> bool:
+            if kept not in held:
+                held[kept] = holds_known_secret_part(kept, parts)
+            return held[kept]
+
+        spans = [m.span() for m in keep.finditer(seen)]
+        whole = _whole_path_spans(seen, _Lookups())
+        spans += [
+            (start, end) for start, end, checked in whole if not holds_secret(seen[start:checked])
+        ]
+        merged: list[list[int]] = []
+        for start, end in sorted(spans):
+            # Overlapping spans only: two that touch are two parts, each judged on its own as main
+            # judged them, or a digest glued to a long kept path was diluted below the threshold.
+            if merged and start < merged[-1][1]:
+                merged[-1][1] = max(merged[-1][1], end)
+            else:
+                merged.append([start, end])
+        shown: list[str] = []
+        done = 0
+        for start, end in merged:
+            kept = seen[start:end]
+            shown.append(late.redact_late(_entropy_masked(entropy, text[done:start])))
+            shown.append(CREDENTIAL_MASK if holds_secret(kept) else kept)
+            done = end
+        shown.append(late.redact_late(_entropy_masked(entropy, text[done:])))
+        joined = "".join(shown)
+        if loopback is not None:
+            joined = joined.replace(_LOOPBACK_MARK, loopback)
+        return joined
+
+    # A message holding U+0000 or U+0001 is read with them dropped and with them made visible,
+    # and what either reading masks is masked, as the redactor reads a text (u01 A-83): the
+    # entropy pass read only what the first pass gave it, so where the redactor reads both, the
+    # joined reading's glued tokens went unread here.
+    return visible_controls(read_both_ways(one_reading, raw))
 
 
 @app.command()

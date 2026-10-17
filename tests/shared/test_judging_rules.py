@@ -125,11 +125,34 @@ PIN_HISTORY: tuple[tuple[int, str, str], ...] = (
         "audit (is_own_checkout reads pyproject.toml only when it is a regular file); a model "
         "config and a file check, no verdict can change; version 1 is not released",
     ),
+    (
+        1,
+        "ce74f59ffe475a510cabae443bc2980dd199342d238138d7bc74ab4a7ebb064f",
+        "re-pin 2026-10-16: masking only (u01/u12 A-83, fix/masking-followups on 7d01521f): the "
+        "redactor's reading of U+0000 and U+0001, the CLI's error masking and exit statuses, an "
+        "endpoint URL's user registered; the redactor decides what is stored and printed, the "
+        "evaluators judge the raw reply, so no verdict can change; version 1 is not released",
+    ),
+    (
+        1,
+        "8c14612b7877025ed3350055d51dbcf0c239b4185ee224ede6e29825f66a18e3",
+        "re-pin 2026-10-17: the fixes of the pre-merge audit of 4f1b28db (an ordered set for a "
+        "merged stretch's masks and A-77's pieces, a text exit code masked as itself, late typed "
+        "a frozenset), masking and speed only; no verdict can change; version 1 is not released",
+    ),
+    (
+        1,
+        "eea242b76899ce22c68bc80c4c6b51a92c22cd39d4763bc373f3cd8a612e9dec",
+        "re-pin 2026-10-17: the merge of fix/packaging-dependency-floors (#119, 1fb6d485) into "
+        "fix/masking-followups, with A-83's round-2 fixes (A-77's pieces share their stretch's "
+        "mask tuple, an exit code holding text masked as that text); masking, speed and "
+        "packaging only, no verdict can change; version 1 is not released",
+    ),
 )
 
 #: The digest each version is pinned to now: the last line of :data:`PIN_HISTORY` for it.
 PINNED: dict[int, str] = {
-    1: "5b95a2b4c8bf9fb8c5e5c99d9c0b43d0434655515dc1a31d2377ccd5e1128e44",
+    1: "eea242b76899ce22c68bc80c4c6b51a92c22cd39d4763bc373f3cd8a612e9dec",
 }
 
 #: One ``<version> <digest>`` line per pin, appended to and never edited: the history must start

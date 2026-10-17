@@ -223,7 +223,11 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   `pii-elicitation` tag regardless of case and of `-` or `_` (`pii_elicitation`, `PII-Elicitation`;
   not `pii elicitation`) or by the `layer_b_pii` capability alone.
 - **Redact-at-rest.** Secrets and PII are masked in logs, evidence and reports. Every
-  credential the tool reads (an `env://` key, a password in an endpoint URL) is registered and
+  credential the tool reads (an `env://` key, a password in an endpoint URL, or the URL's user
+  when it is all the user info says, `https://<token>@host`, since A-83; each as written and
+  percent-decoded; a user-only user info is treated as the credential, so a plain user name belongs
+  beside a password or in `auth_ref`, and a target id holding it is masked in the reports) is
+  registered and
   masked **by value** wherever it appears, also in the escaped form an HTTP library quotes it
   in its error message, and stripped of surrounding whitespace before use (a key with a
   trailing CR from a Windows-edited `.env` used to be quoted, in clear, by the transport error
@@ -295,8 +299,7 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   a digit: written after a run of `_` it was printed, its padding diluting the entropy rule; glued
   to a letter or a digit (`0000...0<key>`) it is the middle of a word, and the entropy rule decides,
   as before. These rules run last, after the labelled and the entropy rules, and add masks
-  without taking any away (a text holding U+0000 or U+0001 aside, whose redaction depends on
-  whether anything else in it is masked, as before A-78): a key the entropy rule masks with the
+  without taking any away: a key the entropy rule masks with the
   word glued to it is still masked whole, and named (`x_<sk-proj- key>` reads
   `«REDACTED:openai_key:<digest>»`). A UUID is masked whole even when its groups are all digits,
   which the phone and card rules take as numbers: what they read of it is held in stand-ins that
@@ -310,9 +313,20 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   target named `tenant-<uuid>` reads as written in every report and `dottore diff` compares two
   runs of it. The salt is public: a high-entropy target id masks to the same text in every
   report, of every user, and a guess of the id can be checked against its 8-digit digest, which
-  the per-run salt before A-78 prevented and which broke `diff`. In a CLI error a UUID inside an
-  existing path stays readable, and one the phone or card rule reads a number in shows as before
-  A-78 (the number masked); a provider's model name keeps its UUID. Each costs some time on a
+  the per-run salt before A-78 prevented and which broke `diff`. In a CLI error a UUID is masked
+  as a report masks it (since A-83; one the phone or card rule read a number in showed the number
+  masked and the rest, its first group included, in clear), and one inside an existing path or a
+  spec file name stays readable, whatever digits its groups hold; a provider's model name keeps its
+  UUID. A text holding U+0000 or U+0001, the two characters the redactor reserves, is read with
+  them dropped (a key split by one is whole again) and with them shown as `␀` and `␁` (a word one
+  ends stays a word), and what either reading masks is masked (A-83): before, the reading kept
+  depended on whether anything else in the text was masked, so a value after `x\x01credential:`
+  was shown once a UUID elsewhere was masked. A CLI error is read both ways too, so an existing path
+  written right after a word a delimiter glues to it is masked with that word (nothing hidden
+  shows). Such a text takes up to about 9 times main's time on the worst shapes measured, linearly
+  (4 MiB of card numbers glued by U+0000: 3.0 s, main 0.32 s; UUIDs whose groups are digits, glued
+  by U+0001: 4.8 s, main 0.81 s; 32-hex runs glued by U+0000: 3.9 s, main 0.7 s); one without
+  them, main's. Each costs some time on a
   text full of them: about 2.3 times main's time on 4 MB of UUIDs whose groups are all digits
   (which main left mostly readable), 1.4 times when they are glued into one token by `_`, 1.2 to
   1.3 times on prose and base64 (the ratios hold on the two machines measured; the seconds do
@@ -333,9 +347,11 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   an absolute path, before a `:` or a `.` (a temp or CI workspace directory, or a report
   named after a commit SHA, used to read `«REDACTED:high_entropy»`). The name of a file
   that does not exist is not, because it may be a key typed where a file belongs: `No
-  such file or directory` shows an absolute path's existing directories, up to the first
-  whitespace, quote, bracket, comma or semicolon, and judges the name as text, so a SHA
-  or a long random key in it is masked. Emails, key shapes and labels in a kept path are
+  such file or directory` shows an absolute path's existing directories, through a directory
+  whose name holds a space, a quote, a bracket, a comma or a semicolon too (since A-83: under
+  "AI projects" every directory after the space read `«REDACTED:high_entropy:...»`), but none of
+  a path holding `//` or `/./`, and judges the name after them as text, so a SHA or a long random
+  key in it is masked. Emails, key shapes and labels in a kept path are
   still masked, a kept path holding 8 consecutive characters of a registered credential
   prints as `«REDACTED:credential»`, and the rest of the path is redacted. Otherwise only
   what the tool computed stays readable: an evidence file name (`<sha256>.json`), the hash a
@@ -1247,8 +1263,10 @@ error was a traceback with exit 1, which a gate that lets `1` through read as a 
 means findings below `--fail-on` and nothing else (`dottore lint` exits 1 on lint findings). An
 error of the command-line library that is not a usage error (a file it cannot open, from the copy
 Typer raises from or from a click installed beside it that a plugin raises from) is `3` too,
-masked as a usage error is, so are its `Aborted!` (`error: aborted`) and an exit a library asks
-for with status 1 or 2 or with a message (`error: unexpected exit with status ...`). A broken
+masked as a usage error is, so are its `Aborted!` (`error: aborted`), an exit a library asks
+for with status 1 or 2 or with a message, and an exit a command asks for with a code that is no
+exit status (a text, a bool, a number outside 0 to 255; `typer.Exit("<text>")` exited 0 until
+A-83): `error: unexpected exit with status <code> ...`, the code masked as every error is. A broken
 output pipe (`dottore ... | head`, or a reader that closes early) is `3` with `error: the output
 stream closed before the command finished (broken pipe)` on stderr: until 2026-10-12 it exited 1,
 a scan with findings whose progress lines met the closed pipe included. Ctrl-C and SIGTERM are

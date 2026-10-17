@@ -199,7 +199,9 @@ reach from 4 KB of text (`tests/cli/test_deep_json.py`, `test_replay.py`,
 anchors reach from 265 bytes (u01 A-37, `tests/cli/test_yaml_expansion.py`).
 Amended 2026-10-12 (A-80): a class nobody listed no longer reaches the terminal as a traceback
 with exit 1: the root command group maps any exception no handler caught to exit 3 with one line,
-and a sqlite3 error from the run store is named after the store.
+and a sqlite3 error from the run store is named after the store. Amended 2026-10-16 (A-83): an exit
+asked for with a code that is no exit status (a text, a bool, a number outside 0 to 255) is exit 3
+with the stray-exit line, masked; `typer.Exit("<text>")` exited 0.
 
 **A-10 A resumed run is bound to its target.** `--resume` refuses a run id whose stored run
 belongs to a different target, and refuses when no run store is available to check. Unbound, it
@@ -722,7 +724,10 @@ inside what another already read; main's rule walks each distinct token once and
 between tokens (a 1 MiB message that cost 524,032 lookups costs 2,048; held, the paths took 1.3 GiB
 where main took 21 MiB). Main's rule stopped at a cap printed a value main masked (audit of the
 cap). Checked by `tests/cli/test_masked_paths.py`, and by a differential fuzz against main:
-no key main masked printed, in 120,000 messages.
+no key main masked printed, in 120,000 messages. Amended 2026-10-16 (A-83 item 5): the existing
+part of a missing path is kept too where main's rule stopped short of it at a space or one of
+`'"()[],;` in a directory's name, and nothing of a path holding `//` or `/./`; the rest is judged
+from its `/` on, its token checked for a registered credential's part with the kept text.
 
 **A-42 A run parses each target file once (added 2026-10-07).** `dottore run` and `dottore
 fingerprint` parse a target file once per time it is named (`wiring.read_target_file`), and the
@@ -1798,6 +1803,147 @@ Merged 2026-10-14 with `fix/no-secret-in-fragments` (u01 A-77, `33782ad3`), whic
   `provider: openai` target with `transport: stdio` reads this clause's refusal of the file
   instead (M5): nothing is sent and no key is read.
 
+**A-83 (this unit's and u01's, added 2026-10-16, the follow-ups the pre-merge audits of the train
+of `de122e26` queued) Every text the CLI prints is masked as every other error is, a UUID
+as the reports mask it, a path under a directory holding a space as one under any other, and an
+exit whose code is no exit status is an internal error.** Seven items, each reproduced on
+`7d01521f` before it was changed; u01's half (the redactor) is u01 A-83.
+
+*1. The CHANGELOG.* The A-82 "Fixed" entry (CLI input validation) stated breaks in its body (a
+click error and an abort exit 3, the report schema refuses a v0.1.0 report, `new-spec --family`
+refuses a key shape) under a heading that named no reader; it now says "breaking for a CI gate, a
+report checked against the exported schema and a `new-spec` call", with a bullet listing them.
+
+*2. An exit code that is no exit status.* `run_masked` (A-82) read any code that was not an
+integer as 0: a command raising `typer.Exit("<text>")` exited 0 with nothing said, where the tree
+before A-82 (`d526747e`) exited 1 with the text in clear, as Python reads `sys.exit("<text>")`; a
+bool exited 0 (Python reads `True` as 1), and a number past 255 reached `sys.exit`, which POSIX
+cuts to its low 8 bits (256 is 0, a clean scan). Decided under the owner's delegation (best
+practice, A-9), revisable: an exit status is `None` (0, as `sys.exit(None)`) or an integer from 0
+to 255 (`cli.app._exit_status`); any other code is what no command of this tool raises, and 0 or
+1 would read as a scan result, so it is said on the stray-exit line and exits 3, in `run_masked`,
+in the root group's guard of a stray `SystemExit` and for a separately installed click's `Exit`.
+Not taken: exit 1 for a text, Python's own rule (1 is findings below `--fail-on` here); keep 0
+(a clean scan for an internal error); reading a bool as its integer (no command means one).
+`tests/cli/test_exit_status.py` (42 tests, 26 fail on `7d01521f`): 15 codes through the console
+entry point in a process of its own and through the test runner, typer 0.26.8 and 0.27.3.
+
+*3. The stray-exit line, masked.* ``error: unexpected exit with status <code> (an internal error,
+...)`` quoted the code raw since #114 (A-80): `SystemExit("<text>")` printed a registered credential
+and a key in clear. A text code goes through `_masked` as itself and is then quoted; any other
+code's `repr` does (`_say_unexpected_exit`; an unreadable `repr` is `<unprintable status>`). The
+first version masked a text's `repr` too, which writes U+0000, U+0001, a newline and a tab as
+escapes, so a registered credential split by one was text the redactor did not know and printed
+whole: with U+0000 on `7d01521f` as here, with a newline as new on this branch, where main printed
+nothing (pre-merge audit of A-83, MEDIUM 1). The four split forms are tested, as `SystemExit` and
+as `typer.Exit` (8 cases, all fail on that version). A code that holds text but is none went
+through `repr` still, so bytes with a NUL, a tuple with a newline and an exception with a tab
+printed the split credential whole, as on main (round 2, LOW 1): bytes are read as Latin-1, a tuple
+or a list as its items' texts, anything else as `str()`, the text masked and quoted, its type named
+in front (`bytes 'halt «REDACTED:credential:...»'`); an integer or a bool is written as it is (3
+cases, all fail on `85da7f8f`).
+
+*4. A UUID in a CLI error.* The redactor masks a UUID whole (u01 A-78), but the CLI masks an error
+in two passes, every rule but the entropy fallback first and the entropy fallback on what it does
+not keep, and its first pass wrote the number rules' masks inside a UUID: `tenant
+3f2a9c1d-6819-4748-9c2d-1234567890ab` printed `tenant
+3f2a9c1d-«REDACTED:phone»«REDACTED:high_entropy:...»`, its first group in clear, and `tel +34 600
+123 456` on the line before a UUID showed 7 of its
+characters; a UUID no number rule reads was `«REDACTED:high_entropy:...»` where a report wrote
+`«REDACTED:uuid:...»`. The two passes now share the redactor's stand-ins (`redactor.UuidCuts`,
+u01 A-83): the first leaves them in its output, the second masks each UUID they are in whole with
+the pieces main masked around it, as the redactor's entropy rule does, and any other as `uuid`
+(`late=frozenset({"uuid"})`: `late` is a bool or a frozenset of types, never a string, whose
+substrings a type test would match, LOW 4); the key formats still run after it, on what it
+shows. What `_masked` keeps is
+found with the stand-ins read back, so an existing path or a spec file name holding a UUID whose
+groups a number rule reads is kept whole, as one holding any other UUID was since A-78 L5 (main
+masked the number in it, so the path no longer existed). For 13 contexts of three UUIDs (digit
+groups, all digits, none) the CLI's mask is the redactor's
+(`tests/cli/test_uuid_in_cli_errors.py`, 45 tests, 36 fail on `7d01521f`). Not taken: reading the
+first pass's stand-ins back as digits, which judged a token whole where main judged it in pieces
+and showed a value glued before a cut UUID that main masked; typing every key format in the
+entropy pass as a report does (`«REDACTED:openai_key»` where the CLI writes
+`«REDACTED:high_entropy»`), which leaves a hex run inside a token-level JWT to a late pattern that
+fails on the text when a letter outside ASCII follows (the reports have that gap, u01 A-83 *Not
+covered*), so the CLI keeps masking the run.
+
+*5. A path under a directory holding a space.* `_masked` keeps out of the entropy rule the part of
+an absolute path that exists, read up to the first whitespace or one of `'"()[],;` (main's rule),
+and a path that exists written whole (A-38). A missing file under a directory holding a space was
+neither, so the entropy rule read every directory after the space with the missing name as one
+token: with `TMPDIR` under "AI projects", 8 to 15 tests of the suite failed on `7d01521f`,
+depending on the path (15 with this branch's, 12 with the auditor's; `cannot
+write evidence under /Users/.../AI «REDACTED:high_entropy:...»: ... is not a directory`). The
+whole-path walk now also reports the existing part of a path that does not exist, up to the last
+name before a `/` that exists, a file's included, and it is kept when main's rule stopped short of
+it at such a character in a name (`_whole_path_spans`). What follows is judged from its `/` on, as
+main judges what follows the part it keeps, and the token there is checked with the kept text for
+8 characters of a registered credential, which the pre-merge audit of A-38 found printed when that
+token was judged alone
+(`test_part_of_a_registered_credential_after_an_existing_directory_is_masked`).
+A `//` or a `/./` in what main's rule would read of the path keeps nothing, and a `..` ends the
+kept part: main's rule keeps nothing of such a path (`Path` drops the step, so no parent is a
+prefix of the text), and kept, the existing part let 203 of 908 short names that main hid be
+judged alone in the differential fuzz below. The name of a file that does not exist is judged as
+text, as OD-25 decided. `tests/cli/test_paths_with_spaces.py` (32 tests, 21 fail on `7d01521f`):
+each character main's rule stops at, eight names judged as under a directory without one, a key
+as the name, a credential's part, the three steps, and the evidence-root refusal through the CLI.
+`test_a_path_longer_than_path_max_is_not_walked` reads its token from a directory without a space,
+which the cap it tests needs. Not taken: widening the entropy rule's path shape (`_PATH_SHAPED`) to
+a name after `/_` or holding a capital, which would print every such token in every report too,
+and no secret can be told from one by its shape; the filesystem says which directories exist.
+
+*6. A message holding U+0000 or U+0001.* `_masked` runs its passes on the message read with them
+dropped and with them made visible, and masks what either reading masks (`redactor.read_both_ways`,
+as `redact_text` reads a text, u01 A-83): its entropy pass read only what its first pass gave it,
+so the joined reading's glued tokens went unread. The cost to readability: an existing path written
+right after a word a delimiter glues to it is masked with that word, as the joined reading reads
+one token there (`abcdefgh\x00/usr/share/man/...` showed its directories on `7d01521f`); nothing
+hidden shows (pre-merge audit of A-83, LOW 3). Its masks are placed back tolerantly (u01 A-83,
+*Placing a reading back*): a later pass can rewrite an earlier one's mask, and placed strictly,
+about 1% of the fuzz's messages were masked whole as `«REDACTED:fragment»`
+(`tests/cli/test_masked_both_ways.py`, 5 tests).
+
+*7. A credential as an endpoint URL's user.* A target file's endpoint registered its password for
+masking by value (SEC-02) and nothing else, so a token written as the URL's user
+(`https://<token>@host`, `https://<token>:@host`), which the HTTP client sends as Basic
+credentials, was never masked by value: a reply quoting it kept it readable in the evidence and in
+every report. `cli.wiring._endpoint_credentials` registers the password, or, when there is none or
+it is empty, the user, each as written and percent-decoded (the value the client sends; a
+`p%40ss` password was registered as written only). Beside a password the user is a name, which the
+reports keep readable, as pip redacts a URL (`user:****@host`, but `****@host`). Against a loopback
+stub echoing the credentials it was sent, through `run -oA`, 3 of
+`tests/cli/test_endpoint_user_credential.py`'s 4 end-to-end cases fail on `7d01521f` (the password
+case passes there too). Not covered: a user beside a non-empty password that is in fact the token
+(`https://<token>:x-oauth-basic@host`, GitHub's form), and a user-only credential under 8
+characters, which is not registered (the floor) and which the adapters, refusing a short password
+(u04 A-78), do not refuse: refusing it would refuse `https://bob@host`. A consequence, found by
+the pre-merge audit (MEDIUM 2): a user-only user info is the credential, so a target id holding
+that user is masked in every report (`deploybot-prod` with `http://deploybot@host/...` reads
+`«REDACTED:credential:...»-prod`), and `dottore diff` against a baseline written before refuses it
+as another target (exit 3). Kept, as it fails closed; the CHANGELOG lists it as breaking (regenerate
+such a baseline), and the MANUAL says a plain user name belongs beside a password or in
+`auth_ref`.
+
+*8. Two items found closed.* A run id of 12 decimal digits is drawn again (A-61, `new_run_id`),
+and every exception class the package defines keeps its name through the redactor, a walk over
+all of them (u01 A-63, `tests/policy/test_redactor_error_class_names.py`); both pass on
+`7d01521f` and here.
+
+*Measured.* The differential fuzz of `_masked` against `7d01521f`'s, in two processes on the same
+messages (the A-78 auditors' grammar with paths under a tree on disk: directories with a space, a
+bracket, a `_` after a `/`, a UUID whose groups a number rule reads; missing names of every shape;
+registered credentials in 30% of the messages), three draws of 20,000: about 5,600 messages a draw
+show a run of 8 characters that main hides. Each is shown by main itself on the same message with
+every such directory replaced by a twin main's rule reads (no stop character, a UUID no number
+rule reads), or by main's own report redactor (15), or is a documented key prefix before a
+`hex_token` mask (2), which main's CLI prints too (`sk-proj-«REDACTED:hex_token»`); two more were
+checked by hand: an `xoxe.` prefix the reports show too, and part of a registered credential
+inside a path that main prints in the same path with another UUID. No message differs for any
+other reason, and none is masked whole as `«REDACTED:fragment»`. Time: `_masked` on 20,000
+messages without U+0000 or U+0001, 1.07 to 1.12 times main's (four measures, two before the last
+fix); on the fuzz's messages, 9,889 of the 20,000 holding one, 1.8 times (two readings).
 
 **A-84 The package carries what it reads, a refusal of an old path names the new one, and CI runs
 the suite on the declared floors (added 2026-10-16, a follow-up of the audit train of `de122e26`;
@@ -1919,7 +2065,9 @@ Both test files fail on `7d01521f`: `ildottore.shared.package_data` does not exi
 - **OD-25** the name of a file that does not exist in a CLI error (a mistyped report named after a
   commit SHA): print it, or keep it masked. **Decided 2026-10-11 under the owner's delegation (best
   practice), revisable: kept masked, as built (2026-10-07, A-38)**, its existing directories printed
-  up to the first whitespace, a quote, a bracket, a comma or a semicolon. An error line reaches a
+  up to the first whitespace, a quote, a bracket, a comma or a semicolon (since A-83 through such a
+  character in a directory's name too, and none of a path holding `//` or `/./`). An error line
+  reaches a
   terminal and a CI log, and a name given where a file belongs can be a secret pasted in the wrong
   argument: the redactor fails closed on a token it cannot tell from a key, and printing the name an
   `OSError` carries when it looks like a file's (an extension, a directory that exists) printed an
