@@ -479,10 +479,16 @@ def test_a_changed_battery_file_is_named_in_clear_through_the_cli(tmp_path: Path
     files = _context(tmp_path)["judging_files"]
     assert isinstance(files, dict) and "battery/attacks/SP-LEAK-001.yaml" in files
     secret = "sk-ant-api03-" + "Zq8xW2vB7nK4pL9s" * 3
+    tampered = "Zq9vT4mXa81LpR2wKd7Yb3Nc.yaml"  # label-shaped, and no directory of the package
     _rewrite(
         tmp_path,
         judging_digest="f" * 64,
-        judging_files={**files, "battery/attacks/SP-LEAK-001.yaml": "0" * 8, secret: "1" * 8},
+        judging_files={
+            **files,
+            "battery/attacks/SP-LEAK-001.yaml": "0" * 8,
+            secret: "1" * 8,
+            tampered: "2" * 8,
+        },
     )
     result = CliRunner().invoke(
         app,
@@ -493,9 +499,31 @@ def test_a_changed_battery_file_is_named_in_clear_through_the_cli(tmp_path: Path
         ],
     )
     assert result.exit_code == ExitCode.ERROR, result.output
-    assert "the files that differ: battery/attacks/SP-LEAK-001.yaml, " in result.output
+    assert "the files that differ: Zq9v" not in result.output
+    assert "battery/attacks/SP-LEAK-001.yaml, " in result.output
     assert secret not in result.output
-    assert "REDACTED" in result.output  # the value of the record that is no label
+    assert tampered not in result.output  # round 2 of the audit, LOW 1
+    assert "REDACTED" in result.output  # the values of the record that are no label of it
+
+
+def test_a_label_only_the_record_names_is_kept_only_where_the_package_has_files() -> None:
+    current = {
+        "ildottore": "1" * 8,  # the package's __init__, a module with no dot
+        "battery/attacks/PI-DIRECT-001.yaml": "1" * 8,
+        "ildottore.adapters": "1" * 8,
+        "ildottore.adapters.rest": "1" * 8,
+    }
+    stored = {
+        "battery/attacks/REMOVED-001.yaml": "0" * 8,  # a spec removed since the halt: kept
+        "ildottore.adapters.gone": "0" * 8,  # a module removed since the halt: kept
+        "Zq9vT4mXa81LpR2wKd7Yb3Nc.yaml": "0" * 8,  # no data file of the package at the root
+        "nowhere/Zq9vT4mXa81LpR2wKd7Yb3Nc.yaml": "0" * 8,  # no such directory
+        "ildottore.nope.gone": "0" * 8,  # no such parent module
+    }
+    for label in stored:
+        _, kept = resume_mod._changed_files({**current, label: "0" * 8}, current)
+        expected = label in {"battery/attacks/REMOVED-001.yaml", "ildottore.adapters.gone"}
+        assert (kept == (label,)) is expected, label
 
 
 def test_a_run_judged_under_another_interpreter_is_refused(

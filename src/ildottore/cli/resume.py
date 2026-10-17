@@ -863,10 +863,38 @@ _LABEL = re.compile(
 )
 
 
+def _is_module(label: str) -> bool:
+    """Whether a covered file's label names a module (``ildottore``, ``ildottore.cli.app``), not a
+    data file's path."""
+
+    return label == "ildottore" or label.startswith("ildottore.")
+
+
+def _parent(label: str) -> str:
+    """A label's parent module (a module's) or directory (a data file's), as the digest names it."""
+
+    return label.rpartition(".")[0] if _is_module(label) else label.rpartition("/")[0]
+
+
+def _is_known_place(label: str, current: dict[str, str]) -> bool:
+    """Whether ``label``, from the run record only, sits where this installation has files: its
+    parent module is one of the package's, or its directory holds a data file of the package."""
+
+    if len(label) > 200 or _LABEL.fullmatch(label) is None:
+        return False
+    parent = _parent(label)
+    if _is_module(label):
+        return parent in current
+    return any(_parent(name) == parent for name in current if not _is_module(name))
+
+
 def _changed_files(stored: object, current: dict[str, str]) -> tuple[str, tuple[str, ...]]:
     """The covered files whose digest differs between the record and now, at most five named,
     and the names a refusal keeps readable: those this installation covers, and those of the
-    record that have a label's shape (a file removed since the halt)."""
+    record alone (a file removed since the halt) that have a label's shape and sit where this
+    installation has files. Any other value of the record stays masked: a tampered record wrote
+    ``Zq9vT4mXa81LpR2wKd7Yb3Nc.yaml``, label-shaped, and it printed in clear (round 2 of the
+    pre-merge audit of u12 A-84, LOW 1)."""
 
     if not isinstance(stored, dict):
         return "", ()
@@ -877,11 +905,7 @@ def _changed_files(stored: object, current: dict[str, str]) -> tuple[str, tuple[
         return "", ()
     named = names[:5]
     shown = ", ".join(named) + (f" and {len(names) - 5} more" if len(names) > 5 else "")
-    kept = tuple(
-        name
-        for name in named
-        if name in current or (len(name) <= 200 and _LABEL.fullmatch(name) is not None)
-    )
+    kept = tuple(name for name in named if name in current or _is_known_place(name, current))
     return f"; the files that differ: {shown}", kept
 
 
