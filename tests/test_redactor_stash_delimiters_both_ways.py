@@ -14,12 +14,13 @@ from __future__ import annotations
 
 import random
 import time
+import tracemalloc
 
 import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from ildottore.redactor import Redactor
+from ildottore.redactor import Redactor, mask_split
 
 #: Registered credentials are process-wide: none from an earlier test changes a mask here.
 pytestmark = pytest.mark.usefixtures("no_known_secrets")
@@ -162,3 +163,37 @@ def test_merging_many_masks_into_one_stretch_stays_linear() -> None:
     small = min(cost(256 * 1024) for _ in range(2))
     large = min(cost(1024 * 1024) for _ in range(2))
     assert large < 6 * small, (small, large)
+
+
+def _glued_key_stream(size: int) -> list[dict[str, object]]:
+    """A logprob stream of 4-character tokens, ``size`` characters of distinct `ghp_` keys glued
+    by U+0000: the joined reading masks them as one stretch, which every token lies in."""
+
+    keys: list[str] = []
+    written = 0
+    while written < size:
+        key = "ghp_" + format(written * 7919 % 36**8, "08x") * 4 + "abcd"
+        keys.append(key)
+        written += len(key) + 1
+    text = "\x00".join(keys)[:size]
+    return [{"token": text[i : i + 4], "logprob": -0.5} for i in range(0, len(text), 4)]
+
+
+def test_a_logprob_stream_s_memory_grows_with_its_length() -> None:
+    """Four times the stream, under eight times the peak memory. Each token held a copy of its
+    stretch's masks, so memory grew as tokens times masks: 4.19 GB on 256 KiB (pre-merge audit of
+    A-83, round 2, MEDIUM 1); 16 KiB and 64 KiB peaked at 15 MiB and 211 MiB, 13.8 times."""
+
+    redactor = Redactor(salt="s")
+
+    def peak(size: int) -> int:
+        items = _glued_key_stream(size)
+        tracemalloc.start()
+        try:
+            mask_split(redactor, items)
+            return tracemalloc.get_traced_memory()[1]
+        finally:
+            tracemalloc.stop()
+
+    small, large = peak(16 * 1024), peak(64 * 1024)
+    assert large < 8 * small, (small, large)

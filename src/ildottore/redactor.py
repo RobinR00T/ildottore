@@ -2905,9 +2905,12 @@ def _masked_pieces(
         while first < len(spans) and spans[first][1] <= start:
             first += 1
         parts: list[str] = []
-        # An ordered set: a list searched for each mask was quadratic in a stretch's masks, for
-        # every piece it covers (pre-merge audit of A-83: 222 s on a 64 KiB logprob stream).
-        masks: dict[str, None] = {}
+        # The masks of the stretches the piece lies in. A piece inside one stretch shares that
+        # stretch's own tuple, which holds no mask twice; only a piece across several builds one,
+        # in order and without repeats. A copy for every piece took memory in pieces times masks:
+        # 4.19 GB on 256 KiB of a logprob stream of `ghp_` keys glued by U+0000, and searched as a
+        # list, time in its square too (pre-merge audits of A-83, HIGH 1 and round 2, MEDIUM 1).
+        touched: list[tuple[str, ...]] = []
         cursor, index = start, first
         while start < end and index < len(spans) and spans[index][0] < end:
             span_start, span_end, shown = spans[index]
@@ -2915,14 +2918,22 @@ def _masked_pieces(
                 parts.append(joined[cursor:span_start])
             if span_start >= start:  # this piece is the first the stretch covers
                 parts.append("".join(shown))
-            masks.update(dict.fromkeys(shown))
+            touched.append(shown)
             cursor = min(max(cursor, span_end), end)
             if span_end > end:  # it goes on into the next piece
                 break
             index += 1
-        if masks and cursor < end:
-            parts.append(joined[cursor:end])
-        out.append(("".join(parts), tuple(masks)) if masks else (piece, ()))
+        if not touched:
+            out.append((piece, ()))
+        else:
+            if cursor < end:
+                parts.append(joined[cursor:end])
+            masks = (
+                touched[0]
+                if len(touched) == 1
+                else tuple(dict.fromkeys(mask for shown in touched for mask in shown))
+            )
+            out.append(("".join(parts), masks))
         start = end
     return out
 
