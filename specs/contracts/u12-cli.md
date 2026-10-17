@@ -1446,8 +1446,10 @@ are the same class.
   and note. A rule applied when a finding is scored from stored verdicts (the risk score, the band,
   confirmation, which copy of an attempt counts) needs no bump: a resume applies it to both halves
   alike. Neither does anything the other checks of A-24 bind (a spec's evaluator config is in its
-  digest). `JUDGING_RULES_SINCE` is the day the version took its value, the one place the docs name
-  for it.
+  digest). `JUDGING_RULES_SINCE` is the day runs began to record their rules (version 1 took its
+  value), the one place the docs name for it, and it stays when the version is bumped: every reader
+  means that day (the refusal of a run that records no rules); a later version's day is its
+  CHANGELOG line's (u08 A-85).
 * **The code that judges, bound by its digest (deny by default).** `shared.judging_rules.
   judging_digest` is a SHA-256 over every file of the package but `ildottore.testing`, the one
   module `JUDGING_EXEMPT` names: Python sources normalized (comments, docstrings and blank lines
