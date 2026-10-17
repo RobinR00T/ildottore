@@ -100,3 +100,15 @@ def test_through_the_cli(specs_dir: Path) -> None:
     assert result.exit_code == 3
     assert result.stderr.startswith("error: spec '«REDACTED:uuid:"), result.stderr
     assert "«REDACTED:phone»" not in result.stderr
+
+
+def test_late_takes_a_frozenset_of_types_and_refuses_a_string() -> None:
+    """The CLI's entropy pass runs the UUID pattern alone (`late=frozenset({"uuid"})`); a bare
+    string was read as a collection, and `"uuid" in "uuid_x"` style tests matched its substrings
+    (pre-merge audit of A-83, LOW 4)."""
+
+    only = Redactor(salt="s", late=frozenset({"uuid"}))
+    shown = only.redact_text(f"id {LETTERS} and sk-ant-api03-" + "Ab3" * 10)
+    assert "«REDACTED:uuid:" in shown and "anthropic_key" not in shown
+    with pytest.raises(TypeError):
+        Redactor(late="uuid")  # type: ignore[arg-type]

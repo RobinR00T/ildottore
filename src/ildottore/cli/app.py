@@ -920,7 +920,7 @@ def _masked(exc: BaseException) -> str:
             raw = _LOOPBACK_IN_URL.sub(_LOOPBACK_MARK, raw)
         cuts = UuidCuts(raw)
         plain = Redactor(entropy_threshold=math.inf, late=False, uuid_cuts=cuts)
-        entropy = Redactor(patterns=[], late=("uuid",), uuid_cuts=cuts)
+        entropy = Redactor(patterns=[], late=frozenset({"uuid"}), uuid_cuts=cuts)
         late = Redactor(patterns=[], entropy_threshold=math.inf)
         text = plain.redact_text(raw)
         # What is kept is found in the text with the stand-ins read back: a UUID a number rule read

@@ -47,7 +47,7 @@ import re
 import secrets
 import threading
 from array import array
-from collections.abc import Callable, Collection, Iterable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, ClassVar, Final, Protocol, cast
 
@@ -1356,7 +1356,7 @@ class Redactor:
         patterns: Sequence[Pattern] | None = None,
         entropy_threshold: float = 3.7,
         entropy_min_len: int = 16,
-        late: bool | Collection[str] = True,
+        late: bool | frozenset[str] = True,
         uuid_cuts: UuidCuts | None = None,
     ) -> None:
         self._salt = (_PROCESS_SALT if salt is None else salt).encode("utf-8")
@@ -1365,8 +1365,11 @@ class Redactor:
         )
         if isinstance(late, bool):
             self._set_late(_late_patterns() if late else [])
-        else:
+        elif isinstance(late, frozenset):
+            # A set of types, so a bare string is refused, not read as the types it holds.
             self._set_late([pattern for pattern in _late_patterns() if pattern.type in late])
+        else:
+            raise TypeError("late is a bool or a frozenset of late pattern types")
         self._uuid_cuts = uuid_cuts
         # The mask types kept as written (`_redact_once`), kept in step with `register`: the
         # tool's own rules', its patterns', and the A-78 types whichever redactor wrote them.
