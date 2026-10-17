@@ -36,9 +36,10 @@ practice, 2026-10-13).
 **Landing.** Version ``1`` is the rules as of the merge that introduced the version: main at
 ``a906cea9`` (the six branches before it) merged in on :data:`JUDGING_RULES_SINCE`, the one place
 the docs name for that date, and the pin made on that tree, replacing the provisional pin of the
-day before. Version ``2`` (u08 A-85, 2026-10-16) changes verdicts and figures: a canary the request
-carries is needs-review, a sweep's crossing counts once, and ``secret_shape`` detects every key
-format the redactor masks; its pin is made on the tree that lands it.
+day before. Version ``2`` (u08 A-85, 2026-10-16) changes verdicts and figures: a crossing of a
+canary the request carries is a fail that needs review, never a confirmed one, and
+``secret_shape`` detects every key format the redactor masks; its pin is made on the tree that
+lands it.
 """
 
 from __future__ import annotations
@@ -70,8 +71,8 @@ __all__ = [
 #: Bumped by one whenever a change can alter the verdict stored for an attempt. ``1``: the rules as
 #: of the merge that introduced the version, the first that records it (OD-16, OD-19, OD-21, OD-38,
 #: OD-40, OD-41, OD-42 and OD-43 in force). ``2``: u08 A-85, a crossing of a canary the identity
-#: sweep's request carries is needs-review, not a confirmed fail; a sweep's crossing is one
-#: success, not one per attempt; ``secret_shape`` reads the redactor's documented key formats.
+#: sweep's request carries is a fail that needs review, not a confirmed one; ``secret_shape``
+#: reads the redactor's documented key formats.
 JUDGING_RULES_VERSION: Final = 2
 
 #: The day runs began to record their rules (version 1 took its value), which the refusal of a run
