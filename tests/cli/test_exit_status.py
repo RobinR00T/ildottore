@@ -149,3 +149,32 @@ def test_a_registered_credential_split_in_a_text_code_is_masked(
     assert "«REDACTED:credential:" in result.stderr, result.stderr
     for half in (REGISTERED[:6], REGISTERED[6:]):
         assert half not in result.stderr, result.stderr
+
+
+#: Codes that are no text but hold one, the credential split in each (pre-merge audit of A-83,
+#: round 2, LOW 1: masked as their `repr`, each printed the credential whole, as on main).
+OTHER_CODES = {
+    "bytes with U+0000": (
+        'SystemExit(("halt " + REGISTERED[:6] + "\\x00" + REGISTERED[6:]).encode())',
+        "bytes 'halt ",
+    ),
+    "tuple with LF": (
+        'SystemExit(("halt", REGISTERED[:6] + "\\n" + REGISTERED[6:]))',
+        "tuple 'halt ",
+    ),
+    "exception with TAB": (
+        'typer.Exit(ValueError("halt " + REGISTERED[:6] + "\\t" + REGISTERED[6:]))',
+        "ValueError 'halt ",
+    ),
+}
+
+
+@pytest.mark.parametrize("case", sorted(OTHER_CODES))
+def test_a_code_that_holds_text_is_masked_as_that_text(case: str, specs_dir: Path) -> None:
+    raised, named = OTHER_CODES[case]
+    result = _entry_point(raised, specs_dir)
+    assert result.returncode == 3, result.stderr
+    assert f"error: unexpected exit with status {named}" in result.stderr, result.stderr
+    assert "«REDACTED:credential:" in result.stderr, result.stderr
+    for half in (REGISTERED[:6], REGISTERED[6:]):
+        assert half not in result.stderr, result.stderr

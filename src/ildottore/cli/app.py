@@ -212,24 +212,39 @@ def _exit_status(code: object) -> int | None:
     return None
 
 
+def _status_text(code: object) -> str:
+    """The text a code that is no integer stands for, as written: bytes read as Latin-1 (every
+    byte one character), a tuple or a list as its items' texts, anything else as ``str``."""
+
+    if isinstance(code, str):
+        return code
+    if isinstance(code, (bytes, bytearray)):
+        return bytes(code).decode("latin-1")
+    if isinstance(code, (tuple, list)):
+        return " ".join(_status_text(item) for item in code)
+    return str(code)
+
+
 def _say_unexpected_exit(code: object) -> None:
     """Say on stderr that the command exited with ``code`` where it had no business to.
 
     The code is quoted through the CLI's mask, as every other error is (u12 A-83): a text code is
     any message at all, and ``SystemExit("<text>")`` printed a registered credential in clear on
-    this line since #114 (A-80). A text is masked as itself and then quoted, never as its
-    ``repr``: ``repr`` writes a NUL, a newline or a tab as an escape, so a registered credential
+    this line since #114 (A-80). A code is masked as the text it holds and then quoted, never as
+    its ``repr``: ``repr`` writes a NUL, a newline or a tab as an escape, so a registered credential
     split by one was text the redactor did not know, and printed whole (pre-merge audit of A-83,
-    MEDIUM 1); ``_masked`` writes the control characters out itself.
+    MEDIUM 1; for bytes, a tuple and an exception as the code, round 2, LOW 1). A code that is not a
+    text is named by its type in front; an integer or a bool is written as it is.
     """
 
     try:
-        said = (
-            f"'{_masked(RuntimeError(code))}'"
-            if isinstance(code, str)
-            else _masked(RuntimeError(repr(code)))
-        )
-    except Exception:  # a code whose repr cannot even be read
+        if isinstance(code, int):  # a bool included: no text in it
+            said = _masked(RuntimeError(repr(code)))
+        else:
+            said = f"'{_masked(RuntimeError(_status_text(code)))}'"
+            if not isinstance(code, str):
+                said = f"{_masked(RuntimeError(type(code).__name__))} {said}"
+    except Exception:  # a code whose text cannot even be read
         said = "<unprintable status>"
     _echo_err(
         f"error: unexpected exit with status {said} (an internal error, not a scan result; rerun "
