@@ -31,7 +31,8 @@ combination and a vote nothing called, and a judge-only fail was `confirmed` whe
 - Implements `shared.protocols.Evaluator` (`type: str`, `async evaluate(ctx)->Verdict`).
 - `semantic_judge` calls an LLM **only via `shared.protocols.TargetAdapter`** (u04): no direct
   provider SDKs. Consumes `shared.models.{Verdict, EvalContext, Attempt}`.
-- Registers each evaluator under its `type` string used in `schemas/attack-spec.schema.json`.
+- Registers each evaluator under its `type` string used in
+  `registry/schemas/attack-spec.schema.json`.
 
 ## §4 Known constraints: KEEP / DECIDE
 - KEEP: deterministic evaluators emit confidence `1.0` (or `0.0`⇒`inconclusive` on ambiguity).

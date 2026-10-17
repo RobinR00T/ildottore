@@ -10,7 +10,7 @@ the filesystem only. Two on-disk shapes are supported:
 * **Spec pack** - a directory containing ``pack.yaml`` (+ ``attacks/*.yaml`` and
   ``suites/*.yaml``). Discovered recursively from each search path.
 * **Loose spec tree** - a directory (or file) of bare ``*.yaml`` attack specs with no
-  ``pack.yaml`` (e.g. the repo ``specs/`` tree or a test fixture dir). These are gathered
+  ``pack.yaml`` (e.g. a test fixture dir). These are gathered
   under a synthetic pack so the registry API is uniform.
 
 Every unparseable / schema-invalid document yields a :class:`LintError` rather than an
@@ -28,6 +28,7 @@ from pydantic import ValidationError as PydanticValidationError
 
 from ildottore.shared import AttackSpec, Pack, Suite
 from ildottore.shared.config_errors import validation_problems
+from ildottore.shared.package_data import moved_note
 
 from .errors import PATH_NOT_FOUND_TEXT, LintCode, LintError, Severity
 from .pack import LoadedPack
@@ -404,7 +405,7 @@ def _loose_tree_notes(path: Path, result: LoadResult) -> None:
                 message=(
                     f"spec path {path} holds no attack spec or suite to read: a directory "
                     "without a pack.yaml is read as loose specs, the *.yaml and *.yml files "
-                    f"directly in it, and it has none{unread}"
+                    f"directly in it, and it has none{unread}{moved_note(path)}"
                 ),
             )
         )
@@ -462,7 +463,8 @@ def load_path(path: Path) -> LoadResult:
     if not is_dir:
         result.errors.append(
             LintError(
-                code=LintCode.PATH_NOT_FOUND, message=f"{PATH_NOT_FOUND_TEXT}{_shown_path(path)}"
+                code=LintCode.PATH_NOT_FOUND,
+                message=f"{PATH_NOT_FOUND_TEXT}{_shown_path(path)}{moved_note(path)}",
             )
         )
         return result

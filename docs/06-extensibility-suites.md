@@ -38,7 +38,8 @@ The design goal: **95% of "new techniques" are L1/L2 (pure declarative), zero co
 1. `dottore new-spec --family prompt_injection --id PI-XYZ-042` → scaffolds a YAML + empty
    fixtures.
 2. Fill `attack`, `expected_secure_behavior`, `evaluators`, `fixtures.vulnerable/hardened`.
-3. `dottore lint specs/` → schema + policy + "fixtures actually prove detection" checks.
+3. `dottore lint <dir>` (the built-in battery: `dottore lint src/ildottore/battery`) → schema +
+   policy + "fixtures actually prove detection" checks.
 4. Add the id to a suite. Done: no core code changed.
 
 ## 3. L3: Plugin registration (new evaluator / mutator type)

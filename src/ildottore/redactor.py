@@ -107,8 +107,29 @@ def visible_stash_delimiters(text: str) -> str:
     return text.translate(_VISIBLE)
 
 
-def _without_stash_delimiters(text: str) -> str:
-    return text.replace(_STASH_OPEN, "").replace(_STASH_CLOSE, "")
+def _holds_stash_delimiter(text: str) -> bool:
+    return _STASH_OPEN in text or _STASH_CLOSE in text
+
+
+class _Joined:
+    """``text`` with its stash delimiters dropped, and where each of its characters is in ``text``.
+
+    The positions are held as the delimiters' places only, in an array of 8-byte integers: a list
+    of every kept character's index took about 30 bytes a character, 120 MB for a 4 MB reply
+    holding one ``\x00`` (u01 A-83).
+    """
+
+    def __init__(self, text: str) -> None:
+        self.text = text.replace(_STASH_OPEN, "").replace(_STASH_CLOSE, "")
+        # For the j-th delimiter at `at`, the index in the joined text of the character after it.
+        self._after = array(
+            "q", [m.start() - rank for rank, m in enumerate(_STASH_DELIMITER.finditer(text))]
+        )
+
+    def at(self, index: int) -> int:
+        """Where character ``index`` of the joined text is in ``text``."""
+
+        return index + bisect.bisect_right(self._after, index)
 
 
 # --- a registered credential split by characters that do not show -----------------------
@@ -928,6 +949,30 @@ class _Cuts:
         return out
 
 
+class UuidCuts:
+    """The stand-ins of a text masked in two passes, one with the number rules and one with the
+    entropy rule (the CLI's error masking, ``cli.app._masked``; u01/u12 A-83).
+
+    Within one pass the number rules write what they read inside a UUID in stand-ins, which the
+    entropy rule reads as main read their masks and the late pattern reads back (:class:`_Cuts`).
+    Two redactors given the same ``UuidCuts`` share them across passes: the first, which has no
+    entropy rule, leaves them in its output; the second, which has one, masks each UUID they are
+    in whole, with the pieces main masked around it, and masks a stand-in left over as the number
+    main masked there. The block is chosen from ``text``, the text the first pass reads, so in
+    what it writes every character of it is a stand-in; None when ``text`` uses every block, and
+    the numbers are masked as main masked them.
+    """
+
+    def __init__(self, text: str) -> None:
+        self.cuts = _Cuts.for_text(text)
+
+    def read_back(self, text: str) -> str:
+        """``text``, written by a pass sharing these stand-ins, with each read back: the same
+        length, every UUID as written."""
+
+        return text if self.cuts is None else self.cuts.decode(text)
+
+
 def _matches(pattern: Pattern, text: str) -> bool:
     """True if ``pattern`` finds a match in ``text`` (a ``skip`` match is none)."""
 
@@ -1296,8 +1341,10 @@ class Redactor:
     hashes are not correlatable across engagements). ``entropy_threshold`` /
     ``entropy_min_len`` govern the interim global high-entropy fallback (OD-15). ``late``
     runs the documented key formats, the JWT and the UUID after the labelled and the entropy
-    rules (``_late_patterns``, u01 A-78); the CLI turns it off on the redactor it runs before
-    its own entropy pass, and runs it after that pass.
+    rules (``_late_patterns``, u01 A-78), all of them or only the types it names; the CLI turns
+    them off on the redactor it runs before its own entropy pass, keeps the UUID on that pass,
+    and runs the rest after it. ``uuid_cuts`` shares the stand-ins of a UUID a number rule reads
+    with a redactor of a later pass (:class:`UuidCuts`).
     """
 
     _HIGH_ENTROPY_TOKEN: Final = re.compile(r"[A-Za-z0-9+/_=-]{16,}")
@@ -1309,13 +1356,21 @@ class Redactor:
         patterns: Sequence[Pattern] | None = None,
         entropy_threshold: float = 3.7,
         entropy_min_len: int = 16,
-        late: bool = True,
+        late: bool | frozenset[str] = True,
+        uuid_cuts: UuidCuts | None = None,
     ) -> None:
         self._salt = (_PROCESS_SALT if salt is None else salt).encode("utf-8")
         self._patterns: list[Pattern] = (
             list(patterns) if patterns is not None else _default_patterns()
         )
-        self._set_late(_late_patterns() if late else [])
+        if isinstance(late, bool):
+            self._set_late(_late_patterns() if late else [])
+        elif isinstance(late, frozenset):
+            # A set of types, so a bare string is refused, not read as the types it holds.
+            self._set_late([pattern for pattern in _late_patterns() if pattern.type in late])
+        else:
+            raise TypeError("late is a bool or a frozenset of late pattern types")
+        self._uuid_cuts = uuid_cuts
         # The mask types kept as written (`_redact_once`), kept in step with `register`: the
         # tool's own rules', its patterns', and the A-78 types whichever redactor wrote them.
         self._mask_types = (
@@ -1399,17 +1454,53 @@ class Redactor:
         abort the campaign.
         """
 
-        # The stash delimiters are dropped first, so an attacker cannot forge a token, and a
-        # secret split by them is whole again: `AKIA\x00IOSF...` and a key read as UTF-16 with
-        # Latin-1 (`s\x00k\x00-\x00...`) are masked. When nothing is masked, the input is
-        # redacted again with them made visible instead, so two names that differ only by one
-        # (`cmd`, `cmd\x01`) stay two keys in the stored evidence, and what joining the pieces
-        # hid is masked: `bob@corp.io\x00_` is no email once joined (pre-merge audit).
-        stripped = _without_stash_delimiters(text)
-        joined = self._to_fixed_point(stripped)
-        if joined != stripped or stripped == text:  # masked, or no delimiter to show
-            return joined
-        return self._to_fixed_point(visible_stash_delimiters(text))
+        if not _holds_stash_delimiter(text):
+            return self._to_fixed_point(text)
+        # A text holding a stash delimiter is read two ways, and what either masks is masked
+        # (u01 A-83). With them dropped, an attacker cannot forge a token, and a secret split by
+        # them is whole again: `AKIA\x00IOSF...` and a key read as UTF-16 with Latin-1
+        # (`s\x00k\x00-\x00...`). With them made visible, a word they end stays a word, so what
+        # joining glued to its neighbour is masked: `bob@corp.io\x00_` is no email once joined,
+        # nor `x\x01credential: <value>` a label. The output is the text with them made visible
+        # and both readings' masks in place, so two names that differ only by one (`cmd`,
+        # `cmd\x01`) stay two keys in the stored evidence. The first version returned the joined
+        # reading whenever it masked anything and the visible one otherwise, so what a text was
+        # masked as depended on whether anything at all was masked in it, however far away: a UUID
+        # in one line showed the labelled secret of the next (pre-merge audits of A-78, F2).
+        visible = visible_stash_delimiters(text)
+        read: dict[str, str] = {}
+
+        def _reading(form: str) -> str:
+            read[form] = self._read_back(form)
+            return read[form]
+
+        out = read_both_ways(_reading, text)
+        # Neither reading masked anything, or the joined one masked nothing the visible one did not
+        # (a delimiter far from every secret): the visible reading is the result, a fixed point.
+        # A pass that leaves stand-ins wrote them back as text, and reads the result again.
+        if out == visible or (out == read.get(visible) and not self._leaves_cuts):
+            return out
+        # The masks of one reading can stand where the other reading wrote text, so the whole is
+        # read once more, which only adds masks, and the result is a fixed point.
+        return self._to_fixed_point(out)
+
+    def _read_back(self, text: str) -> str:
+        """``text`` to a fixed point, with any stand-in this pass leaves read back (A-83).
+
+        The both-ways reading places the masks of each reading in the text as written, which a
+        stand-in is not; the last pass over the result writes them again.
+        """
+
+        out = self._to_fixed_point(text)
+        if self._leaves_cuts and self._uuid_cuts is not None and self._uuid_cuts.cuts is not None:
+            return self._uuid_cuts.cuts.decode(out)
+        return out
+
+    @property
+    def _leaves_cuts(self) -> bool:
+        """True for the first of two passes sharing stand-ins: no entropy rule here reads them."""
+
+        return self._uuid_cuts is not None and not self._hex_runs
 
     def for_terminal(self, text: str) -> str:
         """``text`` redacted, its control and format characters written out, for printing.
@@ -1455,7 +1546,14 @@ class Redactor:
         # The stand-ins of this pass (A-78, `_Cuts`): only a redactor whose entropy rule masks a
         # UUID cut by a number rule whole, and whose late pattern masks any other, uses them.
         # A UUID holds a `-`: a text with none needs no stand-ins, nor the scan for a free block.
-        cuts = _Cuts.for_text(text) if self._hex_runs and self._uuid_late and "-" in text else None
+        # Shared with another pass (A-83, `UuidCuts`), they are the ones it chose: a text whose
+        # every `-` a number rule took holds none, and its stand-ins are still to be read.
+        if self._uuid_cuts is not None:
+            cuts = self._uuid_cuts.cuts
+        else:
+            cuts = (
+                _Cuts.for_text(text) if self._hex_runs and self._uuid_late and "-" in text else None
+            )
 
         def _as_written(stretch: str) -> str:
             if cuts is not None:
@@ -1602,7 +1700,7 @@ class Redactor:
         # Last, after the URL rule as written too, which reads a mask's `:` as a userinfo's and
         # takes the URL for one its rule read (u01 A-78; pre-commit differential fuzz).
         working = self.redact_late(working, _as_written)
-        if cuts is not None:  # a number no mask took is masked as main masked it
+        if cuts is not None and not self._leaves_cuts:  # a number no mask took, as main masked it
             working = cuts.run.sub(lambda m: self._number_masks(cuts, m.group(0)), working)
 
         # One pass: a `str.replace` per kept mask was quadratic with thousands of them.
@@ -2255,7 +2353,7 @@ class Redactor:
         pieces main read (:meth:`_cut_spans`).
         """
 
-        if cuts is not None and cuts.run.search(token):
+        if cuts is not None and self._hex_runs and cuts.run.search(token):
             return self._cut_spans(token, cuts)
         if self._hex_runs and self._uuid_late and _UUID.fullmatch(token):
             # A UUID alone: masked whole either way, as the late pattern masks it.
@@ -2500,12 +2598,14 @@ def identity_masks(value: str) -> tuple[str, ...]:
 # records, each string masked on its own: joining every list read the `type` of a transcript's
 # frames as `auth_oksessiondeltaping...`, one high-entropy token, and masked every frame's type.
 
+#: A mask, with the openers of masks a later pass of the CLI rewrote glued before it
+#: (`«REDACTED:«REDACTED:url_password»`: the URL rule read `«REDACTED` as a URL's user).
+_MASK_AFTER_OPENERS: Final = re.compile("(?:«REDACTED:)*" + _ALREADY_MASKED.pattern)
 #: The mask a piece shows when the redactor masked its stream's joined text and where it masked
 #: could not be placed: every piece of that stream shows it.
 _FRAGMENT_MASK: Final = _MASK_TEMPLATE.format(type="fragment")
 #: How many passes a value gets at most, as ``redact_text`` reads a text to a fixed point.
 _SPLIT_ROUNDS: Final = 4
-_STASH_DELIMITERS: Final = frozenset((_STASH_OPEN, _STASH_CLOSE))
 #: A logprob item's token and its figure (ADR-0005 ``TokenLogprob``, and OpenAI's wire shape).
 _TOKEN: Final = "token"  # noqa: S105 - a field name, not a credential
 _LOGPROB: Final = "logprob"
@@ -2636,7 +2736,9 @@ def split_texts(obj: object, *, alternatives: bool = False) -> Iterator[str]:
                 yield "".join(text for _, _, text in stream)
 
 
-def _placed_masks(text: str, redacted: str) -> list[tuple[int, int, str]] | None:
+def _placed_masks(
+    text: str, redacted: str, *, tolerant: bool = False
+) -> list[tuple[int, int, str]] | None:
     """Where in ``text`` each mask of ``redacted`` may stand, or None when that cannot be said.
 
     ``redacted`` is ``text`` with stretches replaced by masks, so it reads ``L0 M1 L1 ... Mn Ln``
@@ -2647,16 +2749,25 @@ def _placed_masks(text: str, redacted: str) -> list[tuple[int, int, str]] | None
     starts at the latest, and that span holds it in any placement. A character outside every
     span is in a literal in every placement: it is text the redacted copy shows. A literal not
     found means ``redacted`` is not of that form, and None sends the caller to mask everything.
+
+    ``tolerant`` reads a literal between two masks that is not found, in order, as part of the
+    masked stretch: the two masks stand as one for what lies between the literals around them, and
+    the literal is not shown (u01 A-83). The CLI masks in passes, and a later one can rewrite part
+    of a mask an earlier one wrote (`«REDACTED:«REDACTED:url_password»@`), so its output holds text
+    the message does not. Shown with the masks, the literal showed text of the message that this
+    reading left readable and the other reading masked (differential fuzz of A-83).
     """
 
     literals: list[str] = []
     masks: list[str] = []
     cursor = 0
-    for match in _ALREADY_MASKED.finditer(redacted):
+    for match in (_MASK_AFTER_OPENERS if tolerant else _ALREADY_MASKED).finditer(redacted):
         literals.append(redacted[cursor : match.start()])
         masks.append(match.group(0))
         cursor = match.end()
     literals.append(redacted[cursor:])
+    if tolerant and masks:
+        literals, masks = _found_in_order(text, literals, masks)
     count = len(masks)
     if not count or not text.startswith(literals[0]) or not text.endswith(literals[-1]):
         return None
@@ -2683,40 +2794,98 @@ def _placed_masks(text: str, redacted: str) -> list[tuple[int, int, str]] | None
     ]
 
 
+def read_both_ways(redact: Callable[[str], str], text: str) -> str:
+    """``redact(text)``, or, for a text holding a stash delimiter, the text with them made visible
+    and the masks ``redact`` gives it read either way (:func:`_spans_both_ways`, u01 A-83).
+
+    For a caller that masks in passes of its own (``cli.app._masked``), as
+    :meth:`Redactor.redact_text` reads a text; ``redact`` is given a text holding no delimiter.
+    """
+
+    if not _holds_stash_delimiter(text):
+        return redact(text)
+    visible = visible_stash_delimiters(text)
+    pieces: list[str] = []
+    cursor = 0
+    for start, end, shown in _spans_both_ways(redact, text, tolerant=True):
+        pieces += (visible[cursor:start], "".join(shown))
+        cursor = end
+    pieces.append(visible[cursor:])
+    return "".join(pieces)
+
+
+def _found_in_order(
+    text: str, literals: list[str], masks: list[str]
+) -> tuple[list[str], list[str]]:
+    """``literals`` and ``masks`` with each middle literal ``text`` does not hold, in order,
+    dropped, and the masks on either side of it shown as one (``_placed_masks``, ``tolerant``)."""
+
+    # An end that is not the text's own is part of the mask beside it, and not shown.
+    kept, shown = [literals[0] if text.startswith(literals[0]) else ""], [masks[0]]
+    last = literals[-1] if text.endswith(literals[-1]) else ""
+    cursor = len(kept[0])
+    for index in range(1, len(masks)):
+        found = text.find(literals[index], cursor + 1)
+        if found == -1:
+            shown[-1] += masks[index]
+            continue
+        kept.append(literals[index])
+        shown.append(masks[index])
+        cursor = found + len(literals[index])
+    kept.append(last)
+    return kept, shown
+
+
 def _mask_spans(redactor: _RedactsText, joined: str) -> list[tuple[int, int, tuple[str, ...]]]:
     """The stretches of ``joined`` the redactor masks, merged, with the masks each shows.
 
-    ``redact_text`` drops its two stash delimiters before it reads a text, or writes them out
-    when that masks nothing, so a text holding one is read both ways, the first through the
-    positions of the characters it keeps, and what either masks is masked.
+    A text holding a stash delimiter is read both ways, as ``redact_text`` reads it
+    (:func:`_spans_both_ways`).
     """
 
-    if _STASH_DELIMITERS.isdisjoint(joined):
-        forms: list[tuple[str, list[int] | None]] = [(joined, None)]
-    else:
-        kept = [index for index, char in enumerate(joined) if char not in _STASH_DELIMITERS]
-        forms = [
-            ("".join(joined[index] for index in kept), kept),
-            (visible_stash_delimiters(joined), None),
-        ]
+    return _spans_both_ways(redactor.redact_text, joined)
+
+
+def _spans_both_ways(
+    redact: Callable[[str], str], text: str, *, tolerant: bool = False
+) -> list[tuple[int, int, tuple[str, ...]]]:
+    """The stretches of ``text`` that ``redact`` masks, merged, with the masks each shows.
+
+    ``redact`` is given a text holding no stash delimiter only. A text holding one is read with
+    them dropped, each mask placed back through the positions of the characters it keeps, and
+    with them made visible (``␀``, ``␁``); what either reading masks is masked (u01 A-83). A
+    reading whose masks cannot be placed masks the whole text (``fragment``).
+    """
+
+    joined = _Joined(text) if _holds_stash_delimiter(text) else None
+    forms: list[tuple[str, _Joined | None]] = (
+        [(text, None)]
+        if joined is None
+        else [(joined.text, joined), (visible_stash_delimiters(text), None)]
+    )
     spans: list[tuple[int, int, str]] = []
-    for text, positions in forms:
-        redacted = redactor.redact_text(text)
-        if redacted == text:
+    for form, positions in forms:
+        redacted = redact(form)
+        if redacted == form:
             continue
-        for start, end, mask in _placed_masks(text, redacted) or [(0, len(text), _FRAGMENT_MASK)]:
+        placed = _placed_masks(form, redacted, tolerant=tolerant)
+        for start, end, mask in placed or [(0, len(form), _FRAGMENT_MASK)]:
             if positions is not None:
-                start, end = positions[start], positions[end - 1] + 1
+                start, end = positions.at(start), positions.at(end - 1) + 1
             spans.append((start, end, mask))
     spans.sort(key=lambda span: (span[0], span[1]))
-    merged: list[tuple[int, int, tuple[str, ...]]] = []
+    # Each merged stretch keeps its masks in an ordered set (a dict's keys): a tuple rebuilt and
+    # searched for every mask merged into it took time in the square of their number, 177 s on
+    # 4 MiB of 32-hex runs glued by U+0000 where main took 0.73 s (pre-merge audit of A-83, HIGH 1).
+    merged: list[tuple[int, list[int], dict[str, None]]] = []
     for start, end, mask in spans:
-        if merged and start < merged[-1][1]:
-            first, last, shown = merged[-1]
-            merged[-1] = (first, max(last, end), shown if mask in shown else (*shown, mask))
+        if merged and start < merged[-1][1][0]:
+            last = merged[-1][1]
+            last[0] = max(last[0], end)
+            merged[-1][2].setdefault(mask, None)
         else:
-            merged.append((start, end, (mask,)))
-    return merged
+            merged.append((start, [end], {mask: None}))
+    return [(first, last[0], tuple(shown)) for first, last, shown in merged]
 
 
 def _masked_pieces(
@@ -2745,7 +2914,12 @@ def _masked_pieces(
         while first < len(spans) and spans[first][1] <= start:
             first += 1
         parts: list[str] = []
-        masks: list[str] = []
+        # The masks of the stretches the piece lies in. A piece inside one stretch shares that
+        # stretch's own tuple, which holds no mask twice; only a piece across several builds one,
+        # in order and without repeats. A copy for every piece took memory in pieces times masks:
+        # 4.19 GB on 256 KiB of a logprob stream of `ghp_` keys glued by U+0000, and searched as a
+        # list, time in its square too (pre-merge audits of A-83, HIGH 1 and round 2, MEDIUM 1).
+        touched: list[tuple[str, ...]] = []
         cursor, index = start, first
         while start < end and index < len(spans) and spans[index][0] < end:
             span_start, span_end, shown = spans[index]
@@ -2753,14 +2927,22 @@ def _masked_pieces(
                 parts.append(joined[cursor:span_start])
             if span_start >= start:  # this piece is the first the stretch covers
                 parts.append("".join(shown))
-            masks.extend(mask for mask in shown if mask not in masks)
+            touched.append(shown)
             cursor = min(max(cursor, span_end), end)
             if span_end > end:  # it goes on into the next piece
                 break
             index += 1
-        if masks and cursor < end:
-            parts.append(joined[cursor:end])
-        out.append(("".join(parts), tuple(masks)) if masks else (piece, ()))
+        if not touched:
+            out.append((piece, ()))
+        else:
+            if cursor < end:
+                parts.append(joined[cursor:end])
+            masks = (
+                touched[0]
+                if len(touched) == 1
+                else tuple(dict.fromkeys(mask for shown in touched for mask in shown))
+            )
+            out.append(("".join(parts), masks))
         start = end
     return out
 

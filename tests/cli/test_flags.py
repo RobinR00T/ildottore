@@ -19,6 +19,7 @@ from typer.testing import CliRunner
 from ildottore.cli.main import app
 from ildottore.cli.run import CATEGORY_ALIASES, select_specs
 from ildottore.shared.enums import Category
+from ildottore.shared.package_data import BATTERY
 
 from .conftest import LONG_OPTION, make_spec, write_scope, write_spec_tree, write_target
 
@@ -151,13 +152,22 @@ def test_cheatsheet_quick_scan_dry_run(tmp_path: Path) -> None:
 def test_quick_narrows_the_battery_against_the_shipped_specs(tmp_path: Path) -> None:
     """``--quick`` selects fewer specs than the default battery (``docs/08 §2`` tier T0).
 
-    Measured against the repo's own ``specs/`` tree, where the ``quick`` suite exists and was
+    Measured against the built-in battery, where the ``quick`` suite exists and was
     unselectable by the flag that documents it in six places.
     """
 
     scope = write_scope(tmp_path)
     target = write_target(tmp_path)
-    base = ["run", "-t", str(target), "--scope", str(scope), "--spec-path", "specs", "--dry-run"]
+    base = [
+        "run",
+        "-t",
+        str(target),
+        "--scope",
+        str(scope),
+        "--spec-path",
+        str(BATTERY),
+        "--dry-run",
+    ]
 
     full = runner.invoke(app, base)
     quick = runner.invoke(app, [*base, "--quick"])
@@ -183,7 +193,7 @@ def test_discovery_only_sends_nothing_and_says_so(tmp_path: Path) -> None:
     target = write_target(tmp_path)
     res = runner.invoke(
         app,
-        ["run", "-t", str(target), "-sn", "--scope", str(scope), "--spec-path", "specs"],
+        ["run", "-t", str(target), "-sn", "--scope", str(scope), "--spec-path", str(BATTERY)],
     )
     assert res.exit_code == 0
     assert "discovery (-sn): no attacks sent." in res.output

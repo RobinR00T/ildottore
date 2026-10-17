@@ -18,11 +18,11 @@ Two records bind a run to its rules, both written when it starts and both checke
 * :func:`judging_digest`, computed at run time from the installed package itself: a SHA-256 over
   **every file of the package** but the test harness (:data:`JUDGING_EXEMPT`), Python sources
   with their comments, docstrings and blank lines left out (decorators kept), the data files the
-  package reads (:data:`DATA_SUFFIXES`) byte for byte. Deny by default: what is not exempted is
-  covered, a subclass override, a default, a decorator, the offline judge, a renderer and a new
-  module included, with no list to keep up to date. A resume under any other digest, or another
-  interpreter (:func:`python_build`), is refused, whoever forgot what, naming the files that
-  differ (:func:`judging_files`).
+  package reads (:data:`DATA_SUFFIXES`) byte for byte, the built-in battery among them. Deny by
+  default: what is not exempted is covered, a subclass override, a default, a decorator, the
+  offline judge, a renderer and a new module included, with no list to keep up to date. A resume
+  under any other digest, or another interpreter (:func:`python_build`), is refused, whoever
+  forgot what, naming the files that differ (:func:`judging_files`).
 * :data:`JUDGING_RULES_VERSION`, the human name of those rules, which ``dottore --version`` prints
   and a refusal quotes. ``tests/shared/test_judging_rules.py`` pins the digest of each version, so
   a change to covered code fails it until the version is bumped (with a CHANGELOG line) or the
@@ -98,11 +98,14 @@ JUDGING_EXEMPT: Final = {
 }
 
 #: The suffixes of the package's own data files, which the digest covers byte for byte: the
-#: fingerprint signatures (``.yaml``), the run store schema (``.sql``), the report schemas
-#: (``.json``) and the HTML report template (``.j2``). Anything else is not read by the package:
-#: a stray file (a ``.DS_Store``) is not a change of the code that judges (the third audit: one
-#: refused every resume).
-DATA_SUFFIXES: Final = frozenset({".yaml", ".sql", ".json", ".j2"})
+#: fingerprint signatures and the built-in battery's specs, suites and manifest (``.yaml``), the
+#: run store schema (``.sql``), the report schemas and the attack-spec schema (``.json``), the
+#: HTML report template (``.j2``) and the battery's audio asset (``.wav``), the battery and the
+#: attack-spec schema inside the package since u12 A-84. Anything else is not read by the
+#: package: a stray file (a ``.DS_Store``) is not a change of the code that judges (the third
+#: audit: one refused every resume). A new kind of asset under ``battery/`` fails
+#: ``tests/shared/test_judging_rules.py`` until its suffix is added here.
+DATA_SUFFIXES: Final = frozenset({".yaml", ".sql", ".json", ".j2", ".wav"})
 
 #: Hex digits of a per-file digest, which a refusal uses to name the files that changed.
 FILE_DIGEST_LENGTH: Final = 8
@@ -228,7 +231,8 @@ def judging_digest(package: Path = _PACKAGE) -> str:
 
     Taken once per process (the files do not change under a running scan): 0.35 to 0.38 s for the
     171 files of the package at landing on Python 3.12 and 3.14 (0.74 s on 3.9), the parse and the
-    tokenizer being most of it.
+    tokenizer being most of it; 0.355 s for the 264 files since u12 A-84 put the battery and the
+    attack-spec schema in the package (3.14, best of five), data files being read, not parsed.
     """
 
     return _scanned(package)[0]

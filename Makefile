@@ -52,8 +52,8 @@ static: lint format-check type imports ## The full CI `static` job
 
 # --- validate job (detection gates) -------------------------------------------------
 
-spec-lint: ## Gate 1: schema + policy + fixtures-prove-detection lint
-	$(BIN)/dottore lint specs/
+spec-lint: ## Gate 1: schema + policy + fixtures-prove-detection lint (the built-in battery)
+	$(BIN)/dottore lint src/ildottore/battery
 
 test: ## Full test suite, quiet
 	$(BIN)/pytest -q

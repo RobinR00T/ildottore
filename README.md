@@ -55,7 +55,8 @@ verified today, what it costs (measured, not guessed), and the order to run it i
 
 New here? Read [`USAGE.md`](USAGE.md) (practical guide) then [`examples/`](examples/)
 (copy-pasteable scenarios, from "no server, no key" to a full fleet). Full reference:
-[`docs/MANUAL.md`](docs/MANUAL.md). Install options: [`INSTALL.md`](INSTALL.md).
+[`docs/MANUAL.md`](docs/MANUAL.md). Install options, a runtime install from a commit with no
+checkout included: [`INSTALL.md`](INSTALL.md).
 
 ## Repository map
 
@@ -71,22 +72,20 @@ ildottore/
     evaluators/                    # verdict engine: deterministic-first + semantic_judge
     mutators/                      # payload transforms / obfuscation enhancers
     policy/                        # scope + endpoint allowlist (default-deny authorization gate)
+    battery/                       # the built-in battery, inside the package so a wheel carries it
+      attacks/                     # individual declarative tests (YAML), the heart
+      suites/                      # ordered collections of attack specs
+      pack.yaml                    # makes battery/ resolve as a lintable pack
     registry/                      # loads + indexes the declarative attack specs
+      schemas/                     # the JSON Schema that machine-validates every spec
     reporting/                     # JSON / HTML / SARIF / JUnit reporters
     scoring/                       # the risk model (impact x exploitability x reproducibility)
     store/                         # content-addressed evidence store + run store (SQLite)
     fingerprint/                   # model + guardrail fingerprinting (-sV)
     redactor.py                    # secret/PII redaction (redact-at-rest)
     shared/                        # models, enums, protocols (the only cross-package surface)
-  specs/
-    attacks/                       # individual declarative tests (YAML), the heart
-    suites/                        # ordered collections of attack specs
-    targets/                       # example target files
-    scope.example.yaml             # authorization-record template
-    fleet.example.yaml             # fleet template (many targets in one file)
-    pack.yaml                      # makes specs/ resolve as a lintable pack
-  schemas/                         # JSON Schemas that machine-validate every spec
-  examples/                        # runnable, copy-pasteable scenarios
+  specs/contracts/                 # one contract per unit + the index (the build method)
+  examples/                        # runnable scenarios + scope, target and fleet templates
   docs/                            # design corpus (see below) + MANUAL, FAQ, adr/
   tests/                           # unit / contract / golden / e2e / self-scan
 ```

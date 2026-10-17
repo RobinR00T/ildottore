@@ -4,7 +4,7 @@ Stage-6 goal (#3): a run against a *vulnerable*-scenario mock over real T0 specs
 produce decisive ``fail`` findings (real risk bands, not ``info``/``inconclusive``),
 and a *hardened*-scenario mock must produce ``pass``. The *bare* default stays
 ``inconclusive`` (no fabricated verdict). This drives the whole wired system
-(``execute_run`` → wiring → runner → real evaluators) against the shipped ``specs/``
+(``execute_run`` → wiring → runner → real evaluators) against the shipped battery
 tree, offline via the deterministic :class:`~ildottore.adapters.mock.MockTarget`.
 """
 
@@ -15,11 +15,12 @@ from pathlib import Path
 from ildottore.cli.exit_codes import ExitCode
 from ildottore.cli.run import RunOptions, execute_run
 from ildottore.shared.enums import ScanBand, VerdictStatus
+from ildottore.shared.package_data import BATTERY
 
 # Real, shipped T0 specs that are ``weighted`` + not ``test_only`` + require no target
 # capability the mock must fake - so the deterministic evaluators decide even though
 # each spec also lists a ``semantic_judge`` (which abstains offline).
-_SPECS_DIR = Path(__file__).resolve().parents[2] / "specs"
+_SPECS_DIR = BATTERY
 _T0_GLOBS = ["PI-DIRECT-001", "OUT-XSS-001", "OUT-SQLI-001", "OUT-CODEINJ-001"]
 
 
@@ -122,7 +123,7 @@ def test_the_bare_mock_decides_no_spec_of_the_shipped_battery(tmp_path: Path) ->
         evidence_root=tmp_path / "ev",
         run_db=tmp_path / "runs.sqlite",
     )
-    outcome = execute_run(opts, [Path("specs")])
+    outcome = execute_run(opts, [BATTERY])
 
     decided = {
         f.spec_id: f.status.value

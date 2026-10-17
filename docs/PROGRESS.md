@@ -72,6 +72,110 @@ neighbouring entries can interleave (an older branch merged later sits above a n
   it (pre-existing); `secret_leakage` reads a canary the request carries as a leak too
   (pre-existing, outside A-85).
 
+## State, 2026-10-16: masking follow-ups of the train (`fix/masking-followups`, u01/u12 A-83)
+
+- From `main` at `7d01521f`, the items the pre-merge audits of the train queued for after it,
+  each reproduced there first. Decisions taken under the owner's delegation (best practice,
+  revisable) are recorded in the clause with the alternatives not taken; no open decision (OD-48
+  unused).
+- The CLI: an exit whose code is no exit status (a text, a bool, a number outside 0 to 255) exits
+  3 with the stray-exit line, which is masked now (`typer.Exit("<text>")` exited 0;
+  `SystemExit("<text>")` printed its text in clear); a UUID in an error is masked as a report masks
+  it (`redactor.UuidCuts`); a missing file under a directory holding a space keeps its existing
+  part (8 to 15 tests of the suite failed on `7d01521f` with `TMPDIR` under "AI projects",
+  depending on the path); an error
+  holding U+0000 or U+0001 is read both ways; an endpoint URL's user is registered when it is the
+  credential. The A-82 "Fixed" heading is labelled breaking.
+- The redactor: a text holding U+0000 or U+0001 is read with them dropped and with them shown, and
+  what either reading masks is masked (F2 of the A-78 audits, open since then); a text without
+  them reads as before (differential fuzz against `7d01521f`: no difference in 300,000 texts).
+- The pre-merge audit of `4f1b28db` (NOT READY), fixed: the merge of a stretch's masks was
+  quadratic (4 MiB of 32-hex runs glued by U+0000 took 177 s, main 0.73 s; now about 4 s, linear),
+  and A-77's `_masked_pieces`, cubic on a logprob stream, is quadratic now (its output); a text exit
+  code is masked as itself, not its `repr` (a credential split by a NUL, a newline or a tab printed
+  whole); a user-only user info renames a target id in the reports, listed as breaking; the new
+  tests read the battery through `specs_dir`; `late` is a bool or a frozenset; figures corrected.
+- Its round 2 (MERGE-READY at `85da7f8f`), applied: a piece inside one stretch shares its mask
+  tuple (memory grew as pieces times masks, 4.19 GB on 256 KiB of a logprob stream; 41 MiB now); an
+  exit code holding text (bytes, a tuple, an exception) is masked as that text, named by its type;
+  the speed is "up to about 9 times main" (card numbers glued by U+0000).
+- Found closed: the all-digit run id (A-61) and the exception class names (A-63).
+- Open, found by this branch and left: a hex run inside a token-level JWT match followed by a
+  letter outside ASCII is printed by the redactor (on `7d01521f` too); a registered credential is
+  masked whole, not by its parts, so a part of one inside a path a CLI error does not keep prints
+  (on `7d01521f` too); the CLI types a key the entropy pass masks whole as `high_entropy` where a
+  report names its format; a URL user beside a non-empty password (`<token>:x-oauth-basic@`) is
+  not registered; a user-only credential under 8 characters is neither registered nor refused;
+  what a logprob token's alternatives show is every mask of the stretch it lies in, which can be
+  thousands on a hostile stream (A-77's output): bounding it changes that output and goes to its
+  own branch, with an open decision.
+- Judging rules: version 1 re-pinned by appended lines (`ce74f59f`, "masking only", then
+  `8c14612b` after the audit's fixes, masking and speed only):
+  the redactor decides what is stored and printed, the evaluators judge the raw reply, and
+  the exit status changed is that of an exit no command raises, so no stored verdict can
+  change. The stacked landing pins again on the merged tree.
+
+## State, 2026-10-16: the package carries what it reads, CI on the declared floors (`fix/packaging-dependency-floors`, u12 A-84)
+
+- From `main` at `7d01521f`, one of three follow-up branches of the audit train (landing order:
+  `fix/masking-followups`, this one, `fix/scoring-followups`). Decisions under the owner's
+  delegation (best practice, revisable) are in u12 A-84 and ADR-0013.
+- The built-in battery moved to `src/ildottore/battery/` and the attack-spec schema to
+  `src/ildottore/registry/schemas/`, as git renames; the three example files beside the battery
+  to `examples/`; `specs/` holds the unit contracts only. `shared/package_data.py` finds both
+  through `importlib.resources`. Measured on `7d01521f` with a wheel assembled offline by the
+  selection `pyproject.toml` declares (hatchling is not installed here, and nothing may be
+  downloaded): from outside a checkout `registry ls` and `run --dry-run` exit 3 and `lint
+  <checkout>/specs` exits 3 on the schema. On this branch, the same kind of wheel, installed with
+  `pip install --no-index --no-deps --target` and run from outside the checkout, prints what the
+  checkout prints for `--version`, `registry ls`, `schema export`, `lint` of its battery and `run
+  --dry-run`, with the same judging digest (`a5133e82`, 264 files), and judges a quick offline
+  run the same (10 fail, 8 inconclusive, exit 2). The real hatchling build is first proven by the
+  new `package` CI job.
+- With no `--spec-path`, `specs/` here is read whenever it is a directory and refused when it
+  holds nothing (fail closed); the battery is read where there is no `specs/` and at the root of
+  this package's own checkout, said on stderr and, under GitHub Actions, as a `::warning::` line.
+  A path of the old layout is refused naming the new one and what moved it. CHANGELOG lists every
+  old path as breaking, `dottore lint` with no path in the repository root (exit 0 to 3)
+  included. The judging digest covers the battery (`.wav` added): a resume across the change, or
+  after any edit of a built-in spec, is refused, naming the file in clear; version 1 re-pinned
+  (no verdict changes). OD-51 (a `builtin` spec-path keyword) is open.
+- Pre-merge audit of `0f556628` (the move measured sound, verdict parity on the full battery):
+  NOT READY, fixed in new commits. HIGH 1: six floors raised from release histories, not measured
+  (websockets 15.0, typer 0.26.8, rich 13.8.0, PyYAML 6.0.1, Jinja2 3.1.6, pytest-asyncio 0.23.5),
+  the merge waiting for the `floors` job; HIGH 2: the fail-open default above, dropped; MEDIUM 1:
+  a resume refusal masked a battery file's name; LOWs: the lint break listed, the runtime notes
+  name the change, stale old-path references, the CI example's placeholder pin refused unless it
+  is a full SHA (`::error::`), job timeouts, CODEOWNERS on the schema directory.
+- Round 2 of the audit (`72f7d471`): NOT READY, fixed in new commits. HIGH 1: the own checkout
+  was told by three parents, which `pip install --target <dir>/deps` fooled (the operator's
+  `specs/` unread, the built-in 75 run under a false note): it is told by the checkout's shape now
+  (`src/ildottore/battery`, the root, a `pyproject.toml` naming `ildottore`). LOWs: a label only
+  the run record names is kept readable only where the package has files; the CI example's pin
+  guard is bash's whole-value match (`printf | grep` accepted a second line); the injection test
+  skips only the CLI's two exact annotation lines; the `dev` extra declares `click>=8.4.2`.
+- PR #119's CI: `static`, `validate` and `package` (the real hatchling wheel and sdist) green;
+  `floors` red on one test, on pydantic 2.6.0: `WebSocketResponse.model_path` warned about the
+  `model_` protected namespace at import. Fixed in the model (it protects only `model_validate`
+  and `model_dump`), the floor kept at 2.6. Round 3 of the audit, LOW: `is_own_checkout` opens
+  `pyproject.toml` only when it is a regular file (a FIFO there made a command wait).
+- CI: `floors` (every direct dependency at its declared floor, Python 3.11, the suite) and
+  `package` (hatchling wheel and sdist, the wheel run from outside the checkout); actionlint
+  clean, not yet run on GitHub. The existing workflows pin actions by major tag (Dependabot), so
+  the new jobs do too. OD-49 (pin the PR jobs' dependency set, the newest releases on a schedule)
+  is open for the owner. OD-45 to OD-47 hold no packaging fact and are unchanged.
+- Docs: INSTALL (a runtime install from a commit), the CI example (the wheel of a pinned commit,
+  a placeholder until `main` carries this change), README, USAGE, MANUAL, FAQ, `dottore(1)`,
+  `dottore-scope(5)`, examples, CONTRIBUTING, AGENTS, RELEASING, ROADMAP, `docs/03`, `06`, `07`,
+  `08`, `09`, `11`, `12`, ADR-0004, 0006, 0007 and 0013, the unit contracts and the index.
+- Gates on this branch after the audit rounds' and the floors job's fixes (`make gates`,
+  `PYTHONPATH` at the worktree): 7,148 tests, 7,145 passed and 3 skipped (the two hatchling tests,
+  which run in the `package` job, and one of before), 97.70% coverage, 75 specs, 14 suites and 1
+  pack lint OK, four import contracts kept, mypy and ruff clean, self-scan 0 high/critical, bandit
+  and pip-audit clean; the same with `GITHUB_ACTIONS=true CI=true`; the CLI suite and the touched
+  tests (2,613) green on typer 0.27.3, plain and with those variables. `7d01521f` collects 7,108
+  tests (40 new here).
+
 ## State, 2026-10-12: the docs and contracts audit, fixed (`docs/audit-2026-10-12`)
 
 - From `main` at `de122e26`, one commit per finding group of the audit report

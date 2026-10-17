@@ -21,6 +21,7 @@ from typer.testing import CliRunner
 from ildottore.cli.exit_codes import ExitCode
 from ildottore.cli.main import app
 from ildottore.cli.run import RunOptions, execute_run
+from ildottore.shared.package_data import BATTERY
 from ildottore.store.run_sqlite import SqliteRunStore
 
 from .conftest import (
@@ -840,10 +841,7 @@ def test_a_live_run_without_a_judge_says_so_before_sending() -> None:
     from ildottore.cli import wiring
     from ildottore.cli.run import _no_judge_warning
 
-    repo = Path(__file__).resolve().parents[2]
-    spec = next(
-        s for s in wiring.build_registry([repo / "specs"]).list() if s.id == "PI-DIRECT-001"
-    )
+    spec = next(s for s in wiring.build_registry([BATTERY]).list() if s.id == "PI-DIRECT-001")
     from types import SimpleNamespace
 
     target = SimpleNamespace(id="t")

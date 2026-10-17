@@ -181,15 +181,16 @@ def test_no_canary_and_an_empty_one_still_load(tmp_path: Path) -> None:
 
 
 def test_the_templates_commented_tenant_identity_loads(tmp_path: Path) -> None:
-    """``specs/scope.example.yaml`` shows a second identity with a canary: uncommented, it loads."""
+    """``examples/scope.example.yaml`` shows a second identity with a canary: uncommented, it
+    loads."""
 
-    # Where the template is: specs/ on this branch, examples/ once the battery moves (A-84).
+    # Where the template is: examples/ since the battery moved (u12 A-84), specs/ before it.
     repo = Path(__file__).resolve().parents[2]
     template = next(
         path
         for path in (
-            repo / "specs" / "scope.example.yaml",
             repo / "examples" / "scope.example.yaml",
+            repo / "specs" / "scope.example.yaml",
         )
         if path.is_file()
     )

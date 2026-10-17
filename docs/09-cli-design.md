@@ -95,7 +95,9 @@ OUTPUT
   -v, -vv, -q, --no-color                  (-v also prints an internal error's traceback)
   --evidence-root <dir>  --run-db <path>  --spec-path <dir>
                                            checked before anything is sent; the spec path
-                                           defaults to specs/ here, else the packaged battery
+                                           defaults to specs/ here, else the built-in battery
+                                           (inside the package; read in this repository's
+                                           own checkout too, whose specs/ holds contracts)
 
 OTHER COMMANDS
   dottore fingerprint <target.yaml> --scope <scope.yaml> [--offline]
@@ -105,7 +107,7 @@ OTHER COMMANDS
   dottore coverage [--framework all|owasp|atlas|iopc|aisvs] [--suite ..] [--gaps] [--json]
   dottore registry ls [--category ..] [--owasp ..] [--tag ..] [--suite ..]
   dottore describe <spec-id>
-  dottore lint specs/ [--json]              schema + policy + fixtures-prove-detection
+  dottore lint <path> [--json]              schema + policy + fixtures-prove-detection
   dottore new-spec --family <f> --id <ID>   scaffold a spec + empty fixtures
   dottore render-media <spec-id> --out <dir>
   dottore replay <run-id>                   re-read a run from stored evidence; sends nothing
@@ -271,9 +273,9 @@ dottore run --suite owasp:llm --compare -t gpt.yaml -t claude.yaml -t mistral.ya
 ```
 
 A regulatory preset (`--suite eu:ai-act`, `dora`, `nist:ai`, `mitre:atlas`, `iso:42001`) is
-not built: the alias table in `cli/flags.py` maps each to a suite id no file in `specs/suites/`
-has, so the run exits 3 with "suite ... is not registered". For a framework view of what the
-battery tests, use `dottore coverage --framework atlas` (OWASP, ATLAS, IoPC and AISVS axes).
+not built: the alias table in `cli/flags.py` maps each to a suite id no file in the battery's
+`suites/` has, so the run exits 3 with "suite ... is not registered". For a framework view of what
+the battery tests, use `dottore coverage --framework atlas` (OWASP, ATLAS, IoPC and AISVS axes).
 
 ## 4. Output ergonomics
 
@@ -282,8 +284,9 @@ battery tests, use `dottore coverage --framework atlas` (OWASP, ATLAS, IoPC and 
   unless `--include-needs-review` is given.
 - Terminal summary table by category + severity band + reproducibility.
 - Exit codes (`cli/exit_codes.py`): `0` clean, `1` findings below `--fail-on`, `2` findings
-  at/above `--fail-on`, `3` operational error, which includes a run that did not finish and a
-  command-line usage error (an unknown option exits 3, not 2). CI-friendly and scriptable.
+  at/above `--fail-on`, `3` operational error, which includes a run that did not finish, a
+  command-line usage error (an unknown option exits 3, not 2) and an exit whose code is no exit
+  status (a text, a bool, a number outside 0 to 255; A-83). CI-friendly and scriptable.
 - Everything is also machine-output (`-oJ`) so it pipes into other tooling: nmap philosophy.
 
 ## 5. Non-goals for the CLI

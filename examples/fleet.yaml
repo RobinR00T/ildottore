@@ -5,7 +5,7 @@
 #          because that file names the same id, endpoint and credential)
 #
 # This one is local-only so it runs with no API keys (needs Ollama). For the full menu
-# (hosted OpenAI/Anthropic, a raw REST URL, an MCP server), see specs/fleet.example.yaml.
+# (hosted OpenAI/Anthropic, a raw REST URL, an MCP server), see examples/fleet.example.yaml.
 #
 # Keys are NEVER written here: each hosted entry names an env var (api_key_env), resolved
 # only at send time. `provider` is inferred from the endpoint when omitted: the path first

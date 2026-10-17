@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 import jsonschema
 import pytest
@@ -30,10 +29,10 @@ from ildottore.shared import (
     export_schemas,
 )
 from ildottore.shared.models import FingerprintGuess
+from ildottore.shared.package_data import ATTACK_SPEC_SCHEMA, BATTERY
 
-REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-CANONICAL_SPEC = REPO_ROOT / "specs" / "attacks" / "PI-INDIRECT-RAG-001.yaml"
-SCHEMA_PATH = REPO_ROOT / "schemas" / "attack-spec.schema.json"
+CANONICAL_SPEC = BATTERY / "attacks" / "PI-INDIRECT-RAG-001.yaml"
+SCHEMA_PATH = ATTACK_SPEC_SCHEMA
 
 
 def test_version() -> None:
@@ -63,7 +62,8 @@ def test_canonical_spec_round_trips_against_json_schema() -> None:
     """Primary §7 criterion, run **verbatim**: the model dump re-validates vs the schema.
 
     ``AttackSpec.model_validate(y).model_dump(mode="json")`` must satisfy
-    ``schemas/attack-spec.schema.json`` (jsonschema) - no ``exclude_none`` at the call site.
+    ``registry/schemas/attack-spec.schema.json`` (jsonschema), with no ``exclude_none`` at the call
+    site.
     """
     data = yaml.safe_load(CANONICAL_SPEC.read_text())
     schema = json.loads(SCHEMA_PATH.read_text())

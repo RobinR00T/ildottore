@@ -1004,8 +1004,10 @@ shown otherwise (`redact_text`), so a secret one of them splits and that is glue
 mask of a type the tool writes with one inside it, is masked or not depending on the rest of the
 text, on main as here (an address anywhere in it flips it); masking more, A-78 flips it more often:
 every text the fuzzers above find where this change shows what main masks holds one of them, and
-none without. In a CLI error, a UUID the number rules read a number in is masked as main masked it
-(the number masked, the rest as the other rules leave it); one they read none in is masked whole. A
+none without (both readings are made since A-83, and what either masks is masked). In a CLI error,
+a UUID the number rules read a number in is masked as main masked it (the number masked, the rest
+as the other rules leave it); one they read none in is masked whole (since A-83 the CLI masks
+every UUID as the reports do, u12 A-83 item 4). A
 mask of one of the nine types that a target writes is kept outside a labelled value, where main read
 it as text: as a URL's user (`ws://«REDACTED:uuid»:<password>@h`) it stays whole and the password is
 masked, where main masked from its first `:` on; nothing it holds is a secret main masked but the
@@ -1044,6 +1046,98 @@ never the name (`shared.files.read_failure`; `--scope <5,000 digits>` printed `�
 twice, pre-merge audit LOW e). `env://NONE` is the identity that carries no credential: its variable
 is never read (`cli.wiring.resolve_auth_ref`). Checked
 by `tests/cli/test_credential_variables.py` and `tests/cli/test_report_and_file_versions.py`.
+
+**A-83 (added 2026-10-16; u12's half, the CLI, is u12 A-83) A text holding U+0000 or U+0001 is
+masked the same whatever else it holds, two passes of the redactor can share its UUID stand-ins,
+and an endpoint URL's user is registered when it is the credential.** The follow-ups the pre-merge
+audits of the train of `de122e26` queued (F2 of the A-78 audits; the CLI's UUID; a credential as a
+URL's user), each reproduced on `7d01521f`.
+
+*Both readings of the stash delimiters.* The redactor's stash tokens are `\x00<number>\x01`, so it
+never reads those two characters as text. `redact_text` dropped them and returned that reading
+whenever it masked anything, and read the text again with them made visible (`␀`, `␁`) only when
+it masked nothing. Dropped, they glue what they separate (`x\x01credential: <value>` loses its
+label, `bob@corp.io\x00_` its address); shown, they split what they join (`AKIA\x00IOSF...`, a key
+read as UTF-16 with Latin-1). So whether a value was masked depended on whether anything at all
+was masked in the text, however far away: `5f0eb9d2-2c10-0000-ac58-6fdf9029c33d
+cbrbtsw)idfknfiuys\x01credential: '10z61wev'` showed the value once the UUID was masked (F2,
+disclosed since A-78). Both readings are now made, each to its fixed point, the joined one placed
+back through the positions of the characters it keeps (`_Joined`, an array of the delimiters'
+places: a list of every kept index took about 30 bytes a character), and what either masks is
+masked in the text with the delimiters made visible (`read_both_ways`, `_spans_both_ways`, the code
+A-77's `_mask_spans` already used for a joined stream, now shared); the result is read once more,
+which only adds masks, unless the visible reading alone is the result, and is a fixed point. Two
+names that differ only by a delimiter stay two keys, and a delimiter shows in the output whether or
+not anything is masked (it was dropped whenever something was). A text without one is read
+exactly as before. `tests/test_redactor_stash_delimiters_both_ways.py` (36 tests, 14 fail on
+`7d01521f`): six secrets one reading hides, each with four unrelated masked values before it, the
+delimiters shown, a property over 300 texts of fixed points, and linear time (a ratio).
+
+*Shared stand-ins.* `UuidCuts(text)` chooses the block of stand-ins (A-78's `_Cuts`) from the text
+a first pass reads; two redactors given it share them: the first, built without the entropy rule,
+leaves them in its output; the second, with it, masks each UUID they are in whole with the pieces
+main masked around it and masks any stand-in left as the number main masked there. `late` is
+`True`, `False` or a frozenset of the types of the late patterns to run (a string is refused: a
+type test on it matched substrings, LOW 4). The CLI uses both (u12 A-83 item 4); a redactor built
+without `uuid_cuts` is unchanged.
+
+*An endpoint URL's user.* `cli.wiring._endpoint_credentials` registers the password of a target
+file's endpoint, or the user when it is all the user info says, as written and percent-decoded
+(u12 A-83 item 7).
+
+*Measured.* The differential fuzz against `7d01521f`'s redactor (a `git show` copy, loaded beside
+this one; the A-78 auditors' grammar, `scratch/fixkeys-audit/fz/gen.py`; a regression being a run
+of 8 characters this output shows between two masks that no stretch main shows holds), on the
+final tree: 500,000 texts with U+0000 and U+0001 among the glue, 135,514 differ (27.1%), every one
+holding a delimiter, and none shows a run main hides; 300,000 without a delimiter, none differs;
+without the entropy rule, with registered credentials and through the identity mask, 80,000 each:
+every difference holds a delimiter (20,319, 21,750 and 21,792), none shows a run main hides; every
+output is a fixed point. The auditors' own criterion, which counts a mask copied from the input
+as text, flags 316 of the 500,000: in each, a mask this adds stands beside one the input held,
+where main showed the glue between them. Time against main on the same inputs: prose, keys and
+labels, UUIDs cut by numbers, emails and phones, hostile runs and 24,000 short texts, all without
+a delimiter, 0.96 to 1.01 times (best of five). With one, linear, up to about 9 times main's:
+the worst shapes measured at 4 MiB (one run each, on a loaded machine): card numbers glued by
+U+0000 2.99 s (main 0.32 s, 9.4 times; 9.0 in the round-2 audit); UUIDs whose groups are digits,
+glued by U+0001, 4.83 s (0.81 s, 6.0; 6.5 in the audit), glued by U+0000 4.73 s (0.81 s, 5.8
+times); 32-hex runs glued by U+0000 3.89 s (0.69 s, 5.6); one hex run with U+0000 every 40
+characters 3.55 s (0.71 s, 5.0); `ghp_` keys glued by U+0000 2.60 s (0.59 s, 4.4); labelled keys
+and one U+0000 3.84 s (1.51 s, 2.5); prose 1.06 s (1.05 s); each about four times its 1 MiB time.
+The first version merged a stretch's masks into a tuple rebuilt and searched for each mask merged
+into it, in time in the square of their number: 4 MiB of glued 32-hex runs took 177 s, 243 times
+main's (pre-merge audit of A-83, HIGH 1). They are an ordered set now (a dict's keys, the same
+order: 20,000 texts of the grammar give the same output as before, through `redact_text` and as
+logprob streams through `mask_split`), and four times the text takes under six times the time
+(`test_merging_many_masks_into_one_stretch_stays_linear`). A-77's `_masked_pieces` had the same
+search, on a list, for every piece a stretch covers, pre-existing and cubic: 32 KiB of `ghp_` keys
+glued by U+0000 as a logprob stream of 4-character tokens took 22.9 s on `7d01521f`, 0.33 s now.
+It also held, for every piece, its own copy of the masks of the stretch it lies in, so memory grew
+as pieces times masks: 256 KiB of that stream took 4.19 GB, and a target that returns logprobs
+reaches it (round 2 of the audit, MEDIUM 1). A piece inside one stretch shares the stretch's
+tuple now, and only a piece across several builds one: 16 KiB and 64 KiB peak at 2.6 and 9.9 MiB
+(15.3 and 210.5 before), 256 KiB at 41 MiB in 2.8 s, the output unchanged on 24,000 streams
+(logprob lists with and without alternatives, and transcripts), and four times the stream takes
+under eight times the peak memory (`test_a_logprob_stream_s_memory_grows_with_its_length`). What a
+piece's alternatives show is still every mask of its stretch, which is A-77's output: bounding it
+(one mask, or `«REDACTED:fragment»` past a count) changes that output and is left for its own
+change.
+
+*Placing a reading back.* `read_both_ways` places a reading's masks with `tolerant=True`: the CLI
+masks in passes, and a later pass can read an earlier one's mask as a URL's user and rewrite it
+(`redis://«REDACTED:«REDACTED:url_password»@`), so its output holds text the message does not and
+strict placement failed, which masked the whole message as `«REDACTED:fragment»` (about 1% of the
+CLI fuzz's messages). A mask opener glued before a mask is part of it, and a literal it cannot
+place, or an end that is not the text's own, is dropped and the masks beside it stand as one; a
+first version showed that literal with the masks, which showed text the other reading masked. A
+redactor's own output always places strictly (none of the 500,000 texts above needed it); A-77's
+`_mask_spans` keeps the strict placement.
+
+*Not covered.* A hex run inside a token-level JWT match that a letter outside ASCII follows is
+left by the entropy rule to the JWT pattern, which fails on the text (`\b` between two letters):
+`eyJ` and 40 zeros, `.aaaaa.aaaaaé` print the zeros, on `7d01521f` too (found by this clause, not
+changed: it changes the redactor's output outside its items). A registered credential is masked
+whole, not by its parts: a part of one inside a path a CLI error does not keep prints, on
+`7d01521f` too.
 
 **A-85 (u08's clause; this unit's half, added 2026-10-16, amended 2026-10-17).** `load_scope`
 refuses an identity `canary` a reply can hold by chance (`policy.scope.weak_canary`): shorter than

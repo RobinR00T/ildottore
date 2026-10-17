@@ -273,7 +273,9 @@ Category aliases for `-p`: `pi`, `jailbreak`, `leakage`, `tool`, `rag`, `output`
 
 Yes, that is the point. `dottore new-spec …` scaffolds a YAML spec; fill `attack`,
 `expected_secure_behavior`, `evaluators` and golden `fixtures` (a vulnerable fixture the
-scanner must flag, a hardened one it must pass), then `dottore lint specs/`. A directory with a
+scanner must flag, a hardened one it must pass), then `dottore lint <its directory>` (the
+built-in battery, inside the package since u12 A-84: `dottore lint src/ildottore/battery`). A
+directory with a
 `pack.yaml` is read as a pack (`attacks/` and `suites/`); one without is read as loose specs, its
 own `*.yaml` files only, and `lint` says so: a path that holds none exits `3` with `NO_SPECS`,
 naming the YAML files in its subdirectories it did not read, where until 2026-10-11 it printed

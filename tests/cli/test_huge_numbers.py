@@ -31,11 +31,11 @@ from ildottore.cli.exit_codes import ExitCode
 from ildottore.cli.main import app
 from ildottore.registry.schema import validate_attack_spec_schema
 from ildottore.shared import digits
+from ildottore.shared.package_data import BATTERY
 
 from .conftest import write_scope
 
-REPO = Path(__file__).resolve().parents[2]
-SPEC = REPO / "specs" / "attacks" / "AC-BFLA-001.yaml"
+SPEC = BATTERY / "attacks" / "AC-BFLA-001.yaml"
 runner = CliRunner()
 
 #: The finding's literal: 4,817 digits, past the default limit of 4,300.
@@ -329,7 +329,7 @@ def test_a_number_as_provider_or_transport_is_refused_as_not_text(
     both as not text, naming the file and not the number."""
 
     scope = write_scope(tmp_path)
-    plain = REPO / "specs" / "attacks" / "PI-DIRECT-001.yaml"  # a chatbot spec, no setup
+    plain = BATTERY / "attacks" / "PI-DIRECT-001.yaml"  # a chatbot spec, no setup
     specs = _spec_dir(tmp_path, plain.read_text(encoding="utf-8"))
     for value in (HEX_LOW, "5"):
         target = tmp_path / "target.yaml"

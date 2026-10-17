@@ -35,6 +35,7 @@ from ildottore.reporting import get_reporter
 from ildottore.reporting.masking import mask_findings
 from ildottore.shared.enums import InconclusiveReason, ReportFormat, VerdictStatus
 from ildottore.shared.models import EvidenceRef, ModelRequest
+from ildottore.shared.package_data import BATTERY
 from ildottore.store import ReplayResult, TamperError, check_manifest
 from tests.reporting.conftest import make_finding, make_run
 from tests.scoring.conftest import make_attempt
@@ -383,7 +384,7 @@ def test_a_broken_mutator_plugin_is_a_lint_warning_not_a_crash(
     monkeypatch.setattr(mutators, "build_default_registry", broken)
     from ildottore.cli.lint import run_lint
 
-    code, output = run_lint([REPO / "specs"])
+    code, output = run_lint([BATTERY])
     assert code == 0, output
     assert "MUTATOR_PLUGIN_ERROR" in output
 

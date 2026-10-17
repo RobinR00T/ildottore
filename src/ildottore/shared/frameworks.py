@@ -74,7 +74,7 @@ ATLAS_MATRIX_RELEASE = "2026.09"
 
 #: The MITRE ATLAS tactic universe (the columns of the ATLAS matrix). Coverage is measured
 #: against this known set so "passed the scan" cannot hide an unexercised tactic. Specs carry
-#: the human-readable tactic name (see ``specs/`` + ``MitreAtlas.tactic``), so the universe is
+#: the human-readable tactic name (see the battery + ``MitreAtlas.tactic``), so the universe is
 #: keyed by **name**, which makes it sensitive to upstream renames as well as additions.
 #:
 #: Transcribed from ``mitre-atlas/atlas-data``, ``dist/v6/ATLAS-2026.09.yaml`` (release

@@ -127,7 +127,7 @@ class BaseEvaluator:
     only ever attached to an ``inconclusive`` verdict).
     """
 
-    #: The evaluator ``type`` string (matches ``schemas/attack-spec.schema.json``).
+    #: The evaluator ``type`` string (matches ``registry/schemas/attack-spec.schema.json``).
     type: str = ""
 
     async def evaluate(self, ctx: EvalContext) -> Verdict:  # pragma: no cover - abstract

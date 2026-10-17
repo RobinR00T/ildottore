@@ -16,6 +16,7 @@ from typer.testing import CliRunner
 
 from ildottore.cli import wiring
 from ildottore.cli.app import app
+from ildottore.shared.package_data import BATTERY
 
 from .conftest import make_spec, write_scope, write_spec_tree, write_target
 
@@ -307,13 +308,10 @@ def test_a_media_asset_the_loader_read_is_protected(tmp_path: Path, no_sends: li
 
     import shutil
 
-    repo = Path(__file__).resolve().parents[2]
     pack = tmp_path / "pack"
     (pack / "attacks").mkdir(parents=True)
     (pack / "pack.yaml").write_text("id: mine\npack_version: '1.0'\nname: mine\n")
-    audio = next(
-        p for p in (repo / "specs" / "attacks").glob("*.yaml") if "asset:" in p.read_text()
-    )
+    audio = next(p for p in (BATTERY / "attacks").glob("*.yaml") if "asset:" in p.read_text())
     shutil.copy(audio, pack / "attacks" / audio.name)
     for line in audio.read_text().splitlines():
         if "asset:" in line:

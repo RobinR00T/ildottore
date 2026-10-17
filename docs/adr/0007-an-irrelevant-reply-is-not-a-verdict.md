@@ -168,7 +168,8 @@ target, which the default battery ignores.
 
 For OD-44 alone: drop `requires: [mcp]` from `MCP-TOOLPOISON-001`; the capability can stay,
 unread. For all of OD-16: restore the two specs from `6d5f7ae`
-(`specs/attacks/DOS-TOKEN-AMP-001.yaml`, `specs/attacks/MCP-TOOLPOISON-001.yaml`), the pinned pair
+(`specs/attacks/DOS-TOKEN-AMP-001.yaml`, `specs/attacks/MCP-TOOLPOISON-001.yaml` there, now under
+`src/ildottore/battery/attacks/`), the pinned pair
 in `tests/cli/test_scenario_mode.py` and `tests/fingerprint/test_carrier_measured_offline.py`,
 MCP-TOOLPOISON-001 as the unjudged spec of
 `tests/cli/test_resume_halted_mid_batch.py`, and delete `tests/battery/test_irrelevant_reply.py`.

@@ -45,11 +45,12 @@ from ildottore.cli import wiring
 from ildottore.cli.app import app
 from ildottore.cli.run import fingerprint_probe_count
 from ildottore.shared.models import Sampling, Target
+from ildottore.shared.package_data import BATTERY
 from tests.cli.conftest import write_scope
 
 _REPO = Path(__file__).resolve().parents[2]
 _SPEC = "JB-REFUSAL-SUPPRESS-001"
-_SPEC_FILE = _REPO / "specs" / "attacks" / f"{_SPEC}.yaml"
+_SPEC_FILE = BATTERY / "attacks" / f"{_SPEC}.yaml"
 #: The spec's own block: the stub's refusal passes it, and it leaves `top_p` unset.
 _OWN = {"temperature": 0.0, "seed": 42, "max_tokens": 600}
 
@@ -869,9 +870,7 @@ def test_every_turn_and_the_identity_sweep_take_the_block(
     command[command.index(_SPEC)] = spec_id
     result = CliRunner().invoke(app, command)
     assert result.exit_code in (0, 1), result.output
-    (spec,) = [
-        s for s in wiring.build_registry([_REPO / "specs" / "attacks"]).list() if s.id == spec_id
-    ]
+    (spec,) = [s for s in wiring.build_registry([BATTERY / "attacks"]).list() if s.id == spec_id]
     assert spec.sampling is not None and spec.sampling.top_p is None
     expected = {**spec.sampling.model_dump(exclude_none=True), "top_p": 0.25}
     assert len(seen) >= 2, seen

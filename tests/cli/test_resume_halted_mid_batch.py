@@ -31,6 +31,7 @@ import pytest
 from typer.testing import CliRunner
 
 from ildottore.cli.app import app
+from ildottore.shared.package_data import BATTERY
 
 _JUDGE_SAYS_SECURE = json.dumps(
     {
@@ -547,7 +548,7 @@ def test_the_judge_share_comes_off_only_for_what_the_resume_will_not_judge() -> 
     from ildottore.shared.enums import ScanBand
     from ildottore.shared.models import AttackSpec, Finding, RiskScore, TestRun
 
-    attacks = Path(__file__).resolve().parents[2] / "specs" / "attacks"
+    attacks = BATTERY / "attacks"
 
     def load(spec_id: str) -> AttackSpec:
         return AttackSpec.model_validate(

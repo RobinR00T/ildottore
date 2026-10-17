@@ -31,7 +31,8 @@ exist while every unit declares `schemas/` must-not-touch.
    a fingerprint *guess* (may include `json_mode`, `vision`, `max_context_tokens`) is a distinct
    shape from the target-declared `Capabilities` enum.
 5. **Pydantic-first schemas.** Only `schemas/attack-spec.schema.json` is hand-authored (the
-   author-facing spec format). `suite`, `pack` and `test-plan` schemas are **generated from the
+   author-facing spec format; inside the package, `src/ildottore/registry/schemas/`, since u12
+   A-84 and ADR-0013). `suite`, `pack` and `test-plan` schemas are **generated from the
    Pydantic models** via `shared/schema_export.py` (`dottore schema export`), owned by **u00**.
    Contracts must validate against the Pydantic model (or the generated schema), not treat those
    three files as frozen upstream oracles. This resolves OD-14 (schema ownership = u00).

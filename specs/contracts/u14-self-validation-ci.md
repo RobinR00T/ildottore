@@ -7,10 +7,12 @@ Stage-2 build contract. 9-section anatomy per `docs/00 §2`. Read `AGENTS.md` + 
 ## §1 Scope & ownership
 - **OWNS:** `tests/` (scaffolding, `conftest.py`, shared fixtures, taxonomy layout, fixture
   dirs), `.github/workflows/` (`ci.yml`, `audit.yml`, `dependabot.yml`), `.importlinter`,
+  `scripts/dependency_floors.py` (the `floors` job's constraints, u12 A-84),
   `pyproject.toml` `[tool.pytest.ini_options]` + `[tool.coverage.*]` sections.
 - **MUST NOT touch:** any `src/ildottore/**` production code, `schemas/`, `docs/`,
-  another unit's owned files, or spec YAML under `specs/attacks|suites`. This unit wires and
-  gates existing behavior; it never adds product features to fix a red gate: it reports.
+  another unit's owned files, or spec YAML under `battery/attacks|suites` (`specs/` until A-84).
+  This unit wires and gates existing behavior; it never adds product features to fix a red gate: it
+  reports.
 
 ## §2 Intended behavior
 Provide the executable harness that proves the whole build. (1) Lay out `tests/` so every one
@@ -69,7 +71,10 @@ to each unit's contract (evaluators own their P/R tests, mutator owns property t
   --cov-report=term-missing --cov-fail-under=85`.
 - `lint-imports` green (exit 0) against `.importlinter`; `tests/test_import_contract.py` passes.
 - `ruff check . && ruff format --check . && mypy src` clean.
-- `dottore lint specs/` exits 0 (layers 1-2).
+- `dottore lint src/ildottore/battery` exits 0 (layers 1-2).
+- (u12 A-84) The `floors` job installs every direct dependency at the floor `pyproject.toml`
+  declares and the suite passes; the `package` job builds the wheel and the sdist with hatchling
+  and `tests/test_packaging.py` passes against the installed wheel, run from outside the checkout.
 - **Golden-fixture accuracy = 100%** (layer 6, hard gate): every spec flags `fixtures.vulnerable`
   (`fail`) and passes `fixtures.hardened` (`pass`); a mismatch fails CI.
 - Evaluator **precision ≥ 0.90 / recall ≥ 0.85** on `tests/fixtures/labeled/` (layer 7).

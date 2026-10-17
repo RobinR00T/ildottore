@@ -32,12 +32,12 @@ from typer.testing import CliRunner
 from ildottore.cli.app import _masked, app
 from ildottore.cli.new_spec import scaffold_spec
 from ildottore.shared.error_text import error_text
+from ildottore.shared.package_data import BATTERY
 
 from .conftest import write_scope, write_target
 
 runner = CliRunner()
-_REPO = Path(__file__).resolve().parents[2]
-_SPEC = (_REPO / "specs" / "attacks" / "PI-DIRECT-001.yaml").read_text(encoding="utf-8")
+_SPEC = (BATTERY / "attacks" / "PI-DIRECT-001.yaml").read_text(encoding="utf-8")
 
 
 def _run(tmp_path: Path, *extra: str) -> Any:
@@ -248,7 +248,7 @@ _KEY = "sk-ant-api03-Q7xZ2mV9pL4kR8tN1wB6yH3jF5dS0aC-QwErTyUiOpAsDfGh"
     [
         ["lint", _KEY],
         ["lint", "--json", _KEY],
-        ["describe", _KEY, "--spec-path", str(_REPO / "specs")],
+        ["describe", _KEY, "--spec-path", str(BATTERY)],
         ["schema", "export", "--name", _KEY],
     ],
     ids=["lint", "lint-json", "describe", "schema-export"],

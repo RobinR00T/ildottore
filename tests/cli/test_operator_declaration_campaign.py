@@ -365,7 +365,8 @@ def test_discovery_shows_the_declaration_and_sends_nothing(
 
     assert discovery.exit_code == 0, discovery.output
     assert f"    operator:  {_OPERATOR_LINE}\n" in discovery.output
-    assert quiet.output.strip() == (
+    # stdout: from the repository root, stderr says which battery a run with no --spec-path read.
+    assert quiet.stdout.strip() == (
         "discovery: 1 target(s), sent nothing, 1 tool(s) declared not destructive"
     )
     assert state == {"attack": 0, "judge": 0}
