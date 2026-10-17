@@ -109,6 +109,10 @@ the file, schema copy, build or pipeline it names.
   change waits for it to be green). The venv the suite ran on holds a version at or above each
   (websockets 17.2, typer 0.26.8, rich 15.0.0, PyYAML 6.0.3, Jinja2 3.1.6, pytest-asyncio
   1.4.0). `pydantic>=2.6` stays, for the job to decide.
+- The `dev` extra declares `click>=8.4.2`: nine test files import `click.testing` or click's
+  exceptions, and neither typer 0.26.8 nor 0.27.3 declares click, so the suite relied on it being
+  installed by something else (round 2 of the pre-merge audit, LOW 4). 8.4.2 is the release the
+  suite has passed on here; CI's newest is 8.5.0.
 
 ### Added (CI runs the suite on the declared dependency floors, and builds and runs the wheel, u12 A-84)
 

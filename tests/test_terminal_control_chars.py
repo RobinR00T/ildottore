@@ -76,19 +76,27 @@ def _raw_controls(text: str) -> list[str]:
     return [ch for ch in text if unicodedata.category(ch) in _RAW]
 
 
-#: The one workflow command the CLI writes itself: under GitHub Actions, the note that a command
-#: with no --spec-path reads the built-in battery (u12 A-84). Its text is the tool's own.
-_OWN_ANNOTATION = "::warning title=dottore spec path::"
+#: The one workflow command the CLI writes itself, whole: under GitHub Actions, the note that a
+#: command with no --spec-path reads the built-in battery (u12 A-84), in its two wordings. Only
+#: these exact lines are the tool's own; a line that merely starts like them is not.
+_OWN_ANNOTATIONS = frozenset(
+    f"::warning title=dottore spec path::{here}, so this reads the built-in battery inside the "
+    f"installed package: {BATTERY} (pass --spec-path to read another)"
+    for here in (
+        "there is no specs/ directory here",
+        "this is Il Dottore's own checkout, whose specs/ holds the unit contracts",
+    )
+)
 
 
 def _injected_lines(output: str) -> list[str]:
     """Lines a GitHub Actions runner would read as a workflow command (leading space trimmed),
-    but the CLI's own spec-path annotation."""
+    but the CLI's own spec-path annotation, matched in full."""
 
     return [
         line
         for line in output.splitlines()
-        if line.lstrip().startswith("::") and not line.startswith(_OWN_ANNOTATION)
+        if line.lstrip().startswith("::") and line not in _OWN_ANNOTATIONS
     ]
 
 

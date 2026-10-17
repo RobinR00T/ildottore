@@ -79,9 +79,11 @@ jobs:
           # - resume (A-81): there is no `--resume`; here a resume is refused when the code that
           #   judged the halted half differs.
         # The placeholder fails here, before anything is installed or scanned, with an annotation
-        # that says what to set; so does a tag, a branch or a short SHA, which can move.
+        # that says what to set; so does a tag, a branch, a short SHA or a SHA with a second line,
+        # which can move. bash's own match tests the whole value, not each line of it.
+        shell: bash
         run: |
-          if ! printf '%s' "$ILDOTTORE_COMMIT" | grep -Eq '^[0-9a-f]{40}$'; then
+          if [[ ! "$ILDOTTORE_COMMIT" =~ ^[0-9a-f]{40}$ ]]; then
             echo "::error title=Il Dottore pin::set ILDOTTORE_COMMIT to a full 40-hex commit SHA"
             exit 1
           fi
