@@ -37,6 +37,13 @@ neighbouring entries can interleave (an older branch merged later sits above a n
   a resume refusal masked a battery file's name; LOWs: the lint break listed, the runtime notes
   name the change, stale old-path references, the CI example's placeholder pin refused unless it
   is a full SHA (`::error::`), job timeouts, CODEOWNERS on the schema directory.
+- Round 2 of the audit (`72f7d471`): NOT READY, fixed in new commits. HIGH 1: the own checkout
+  was told by three parents, which `pip install --target <dir>/deps` fooled (the operator's
+  `specs/` unread, the built-in 75 run under a false note): it is told by the checkout's shape now
+  (`src/ildottore/battery`, the root, a `pyproject.toml` naming `ildottore`). LOWs: a label only
+  the run record names is kept readable only where the package has files; the CI example's pin
+  guard is bash's whole-value match (`printf | grep` accepted a second line); the injection test
+  skips only the CLI's two exact annotation lines; the `dev` extra declares `click>=8.4.2`.
 - CI: `floors` (every direct dependency at its declared floor, Python 3.11, the suite) and
   `package` (hatchling wheel and sdist, the wheel run from outside the checkout); actionlint
   clean, not yet run on GitHub. The existing workflows pin actions by major tag (Dependabot), so
