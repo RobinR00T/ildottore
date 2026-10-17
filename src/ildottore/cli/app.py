@@ -21,7 +21,7 @@ import re
 import sqlite3
 import sys
 import traceback
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence, Set
 from functools import partial
 from itertools import chain
 from pathlib import Path
@@ -215,13 +215,18 @@ def _exit_status(code: object) -> int | None:
 
 def _status_text(code: object) -> str:
     """The text a code that is no integer stands for, as written: bytes read as Latin-1 (every
-    byte one character), a tuple or a list as its items' texts, anything else as ``str``."""
+    byte one character), a tuple, a list or a set as its items' texts, a mapping as its keys' and
+    values' texts in order, anything else as ``str``. ``str`` of a container writes each item's
+    ``repr``, which escapes a newline or a NUL, so a credential a code split by one was text the
+    redactor did not know (a dict or a set, u01 A-86 item 2)."""
 
     if isinstance(code, str):
         return code
     if isinstance(code, (bytes, bytearray)):
         return bytes(code).decode("latin-1")
-    if isinstance(code, (tuple, list)):
+    if isinstance(code, Mapping):
+        return " ".join(_status_text(part) for item in code.items() for part in item)
+    if isinstance(code, (tuple, list, Set)):
         return " ".join(_status_text(item) for item in code)
     return str(code)
 
