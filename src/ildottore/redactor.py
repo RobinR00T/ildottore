@@ -2862,14 +2862,18 @@ def _spans_both_ways(
                 start, end = positions.at(start), positions.at(end - 1) + 1
             spans.append((start, end, mask))
     spans.sort(key=lambda span: (span[0], span[1]))
-    merged: list[tuple[int, int, tuple[str, ...]]] = []
+    # Each merged stretch keeps its masks in an ordered set (a dict's keys): a tuple rebuilt and
+    # searched for every mask merged into it took time in the square of their number, 177 s on
+    # 4 MiB of 32-hex runs glued by U+0000 where main took 0.73 s (pre-merge audit of A-83, HIGH 1).
+    merged: list[tuple[int, list[int], dict[str, None]]] = []
     for start, end, mask in spans:
-        if merged and start < merged[-1][1]:
-            first, last, shown = merged[-1]
-            merged[-1] = (first, max(last, end), shown if mask in shown else (*shown, mask))
+        if merged and start < merged[-1][1][0]:
+            last = merged[-1][1]
+            last[0] = max(last[0], end)
+            merged[-1][2].setdefault(mask, None)
         else:
-            merged.append((start, end, (mask,)))
-    return merged
+            merged.append((start, [end], {mask: None}))
+    return [(first, last[0], tuple(shown)) for first, last, shown in merged]
 
 
 def _masked_pieces(
@@ -2898,7 +2902,9 @@ def _masked_pieces(
         while first < len(spans) and spans[first][1] <= start:
             first += 1
         parts: list[str] = []
-        masks: list[str] = []
+        # An ordered set: a list searched for each mask was quadratic in a stretch's masks, for
+        # every piece it covers (pre-merge audit of A-83: 222 s on a 64 KiB logprob stream).
+        masks: dict[str, None] = {}
         cursor, index = start, first
         while start < end and index < len(spans) and spans[index][0] < end:
             span_start, span_end, shown = spans[index]
@@ -2906,7 +2912,7 @@ def _masked_pieces(
                 parts.append(joined[cursor:span_start])
             if span_start >= start:  # this piece is the first the stretch covers
                 parts.append("".join(shown))
-            masks.extend(mask for mask in shown if mask not in masks)
+            masks.update(dict.fromkeys(shown))
             cursor = min(max(cursor, span_end), end)
             if span_end > end:  # it goes on into the next piece
                 break

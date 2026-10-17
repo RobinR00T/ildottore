@@ -12,6 +12,7 @@ are now made, and what either masks is masked, in the text with the delimiters m
 
 from __future__ import annotations
 
+import random
 import time
 
 import pytest
@@ -133,3 +134,31 @@ def test_reading_both_ways_stays_linear() -> None:
     cost(200)  # warm the patterns
     small, large = min(cost(2_000) for _ in range(3)), min(cost(8_000) for _ in range(3))
     assert large < 8 * small, (small, large)
+
+
+def _glued_hex_runs(size: int) -> str:
+    """Distinct 32-hex runs glued by U+0000, ``size`` characters: the joined reading masks one run,
+    the visible one each of them, a mask of its own each, and every mask merges into one stretch."""
+
+    draw = random.Random(0)  # noqa: S311 - test data, not a secret
+    runs = (size // 33) + 1
+    return "\x00".join(f"{draw.getrandbits(128):032x}" for _ in range(runs))[:size]
+
+
+def test_merging_many_masks_into_one_stretch_stays_linear() -> None:
+    """Four times the text, under six times the time. The merged stretch's masks were a tuple
+    rebuilt and searched for each mask merged into it: 4 MiB took 177 s where main took 0.73 s
+    (pre-merge audit of A-83, HIGH 1)."""
+
+    redactor = Redactor(salt="s")
+
+    def cost(size: int) -> float:
+        text = _glued_hex_runs(size)
+        started = time.perf_counter()
+        redactor.redact_text(text)
+        return time.perf_counter() - started
+
+    cost(16 * 1024)  # warm the patterns
+    small = min(cost(256 * 1024) for _ in range(2))
+    large = min(cost(1024 * 1024) for _ in range(2))
+    assert large < 6 * small, (small, large)
