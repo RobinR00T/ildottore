@@ -274,7 +274,12 @@ def is_own_checkout() -> bool:
         root = src.parent
         if Path.cwd().resolve() != root:
             return False
-        project = tomllib.loads(read_text_capped(root / "pyproject.toml")).get("project")
+        pyproject = root / "pyproject.toml"
+        # A regular file only: opening a FIFO waits for a writer, and a command would hang there
+        # (round 3 of the pre-merge audit of A-84, LOW).
+        if not pyproject.is_file():
+            return False
+        project = tomllib.loads(read_text_capped(pyproject)).get("project")
     except (OSError, RuntimeError, tomllib.TOMLDecodeError):
         # The working directory was removed, a link loop, no pyproject.toml or one that is not
         # TOML: not the checkout.

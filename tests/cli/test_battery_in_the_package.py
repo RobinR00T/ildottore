@@ -21,7 +21,9 @@ examples are in ``examples/``, and ``specs/`` holds the unit contracts only. So:
 
 from __future__ import annotations
 
+import os
 import sys
+import threading
 from pathlib import Path
 
 import pytest
@@ -221,6 +223,30 @@ def test_a_checkout_of_ildottore_reads_the_battery(
     assert wiring.default_spec_paths() == [battery]
     monkeypatch.chdir(tmp_path / "specs")
     assert not wiring.is_own_checkout()
+
+
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="needs FIFOs")
+def test_a_fifo_named_pyproject_toml_does_not_make_a_command_wait(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Round 3 of the audit, LOW: opening a FIFO waits for a writer, so a `pyproject.toml` that
+    is one hung every command run from that directory. Only a regular file is read."""
+
+    battery = tmp_path / "src" / "ildottore" / "battery"
+    battery.mkdir(parents=True)
+    fifo = tmp_path / "pyproject.toml"
+    os.mkfifo(fifo)
+    monkeypatch.setattr(wiring, "PACKAGED_SPEC_PATH", battery)
+    monkeypatch.chdir(tmp_path)
+    answers: list[bool] = []
+    worker = threading.Thread(target=lambda: answers.append(wiring.is_own_checkout()), daemon=True)
+    worker.start()
+    worker.join(timeout=10)
+    if worker.is_alive():  # unblock the reader before failing, so nothing is left waiting
+        os.close(os.open(fifo, os.O_WRONLY | os.O_NONBLOCK))
+        worker.join(timeout=5)
+        pytest.fail("is_own_checkout waited on a FIFO named pyproject.toml")
+    assert answers == [False]
 
 
 def test_the_repository_specs_directory_holds_no_yaml() -> None:
