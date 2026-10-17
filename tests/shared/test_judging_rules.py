@@ -108,11 +108,20 @@ PIN_HISTORY: tuple[tuple[int, str, str], ...] = (
         "resume refusal keeps battery file names readable; spec selection and messages only, no "
         "verdict can change; version 1 is not released",
     ),
+    (
+        1,
+        "c8f50e0615fb1fd0a95752c37a88631fc8f2612a62bd9b6bc1b69d34edf1bc88",
+        "re-pin 2026-10-17: round 2 of the pre-merge audit of u12 A-84: the own checkout told by "
+        "its shape (src/ildottore/battery, the root, a pyproject.toml naming ildottore), a "
+        "record-only label kept readable only where the package has files; which specs a "
+        "default reads and what a refusal shows, no verdict can change; version 1 is not "
+        "released",
+    ),
 )
 
 #: The digest each version is pinned to now: the last line of :data:`PIN_HISTORY` for it.
 PINNED: dict[int, str] = {
-    1: "63e2465e2c59dc5db9c2a3a29bcf10fb16070af065b890f353fe74b3bd9808a9",
+    1: "c8f50e0615fb1fd0a95752c37a88631fc8f2612a62bd9b6bc1b69d34edf1bc88",
 }
 
 #: One ``<version> <digest>`` line per pin, appended to and never edited: the history must start
