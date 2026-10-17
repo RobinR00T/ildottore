@@ -15,7 +15,13 @@ from pathlib import Path
 import pytest
 
 from ildottore.policy.errors import ScopeError
-from ildottore.policy.scope import MIN_CANARY_CHARS, load_scope, weak_canary
+from ildottore.policy.scope import (
+    MIN_CANARY_BITS,
+    MIN_CANARY_CHARS,
+    MIN_SINGLE_CLASS_CHARS,
+    load_scope,
+    weak_canary,
+)
 
 
 def _scope(tmp_path: Path, canary: str, *, name: str = "tenant-two", target: str = "acme") -> Path:
@@ -31,6 +37,11 @@ def _scope(tmp_path: Path, canary: str, *, name: str = "tenant-two", target: str
     return path
 
 
+_LABEL = "holds, or is part of, an identity's name or the target id"
+_ONE_CLASS = "and is shorter than 16 characters, so it reads as a word, a name or a number"
+_REGULAR = "too few or too repeated to be a random token"
+
+
 @pytest.mark.parametrize(
     ("canary", "why"),
     [
@@ -39,11 +50,15 @@ def _scope(tmp_path: Path, canary: str, *, name: str = "tenant-two", target: str
         ("B-42", "shorter than 8 characters"),
         ("invoice ready", "holds a space"),
         ("tenant\tb2-x9", "holds a space"),
-        ("tenant-b", "holds no digit"),
-        ("Confidential", "holds no digit"),
-        ("ZYNAP_CANARY_ALPHA", "holds no digit"),
-        ("12345678", "holds no letter"),
-        ("2026-10-16", "holds no letter"),
+        ("tenant-b", f"holds only letters {_ONE_CLASS}"),
+        ("Confidential", f"holds only letters {_ONE_CLASS}"),
+        ("12345678", f"holds only digits {_ONE_CLASS}"),
+        ("2026-10-16", f"holds only digits {_ONE_CLASS}"),
+        ("COVID-19", _REGULAR),
+        ("canary-1", _REGULAR),
+        ("password1", _REGULAR),
+        ("4111111111111111", _REGULAR),  # sixteen digits, one of them different
+        ("abababababababab", _REGULAR),
     ],
 )
 def test_a_canary_ordinary_text_can_hold_is_refused(tmp_path: Path, canary: str, why: str) -> None:
@@ -62,15 +77,17 @@ def test_a_canary_ordinary_text_can_hold_is_refused(tmp_path: Path, canary: str,
         ("TENANT-B2", "tenant-b2", "acme"),  # in any case
         ("prod-2026", "tenant-two", "acme-prod-2026"),  # inside the target id
         ("tenant-a1", "tenant-two", "acme"),  # another identity's name, whole
+        ("tenant-two-2026", "tenant-two", "acme"),  # a name inside the canary (audit LOW 4)
+        ("acme-7f3a91c2e5d4", "tenant-two", "acme"),  # the target id inside the canary
     ],
 )
-def test_a_canary_inside_a_name_or_the_target_id_is_refused(
+def test_a_canary_that_holds_or_is_part_of_a_name_or_the_target_id_is_refused(
     tmp_path: Path, canary: str, name: str, target: str
 ) -> None:
     path = _scope(tmp_path, canary, name=name, target=target)
     if canary == "tenant-a1":
         path.write_text(path.read_text().replace("name: tenant-a\n", "name: tenant-a1\n"))
-    with pytest.raises(ScopeError, match="part of an identity's name or of the target id"):
+    with pytest.raises(ScopeError, match=_LABEL):
         load_scope(path)
 
 
@@ -78,12 +95,13 @@ def test_a_canary_inside_a_name_or_the_target_id_is_refused(
     "canary",
     [
         "CANARY-B-7f3a91c2",
-        "TENANT-B-CANARY-42",
+        "TENANT-B-CANARY-42",  # the names here are tenant-a and tenant-two
         "ZZ-CANARY-7f3a91",
-        "canary-1",
+        "ZYNAP_CANARY_ALPHA",  # one class, long and varied enough
+        "2914177763170669",  # a random 16-digit number (audit LOW 4)
+        "RAMVGNXAQHYOPRHL",  # a random all-letter token (audit LOW 4)
         "CANARY_B_{{run_id}}",
         "{{run_id}}",
-        "tenant-b-CANARY-91",  # holds a name, which a reply naming the tenant does not hold whole
     ],
 )
 def test_a_random_token_or_one_bound_to_the_run_is_accepted(tmp_path: Path, canary: str) -> None:
@@ -94,9 +112,11 @@ def test_a_random_token_or_one_bound_to_the_run_is_accepted(tmp_path: Path, cana
 
 
 def test_the_rule_is_one_function_the_loader_applies() -> None:
-    assert MIN_CANARY_CHARS == 8
+    assert (MIN_CANARY_CHARS, MIN_SINGLE_CLASS_CHARS, MIN_CANARY_BITS) == (8, 16, 36.0)
     assert weak_canary("CANARY-B-7f3a91c2", ["acme", "tenant-a", "tenant-b"]) is None
     assert weak_canary("ACME1234", ["acme1234-prod"]) is not None
+    # A label under three characters is not looked for inside a canary: "b" is in most tokens.
+    assert weak_canary("CANARY-B-7f3a91c2", ["a", "b"]) is None
     # An identity with no canary is not checked: the runner ignores an empty one.
     assert weak_canary("", []) is not None
 
@@ -111,7 +131,16 @@ def test_no_canary_and_an_empty_one_still_load(tmp_path: Path) -> None:
 def test_the_templates_commented_tenant_identity_loads(tmp_path: Path) -> None:
     """``specs/scope.example.yaml`` shows a second identity with a canary: uncommented, it loads."""
 
-    template = Path(__file__).resolve().parents[2] / "specs" / "scope.example.yaml"
+    # Where the template is: specs/ on this branch, examples/ once the battery moves (A-84).
+    repo = Path(__file__).resolve().parents[2]
+    template = next(
+        path
+        for path in (
+            repo / "specs" / "scope.example.yaml",
+            repo / "examples" / "scope.example.yaml",
+        )
+        if path.is_file()
+    )
     lines = template.read_text(encoding="utf-8").splitlines()
     start = lines.index("      # - name: tenant-b")
     block = [line.replace("# ", "", 1) for line in lines[start : start + 3]]

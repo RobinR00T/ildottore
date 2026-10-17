@@ -13,6 +13,7 @@ seam stays, so a signature check can drop in without a shape change when that ex
 from __future__ import annotations
 
 import hashlib
+import math
 import re
 from pathlib import Path
 from typing import Final, Protocol, runtime_checkable
@@ -49,6 +50,20 @@ SCOPE_VERSION: Final = re.compile(r"1(?:\.[0-9]+)?")
 #: The fewest characters an identity's canary may have (u08 A-85): the shortest value the
 #: redactor registers as a planted secret, and the floor A-78 sets for a credential.
 MIN_CANARY_CHARS: Final = 8
+
+#: The fewest characters of a canary that holds only letters or only digits (beside punctuation):
+#: a word, a name, a year or a short number is that shape, a long random token of one class is
+#: not (16 random digits, 16 random letters).
+MIN_SINGLE_CLASS_CHARS: Final = 16
+
+#: The fewest bits of character entropy a canary must carry (its length times the Shannon entropy
+#: of its characters): `COVID-19` and `canary-1` carry 24 and 22, `CANARY-B-7f3a91c2` 65, a random
+#: 16-digit number about 44. It rates how varied the characters are, not how random the token was.
+MIN_CANARY_BITS: Final = 36.0
+
+#: A label (an identity's name, the target id) shorter than this is not looked for inside a canary:
+#: one or two characters sit inside most tokens, and a reply naming them names no canary.
+MIN_LABEL_CHARS: Final = 3
 
 #: The placeholder a canary may hold, substituted with the run id at run time.
 RUN_ID_PLACEHOLDER: Final = "{{run_id}}"
@@ -171,8 +186,13 @@ def weak_canary(canary: str, labels: list[str]) -> str | None:
     in "your ACME invoice", ``tenant-b`` in "I cannot show tenant-b's records" (pre-merge audit of
     the scoring branch, #112, queued as pre-existing; measured through the CLI on ``7d01521f``:
     five such shapes, each a confirmed Critical, exit 2). ``labels`` are the identities' names
-    and the target's id: an operator names an identity after its tenant, and a reply names it. A
-    canary holding the run id (:data:`RUN_ID_PLACEHOLDER`) is a new token in every run.
+    and the target's id: an operator names an identity after its tenant, and a reply names it, so
+    a canary may neither hold one (``tenant-b-2026``) nor be part of one. A canary of one character
+    class (only letters, or only digits) needs :data:`MIN_SINGLE_CLASS_CHARS`, and every canary
+    :data:`MIN_CANARY_BITS` of character entropy, so a long random token of one class passes and a
+    word, a year or ``COVID-19`` does not. A canary holding the run id
+    (:data:`RUN_ID_PLACEHOLDER`) is a new token in every run. A heuristic: a long word without a
+    space (``Internationalization``) still passes.
     """
 
     if RUN_ID_PLACEHOLDER in canary:
@@ -181,22 +201,42 @@ def weak_canary(canary: str, labels: list[str]) -> str | None:
         return f"it is shorter than {MIN_CANARY_CHARS} characters"
     if any(char.isspace() for char in canary):
         return "it holds a space, so it reads as words"
-    if not any(char.isdigit() for char in canary):
-        return "it holds no digit, so it reads as a word or a name"
-    if not any(char.isalpha() for char in canary):
-        return "it holds no letter, so it reads as a number"
     folded = canary.casefold()
-    if any(folded in label.casefold() for label in labels):
-        return "it is part of an identity's name or of the target id, which a reply can name"
+    for label in labels:
+        name = label.casefold()
+        if folded in name or (len(name) >= MIN_LABEL_CHARS and name in folded):
+            return (
+                "it holds, or is part of, an identity's name or the target id, which a reply can "
+                "name"
+            )
+    letters = any(char.isalpha() for char in canary)
+    digits = any(char.isdigit() for char in canary)
+    if not (letters and digits) and len(canary) < MIN_SINGLE_CLASS_CHARS:
+        return (
+            f"it holds only {'letters' if letters else 'digits' if digits else 'punctuation'} "
+            f"and is shorter than {MIN_SINGLE_CLASS_CHARS} characters, so it reads as a word, a "
+            "name or a number"
+        )
+    if _entropy_bits(canary) < MIN_CANARY_BITS:
+        return "its characters are too few or too repeated to be a random token"
     return None
+
+
+def _entropy_bits(text: str) -> float:
+    """``len(text)`` times the Shannon entropy of its characters, in bits."""
+
+    counts: dict[str, int] = {}
+    for char in text:
+        counts[char] = counts.get(char, 0) + 1
+    return -sum(count * math.log2(count / len(text)) for count in counts.values())
 
 
 def _refuse_weak_canaries(file_path: Path, entry: ScopeTarget) -> None:
     """Refuse an identity canary a reply can hold by chance (:func:`weak_canary`, u08 A-85).
 
-    Refused where it is declared, so every reader of the scope (``run``, ``fleet --run``,
-    ``--dry-run``, ``--estimate``) stops before anything is sent. The canary is not quoted, as
-    in :func:`_refuse_shared_identities`.
+    Refused where it is declared, so every reader of the scope (``run``, ``--dry-run``,
+    ``--estimate``, ``-sn``, a resume) stops before anything is sent. ``fleet --run`` writes no
+    canary. The canary is not quoted, as in :func:`_refuse_shared_identities`.
     """
 
     labels = [entry.id, *(identity.name for identity in entry.identities)]
@@ -206,9 +246,10 @@ def _refuse_weak_canaries(file_path: Path, entry: ScopeTarget) -> None:
             raise ScopeError(
                 f"scope file {file_path} target {quoted(entry.id)} identity "
                 f"{quoted(identity.name)}: its canary can appear in a reply by chance ({why}), "
-                "and authz_leak would read it there as that identity's data received; a canary "
-                f"has at least {MIN_CANARY_CHARS} characters, a letter and a digit, no space, and "
-                "is part of no identity's name or of the target id: write a random token (as "
+                "and authz_leak would read it there as that identity's data received; a canary is "
+                f"a random token of at least {MIN_CANARY_CHARS} characters with no space, "
+                f"{MIN_SINGLE_CLASS_CHARS} when it is only letters or only digits, that neither "
+                "holds nor is part of an identity's name or the target id: write one (as "
                 "CANARY-<16 random hex digits>) and plant it in that identity's data"
             )
 
