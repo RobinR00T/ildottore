@@ -1823,7 +1823,8 @@ every job installs the newest releases.
   `specs/` the built-in battery is read. The one exception is the root of this package's own
   checkout, whose `specs/` holds the unit contracts (`wiring.is_own_checkout`, by the checkout's
   shape: the battery at `<root>/src/ildottore/battery`, the working directory resolving to
-  `<root>`, and `<root>/pyproject.toml`, read capped, naming the project `ildottore`; the working
+  `<root>`, and `<root>/pyproject.toml`, a regular file read capped (a FIFO is never opened, round
+  3), naming the project `ildottore`; the working
   directory at the battery's `parents[2]` alone was fooled by `pip install --target <dir>/deps`,
   which ran the built-in 75 from `<dir>` under a false note, round 2 of the audit, HIGH 1). The
   note says which (`there is no specs/ directory here` or `this is Il Dottore's own checkout,
@@ -1881,7 +1882,9 @@ the package and bound by the judging digest, the selection and `.gitignore` able
 with hatchling, the real wheel and sdist), `tests/cli/test_battery_in_the_package.py` (the default
 spec path, the repository root, each old path through the real CLI),
 `tests/test_dependency_floors.py`, `tests/cli/test_resume_judging_rules.py` (a changed battery
-file named in clear through the CLI).
+file named in clear through the CLI), `tests/shared/test_protected_namespaces.py` (no model field
+warns on the floor's pydantic: `WebSocketResponse.model_path`, which the `floors` job of #119 found
+on 2.6.0, protects only `model_validate` and `model_dump`).
 Both test files fail on `7d01521f`: `ildottore.shared.package_data` does not exist there.
 
 ## §8 Out of scope / forbidden

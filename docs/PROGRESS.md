@@ -44,6 +44,11 @@ neighbouring entries can interleave (an older branch merged later sits above a n
   the run record names is kept readable only where the package has files; the CI example's pin
   guard is bash's whole-value match (`printf | grep` accepted a second line); the injection test
   skips only the CLI's two exact annotation lines; the `dev` extra declares `click>=8.4.2`.
+- PR #119's CI: `static`, `validate` and `package` (the real hatchling wheel and sdist) green;
+  `floors` red on one test, on pydantic 2.6.0: `WebSocketResponse.model_path` warned about the
+  `model_` protected namespace at import. Fixed in the model (it protects only `model_validate`
+  and `model_dump`), the floor kept at 2.6. Round 3 of the audit, LOW: `is_own_checkout` opens
+  `pyproject.toml` only when it is a regular file (a FIFO there made a command wait).
 - CI: `floors` (every direct dependency at its declared floor, Python 3.11, the suite) and
   `package` (hatchling wheel and sdist, the wheel run from outside the checkout); actionlint
   clean, not yet run on GitHub. The existing workflows pin actions by major tag (Dependabot), so

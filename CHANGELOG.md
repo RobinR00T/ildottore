@@ -58,9 +58,10 @@ the file, schema copy, build or pipeline it names.
   Dottore's own checkout, whose `specs/` holds the unit contracts (told by its shape: the battery
   at `<root>/src/ildottore/battery`, the working directory `<root>`, and `<root>/pyproject.toml`
   naming the project `ildottore`; a package installed with `pip install --target <dir>/deps` is
-  no checkout, and from `<dir>` the operator's `specs/` is read). stderr says which: `note: there is
-  no specs/ directory here, so this reads the built-in battery inside the installed package: <path>
-  (pass --spec-path to read another)`, or
+  no checkout, and from `<dir>` the operator's `specs/` is read; a `pyproject.toml` that is not a
+  regular file, a FIFO say, is not opened, so it cannot make a command wait). stderr says which:
+  `note: there is no specs/ directory here, so this reads the built-in battery inside the installed
+  package: <path> (pass --spec-path to read another)`, or
   `note: this is Il Dottore's own checkout, whose specs/ holds the unit contracts, so ...`; with
   `GITHUB_ACTIONS=true` the same text follows as a `::warning title=dottore spec path::` line, so a
   pipeline that gates on the default battery sees it in its annotations. The first build of this
@@ -115,6 +116,14 @@ the file, schema copy, build or pipeline it names.
   exceptions, and neither typer 0.26.8 nor 0.27.3 declares click, so the suite relied on it being
   installed by something else (round 2 of the pre-merge audit, LOW 4). 8.4.2 is the release the
   suite has passed on here; CI's newest is 8.5.0.
+- **Measured by the `floors` job on #119** (Python 3.11.17, every direct dependency at its floor):
+  one failure, on pydantic 2.6.0. `WebSocketResponse.model_path` met that version's default
+  protection of every `model_` name, and importing the models printed `UserWarning: Field
+  "model_path" has conflict with protected namespace "model_"`, which every command prints on a
+  pydantic below 2.10 (and which broke `tests/store/test_store_open_errors.py`, whose subprocesses
+  print `ok`). Fixed in the code, not the floor: the model protects only `model_validate` and
+  `model_dump`, as pydantic 2.10 does by default, so 2.6 to the newest are quiet; `pydantic>=2.6`
+  stays. No other model has a field starting with `model_`.
 
 ### Added (CI runs the suite on the declared dependency floors, and builds and runs the wheel, u12 A-84)
 
