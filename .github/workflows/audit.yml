@@ -81,7 +81,7 @@ jobs:
           lint-imports
 
       - name: Spec lint (layers 1-2)
-        run: dottore lint specs/attacks
+        run: dottore lint src/ildottore/battery/attacks
 
       - name: Full suite + coverage gate (core ≥ 85%)
         run: |

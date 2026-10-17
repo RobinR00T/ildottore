@@ -16,12 +16,12 @@ from typing import Any
 from typer.testing import CliRunner
 
 from ildottore.cli.app import app
+from ildottore.shared.package_data import BATTERY
 
 from .conftest import write_scope, write_target
 
 runner = CliRunner()
-_REPO = Path(__file__).resolve().parents[2]
-_SPEC = (_REPO / "specs" / "attacks" / "PI-DIRECT-001.yaml").read_text(encoding="utf-8")
+_SPEC = (BATTERY / "attacks" / "PI-DIRECT-001.yaml").read_text(encoding="utf-8")
 
 
 def _run(tmp_path: Path, *spec_paths: Path, extra: tuple[str, ...] = ("--dry-run",)) -> Any:
@@ -65,11 +65,11 @@ def test_a_spec_path_that_redeclares_a_shipped_id_refuses_the_run(tmp_path: Path
     extra = tmp_path / "extra"
     extra.mkdir()
     (extra / "mine.yaml").write_text(_SPEC)
-    result = _run(tmp_path, _REPO / "specs", extra)
+    result = _run(tmp_path, BATTERY, extra)
     assert result.exit_code == 3, result.output
     said = result.output.replace("\n", "")
     assert "spec id 'PI-DIRECT-001' is declared twice" in said
-    assert str(_REPO / "specs" / "attacks" / "PI-DIRECT-001.yaml") in said
+    assert str(BATTERY / "attacks" / "PI-DIRECT-001.yaml") in said
     assert str(extra / "mine.yaml") in said
 
 
@@ -87,13 +87,13 @@ def test_lint_names_both_files_too(tmp_path: Path) -> None:
 
 
 def test_one_declaration_per_id_runs_as_before(tmp_path: Path) -> None:
-    assert _run(tmp_path, _REPO / "specs").exit_code == 0
+    assert _run(tmp_path, BATTERY).exit_code == 0
 
 
 def test_one_file_read_twice_is_no_collision(tmp_path: Path) -> None:
     """The same spec path twice, or a pack and its own attacks/ directory, read the same bytes."""
 
-    specs = _REPO / "specs"
+    specs = BATTERY
     assert _run(tmp_path, specs, specs).exit_code == 0
     assert _run(tmp_path, specs, specs / "attacks").exit_code == 0
 
@@ -102,8 +102,8 @@ def test_lint_reads_one_file_read_twice_as_one_declaration_too() -> None:
     """`lint sp sp` reported 75 ID_COLLISION naming the same file twice while `run` took the
     file once (pre-merge audit of A-82, LOW b)."""
 
-    specs = str(_REPO / "specs")
-    for args in ([specs, specs], [specs, str(_REPO / "specs" / "attacks")]):
+    specs = str(BATTERY)
+    for args in ([specs, specs], [specs, str(BATTERY / "attacks")]):
         result = runner.invoke(app, ["lint", *args])
         assert result.exit_code == 0, result.output
         assert "ID_COLLISION" not in result.output

@@ -33,7 +33,7 @@ htmlcov/
 # no trailing comments: after a pattern, it would become part of the pattern.
 !tests/**/*.sarif
 /scope.yaml
-!specs/scope.example.yaml
+!examples/scope.example.yaml
 
 # OS / editor
 .DS_Store

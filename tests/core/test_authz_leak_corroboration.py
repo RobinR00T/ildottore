@@ -43,6 +43,7 @@ from ildottore.shared.models import (
     Target,
     Verdict,
 )
+from ildottore.shared.package_data import BATTERY
 
 from .conftest import AllowAllPolicy, make_spec, mock_adapter_factory, no_sleep
 
@@ -57,7 +58,7 @@ _SECURE = (
 
 
 def _battery() -> dict[str, AttackSpec]:
-    registry = Registry.from_packs(load_paths([_REPO / "specs" / "attacks"]).packs)
+    registry = Registry.from_packs(load_paths([BATTERY / "attacks"]).packs)
     return {spec.id: spec for spec in registry.list()}
 
 

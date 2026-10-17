@@ -31,12 +31,13 @@ from ildottore.policy.errors import ScopeError
 from ildottore.reporting.summary import pct_display
 from ildottore.shared.enums import RequiresCapability
 from ildottore.shared.models import PlanBudgets
+from ildottore.shared.package_data import BATTERY
 
 from .conftest import make_spec, write_scope, write_spec_tree, write_target
 
 runner = CliRunner()
 
-SHIPPED_SPECS = Path("specs")
+SHIPPED_SPECS = BATTERY
 
 
 def _opts(tmp_path: Path, target: Path, scope: Path, **kw: object) -> RunOptions:

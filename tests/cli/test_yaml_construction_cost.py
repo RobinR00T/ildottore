@@ -36,6 +36,7 @@ from ildottore.cli.lint import EXIT_LINT_FAILED
 from ildottore.cli.main import app
 from ildottore.registry.schema import MAX_YAML_BYTES, SafeLoadError, safe_load_yaml
 from ildottore.shared.config_errors import yaml_problem
+from ildottore.shared.package_data import BATTERY
 
 from .conftest import make_spec, write_scope, write_spec_tree, write_target
 
@@ -520,7 +521,7 @@ def test_a_resumed_run_parses_its_target_once(tmp_path: Path, parses: Counter[st
     scope = _marked(write_scope(tmp_path), "scope")
     db = tmp_path / "runs.sqlite"
     common = [
-        "run", "-t", str(target), "--scope", str(scope), "--spec-path", str(REPO / "specs"),
+        "run", "-t", str(target), "--scope", str(scope), "--spec-path", str(BATTERY),
         "--quick", "-sV", "--run-db", str(db), "--evidence-root", str(tmp_path / "ev"),
         "--no-color",
     ]  # fmt: skip
@@ -552,7 +553,7 @@ def test_a_judge_file_is_parsed_once(tmp_path: Path, parses: Counter[str]) -> No
         app,
         [
             "run", "-t", str(files["target"]), "--scope", str(files["scope"]),
-            "--judge", str(files["judge"]), "--spec-path", str(REPO / "specs"), "--quick",
+            "--judge", str(files["judge"]), "--spec-path", str(BATTERY), "--quick",
             "--dry-run", "--no-color",
         ],
     )  # fmt: skip

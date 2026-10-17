@@ -11,7 +11,7 @@ schema errors). The budget and its measure are ``safe_yaml``'s, shared since 202
 the loaders of the operator's own files, which had none. A JSON-schema message can still quote
 the offending value, cut at 300 characters.
 
-``schemas/attack-spec.schema.json`` is the hand-authored oracle for attack specs; the
+``registry/schemas/attack-spec.schema.json`` is the hand-authored oracle for attack specs; the
 ``suite`` and ``pack`` schemas are Pydantic-first (ADR-0006 / OD-14) and generated from the
 u00 models, so those are validated by constructing the model, not against a JSON file.
 """
@@ -35,13 +35,7 @@ from jsonschema.exceptions import ValidationError
 from ildottore.safe_yaml import SafeValueLoader, check_expanded
 from ildottore.shared.config_errors import yaml_problem
 from ildottore.shared.digits import described, path_text, too_long_paths
-
-# Repo layout: <root>/schemas/attack-spec.schema.json ; this file lives at
-# <root>/src/ildottore/registry/schema.py → three parents up to the package src root,
-# then two more to the repo root.
-_REPO_ROOT = Path(__file__).resolve().parents[3]
-_ATTACK_SPEC_SCHEMA = _REPO_ROOT / "schemas" / "attack-spec.schema.json"
-
+from ildottore.shared.package_data import ATTACK_SPEC_SCHEMA
 
 #: Larger than any spec needs (the biggest shipped spec is under 5 KB; media assets are files).
 MAX_YAML_BYTES = 1024 * 1024
@@ -161,7 +155,7 @@ def load_yaml_file(path: Path, *, root: Path | None = None) -> Any:
 @lru_cache(maxsize=1)
 def _attack_spec_validator() -> Draft202012Validator:
     """Compile the hand-authored attack-spec validator once."""
-    schema = json.loads(_ATTACK_SPEC_SCHEMA.read_text(encoding="utf-8"))
+    schema = json.loads(ATTACK_SPEC_SCHEMA.read_text(encoding="utf-8"))
     Draft202012Validator.check_schema(schema)
     return Draft202012Validator(schema)
 

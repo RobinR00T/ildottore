@@ -39,13 +39,14 @@ from ildottore.shared.models import (
     Target,
     Verdict,
 )
+from ildottore.shared.package_data import BATTERY
 from tests.evaluators.conftest import make_spec
 
 _HANDOFF = "transfer_to_billing_agent"
 #: What opens the note of a verdict the declaration changed (``shared.tool_abuse``), written out
 #: here so that this module is collected on the base too and each test fails on its own there.
 OPERATOR_DECLARATION = "operator declaration (OD-43)"
-_SPECS = Path(__file__).resolve().parents[2] / "specs" / "attacks"
+_SPECS = BATTERY / "attacks"
 
 
 def _shipped(spec_id: str) -> AttackSpec:

@@ -15,11 +15,11 @@ from ildottore.cli.coverage import (
 )
 from ildottore.reporting.summary import build_battery_coverage
 from ildottore.shared.iopc import IOPC_IMPACT_UNIVERSE, IOPC_TECHNIQUE_UNIVERSE
+from ildottore.shared.package_data import BATTERY
 
-REPO = Path(__file__).resolve().parents[2]
-#: The whole specs tree, as the CLI uses: suites live beside attacks, so a registry
+#: The whole built-in battery, as the CLI uses: suites live beside attacks, so a registry
 #: built from attacks/ alone cannot resolve --suite.
-SPECS = REPO / "specs"
+SPECS = BATTERY
 
 
 def _coverage():

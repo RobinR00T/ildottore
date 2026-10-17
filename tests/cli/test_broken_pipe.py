@@ -16,6 +16,8 @@ from pathlib import Path
 
 import pytest
 
+from ildottore.shared.package_data import BATTERY
+
 from .conftest import make_spec, write_scope, write_spec_tree, write_target
 
 REPO = Path(__file__).resolve().parents[2]
@@ -45,10 +47,10 @@ def _into_a_closed_reader(cwd: Path, *argv: str) -> tuple[int, str]:
 @pytest.mark.parametrize(
     "argv",
     [
-        ["registry", "ls", "--spec-path", str(REPO / "specs")],
-        ["lint", str(REPO / "specs")],
-        ["describe", "PI-DIRECT-001", "--spec-path", str(REPO / "specs")],
-        ["coverage", str(REPO / "specs")],
+        ["registry", "ls", "--spec-path", str(BATTERY)],
+        ["lint", str(BATTERY)],
+        ["describe", "PI-DIRECT-001", "--spec-path", str(BATTERY)],
+        ["coverage", str(BATTERY)],
     ],
     ids=["registry-ls", "lint", "describe", "coverage"],
 )

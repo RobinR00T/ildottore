@@ -38,13 +38,14 @@ noted, over the wire.
   token gloss, zero sends), `calibrate` (score findings against operator labels, HITL),
   `render-media` (preview a multimodal carrier), fingerprinting, MANUAL / FAQ / INSTALL / examples /
   man pages, and `make gates` (everything CI runs, plus bandit and pip-audit).
+- ✅ **An installable package** (2026-10-16, u12 A-84): the built-in battery and the attack-spec
+  schema live inside the package, so a wheel (`pip install .`, or `pip install "git+https://..."`
+  of a commit from then on) runs with no checkout (`INSTALL.md`); CI builds and runs it (the
+  `package` job) and tests the declared dependency floors (the `floors` job). Not released: the
+  only tag, `v0.1.0`, predates it, and nothing is on PyPI.
 
 ## Near-term (candidates, not committed)
 
-- ⬜ **An installable package**: a wheel (`pip install` without `-e`, or
-  `pip install "git+https://..."`) ships neither `specs/` nor `schemas/` and cannot load the
-  battery outside a checkout (found 2026-10-12, `docs/12` P1); until it does, install a clone
-  editable (`INSTALL.md`).
 - ⬜ **Live validation matrix**: run the multimodal (image + audio) battery end-to-end against real
   vision/audio models (a local Ollama vision model and/or a hosted provider) and record the
   results. The attacks are golden-proven offline; a live pass is the highest-credibility next step.

@@ -28,13 +28,17 @@
 > pure function over `Verdict`s, here by exception to §8 for the same reason as
 > `shared/patterns.py` and `shared/provider_filter.py`, since the three units that must apply it
 > one way cannot import each other (`core` imports only `shared`, `registry` may not import
-> `evaluators`).
+> `evaluators`). Since u12 A-84 (2026-10-16, ADR-0013) this unit also owns
+> `shared/package_data.py`: the one place that finds the package's own data files (the built-in
+> battery, `BATTERY`, and the attack-spec schema, `ATTACK_SPEC_SCHEMA`, both inside the package)
+> through `importlib.resources`, and names where a path of the old repository layout is now
+> (`MOVED`, `moved_note`), for every unit that reads or refuses such a path.
 
 Stage-2 build contract. 9-section anatomy per `docs/00 §2`. Read `AGENTS.md` + `docs/01 §3`
-+ `docs/03-05` + `docs/10` + `schemas/attack-spec.schema.json` + ADR-0005 before implementing.
-This is the **root** of the DAG (W0): every other unit codes against what this file defines, so
-its interfaces are program-level frozen contracts: a change here is an index-ledger open decision,
-never a unit-local edit.
++ `docs/03-05` + `docs/10` + `registry/schemas/attack-spec.schema.json` + ADR-0005 before
+implementing. This is the **root** of the DAG (W0): every other unit codes against what this file
+defines, so its interfaces are program-level frozen contracts: a change here is an index-ledger open
+decision, never a unit-local edit.
 
 ## §1 Scope & ownership
 - **OWNS:** `src/ildottore/shared/`: `models.py` (dependency-free Pydantic v2 models),
@@ -46,11 +50,12 @@ never a unit-local edit.
 
 ## §2 Intended behavior
 Provide the stable, dependency-free type layer for the whole build: (a) Pydantic v2 models that
-**mirror `schemas/attack-spec.schema.json`** and the runtime objects in `docs/01 §3`; (b) the 7
-runtime `Protocol`s; (c) the shared StrEnums. Models are the wire/persistence shapes; protocols
-are the seams `core` codes against (interfaces only: no concretes). Verdict polarity is fixed
-repo-wide and encoded here: **`pass` = secure, `fail` = exploited** (`docs/04 §0`). `AttackSpec`
-must round-trip any schema-valid YAML and reject any schema-invalid one (schema is the oracle).
+**mirror `registry/schemas/attack-spec.schema.json`** and the runtime objects in `docs/01 §3`; (b)
+the 7 runtime `Protocol`s; (c) the shared StrEnums. Models are the wire/persistence shapes;
+protocols are the seams `core` codes against (interfaces only: no concretes). Verdict polarity is
+fixed repo-wide and encoded here: **`pass` = secure, `fail` = exploited** (`docs/04 §0`).
+`AttackSpec` must round-trip any schema-valid YAML and reject any schema-invalid one (schema is the
+oracle).
 
 ## §3 Dependencies & interface contracts
 - **Depends on:** none (W0 root).
@@ -144,8 +149,9 @@ must round-trip any schema-valid YAML and reject any schema-invalid one (schema 
   that `shared.models` can validate a declaration without importing the module that reads replies.
 - `Verdict = {status: VerdictStatus, confidence: float[0,1], reasoning: str, matched: list[str],
   evaluator_type: str, inconclusive_reason: InconclusiveReason | None}` (`docs/04 §1-§3`).
-- `AttackSpec` = every field/constraint in `schemas/attack-spec.schema.json` (`docs/03 §2`),
-  including `fixtures.{vulnerable,hardened}` with `expect_verdict` literals `fail`/`pass`.
+- `AttackSpec` = every field/constraint in `registry/schemas/attack-spec.schema.json`
+  (`docs/03 §2`), including `fixtures.{vulnerable,hardened}` with `expect_verdict` literals
+  `fail`/`pass`.
 - `RiskScore = {impact:1-4, exploitability:1-4, reproducibility:float[0,1], score:float, band:Band}`
   (`docs/05 §2-§3`; the model carries the value, u07 computes it).
 - `ModelFingerprint` mirrors the `docs/10 §2` JSON (family/version guesses+confidence,
@@ -156,7 +162,7 @@ must round-trip any schema-valid YAML and reject any schema-invalid one (schema 
 - **Schema-parity gate** (`tests/shared/test_schema_parity.py`): every schema-valid fixture in
   `tests/fixtures/specs/valid/*.yaml` parses into `AttackSpec`; every one in
   `.../invalid/*.yaml` raises `pydantic.ValidationError`. `AttackSpec` field names/enums are
-  asserted equal to the parsed `schemas/attack-spec.schema.json` (no drift): including
+  asserted equal to the parsed `registry/schemas/attack-spec.schema.json` (no drift): including
   `additionalProperties:false` ⇔ `extra="forbid"`.
 - **Round-trip:** `AttackSpec.model_validate(y).model_dump(mode="json")` re-validates against the
   JSON Schema (`jsonschema`), byte-stable on re-dump.
@@ -220,8 +226,9 @@ schema's description, is unchanged; the reason is a comment. Checked by
 - MUST NOT import any other `ildottore` package or any provider SDK / httpx / Jinja / Typer.
 - MUST NOT implement behavior: no scoring/banding math (u07), no evaluation (u06), no I/O,
   no adapter concretes, no redaction logic (u01): only the shapes those units fill.
-- MUST NOT diverge from `schemas/attack-spec.schema.json`; the schema stays the source of truth
-  (if a field is genuinely missing, that is a schema change + ADR, not a silent model addition).
+- MUST NOT diverge from `registry/schemas/attack-spec.schema.json`; the schema stays the source of
+  truth (if a field is genuinely missing, that is a schema change + ADR, not a silent model
+  addition).
 - MUST NOT relax `frozen`/`extra="forbid"` to make a downstream unit compile.
 
 ## §9 Open decisions (human sign-off → rolls to 00-INDEX ledger)

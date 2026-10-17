@@ -20,6 +20,7 @@ from ildottore.mutators.registry import MutatorRegistry
 from ildottore.scoring import DefaultRiskScorer
 from ildottore.shared.enums import VerdictStatus
 from ildottore.shared.models import Capabilities, ModelRequest, ModelResponse
+from ildottore.shared.package_data import BATTERY
 from ildottore.store.evidence_fs import FsEvidenceStore
 from ildottore.store.run_sqlite import SqliteRunStore
 from tests.core.conftest import (
@@ -452,8 +453,7 @@ def test_lint_refuses_a_mutation_parameter_the_mutator_does_not_implement(tmp_pa
     pack = tmp_path / "pack"
     (pack / "attacks").mkdir(parents=True)
     (pack / "pack.yaml").write_text("id: pack\npack_version: '1.0'\nname: pack\n")
-    repo = Path(__file__).resolve().parents[1]
-    source = (repo / "specs" / "attacks" / "PI-DIRECT-001.yaml").read_text()
+    source = (BATTERY / "attacks" / "PI-DIRECT-001.yaml").read_text()
     assert "mutations:" in source
     (pack / "attacks" / "PI-DIRECT-001.yaml").write_text(
         source.replace("mutations: [", "mutations: [translate:klingon, ", 1)
@@ -610,8 +610,7 @@ def test_mutation_parameters_compare_case_insensitively_and_unparameterized_take
     pack = tmp_path / "pack"
     (pack / "attacks").mkdir(parents=True)
     (pack / "pack.yaml").write_text("id: pack\npack_version: '1.0'\nname: pack\n")
-    repo = Path(__file__).resolve().parents[1]
-    source = (repo / "specs" / "attacks" / "PI-DIRECT-001.yaml").read_text()
+    source = (BATTERY / "attacks" / "PI-DIRECT-001.yaml").read_text()
     (pack / "attacks" / "PI-DIRECT-001.yaml").write_text(
         source.replace("mutations: [", "mutations: [translate:ES, rot13:x, ", 1)
     )
@@ -747,8 +746,7 @@ def test_lint_does_not_second_guess_a_plugin_that_declares_no_parameters(
     pack = tmp_path / "pack"
     (pack / "attacks").mkdir(parents=True)
     (pack / "pack.yaml").write_text("id: pack\npack_version: '1.0'\nname: pack\n")
-    repo = Path(__file__).resolve().parents[1]
-    source = (repo / "specs" / "attacks" / "PI-DIRECT-001.yaml").read_text()
+    source = (BATTERY / "attacks" / "PI-DIRECT-001.yaml").read_text()
     (pack / "attacks" / "PI-DIRECT-001.yaml").write_text(
         source.replace("mutations: [", "mutations: [plug:level3, subplug:level3, rot13:x, ", 1)
     )

@@ -7,12 +7,16 @@ Il Dottore is built **spec-driven** (Zynap methodology). Read `AGENTS.md` and
 
 ### 1. Add a test technique (no core code: the common case)
 This is the product's extensibility story (`docs/06`). To add an attack:
-1. `dottore new-spec --family <family> --id <ID>` (scaffolds YAML + empty fixtures).
+1. `dottore new-spec --family <family> --id <ID> --out src/ildottore/battery/attacks` (scaffolds
+   YAML + empty fixtures). The built-in battery lives inside the package since u12 A-84, so a
+   wheel carries it; `specs/` holds the unit contracts only.
 2. Fill `attack`, `expected_secure_behavior`, `evaluators`, and **golden `fixtures`**
    (`vulnerable` → scanner must flag; `hardened` → scanner must pass). Include a
    hallucinated-but-valid negative for PII/secret checks (`docs/11 §4`).
-3. `dottore lint specs/` must pass (schema + policy + "fixtures prove detection").
-4. Reference the id from a suite. Open a PR.
+3. `dottore lint src/ildottore/battery` must pass (schema + policy + "fixtures prove detection").
+4. Reference the id from a suite (`src/ildottore/battery/suites/`). Open a PR. A new kind of
+   media asset (a suffix the battery does not hold yet) also goes in `DATA_SUFFIXES` of
+   `src/ildottore/shared/judging_rules.py`, which `tests/shared/test_judging_rules.py` asks for.
 
 ### 2. Change the engine (code)
 1. Work against a unit **contract** in `specs/contracts/`. If none exists, propose one.

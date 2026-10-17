@@ -55,7 +55,7 @@ Per-unit `conftest.py` files under each sub-directory own their domain fixtures;
 ## Running locally (mirrors CI gates)
 
 ```sh
-dottore lint specs/                    # gate 1  (layers 1-2)
+dottore lint src/ildottore/battery     # gate 1  (layers 1-2)
 lint-imports                           # gate 2  (layer 14)
 pytest -q                              # gates 3-10, 13, 15, 18
 pytest --cov=src/ildottore --cov-report=term-missing --cov-fail-under=85   # gate 12

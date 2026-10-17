@@ -90,11 +90,46 @@ PIN_HISTORY: tuple[tuple[int, str, str], ...] = (
         "a docstring of cli.run), from docs/audit-2026-10-12 stacked on e92a7541; no verdict can "
         "change; version 1 is not released",
     ),
+    (
+        1,
+        "a5133e824e05f286f6375a00439721cd64a9a5e4f99b76e92d1cfbab3afed230",
+        "re-pin 2026-10-16: the built-in battery and the attack-spec schema moved into the "
+        "package (u12 A-84), byte for byte, now covered as data files (.wav added), the lookup "
+        "through shared.package_data, the default spec path, the moved-path notes and help text; "
+        "no verdict can change; from fix/packaging-dependency-floors on 7d01521f; version 1 is "
+        "not released",
+    ),
+    (
+        1,
+        "63e2465e2c59dc5db9c2a3a29bcf10fb16070af065b890f353fe74b3bd9808a9",
+        "re-pin 2026-10-16: the pre-merge audit of 0f556628 (u12 A-84): the default spec path "
+        "fails closed (specs/ read whenever it is a directory, the battery where there is none "
+        "and in the own checkout, a GitHub warning), the moved-path notes name the change, a "
+        "resume refusal keeps battery file names readable; spec selection and messages only, no "
+        "verdict can change; version 1 is not released",
+    ),
+    (
+        1,
+        "c8f50e0615fb1fd0a95752c37a88631fc8f2612a62bd9b6bc1b69d34edf1bc88",
+        "re-pin 2026-10-17: round 2 of the pre-merge audit of u12 A-84: the own checkout told by "
+        "its shape (src/ildottore/battery, the root, a pyproject.toml naming ildottore), a "
+        "record-only label kept readable only where the package has files; which specs a "
+        "default reads and what a refusal shows, no verdict can change; version 1 is not "
+        "released",
+    ),
+    (
+        1,
+        "5b95a2b4c8bf9fb8c5e5c99d9c0b43d0434655515dc1a31d2377ccd5e1128e44",
+        "re-pin 2026-10-17: the floors job of #119 (WebSocketResponse protects only model_validate "
+        "and model_dump, so pydantic 2.6 does not warn about model_path) and round 3 of the "
+        "audit (is_own_checkout reads pyproject.toml only when it is a regular file); a model "
+        "config and a file check, no verdict can change; version 1 is not released",
+    ),
 )
 
 #: The digest each version is pinned to now: the last line of :data:`PIN_HISTORY` for it.
 PINNED: dict[int, str] = {
-    1: "dbfbedd793b731ab385a0c2bae7e9bc9e85c795a1230eeaf0814c83038335d0c",
+    1: "5b95a2b4c8bf9fb8c5e5c99d9c0b43d0434655515dc1a31d2377ccd5e1128e44",
 }
 
 #: One ``<version> <digest>`` line per pin, appended to and never edited: the history must start
@@ -310,6 +345,12 @@ def test_every_other_file_of_the_package_is_covered() -> None:
         "fingerprint/signatures/pack.yaml",
         "reporting/schemas/report-1.0.schema.json",
         "reporting/templates/report.html.j2",
+        # The built-in battery and the attack-spec schema, inside the package since u12 A-84.
+        "battery/pack.yaml",
+        "battery/attacks/PI-DIRECT-001.yaml",
+        "battery/attacks/assets/mm-audio-override-pineapple.wav",
+        "battery/suites/quick.yaml",
+        "registry/schemas/attack-spec.schema.json",
         "ildottore.reporting.json_reporter",
         "ildottore.cli.render",
         "ildottore.cli.app",

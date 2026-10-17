@@ -12,8 +12,7 @@ import pytest
 from typer.testing import CliRunner
 
 from ildottore.cli.app import app
-
-REPO = Path(__file__).resolve().parents[2]
+from ildottore.shared.package_data import BATTERY
 
 
 def test_a_spec_that_fails_to_load_refuses_the_run(tmp_path: Path) -> None:
@@ -29,7 +28,7 @@ def test_a_spec_that_fails_to_load_refuses_the_run(tmp_path: Path) -> None:
     pack = tmp_path / "pack"
     (pack / "attacks").mkdir(parents=True)
     (pack / "pack.yaml").write_text("id: pack\npack_version: '1.0'\nname: pack\n")
-    good = (REPO / "specs" / "attacks" / "PI-DIRECT-001.yaml").read_text()
+    good = (BATTERY / "attacks" / "PI-DIRECT-001.yaml").read_text()
     (pack / "attacks" / "PI-DIRECT-001.yaml").write_text(good)
     (pack / "attacks" / "broken.yaml").write_text(
         good.replace("id: PI-DIRECT-001", "id: PI-TYPO-001").replace(
@@ -99,7 +98,7 @@ def _dry_run(tmp_path: Path, pack: Path) -> str:
 
 
 def _broken(spec_id: str, extra_key: str = "severty") -> str:
-    good = (REPO / "specs" / "attacks" / f"{spec_id}.yaml").read_text()
+    good = (BATTERY / "attacks" / f"{spec_id}.yaml").read_text()
     return good.replace("severity: high", f"{extra_key}: high", 1)
 
 

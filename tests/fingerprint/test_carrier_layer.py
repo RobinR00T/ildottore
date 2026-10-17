@@ -36,6 +36,7 @@ from ildottore.fingerprint.layers.carrier import (
 )
 from ildottore.mutators import build_default_registry
 from ildottore.shared.models import Capabilities, ModelRequest, ModelResponse
+from ildottore.shared.package_data import BATTERY
 
 #: Every registered carrier except the identity baseline, as the composition root sees them.
 ALL_MUTATORS = [
@@ -257,8 +258,6 @@ def test_the_carrier_layer_is_wired_by_the_composition_root_only() -> None:
 def test_the_fingerprint_reorders_the_real_plan() -> None:
     """The headline, driven by real mutators against a target that decodes only two of them."""
 
-    import pathlib
-
     import yaml
 
     from ildottore.shared.models import AttackSpec
@@ -268,9 +267,7 @@ def test_the_fingerprint_reorders_the_real_plan() -> None:
     hinted = fingerprint.capability_guess.get("effective_mutators")
     assert hinted, "the probe produced no ordering hint at all"
 
-    raw = yaml.safe_load(
-        pathlib.Path("specs/attacks/JB-ENCODING-001.yaml").read_text(encoding="utf-8")
-    )
+    raw = yaml.safe_load((BATTERY / "attacks" / "JB-ENCODING-001.yaml").read_text(encoding="utf-8"))
     spec = AttackSpec.model_validate(raw).model_copy(
         update={"mutations": ["leetspeak", "rot13", "base64_wrap"]}
     )

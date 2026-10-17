@@ -14,6 +14,7 @@ findings are a redacted projection, not the attempts themselves.
 
 from __future__ import annotations
 
+import re
 import shlex
 import sys
 from collections import Counter, defaultdict
@@ -694,7 +695,7 @@ def _assert_same_specs(
     if changed:
         advice.append(
             "Point --spec-path at the specs the run was made with (a copy of them, or the "
-            "specs/ of the version that started it)"
+            "built-in battery of the version that started it)"
         )
     raise ValueError(
         f"the battery changed since run {run_id!r} halted: {'; '.join(parts)}. Resuming "
@@ -834,30 +835,78 @@ def _assert_same_rules(run_id: str, context: dict[str, object]) -> None:
 
 
 class ResumeRefused(ValueError):
-    """A resume refused with the digests it names, which the CLI's error masking keeps readable.
+    """A resume refused with the digests and file names it gives, which the CLI's error masking
+    keeps readable.
 
     A bare SHA-256 reads as a high-entropy secret to the redactor every error goes through: an
     exception that carries the digests it computed in ``digests`` has them kept (as a tampered
-    artifact's are, ``store.replay.TamperError``).
+    artifact's are, ``store.replay.TamperError``). A covered file's label can read so too: a spec
+    of the built-in battery, ``battery/attacks/SP-LEAK-001.yaml``, printed
+    ``«REDACTED:high_entropy:...».yaml`` (pre-merge audit of u12 A-84, MEDIUM 1), so the labels
+    the refusal names are carried in ``kept_names``, as a fleet refusal's parameter names are.
     """
 
-    def __init__(self, message: str, *, digests: tuple[str, ...] = ()) -> None:
+    def __init__(
+        self, message: str, *, digests: tuple[str, ...] = (), kept_names: tuple[str, ...] = ()
+    ) -> None:
         super().__init__(message)
         self.digests = digests
+        self.kept_names = kept_names
 
 
-def _changed_files(stored: object, current: dict[str, str]) -> str:
-    """The covered files whose digest differs between the record and now, at most five named."""
+#: The shape of a label the judging digest gives a covered file: a module of the package, or a
+#: data file's path under it. A label of the run record that has another shape is not kept
+#: readable: the record is a file, and a value written into it is no name this tool gave.
+_LABEL = re.compile(
+    r"ildottore(\.[A-Za-z_][A-Za-z0-9_]*)+"
+    r"|[A-Za-z0-9_][A-Za-z0-9_.-]*(/[A-Za-z0-9_][A-Za-z0-9_.-]*)*\.(yaml|sql|json|j2|wav)"
+)
+
+
+def _is_module(label: str) -> bool:
+    """Whether a covered file's label names a module (``ildottore``, ``ildottore.cli.app``), not a
+    data file's path."""
+
+    return label == "ildottore" or label.startswith("ildottore.")
+
+
+def _parent(label: str) -> str:
+    """A label's parent module (a module's) or directory (a data file's), as the digest names it."""
+
+    return label.rpartition(".")[0] if _is_module(label) else label.rpartition("/")[0]
+
+
+def _is_known_place(label: str, current: dict[str, str]) -> bool:
+    """Whether ``label``, from the run record only, sits where this installation has files: its
+    parent module is one of the package's, or its directory holds a data file of the package."""
+
+    if len(label) > 200 or _LABEL.fullmatch(label) is None:
+        return False
+    parent = _parent(label)
+    if _is_module(label):
+        return parent in current
+    return any(_parent(name) == parent for name in current if not _is_module(name))
+
+
+def _changed_files(stored: object, current: dict[str, str]) -> tuple[str, tuple[str, ...]]:
+    """The covered files whose digest differs between the record and now, at most five named,
+    and the names a refusal keeps readable: those this installation covers, and those of the
+    record alone (a file removed since the halt) that have a label's shape and sit where this
+    installation has files. Any other value of the record stays masked: a tampered record wrote
+    ``Zq9vT4mXa81LpR2wKd7Yb3Nc.yaml``, label-shaped, and it printed in clear (round 2 of the
+    pre-merge audit of u12 A-84, LOW 1)."""
 
     if not isinstance(stored, dict):
-        return ""
+        return "", ()
     names = sorted(
         label for label in stored.keys() | current.keys() if stored.get(label) != current.get(label)
     )
     if not names:
-        return ""
-    shown = ", ".join(names[:5]) + (f" and {len(names) - 5} more" if len(names) > 5 else "")
-    return f"; the files that differ: {shown}"
+        return "", ()
+    named = names[:5]
+    shown = ", ".join(named) + (f" and {len(names) - 5} more" if len(names) > 5 else "")
+    kept = tuple(name for name in named if name in current or _is_known_place(name, current))
+    return f"; the files that differ: {shown}", kept
 
 
 def _assert_same_code(run_id: str, context: dict[str, object]) -> None:
@@ -890,13 +939,14 @@ def _assert_same_code(run_id: str, context: dict[str, object]) -> None:
             f"so the code that judged it cannot be told from this one ({this}). {advice}"
         )
     if stored != current:
-        files = _changed_files(context.get("judging_files"), judging_files())
+        files, kept = _changed_files(context.get("judging_files"), judging_files())
         raise ResumeRefused(
             f"run {run_id!r} was judged under the same judging rules ({JUDGING_RULES_VERSION}) by "
             f"other code: its judging digest is {stored} and this installation's is {current} (Il "
             f"Dottore's code changed since the halt: an upgrade, a reinstall or a local edit"
             f"{files}; {this}). {advice}",
             digests=(str(stored), current),
+            kept_names=kept,
         )
     then, now = context.get("python"), python_build()
     if then != now:

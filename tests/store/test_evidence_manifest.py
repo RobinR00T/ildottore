@@ -16,8 +16,7 @@ from click.testing import Result
 from typer.testing import CliRunner
 
 from ildottore.cli.app import app
-
-REPO = Path(__file__).resolve().parents[2]
+from ildottore.shared.package_data import BATTERY
 
 
 def _workspace(tmp_path: Path) -> Path:
@@ -49,7 +48,7 @@ def _run(d: Path, *extra: str) -> Result:
             "--run-db",
             str(d / "runs.sqlite"),
             "--spec-path",
-            str(REPO / "specs"),
+            str(BATTERY),
             "--no-color",
             "-q",
             "--spec",

@@ -28,11 +28,11 @@ from typer.testing import CliRunner
 from ildottore.cli.main import app
 from ildottore.registry import LintCode, lint
 from ildottore.registry.schema import validate_attack_spec_schema
+from ildottore.shared.package_data import BATTERY
 
 runner = CliRunner()
 
-_ROOT = Path(__file__).resolve().parents[2]
-_ATTACKS = _ROOT / "specs" / "attacks"
+_ATTACKS = BATTERY / "attacks"
 _TOOL = "PI-INDIRECT-TOOL-001"
 _RETURNS = "lookup_ticket"  # the tool whose `returns` block the tests replace
 _SELFCORRECT = "AG-AUTONOMY-SELFCORRECT-001"
@@ -377,7 +377,7 @@ def test_no_shipped_spec_holds_one() -> None:
 
 
 def test_the_shipped_battery_lints_clean() -> None:
-    report = lint([_ROOT / "specs"])
+    report = lint([BATTERY])
 
     assert [e for e in report.errors if e.code is LintCode.SCHEMA] == []
 
