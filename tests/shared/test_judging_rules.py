@@ -117,11 +117,19 @@ PIN_HISTORY: tuple[tuple[int, str, str], ...] = (
         "default reads and what a refusal shows, no verdict can change; version 1 is not "
         "released",
     ),
+    (
+        1,
+        "5b95a2b4c8bf9fb8c5e5c99d9c0b43d0434655515dc1a31d2377ccd5e1128e44",
+        "re-pin 2026-10-17: the floors job of #119 (WebSocketResponse protects only model_validate "
+        "and model_dump, so pydantic 2.6 does not warn about model_path) and round 3 of the "
+        "audit (is_own_checkout reads pyproject.toml only when it is a regular file); a model "
+        "config and a file check, no verdict can change; version 1 is not released",
+    ),
 )
 
 #: The digest each version is pinned to now: the last line of :data:`PIN_HISTORY` for it.
 PINNED: dict[int, str] = {
-    1: "c8f50e0615fb1fd0a95752c37a88631fc8f2612a62bd9b6bc1b69d34edf1bc88",
+    1: "5b95a2b4c8bf9fb8c5e5c99d9c0b43d0434655515dc1a31d2377ccd5e1128e44",
 }
 
 #: One ``<version> <digest>`` line per pin, appended to and never edited: the history must start
