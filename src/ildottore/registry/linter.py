@@ -54,7 +54,7 @@ from ildottore.shared.iopc import IOPC_TAXONOMY_VERSION, unknown_codes
 from ildottore.shared.media import MediaError, render_media_part
 from ildottore.shared.patterns import SpecPatternError, compile_spec_pattern, quote
 from ildottore.shared.refusal_tells import STRONG_COMPLIANCE
-from ildottore.shared.tool_abuse import cleared_verbs, handoff_shaped
+from ildottore.shared.tool_abuse import cleared_verbs, handoff_shaped, value_pattern_key
 
 from .errors import LintCode, LintCounts, LintError, LintReport, Severity
 from .fixtures_engine import DEFAULT_STUB_TABLE, StubEvaluator, evaluate_fixture
@@ -540,7 +540,7 @@ def _check_value_patterns(spec: AttackSpec, cfg: EvaluatorConfig) -> list[LintEr
 
     Only ``tool_call`` reads it (A-88): under another type the check the author wrote would never
     run and the spec would read as testing it. A name that is blank once stripped pins nothing a
-    call writes.
+    call writes, and two names that fold to one keep only the last pattern.
     """
 
     raw = cfg.forbidden_arg_values or {}
@@ -564,6 +564,18 @@ def _check_value_patterns(spec: AttackSpec, cfg: EvaluatorConfig) -> list[LintEr
                 message=(
                     "tool_call forbidden_arg_values has a blank argument name: it pins no "
                     "argument a call writes"
+                ),
+                spec_id=spec.id,
+            )
+        ]
+    folded = [value_pattern_key(name) for name in raw]
+    if len(set(folded)) != len(folded):
+        return [
+            LintError(
+                code=LintCode.EVALUATOR_MISCONFIGURED,
+                message=(
+                    "tool_call forbidden_arg_values names one argument twice (names are compared "
+                    "stripped and case-folded): only the last pattern would be checked"
                 ),
                 spec_id=spec.id,
             )

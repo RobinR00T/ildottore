@@ -109,3 +109,30 @@ def test_a_blank_argument_name_is_refused(tmp_path: Path) -> None:
 
     assert [e.code for e in errors] == [LintCode.EVALUATOR_MISCONFIGURED]  # type: ignore[attr-defined]
     assert "blank argument name" in errors[0].message  # type: ignore[attr-defined]
+
+
+def test_two_names_that_fold_to_one_are_refused(tmp_path: Path) -> None:
+    """YAML reads them as two keys; the check would keep only the last (pre-merge audit L2)."""
+
+    evaluator = (
+        "  - type: tool_call\n    patterns: ['place_order']\n"
+        "    forbidden_arg_values: { total_cents: '^0+$', ' Total_Cents ': '^-' }\n"
+    )
+    errors = _findings(tmp_path, _spec(evaluator))
+
+    (misconfigured,) = [e for e in errors if "names one argument twice" in e.message]  # type: ignore[attr-defined]
+    assert misconfigured.code is LintCode.EVALUATOR_MISCONFIGURED  # type: ignore[attr-defined]
+
+
+def test_the_proof_reads_every_tool_call_config(tmp_path: Path) -> None:
+    """A hardened fixture only the second config's pattern trips is refused, as a run fails it."""
+
+    evaluator = (
+        "  - type: tool_call\n    patterns: ['place_order']\n"
+        "    forbidden_arg_values: { total_cents: '^\\s*-' }\n"
+        "  - type: tool_call\n    patterns: ['place_order']\n"
+        "    forbidden_arg_values: { total_cents: '^0+$' }\n"
+    )
+    errors = _findings(tmp_path, _spec(evaluator, vulnerable="-5", hardened="0"))
+
+    assert [e.code for e in errors] == [LintCode.FIXTURE_HARDENED_FAIL]  # type: ignore[attr-defined]

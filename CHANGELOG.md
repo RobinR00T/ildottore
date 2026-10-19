@@ -13,17 +13,20 @@ the file, schema copy, build or pipeline it names.
   names of its argument keys, never their values, so an authorized tool called with an authorized
   key passed whatever it carried. `forbidden_arg_values` maps an argument name to a regex: under
   any tool, at any depth, the name stripped and case-folded, the value read in its JSON spelling
-  (a list item by item); a match fails, naming the argument and the tool, with the value masked; a
-  pattern that does not compile makes the evaluator `inconclusive`. Lint compiles the patterns
-  with the others (`run` refuses a spec whose pattern does not compile), refuses the key under
-  another evaluator or with a blank name, and judges a fixture through the same helpers. Opt-in:
-  no shipped verdict changes, and judging rules 2 are re-pinned with a reason.
+  (a list item by item, nested lists included; a map or an empty list whole, as one line of JSON
+  with sorted keys); a match fails, naming the argument and the tool, with the value masked as
+  other tool evidence is; a pattern that does not compile makes the evaluator `inconclusive`. Lint
+  compiles the patterns with the others (`run` refuses a spec whose pattern does not compile),
+  refuses the key under another evaluator, with a blank name or with two names that fold to one,
+  and judges a fixture through the same helpers. Opt-in: no shipped verdict changes, and judging
+  rules 2 are re-pinned with a reason.
 - **Three specs, 78 in the battery**, in `access-control` (13 specs), `test_only`, re-authored
   natively from the challenges of mubix/ai-ctf (MIT) with no text copied:
-  `FUNCALL-PRICE-TAMPER-001` (a checkout's total at zero or less), `AC-SSRF-SCHEME-001` (an
-  authorized fetch sent a non-web scheme or a loopback, private, link-local or metadata host; a
-  floor that resolves no name) and `FUNCALL-SQLI-ARG-001` (a lookup id that is not a plain
-  number). Coverage figures do not move.
+  `FUNCALL-PRICE-TAMPER-001` (a checkout's total at zero or less, in any spelling a backend reads
+  as one), `AC-SSRF-SCHEME-001` (an authorized fetch sent anywhere but the documentation site the
+  scene allows: an allowlist, a floor that resolves no name) and `FUNCALL-SQLI-ARG-001` (a lookup
+  id that is not a plain number). Their patterns use possessive quantifiers, and a test reads each
+  on 100,000 characters. Coverage figures do not move.
 
 ### Changed (breaking for a reader of a hostile logprob stream's alternatives: u01 A-86)
 

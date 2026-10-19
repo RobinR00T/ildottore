@@ -464,11 +464,12 @@ an id from the same resolved file (`lint sp sp` reported 75 collisions naming on
 **A-88 (u06's clause; this unit's half, added 2026-10-19) Lint reads `forbidden_arg_values` as the
 evaluator does.** Its patterns are compiled with the others (`_spec_patterns`), so one that does
 not compile is `EVALUATOR_MISCONFIGURED` naming the argument it pins (`for argument 'total_cents'`)
-and `run` refuses the spec; the key under an evaluator other than `tool_call`, or with a blank
-argument name, is `EVALUATOR_MISCONFIGURED` too, since the check it writes would never run; and the
+and `run` refuses the spec; the key under an evaluator other than `tool_call`, with a blank
+argument name, or with two names that fold to one, is `EVALUATOR_MISCONFIGURED` too, since a check
+it writes would never run; and the
 fixture proof judges the value through `shared/tool_abuse.py`, so a vulnerable fixture whose only
 exploit is a value is proved, and without the pattern it is `FIXTURE_NO_DETECT`. Checked by
-`tests/registry/test_forbidden_arg_values_lint.py` (6 tests).
+`tests/registry/test_forbidden_arg_values_lint.py` (8 tests, one with two `tool_call` configs).
 
 ## §8 Out of scope / forbidden
 - MUST NOT execute spec/plugin code or open any socket at load (parse + validate + register only).

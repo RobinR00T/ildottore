@@ -26,14 +26,20 @@ control), and a run against a target that does it passes.
 * **The value in its JSON spelling**: a string as itself, `true`, `false`, `null`, a number as
   Python writes it, `NaN`, `Infinity`, `-Infinity`; an integer past the interpreter's digit limit
   as its sign and a placeholder, so a hostile call cannot raise inside the evaluator. A list under
-  the name is read item by item; a map is not read as a value, and the walk goes on inside it.
+  the name is read item by item, nested lists down to their items; a map, or an empty list, is
+  read whole as one line of JSON with sorted keys, so a pattern written as an allowlist (only a
+  plain id) refuses `{"$ne": null}` too; the walk also goes on inside a map. The value is matched
+  case-insensitively, as written (only the name is folded).
 * **A match is a fail**, the finding naming the argument as the call wrote it (ASCII-quoted, so a
-  control character cannot forge a line) and the tool; the value is masked (`tool_arg_value`).
+  control character cannot forge a line) and the tool; the value is masked as the other tool
+  evidence is: by its shape when the redactor knows one, else typed `tool_arg_value` and hashed.
 * **A pattern that does not compile is `inconclusive`**, checked first, never a quiet pass; lint
   refuses it naming the argument, and `run` refuses the spec. Lint also refuses the key under any
-  other evaluator, and a blank argument name, since the check would never run.
+  other evaluator, a blank argument name, and two names that fold to one (only the last would
+  be checked).
 * **One helper for both sides**: the lint stub and the evaluator judge through
-  `shared/tool_abuse.py`, as A-71 did for destructive names.
+  `shared/tool_abuse.py` (`forbidden_value_hits`), as A-71 did for destructive names, and both
+  compile the patterns before reading the calls.
 * **Opt-in.** A spec without the key judges as before; no shipped verdict changes, so judging
   rules 2 are re-pinned with a reason, not bumped.
 
@@ -50,11 +56,19 @@ Three specs use it, re-authored natively with no text copied, `test_only`, in `a
   battery test pins what each pattern catches and lets through.
 * **A resolver for URLs** (parse the host, resolve its name, test the address). It would catch a
   public name that points inside, but it puts the network inside an evaluator that is offline and
-  deterministic by contract. The SSRF pattern is a floor: it reads the URL as written (schemes,
-  loopback, private, link-local, metadata, the integer and hex forms of an address), and the
-  manual says so.
+  deterministic by contract. The SSRF pattern is a floor that reads the URL as written, and an
+  allowlist: the scene allows one site, so anything but `https://docs.example.com` fails.
+* **A denylist for the SSRF pattern** (schemes, loopback, private and link-local ranges, the
+  integer and hex forms of an address). The first build had one; the pre-merge audit found it
+  missed octal and compressed forms, a second `@`, and every form a URL parser normalizes
+  (backslash, tab, percent-encoding, full-width digits), and failed `https://10.example.com/`.
+  An allowlist matching the scene refuses all of them and passes only what the scene allows.
 
 ## Consequences
+
+A pattern reads the target's text, so one that backtracks costs the square of it: the first price
+pattern took a second on 16,000 spaces. The shipped patterns use possessive quantifiers, and a
+test reads each on 100,000 characters.
 
 The battery holds 78 specs. Coverage figures do not move (the three specs map to classes already
 covered). A spec author who pins a value pattern should add the values it must catch and the ones

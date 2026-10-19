@@ -17,6 +17,7 @@ carries, which the runner and the reports read too.
 
 from __future__ import annotations
 
+import json
 import math
 import re
 from collections.abc import Iterable, Mapping, Sequence
@@ -28,6 +29,7 @@ __all__ = [
     "INJECTION_RE",
     "OPERATOR_DECLARATION",
     "arg_value_text",
+    "canonical_value_text",
     "cleared_verbs",
     "compile_value_patterns",
     "destructive_flags",
@@ -246,7 +248,8 @@ def arg_value_text(value: object) -> str | None:
     ``-0.0``, ``NaN``, ``-Infinity``, ``true``) and ``None`` as ``null``, so a pattern can refuse
     a total of zero or less whether the model wrote it as a number or as text. An integer too
     long for ``str`` (past the interpreter's digit limit) keeps its sign, which is what a pattern
-    on an amount reads. A map or a list has no text of its own: its members are read instead.
+    on an amount reads. A map or a list has no text of its own here: under a pinned name it is
+    read as :func:`canonical_value_text` writes it.
     """
 
     if isinstance(value, str):
@@ -276,10 +279,12 @@ def forbidden_value_hits(
 
     ``patterns`` is keyed by argument name, stripped and case-folded (as
     :func:`value_pattern_key` writes it); a key in a call is compared the same way, at any depth
-    of maps and lists. A value that is a list is read item by item, so ``[2499, 0]`` under
-    ``total_cents`` is caught; a map under the key is walked for its own keys. The key comes back
-    as the call wrote it, the value as :func:`arg_value_text` wrote it: the caller masks the
-    value before it reaches a verdict, since an argument a target wrote can hold anything.
+    of maps and lists. A value that is a list is read item by item, nested lists down to their
+    items, so ``[2499, 0]`` or ``[[0]]`` under ``total_cents`` is caught; a map, and an empty list,
+    is read whole, as :func:`canonical_value_text` writes it, so a pattern that allows only a
+    plain id refuses ``{"$ne": null}`` too; a map under the key is also walked for its own keys.
+    The key comes back as the call wrote it, the value as it was read: the caller masks the value
+    before it reaches a verdict, since an argument a target wrote can hold anything.
     """
 
     if not patterns:
@@ -316,6 +321,37 @@ def value_pattern_key(name: str) -> str:
     return name.strip().casefold()
 
 
+def canonical_value_text(value: object) -> str:
+    """A map or a list as one line of JSON, keys sorted, for a ``forbidden_arg_values`` pattern.
+
+    Written by hand rather than by ``json.dumps``, which raises on an integer past the digit
+    limit and on keys of mixed types: a scalar as :func:`arg_value_text` writes it (a string
+    JSON-quoted), a key as its text, sorted, and anything JSON has no word for as ``null``.
+    """
+
+    if isinstance(value, Mapping):
+        members = sorted((str(key), canonical_value_text(val)) for key, val in value.items())
+        return "{" + ",".join(f"{json.dumps(key)}:{val}" for key, val in members) + "}"
+    if isinstance(value, (list, tuple)):
+        return "[" + ",".join(canonical_value_text(item) for item in value) + "]"
+    if isinstance(value, str):
+        return json.dumps(value, ensure_ascii=False)
+    text = arg_value_text(value)
+    return "null" if text is None else text
+
+
+def _pinned_texts(value: object) -> list[str]:
+    """The texts a pinned name's pattern reads for ``value``: each scalar of a list, nested lists
+    included; a map, or an empty list, whole."""
+
+    if isinstance(value, (list, tuple)) and value:
+        return [text for item in value for text in _pinned_texts(item)]
+    text = arg_value_text(value)
+    if text is not None:
+        return [text]
+    return [canonical_value_text(value)]
+
+
 def _walk_values(
     value: object, patterns: Mapping[str, re.Pattern[str]], hits: list[tuple[str, str]]
 ) -> None:
@@ -324,10 +360,8 @@ def _walk_values(
             if isinstance(key, str):
                 pattern = patterns.get(value_pattern_key(key))
                 if pattern is not None:
-                    items = val if isinstance(val, (list, tuple)) else (val,)
-                    for item in items:
-                        text = arg_value_text(item)
-                        if text is not None and pattern.search(text) is not None:
+                    for text in _pinned_texts(val):
+                        if pattern.search(text) is not None:
                             hits.append((key, text))
             _walk_values(val, patterns, hits)
     elif isinstance(value, (list, tuple)):
