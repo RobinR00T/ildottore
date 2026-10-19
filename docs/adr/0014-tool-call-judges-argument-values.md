@@ -91,6 +91,14 @@ own, so typing one shape inside it says little, and the rest of what a target wr
 report. `forbidden_value_hits` returns, with each hit, whether its text was read whole, and the
 evaluator masks that text as one `tool_arg_value` and its salted hash (`mask_value(whole=True)`),
 so two identical maps still correlate. A scalar, a string included, is masked as before: by its
-shape when the redactor knows one. Verdicts do not change, only the masks in `matched`.
-Checked by `test_a_value_read_whole_is_hashed_whole` (a map, a map in a list, a map holding a
-list), which fails on `d6236c7d`, and `test_a_scalar_is_still_masked_by_its_shape`.
+shape when the redactor knows one. Verdicts do not change, only the masks in `matched`, so judging
+rules 2 are re-pinned, not bumped.
+
+What it does not cover, left as it is: a text value with a shape in it keeps its residue in
+`matched` (`7 OR 1=1 -- «REDACTED:email»`), as every other piece of tool evidence masked by shape
+does (`tool_arg_injection`, `shared_line`); and the call itself stays in the attempt's record,
+masked by shape by the reports as every tool call is. Hashing a scalar whole would lose the type
+of the shape it holds; how a report masks a call's arguments is the reports' decision, not this
+evaluator's. Checked by `test_a_value_read_whole_is_hashed_whole` (a map, a map in a list, a map
+holding a list; the mask compared with the redactor's salted hash), which fails on `d6236c7d`,
+`test_a_scalar_is_still_masked_by_its_shape`, and `test_mask_value_whole_is_salted_and_keyed`.

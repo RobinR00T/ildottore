@@ -11,9 +11,11 @@ the file, schema copy, build or pipeline it names.
 
 - **A map read whole under a pinned argument is hashed whole in the verdict.** It was masked by
   shape: the redactor typed what it knew inside the JSON (an address, a key) and the map's keys and
-  every other value stayed in clear in `matched` and the reports. Now a map or an empty list read
-  whole is one `«REDACTED:tool_arg_value:<hash>»`; a scalar is masked by its shape as before.
-  Verdicts do not change, only the masks (audit 2 of A-88, LOW-3).
+  every other value stayed in clear in the verdict's `matched`. Now a map or an empty list read
+  whole is one `«REDACTED:tool_arg_value:<hash>»`, with the redactor's salted hash; a scalar is
+  masked by its shape as before, and the call in the attempt's record is masked by shape as every
+  tool call is. Verdicts do not change, only the masks, so judging rules 2 are re-pinned, not
+  bumped (audit 2 of A-88, LOW-3).
 
 ### Added (u06 A-88, ADR-0014)
 

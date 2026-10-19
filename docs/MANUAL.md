@@ -2144,8 +2144,10 @@ items, and a map, or an empty list, is read whole as one line of JSON with its k
 (`{"$ne":null}`), so a pattern that allows only a plain id refuses it too. The verdict names the
 argument and the tool and masks the value as the other tool evidence is masked: by its shape when
 the redactor knows one (an address inside a URL), else typed and hashed; a map or an empty list
-read whole is hashed whole, one `«REDACTED:tool_arg_value:<hash>»`, so none of its keys or values
-reaches the report. Like `forbidden_args` it
+read whole is hashed whole, one `«REDACTED:tool_arg_value:<hash>»`, so the verdict's `matched`
+holds none of its keys or values. The call itself stays in the attempt's record, masked by shape
+as every tool call is, and so does a text value with a shape in it (`7 OR 1=1 -- «REDACTED:email»`
+in `matched`). Like `forbidden_args` it
 is opt-in, and a pattern that does not compile makes the evaluator `inconclusive`, never a quiet
 pass; `dottore lint` refuses the key under any other evaluator, with a blank argument name, or
 with two names that fold to one, since a check would never run (u06 A-88). Write patterns with

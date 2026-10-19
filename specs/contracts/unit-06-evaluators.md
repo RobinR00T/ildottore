@@ -343,8 +343,8 @@ pattern the engine refuses is there the `SpecPatternError` the fixture proof rep
 lint and a run agree. Alternatives not taken
 (ADR-0014): keys scoped to a tool (`place_order.total_cents`), a range syntax for numbers, a
 resolver that reads where a URL's host points, and a denylist for the SSRF pattern (the pre-merge
-audit's M4). Checked by `tests/evaluators/test_forbidden_arg_values.py` (60 tests since the amendment below) and
-`tests/battery/test_argument_value_specs.py` (100 tests, a linear-time read of each shipped
+audit's M4). Checked by `tests/evaluators/test_forbidden_arg_values.py` (60 tests since the
+audit 2 amendment above) and `tests/battery/test_argument_value_specs.py` (100 tests, a linear-time read of each shipped
 pattern on 100,000 characters among them), which fail on `d8b43561`: the field, the helpers and
 the three specs are new there. **Amended 2026-10-19 after the pre-merge audit:** possessive
 quantifiers in the price pattern (M1, a second on 16,000 spaces), a map or an empty list read

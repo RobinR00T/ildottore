@@ -10,8 +10,11 @@ neighbouring entries can interleave (an older branch merged later sits above a n
 - **What.** Audit 2 of A-88 (LOW-3): a map or an empty list read whole under a pinned argument
   was masked by shape, so its keys and every value the redactor has no shape for stayed in clear
   in the verdict's `matched`. Now it is hashed whole as one `tool_arg_value`; a scalar is masked
-  by shape as before. Verdicts do not change. ADR-0014 amended; 4 tests, 3 of which fail on
-  `d6236c7d`.
+  by shape as before; the call in the attempt's record stays masked by shape, as every tool
+  call is (ADR-0014 says so). Verdicts do not change: judging rules 2 re-pinned. 5 tests, 4 of
+  which fail on `d6236c7d`.
+- **Audit.** One pre-merge round (no CRITICAL): the pin (HIGH), a manual that promised the
+  report held none of the map (MEDIUM), the hash's salt untested (LOW), all applied.
 
 ## State, 2026-10-19: argument values on an authorized tool (u06 A-88, `feat/tool-argument-values`)
 
