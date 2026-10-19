@@ -369,13 +369,39 @@ skip an `int`. `check_argument_nesting` parses with the same hook. Not taken: ma
 long number (the reasoning of OD-28 for lone surrogates); raising the digit limit, which is
 process-wide and bounds a conversion whose cost is the square of its length. Arguments that are an
 object in the reply (Anthropic's `input`, an OpenAI `function.arguments` written as an object, a
-WebSocket frame's calls) are parsed with the reply, without the hook, so the same integer there
-still makes the whole reply unreadable: `ResponseMalformed`, the attempt `inconclusive` and not
-retried (OD-21), never a pass, and twenty in a row halt the campaign; reading those bodies with the
-hook too is left for its own branch (the pre-merge audit's MEDIUM-1). Stored verdicts can change (a
-pass becomes a fail), so `JUDGING_RULES_VERSION` is 3 (u12's line). Checked by
-`tests/evaluators/test_long_integer_arguments.py` (17 tests, at the interpreter's floor of 640
+WebSocket frame's calls) were parsed with the reply, without the hook, so the same integer there
+still made the whole reply unreadable (the pre-merge audit's MEDIUM-1; closed by A-90). Stored
+verdicts can change (a pass becomes a fail), so `JUDGING_RULES_VERSION` is 3 (u12's line). Checked
+by `tests/evaluators/test_long_integer_arguments.py` (17 tests, at the interpreter's floor of 640
 digits and at 4300), 12 of which fail on `d6236c7d`, and by
+`tests/cli/test_resume_judging_rules.py`.
+
+**A-90 (this unit's clause, added 2026-10-19; a line in u12) Arguments a reply carries as a JSON
+object read an integer longer than `int` converts too.** Anthropic's `tool_use` `input`, an OpenAI
+`function.arguments` written as an object and a WebSocket frame's calls (at
+`response.tool_calls_path`) are parsed with the reply, by `bounded_loads` without A-89's hook, so
+one such integer in them made the whole reply `ResponseMalformed`, the attempt `inconclusive`
+(OD-21), where the same call written as a JSON string is judged (A-89): the verdict on one logical
+call depended on the provider's wire shape (MEDIUM-1 of the pre-merge audit of A-89). A success body
+(`BaseAdapter._handle_final_response`: OpenAI, Anthropic, REST) and a WebSocket frame
+(`_recv_frame`) are now parsed by `shared.toolcalls.loads_keeping_long_integers`, which keeps each
+such integer as a `LongInteger` and returns the ones it kept; when there are any,
+`check_long_integers` raises the `ValueError` `int` raises for the first that is not inside the
+arguments `call_arguments` reads of a call the adapter reads in that body (`BaseAdapter._calls_read`,
+which asks the adapter's own `_parse_response`; `WebSocketAdapter._calls_in`, the list at
+`tool_calls_path`), matched by identity, so the same digits in the text and in an argument are two.
+Such an integer anywhere else (the text, a call's name or id, arguments that are themselves the
+integer, a stop reason, an id, the usage, a block the adapter does not read as a call, every REST
+template body, a frame of a block that declares no `tool_calls_path`) keeps the reply unreadable,
+with the message it had: a `LongInteger` is a `str`, and a field read as text would take its digits
+for the model's words (OpenAI's `content`), so no reader of a body's text or figures sees one. Not
+changed: an SSE body's events and a JSON body's excerpt are read for masking only (`_event`,
+`_split_masked`), and an error body (`azure_prompt_filter`, `sampling_params_named`) is read for
+its codes; each keeps `bounded_loads` without the hook, so such an integer there reads as text to
+mask, or as no code, as before. Stored verdicts can change (an `inconclusive` becomes a verdict), so
+`JUDGING_RULES_VERSION` is 4 (u12's line). Checked by
+`tests/adapters/test_long_integer_object_arguments.py` (15 tests at the interpreter's floor of 640
+digits: Anthropic, OpenAI, REST and WebSocket), 4 of which fail on the tree before it, and by
 `tests/cli/test_resume_judging_rules.py`.
 
 ## §8 Out of scope / forbidden

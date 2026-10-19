@@ -5,6 +5,22 @@ The carryover ledger. Every agent session updates this so context survives even 
 newest merge on top: a branch's entries land together when it merges, so the dates of
 neighbouring entries can interleave (an older branch merged later sits above a newer one).
 
+## State, 2026-10-19: long integers in object-form arguments (u06 A-90, `fix/long-integer-object-arguments`)
+
+- **What.** MEDIUM-1 of the A-89 audit, closed: arguments a reply carries as a JSON object
+  (Anthropic's `input`, an OpenAI `function.arguments` written as an object, a WebSocket frame's
+  calls) holding an integer past the digit limit made the whole reply unreadable, `inconclusive`
+  (OD-21), where the string form is judged. Bodies and frames are parsed by
+  `shared.toolcalls.loads_keeping_long_integers`, and `check_long_integers` keeps such an integer
+  only inside the arguments of a call the adapter reads (matched by identity); anywhere else the
+  reply stays unreadable, so no reader of a body's text or figures sees a `LongInteger`. Judging
+  rules 4 (an `inconclusive` can become a verdict).
+- **Checks.** `tests/adapters/test_long_integer_object_arguments.py`: 15 tests, 4 fail on the tree
+  before the change (`scratch/longint/red-before-longobj.log`, outside the repo); a resume test for
+  3 to 4.
+- **Left open.** `fix/identity-trials` (not merged) now needs judging rules 5, or whichever is free
+  when it lands. The SSE masking path and error bodies keep the plain parse (u06 A-90 says why).
+
 ## State, 2026-10-19: long integers in a call's arguments (u06 A-89, `fix/long-integer-arguments`)
 
 - **What.** OpenAI's JSON-string arguments holding an integer past `sys.get_int_max_str_digits()`
@@ -18,9 +34,8 @@ neighbouring entries can interleave (an older branch merged later sits above a n
   test pinned the version (loosened), the docs said "every walk" where the redactor masks the
   digits by shape (now "every check"). Its MEDIUM-1 is left open, below.
 - **Left open, each for its own branch.** Object-form arguments with such an integer (Anthropic's
-  `input`, a WebSocket frame's calls) still make the whole reply unreadable, `inconclusive` (OD-21),
-  since the body is parsed without the hook (`adapters/base.py`, `websocket.py`); closing it changes
-  stored verdicts again (judging rules 4). A map read whole under a pinned name is masked by shape
+  `input`, a WebSocket frame's calls) still made the whole reply unreadable, `inconclusive` (OD-21):
+  closed by A-90 (judging rules 4), above. A map read whole under a pinned name is masked by shape
   only (A-88 audit round 2, LOW-3). `fix/identity-trials` (not merged) planned judging rules 3 and
   now needs the next free version.
 

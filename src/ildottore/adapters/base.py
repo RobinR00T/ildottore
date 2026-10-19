@@ -56,13 +56,18 @@ from ildottore.shared.filter_stops import NO_FILTER_STOPS, OPENAI_FILTER_STOPS
 from ildottore.shared.logprobs import readable_logprob
 from ildottore.shared.models import (
     Capabilities,
+    JsonDict,
     ModelRequest,
     ModelResponse,
     TokenLogprob,
 )
 from ildottore.shared.nesting import NestedTooDeeply, bounded_loads
 from ildottore.shared.provider_filter import INPUT_FILTER_REFUSED, stop_provenance
-from ildottore.shared.toolcalls import check_argument_nesting
+from ildottore.shared.toolcalls import (
+    check_argument_nesting,
+    check_long_integers,
+    loads_keeping_long_integers,
+)
 from ildottore.shared.wellformed import well_formed_json
 
 __all__ = [
@@ -177,7 +182,8 @@ class ResponseTooDeep(AdapterEnvError):
 class ResponseMalformed(AdapterEnvError):
     """A success reply the adapter cannot read as one: not evaluated, and not retried (OD-21).
 
-    Not JSON (brackets that do not balance, an integer of more than 4,300 digits, bytes that are
+    Not JSON (brackets that do not balance, an integer of more than 4,300 digits outside a tool
+    call's arguments (u06 A-90), bytes that are
     not text included), not a JSON object, or not the shape the provider or the template
     declares (OpenAI's ``choices[0].message.content``, Anthropic's ``content`` array, a REST
     template's ``text_path``, a WebSocket frame that is binary, not JSON or not an object, or a
@@ -1296,6 +1302,22 @@ class BaseAdapter(ABC):
         # adapter's provider documents it (u04 A-79), and its own word on an empty reply always.
         return stop_provenance(parsed, self.filter_stops, self.own_filter_stops)
 
+    def _calls_read(self, payload: Any) -> list[JsonDict]:
+        """The tool calls this adapter reads in ``payload``, or none when it reads no reply there.
+
+        Asked only of a body holding an integer past the digit limit (u06 A-90), before any
+        other reading of it: such an integer is kept only inside these calls' arguments.
+        """
+
+        try:
+            if isinstance(payload, list) and self.reads_array_body:
+                return self._parse_array_response(payload).tool_calls
+            if isinstance(payload, Mapping):
+                return self._parse_response(payload).tool_calls
+        except ResponseMalformed:
+            pass
+        return []
+
     def _unreadable(self, message: str, body: bytes | str) -> ResponseMalformed:
         """A :class:`ResponseMalformed` with an excerpt of ``body`` and this adapter's advice."""
 
@@ -1434,7 +1456,10 @@ class BaseAdapter(ABC):
             try:
                 # Half a character (a lone surrogate) parses, and then no UTF-8 writer
                 # takes it: the evidence store aborted the campaign on one (A-47).
-                payload = well_formed_json(bounded_loads(raw))
+                parsed_body, long_integers = loads_keeping_long_integers(raw)
+                payload = well_formed_json(parsed_body)
+                if long_integers:  # only a tool call's arguments may hold one (u06 A-90)
+                    check_long_integers(long_integers, self._calls_read(payload))
             except NestedTooDeeply as exc:
                 raise ResponseTooDeep(f"{label} is {exc}; not evaluated") from exc
             except ValueError as exc:  # non-JSON success body = malformed (OD-21)

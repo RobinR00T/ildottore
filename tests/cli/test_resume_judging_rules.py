@@ -176,6 +176,27 @@ def test_a_run_halted_under_rules_2_is_refused_by_rules_3_naming_both(tmp_path: 
     assert _context(tmp_path) == before and _stored(tmp_path) == stored
 
 
+def test_a_run_halted_under_rules_3_is_refused_by_rules_4_naming_both(tmp_path: Path) -> None:
+    """u06 A-90 bumped the rules to 4: a run halted under 3 may hold an attempt not evaluated
+    because arguments a reply carried as a JSON object held an integer longer than ``int``
+    converts, which the new rules judge, so its resume is refused before anything is sent.
+    Every later version refuses it the same way."""
+
+    assert JUDGING_RULES_VERSION >= 4
+    run_id, spec_dir = _halted(tmp_path)
+    _rewrite(tmp_path, judging_rules=3)
+    before, stored = _context(tmp_path), _stored(tmp_path)
+
+    with pytest.raises(ValueError) as refused:
+        execute_run(_opts(tmp_path, resume=run_id, budget_requests=100), [spec_dir])
+
+    message = str(refused.value)
+    assert "was judged by the rules of an older Il Dottore (judging rules 3," in message
+    assert f"judging rules {JUDGING_RULES_VERSION}." in message
+    assert "There is no flag for this" in message
+    assert _context(tmp_path) == before and _stored(tmp_path) == stored
+
+
 def test_a_run_judged_by_newer_rules_is_refused_too(tmp_path: Path) -> None:
     run_id, spec_dir = _halted(tmp_path)
     _rewrite(tmp_path, judging_rules=JUDGING_RULES_VERSION + 1)

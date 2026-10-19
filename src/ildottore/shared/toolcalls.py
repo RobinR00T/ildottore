@@ -8,12 +8,21 @@ read it here.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
+from typing import Any
 
 from ildottore.shared.nesting import NestedTooDeeply, bounded_loads
 from ildottore.shared.wellformed import well_formed_json
 
-__all__ = ["LongInteger", "call_arguments", "call_id", "call_name", "check_argument_nesting"]
+__all__ = [
+    "LongInteger",
+    "call_arguments",
+    "call_id",
+    "call_name",
+    "check_argument_nesting",
+    "check_long_integers",
+    "loads_keeping_long_integers",
+]
 
 
 class LongInteger(str):
@@ -46,6 +55,64 @@ def _integer(digits: str) -> int | LongInteger:
         return int(digits)
     except ValueError:
         return LongInteger(digits)
+
+
+def loads_keeping_long_integers(text: str | bytes) -> tuple[Any, list[LongInteger]]:
+    """A reply's JSON parsed as :func:`~ildottore.shared.nesting.bounded_loads` parses it, each
+    integer past the digit limit kept as a :class:`LongInteger`, and the ones kept (u06 A-90).
+
+    Arguments a reply carries as a JSON object (Anthropic's ``tool_use`` ``input``, OpenAI's
+    ``function.arguments`` written as an object, a WebSocket frame's calls) are parsed with the
+    reply, so one such integer in them made the whole reply unreadable, not evaluated (OD-21),
+    where the same call written as a JSON string is read (A-89). Only arguments may hold one:
+    the caller hands the calls it read to :func:`check_long_integers`, which refuses any other.
+    """
+
+    kept: list[LongInteger] = []
+
+    def read(digits: str) -> int | LongInteger:
+        value = _integer(digits)
+        if isinstance(value, LongInteger):
+            kept.append(value)
+        return value
+
+    return bounded_loads(text, parse_int=read), kept
+
+
+def check_long_integers(kept: Iterable[LongInteger], calls: Iterable[object]) -> None:
+    """Raise the ``ValueError`` ``int`` raises for the first of ``kept`` that is not inside the
+    arguments :func:`call_arguments` reads of one of ``calls``.
+
+    Anywhere else (the text, a stop reason, an id, the usage, a filter's code, a call's own
+    name or id, arguments that are themselves the integer) the reply stays unreadable, as it
+    was: a :class:`LongInteger` is a ``str``, and a field read as text would take its digits for
+    the model's words (u06 A-90). Each integer is matched by identity, so the same digits
+    written twice count as two.
+    """
+
+    inside: set[int] = set()
+    for call in calls:
+        if isinstance(call, Mapping):
+            arguments = _raw_arguments(call)
+            if isinstance(arguments, Mapping):
+                _collect(arguments, inside)
+    for number in kept:
+        if id(number) not in inside:
+            int(number)  # the limit refuses it again: the error the reply's parse raised
+            raise ValueError(f"an integer of {len(number)} characters is past the digit limit")
+
+
+def _collect(value: object, inside: set[int]) -> None:
+    """Add the identity of every :class:`LongInteger` under ``value`` to ``inside``."""
+
+    if isinstance(value, LongInteger):
+        inside.add(id(value))
+    elif isinstance(value, Mapping):
+        for item in value.values():
+            _collect(item, inside)
+    elif isinstance(value, list):
+        for item in value:
+            _collect(item, inside)
 
 
 def call_name(call: Mapping[str, object]) -> str:

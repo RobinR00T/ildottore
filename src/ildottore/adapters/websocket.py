@@ -91,9 +91,13 @@ from ildottore.shared.models import (
     WebSocketExpect,
     WebSocketSpec,
 )
-from ildottore.shared.nesting import NestedTooDeeply, bounded_loads
+from ildottore.shared.nesting import NestedTooDeeply
 from ildottore.shared.provider_filter import blank_text, stop_provenance
-from ildottore.shared.toolcalls import check_argument_nesting
+from ildottore.shared.toolcalls import (
+    check_argument_nesting,
+    check_long_integers,
+    loads_keeping_long_integers,
+)
 from ildottore.shared.wellformed import well_formed_json
 
 __all__ = [
@@ -827,7 +831,10 @@ class WebSocketAdapter:
             # parse, and half a character (a lone surrogate escaped in a string) read as U+FFFD,
             # since no UTF-8 writer downstream takes it (A-47; pre-merge audit of PR #87: a
             # plain json.loads let one such frame abort the campaign).
-            frame = well_formed_json(bounded_loads(raw))
+            parsed, long_integers = loads_keeping_long_integers(raw)
+            frame = well_formed_json(parsed)
+            if long_integers:  # only a tool call's arguments may hold one (u06 A-90)
+                check_long_integers(long_integers, self._calls_in(frame))
         except NestedTooDeeply as exc:
             raise too_deep from exc
         except ValueError as exc:
@@ -875,6 +882,16 @@ class WebSocketAdapter:
         ):
             closed.retryable = False  # the server refused what was sent; it would again
         return closed
+
+    def _calls_in(self, frame: object) -> list[object]:
+        """The tool calls the turn reads in ``frame``: the list at ``response.tool_calls_path``,
+        none when the block declares no such path or the frame is not an object (u06 A-90)."""
+
+        path = self.spec.response.tool_calls_path
+        if path is None or not isinstance(frame, Mapping):
+            return []
+        calls = get_path(frame, path)
+        return list(calls) if isinstance(calls, list) else []
 
     def _tool_call(self, call: Mapping[str, Any]) -> JsonDict:
         """A tool call read from a frame, refused when its JSON-text arguments nest too deeply.
