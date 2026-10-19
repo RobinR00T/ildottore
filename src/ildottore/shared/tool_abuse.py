@@ -274,8 +274,8 @@ def arg_value_text(value: object) -> str | None:
 
 def forbidden_value_hits(
     args: object, patterns: Mapping[str, re.Pattern[str]]
-) -> list[tuple[str, str]]:
-    """Each ``(key, value text)`` in ``args`` whose value matches the pattern its key names.
+) -> list[tuple[str, str, bool]]:
+    """Each ``(key, value text, read whole)`` in ``args`` whose value matches its key's pattern.
 
     ``patterns`` is keyed by argument name, stripped and case-folded (as
     :func:`value_pattern_key` writes it); a key in a call is compared the same way, at any depth
@@ -283,13 +283,15 @@ def forbidden_value_hits(
     items, so ``[2499, 0]`` or ``[[0]]`` under ``total_cents`` is caught; a map, and an empty list,
     is read whole, as :func:`canonical_value_text` writes it, so a pattern that allows only a
     plain id refuses ``{"$ne": null}`` too; a map under the key is also walked for its own keys.
-    The key comes back as the call wrote it, the value as it was read: the caller masks the value
-    before it reaches a verdict, since an argument a target wrote can hold anything.
+    The key comes back as the call wrote it, the value as it was read, and whether it was read
+    whole: the caller masks the value before it reaches a verdict, since an argument a target
+    wrote can hold anything, and masks text read whole as one value, never by the shapes in it
+    (audit 2 of A-88, LOW-3).
     """
 
     if not patterns:
         return []
-    hits: list[tuple[str, str]] = []
+    hits: list[tuple[str, str, bool]] = []
     _walk_values(args, patterns, hits)
     return hits
 
@@ -340,29 +342,29 @@ def canonical_value_text(value: object) -> str:
     return "null" if text is None else text
 
 
-def _pinned_texts(value: object) -> list[str]:
-    """The texts a pinned name's pattern reads for ``value``: each scalar of a list, nested lists
-    included; a map, or an empty list, whole."""
+def _pinned_texts(value: object) -> list[tuple[str, bool]]:
+    """The texts a pinned name's pattern reads for ``value``, each with whether it was read
+    whole: each scalar of a list, nested lists included; a map, or an empty list, whole."""
 
     if isinstance(value, (list, tuple)) and value:
-        return [text for item in value for text in _pinned_texts(item)]
+        return [read for item in value for read in _pinned_texts(item)]
     text = arg_value_text(value)
     if text is not None:
-        return [text]
-    return [canonical_value_text(value)]
+        return [(text, False)]
+    return [(canonical_value_text(value), True)]
 
 
 def _walk_values(
-    value: object, patterns: Mapping[str, re.Pattern[str]], hits: list[tuple[str, str]]
+    value: object, patterns: Mapping[str, re.Pattern[str]], hits: list[tuple[str, str, bool]]
 ) -> None:
     if isinstance(value, Mapping):
         for key, val in value.items():
             if isinstance(key, str):
                 pattern = patterns.get(value_pattern_key(key))
                 if pattern is not None:
-                    for text in _pinned_texts(val):
+                    for text, whole in _pinned_texts(val):
                         if pattern.search(text) is not None:
-                            hits.append((key, text))
+                            hits.append((key, text, whole))
             _walk_values(val, patterns, hits)
     elif isinstance(value, (list, tuple)):
         for item in value:

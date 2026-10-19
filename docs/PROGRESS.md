@@ -5,6 +5,14 @@ The carryover ledger. Every agent session updates this so context survives even 
 newest merge on top: a branch's entries land together when it merges, so the dates of
 neighbouring entries can interleave (an older branch merged later sits above a newer one).
 
+## State, 2026-10-19: a map read whole is hashed whole (u06 A-88, `u06-argval-hash-whole`)
+
+- **What.** Audit 2 of A-88 (LOW-3): a map or an empty list read whole under a pinned argument
+  was masked by shape, so its keys and every value the redactor has no shape for stayed in clear
+  in the verdict's `matched`. Now it is hashed whole as one `tool_arg_value`; a scalar is masked
+  by shape as before. Verdicts do not change. ADR-0014 amended; 4 tests, 3 of which fail on
+  `d6236c7d`.
+
 ## State, 2026-10-19: argument values on an authorized tool (u06 A-88, `feat/tool-argument-values`)
 
 - **What.** `tool_call` read a call's tool name and its argument keys, never their values, so an
