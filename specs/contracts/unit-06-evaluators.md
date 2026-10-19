@@ -347,8 +347,8 @@ pattern on 100,000 characters among them), which fail on `d8b43561`: the field, 
 the three specs are new there. **Amended 2026-10-19 after the pre-merge audit:** possessive
 quantifiers in the price pattern (M1, a second on 16,000 spaces), a map or an empty list read
 whole and nested lists to their items (M2), an allowlist for the price (M3, widened as a
-denylist first; round 2 of the audit found zeros it still missed) and for the URL (M4), the stub compiles before its no-calls pass (L1), lint refuses two names that fold to one
-(L2); a string-form argument holding an integer past the digit limit still reads as no arguments
+denylist first; round 2 of the audit found zeros it still missed) and for the URL (M4), the
+stub compiles before its no-calls pass (L1), lint refuses two names that fold to one (L2); a string-form argument holding an integer past the digit limit still reads as no arguments
 (L5, older than this clause, left for its own branch).
 
 ## §8 Out of scope / forbidden
