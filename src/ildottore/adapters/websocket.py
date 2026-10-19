@@ -708,7 +708,7 @@ class WebSocketAdapter:
                                 f"({quoted(reading.error_path)}: {self._shown(error)})"
                             )
                     # A path declared into a call's arguments can reach a LongInteger, a str:
-                    # never the text, the model or the id (pre-merge audit of A-90, LOW-4).
+                    # never the text, the model, the id or the stop (pre-merge audit of A-90).
                     fragment = get_path(frame, reading.text_path)
                     if isinstance(fragment, str) and not isinstance(fragment, LongInteger):
                         parts.append(fragment)
@@ -744,6 +744,8 @@ class WebSocketAdapter:
             ) from exc
 
         finish = get_path(final, reading.final_path) if final is not None else None
+        if isinstance(finish, LongInteger):  # nor the stop (second audit of A-90)
+            finish = None
         stop = normalized_stop(finish if isinstance(finish, str) else None)
         text = "".join(parts)
         # A turn with no text is still a reply when it carries tool calls (an agent that only

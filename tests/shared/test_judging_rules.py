@@ -236,9 +236,15 @@ PIN_HISTORY: tuple[tuple[int, str, str], ...] = (
     (
         4,
         "7589807e9974bc2c0977706d3d05c418042d69c73ae58bb0cbf9cc3f8bba5f68",
-        "re-pin, the pre-merge audit of A-90: the check reads the integers the parsed reply holds (a "
-        "duplicate key's dropped value is not refused), and a WebSocket text, model or id path "
+        "re-pin, the pre-merge audit of A-90: the check reads the integers the parsed reply holds "
+        "(a duplicate key's dropped value is not refused), and a WebSocket text, model or id path "
         "into a call's arguments reads no digits; version 4 is not released",
+    ),
+    (
+        4,
+        "a1609118af05b8a942c1982916c99c707552ac8324d804d3248aecac0bd67dc1",
+        "re-pin, the second audit of A-90: a WebSocket final_path into a call's arguments reads "
+        "no stop there either; version 4 is not released",
     ),
 )
 
@@ -247,7 +253,7 @@ PINNED: dict[int, str] = {
     1: "eea242b76899ce22c68bc80c4c6b51a92c22cd39d4763bc373f3cd8a612e9dec",
     2: "8d0f56fb1a5237de51492dea812a213f4ed39c8ea5a2b5edaff1812e0300c372",
     3: "bedc37ed4b3f66fd60f755711a9911094ad64e456056e09f708ff09928c00f26",
-    4: "7589807e9974bc2c0977706d3d05c418042d69c73ae58bb0cbf9cc3f8bba5f68",
+    4: "a1609118af05b8a942c1982916c99c707552ac8324d804d3248aecac0bd67dc1",
 }
 
 #: One ``<version> <digest>`` line per pin, appended to and never edited: the history must start

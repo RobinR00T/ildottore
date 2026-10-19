@@ -337,7 +337,7 @@ async def test_websocket_long_integer_outside_a_frames_calls_is_still_unreadable
 
 async def test_websocket_text_path_into_a_calls_arguments_reads_no_digits() -> None:
     """A path declared into a call's arguments reaches the LongInteger the check kept: it is
-    never the turn's text, its model or its id (LOW-4)."""
+    never the turn's text, its model, its id or its stop (LOW-4, and the second audit)."""
 
     call = {"name": _TOOL, "arguments": {"note": _MARK}}
     frame = _text({"type": "done", "tool_calls": [call]})
@@ -347,12 +347,14 @@ async def test_websocket_text_path_into_a_calls_arguments_reads_no_digits() -> N
             "text_path": "tool_calls.0.arguments.note",
             "model_path": "tool_calls.0.arguments.note",
             "id_path": "tool_calls.0.arguments.note",
+            "final_path": "tool_calls.0.arguments.note",
+            "final_value": None,
         }
     )
     with _frames_server(frame) as server:
         response = await _adapter(server, spec).send(ModelRequest(prompt="hi"))
 
-    assert response.text == ""
+    assert response.text == "" and response.finish_reason == "final"
     assert "model" not in response.raw_ids and "id" not in response.raw_ids
     assert isinstance(call_arguments(response.tool_calls[0])["note"], LongInteger)
 
