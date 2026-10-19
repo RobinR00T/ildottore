@@ -211,13 +211,19 @@ PIN_HISTORY: tuple[tuple[int, str, str], ...] = (
         "re-pin 2026-10-17: u01 A-86 pre-merge audit (fix/stream-bounds on 620095b5): a deque, an "
         "exception with arguments and a memoryview exit code are masked as their items' texts "
         "(bytes for a memoryview); masking only, no verdict can change; version 2 is not released",
+    ),    (
+        2,
+        "7eef39186abaac937b60bd7e90e803511a35f8d39336a5b25906b83071db0835",
+        "re-pin 2026-10-19: u06 A-88 (feat/tool-argument-values on d8b43561): tool_call reads an "
+        "opt-in forbidden_arg_values, and three test_only specs use it; a spec without the key "
+        "judges as before, no existing verdict changes; version 2 is not released",
     ),
 )
 
 #: The digest each version is pinned to now: the last line of :data:`PIN_HISTORY` for it.
 PINNED: dict[int, str] = {
     1: "eea242b76899ce22c68bc80c4c6b51a92c22cd39d4763bc373f3cd8a612e9dec",
-    2: "06bb22a2c83345c8cea8c238e6b2b642e8ef5236ba9d5879193899d1741c6082",
+    2: "7eef39186abaac937b60bd7e90e803511a35f8d39336a5b25906b83071db0835",
 }
 
 #: One ``<version> <digest>`` line per pin, appended to and never edited: the history must start

@@ -7,7 +7,7 @@ Where the project is and what is left. The living, prioritized gap analysis is
 
 ## Shipped
 
-The battery is **75 specs across 14 suites**, mapped to OWASP LLM Top 10 (2025), MITRE ATLAS and
+The battery is **78 specs across 14 suites**, mapped to OWASP LLM Top 10 (2025), MITRE ATLAS and
 the Nova IoPC taxonomy, with a NIST AI RMF 1.0 subcategory token on every spec (NIST AI 600-1 is
 a reference, not a mapping the code checks). Everything below runs offline against a mock and, where
 noted, over the wire.
@@ -22,7 +22,8 @@ noted, over the wire.
   system-prompt & data leakage (canary-proven), insecure output handling, excessive agency,
   unbounded consumption, multi-turn (Crescendo / Linear / Sequential / Bad-Likert / Tree),
   access-control (BFLA / BOLA / RBAC / SSRF / debug / shell-injection / tool-metadata poisoning /
-  argument-smuggling), OWASP-Agents-2026 agentic breadth, agentic-extortion (policy-gated),
+  argument-smuggling / argument values on an authorized tool), OWASP-Agents-2026 agentic
+  breadth, agentic-extortion (policy-gated),
   embeddings, MCP tool-metadata poisoning, guardrail/moderation-layer evasion, an optional
   Responsible-AI pack (safety-content + bias/fairness), a **NOVA/IoPC coverage-gap battery**
   (delayed-trigger injection, persistent memory poisoning, slopsquatting, self-replicating prompt,

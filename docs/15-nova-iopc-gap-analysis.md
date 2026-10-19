@@ -218,7 +218,7 @@ Design decisions worth recording:
   reader understands, so it gets its own line rather than being folded into a single number.
 - **Optional in the schema, required for our battery by test.** Making it a required field
   would break every third-party spec pack (the repo is public and v0.1.0 is released), so the
-  schema stays permissive and `tests/battery` pins that our own 75 specs are fully mapped.
+  schema stays permissive and `tests/battery` pins that our own 78 specs are fully mapped.
 - **A spec may map on one axis only.** The responsible-AI safety specs carry an impact code and
   no technique, because they assert a class of harm rather than an attack technique. That is
   honest, so the test accepts either axis.
