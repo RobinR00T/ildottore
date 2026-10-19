@@ -204,6 +204,46 @@ async def test_anthropic_long_integer_outside_a_calls_input_is_still_unreadable(
         await _send(_anthropic(anthropic_allowlist), _ANTHROPIC_URL, _text(payload))
 
 
+async def test_anthropic_long_integer_after_one_in_the_input_is_still_unreadable(
+    anthropic_allowlist: EndpointAllowlist,
+) -> None:
+    """Every integer is checked, not the first: one in the input, then one in the usage (pre-merge
+    audit of A-90, MEDIUM-1)."""
+
+    payload = _anthropic_body(input={"pad": _MARK})
+    payload["usage"] = {"input_tokens": 10, "output_tokens": _MARK}
+    with pytest.raises(ResponseMalformed, match=r"not valid JSON: .*digits"):
+        await _send(_anthropic(anthropic_allowlist), _ANTHROPIC_URL, _text(payload))
+
+
+async def test_anthropic_two_calls_each_with_a_long_integer_are_read(
+    anthropic_allowlist: EndpointAllowlist,
+) -> None:
+    """The arguments of every call count, not the first call's (LOW-3)."""
+
+    payload = _anthropic_body(input={"pad": _MARK})
+    content: list[JsonDict] = payload["content"]  # type: ignore[assignment]
+    content.append({"type": "tool_use", "id": "toolu_2", "name": _TOOL, "input": {"n": _MARK}})
+    response = await _send(_anthropic(anthropic_allowlist), _ANTHROPIC_URL, _text(payload))
+
+    assert [
+        isinstance(next(iter(call_arguments(c).values())), LongInteger) for c in response.tool_calls
+    ] == [True, True]
+
+
+async def test_anthropic_long_integer_a_duplicate_key_dropped_is_not_refused(
+    anthropic_allowlist: EndpointAllowlist,
+) -> None:
+    """JSON keeps a duplicate key's last value, as the string form does: an integer the parse met
+    and dropped is in no field to read (LOW-1)."""
+
+    body = _text(_anthropic_body(input={"q": "x"})).replace('"q": "x"', f'"q": {_LONG}, "q": 1')
+    response = await _send(_anthropic(anthropic_allowlist), _ANTHROPIC_URL, body)
+
+    assert call_arguments(response.tool_calls[0]) == {"q": 1}
+    assert call_arguments({"input": f'{{"q": {_LONG}, "q": 1}}'}) == {"q": 1}
+
+
 # --- OpenAI: ``function.arguments`` written as an object --------------------------------------
 
 
@@ -255,13 +295,16 @@ def _frames_server(*frames: str) -> Any:
     return _query_server(on_query)
 
 
-async def test_websocket_frame_call_with_a_long_integer_is_read() -> None:
+@pytest.mark.parametrize("path", ["tool_calls", "result.calls"])
+async def test_websocket_frame_call_with_a_long_integer_is_read(path: str) -> None:
     call = {"name": _TOOL, "arguments": {"role": "admin", "pad": _MARK}}
-    frames = (
-        _text({"type": "delta", "delta": {"text": "ok"}}),
-        _text({"type": "done", "tool_calls": [call]}),
-    )
-    spec = _spec(response={"tool_calls_path": "tool_calls"})
+    done: JsonDict = {"type": "done"}
+    if path == "tool_calls":
+        done["tool_calls"] = [call]
+    else:
+        done["result"] = {"calls": [call]}
+    frames = (_text({"type": "delta", "delta": {"text": "ok"}}), _text(done))
+    spec = _spec(response={"tool_calls_path": path})
     with _frames_server(*frames) as server:
         response = await _adapter(server, spec).send(ModelRequest(prompt="hi"))
 
@@ -270,24 +313,48 @@ async def test_websocket_frame_call_with_a_long_integer_is_read() -> None:
     assert await _status(response.tool_calls[0], forbidden_args=["role"]) is VerdictStatus.FAIL
 
 
-@pytest.mark.parametrize("declared", [True, False])
+@pytest.mark.parametrize("where", ["the text", "no declared path", "a decoy list"])
 async def test_websocket_long_integer_outside_a_frames_calls_is_still_unreadable(
-    declared: bool,
+    where: str,
 ) -> None:
-    """In the text, or in calls the block declares no path for, the frame stays unreadable."""
+    """In the text, in calls the block declares no path for, or in a list beside the declared
+    one (LOW-2), the frame stays unreadable."""
 
     call = {"name": _TOOL, "arguments": {"pad": _MARK}}
-    if declared:
+    ok = _text({"type": "delta", "delta": {"text": "ok"}})
+    if where == "the text":
         frames = (_text({"type": "delta", "delta": {"text": _MARK}}), _text({"type": "done"}))
         spec = _spec(response={"tool_calls_path": "tool_calls"})
-    else:
-        frames = (
-            _text({"type": "delta", "delta": {"text": "ok"}}),
-            _text({"type": "done", "tool_calls": [call]}),
-        )
+    elif where == "no declared path":
+        frames = (ok, _text({"type": "done", "tool_calls": [call]}))
         spec = _spec()
+    else:
+        frames = (ok, _text({"type": "done", "tool_calls": [call], "result": {"calls": []}}))
+        spec = _spec(response={"tool_calls_path": "result.calls"})
     with _frames_server(*frames) as server, pytest.raises(ResponseMalformed, match="digits"):
         await _adapter(server, spec).send(ModelRequest(prompt="hi"))
+
+
+async def test_websocket_text_path_into_a_calls_arguments_reads_no_digits() -> None:
+    """A path declared into a call's arguments reaches the LongInteger the check kept: it is
+    never the turn's text, its model or its id (LOW-4)."""
+
+    call = {"name": _TOOL, "arguments": {"note": _MARK}}
+    frame = _text({"type": "done", "tool_calls": [call]})
+    spec = _spec(
+        response={
+            "tool_calls_path": "tool_calls",
+            "text_path": "tool_calls.0.arguments.note",
+            "model_path": "tool_calls.0.arguments.note",
+            "id_path": "tool_calls.0.arguments.note",
+        }
+    )
+    with _frames_server(frame) as server:
+        response = await _adapter(server, spec).send(ModelRequest(prompt="hi"))
+
+    assert response.text == ""
+    assert "model" not in response.raw_ids and "id" not in response.raw_ids
+    assert isinstance(call_arguments(response.tool_calls[0])["note"], LongInteger)
 
 
 # --- the check itself ------------------------------------------------------------------------
@@ -301,8 +368,8 @@ def test_the_same_digits_outside_the_arguments_are_refused_by_identity() -> None
     )
     assert len(kept) == 2 and kept[0] == kept[1]
     with pytest.raises(ValueError, match="digits"):
-        check_long_integers(kept, payload["calls"])
-    check_long_integers(kept[1:], payload["calls"])
+        check_long_integers(payload, payload["calls"])
+    check_long_integers(payload["calls"], payload["calls"])
 
 
 def test_a_reply_with_no_long_integer_keeps_none() -> None:

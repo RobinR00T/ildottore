@@ -15,9 +15,13 @@ neighbouring entries can interleave (an older branch merged later sits above a n
   only inside the arguments of a call the adapter reads (matched by identity); anywhere else the
   reply stays unreadable, so no reader of a body's text or figures sees a `LongInteger`. Judging
   rules 4 (an `inconclusive` can become a verdict).
-- **Checks.** `tests/adapters/test_long_integer_object_arguments.py`: 15 tests, 4 fail on the tree
-  before the change (`scratch/longint/red-before-longobj.log`, outside the repo); a resume test for
-  3 to 4.
+- **Checks.** `tests/adapters/test_long_integer_object_arguments.py`: 21 tests, 8 fail on the tree
+  before the change; a resume test for 3 to 4.
+- **Audit.** One pre-merge round, no HIGH. MEDIUM-1 (only the first kept integer was in effect
+  tested) and LOW-2/3 (a nested `tool_calls_path`, a decoy list, a second call): tests added, each
+  surviving mutant now killed. LOW-1: the check reads the integers the parsed reply holds, so a
+  duplicate key's dropped value no longer refuses it. LOW-4: a WebSocket `text_path`, `model_path`
+  or `id_path` declared into a call's arguments reads no digits. LOW-5: wording and wrapping.
 - **Left open.** `fix/identity-trials` (not merged) now needs judging rules 5, or whichever is free
   when it lands. The SSE masking path and error bodies keep the plain parse (u06 A-90 says why).
 

@@ -8,7 +8,7 @@ read it here.
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Iterator, Mapping
 from typing import Any
 
 from ildottore.shared.nesting import NestedTooDeeply, bounded_loads
@@ -65,7 +65,8 @@ def loads_keeping_long_integers(text: str | bytes) -> tuple[Any, list[LongIntege
     ``function.arguments`` written as an object, a WebSocket frame's calls) are parsed with the
     reply, so one such integer in them made the whole reply unreadable, not evaluated (OD-21),
     where the same call written as a JSON string is read (A-89). Only arguments may hold one:
-    the caller hands the calls it read to :func:`check_long_integers`, which refuses any other.
+    the caller hands the parsed reply and the calls it read to :func:`check_long_integers`, which
+    refuses any other.
     """
 
     kept: list[LongInteger] = []
@@ -79,15 +80,17 @@ def loads_keeping_long_integers(text: str | bytes) -> tuple[Any, list[LongIntege
     return bounded_loads(text, parse_int=read), kept
 
 
-def check_long_integers(kept: Iterable[LongInteger], calls: Iterable[object]) -> None:
-    """Raise the ``ValueError`` ``int`` raises for the first of ``kept`` that is not inside the
-    arguments :func:`call_arguments` reads of one of ``calls``.
+def check_long_integers(reply: object, calls: Iterable[object]) -> None:
+    """Raise the ``ValueError`` ``int`` raises for the first :class:`LongInteger` in ``reply``
+    that is not inside the arguments :func:`call_arguments` reads of one of ``calls``.
 
     Anywhere else (the text, a stop reason, an id, the usage, a filter's code, a call's own
     name or id, arguments that are themselves the integer) the reply stays unreadable, as it
     was: a :class:`LongInteger` is a ``str``, and a field read as text would take its digits for
     the model's words (u06 A-90). Each integer is matched by identity, so the same digits
-    written twice count as two.
+    written twice count as two. The integers are those the parsed ``reply`` holds, not every one
+    the parse met: a duplicate key drops the first value, as the string form drops it (pre-merge
+    audit of A-90, LOW-1).
     """
 
     inside: set[int] = set()
@@ -95,24 +98,25 @@ def check_long_integers(kept: Iterable[LongInteger], calls: Iterable[object]) ->
         if isinstance(call, Mapping):
             arguments = _raw_arguments(call)
             if isinstance(arguments, Mapping):
-                _collect(arguments, inside)
-    for number in kept:
+                inside.update(id(number) for number in _long_integers(arguments))
+    for number in _long_integers(reply):
         if id(number) not in inside:
             int(number)  # the limit refuses it again: the error the reply's parse raised
             raise ValueError(f"an integer of {len(number)} characters is past the digit limit")
 
 
-def _collect(value: object, inside: set[int]) -> None:
-    """Add the identity of every :class:`LongInteger` under ``value`` to ``inside``."""
+def _long_integers(value: object) -> Iterator[LongInteger]:
+    """Every :class:`LongInteger` under ``value``, in document order, by an explicit stack."""
 
-    if isinstance(value, LongInteger):
-        inside.add(id(value))
-    elif isinstance(value, Mapping):
-        for item in value.values():
-            _collect(item, inside)
-    elif isinstance(value, list):
-        for item in value:
-            _collect(item, inside)
+    stack = [value]
+    while stack:
+        item = stack.pop()
+        if isinstance(item, LongInteger):
+            yield item
+        elif isinstance(item, Mapping):
+            stack.extend(reversed(list(item.values())))
+        elif isinstance(item, list):
+            stack.extend(reversed(item))
 
 
 def call_name(call: Mapping[str, object]) -> str:

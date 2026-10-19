@@ -94,6 +94,7 @@ from ildottore.shared.models import (
 from ildottore.shared.nesting import NestedTooDeeply
 from ildottore.shared.provider_filter import blank_text, stop_provenance
 from ildottore.shared.toolcalls import (
+    LongInteger,
     check_argument_nesting,
     check_long_integers,
     loads_keeping_long_integers,
@@ -706,8 +707,10 @@ class WebSocketAdapter:
                                 f"{self.id}: the server answered with an error frame "
                                 f"({quoted(reading.error_path)}: {self._shown(error)})"
                             )
+                    # A path declared into a call's arguments can reach a LongInteger, a str:
+                    # never the text, the model or the id (pre-merge audit of A-90, LOW-4).
                     fragment = get_path(frame, reading.text_path)
-                    if isinstance(fragment, str):
+                    if isinstance(fragment, str) and not isinstance(fragment, LongInteger):
                         parts.append(fragment)
                     if reading.tool_calls_path is not None:
                         raw_calls = get_path(frame, reading.tool_calls_path)
@@ -721,11 +724,11 @@ class WebSocketAdapter:
                             usage = dict(raw_usage)
                     if reading.model_path is not None:
                         model = get_path(frame, reading.model_path)
-                        if isinstance(model, str):
+                        if isinstance(model, str) and not isinstance(model, LongInteger):
                             ids["model"] = model
                     if reading.id_path is not None:
                         reply_id = get_path(frame, reading.id_path)
-                        if reply_id is not None:
+                        if reply_id is not None and not isinstance(reply_id, LongInteger):
                             ids["id"] = reply_id
                     if self._is_final(frame):
                         final = frame
@@ -834,7 +837,7 @@ class WebSocketAdapter:
             parsed, long_integers = loads_keeping_long_integers(raw)
             frame = well_formed_json(parsed)
             if long_integers:  # only a tool call's arguments may hold one (u06 A-90)
-                check_long_integers(long_integers, self._calls_in(frame))
+                check_long_integers(frame, self._calls_in(frame))
         except NestedTooDeeply as exc:
             raise too_deep from exc
         except ValueError as exc:

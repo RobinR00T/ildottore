@@ -389,7 +389,10 @@ such integer as a `LongInteger` and returns the ones it kept; when there are any
 `check_long_integers` raises the `ValueError` `int` raises for the first that is not inside the
 arguments `call_arguments` reads of a call the adapter reads in that body (`BaseAdapter._calls_read`,
 which asks the adapter's own `_parse_response`; `WebSocketAdapter._calls_in`, the list at
-`tool_calls_path`), matched by identity, so the same digits in the text and in an argument are two.
+`tool_calls_path`), matched by identity, so the same digits in the text and in an argument are two,
+among the integers the parsed reply holds (a duplicate key's dropped value is in no field, and the
+string form drops it too). A WebSocket path a block declares into those arguments (`text_path`,
+`model_path`, `id_path`) reads no text, model or id there.
 Such an integer anywhere else (the text, a call's name or id, arguments that are themselves the
 integer, a stop reason, an id, the usage, a block the adapter does not read as a call, every REST
 template body, a frame of a block that declares no `tool_calls_path`) keeps the reply unreadable,
@@ -400,8 +403,8 @@ changed: an SSE body's events and a JSON body's excerpt are read for masking onl
 its codes; each keeps `bounded_loads` without the hook, so such an integer there reads as text to
 mask, or as no code, as before. Stored verdicts can change (an `inconclusive` becomes a verdict), so
 `JUDGING_RULES_VERSION` is 4 (u12's line). Checked by
-`tests/adapters/test_long_integer_object_arguments.py` (15 tests at the interpreter's floor of 640
-digits: Anthropic, OpenAI, REST and WebSocket), 4 of which fail on the tree before it, and by
+`tests/adapters/test_long_integer_object_arguments.py` (21 tests at the interpreter's floor of 640
+digits: Anthropic, OpenAI, REST and WebSocket), 8 of which fail on the tree before it, and by
 `tests/cli/test_resume_judging_rules.py`.
 
 ## §8 Out of scope / forbidden

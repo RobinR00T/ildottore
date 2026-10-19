@@ -102,52 +102,51 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   `dottore run`).
 - **A reply the adapter cannot read.** A success reply that is not JSON (brackets that do not
   balance, an integer of more than 4,300 digits outside a tool call's arguments, which Python
-  refuses to read, bytes that are not text), not a JSON object, or not the shape the provider or the template declares (an OpenAI
-  reply with no `choices`, an Anthropic one with no `content` array, a REST reply with nothing at
-  `text_path`), a WebSocket frame that is binary, not JSON or not an object, a turn with no text,
-  no tool call and no filter stop its file declares, and an MCP reply that is not JSON-RPC, fails
-  its attempt since 2026-10-11 (OD-21): `ResponseMalformed`, `inconclusive` with the reason
-  `unreadable_reply`, not retried within the run, debited, re-derived by `dottore replay`, and the
-  scan goes on; during a `-sV` probe pass that one probe fails. It used to stop the run (exit 3) at
-  the first one, so one hostile `<html>` reply ended a scan. Such an attempt keeps its spec from
-  passing, whatever the other attempts did (a `fail` elsewhere still fails it): a wrapper that
-  pastes the model's output into its JSON breaks on the quotes a jailbreak that worked writes, so
-  the reply that broke may be the exploit. It keeps what came back for review under
-  `request.metadata.unreadable_reply`: at most 4 KiB of the body through the redactor, the body's
-  size, and what to check. The summary says how many, never silenced by `-q` (`Unreadable replies:
-  1 attempt(s) in 1 spec(s) (PI-DIRECT-001) got a reply that could not be read as the provider's;
-  ...`), and so does every report (`summary.unreadable_reply` in JSON, SARIF, JUnit, HTML). A
-  resume sends such an attempt again, since the target may have been fixed: a re-send the adapter
-  reads is the attempt in its place, and one that ends in an environment error or a block leaves
-  the unreadable reply standing, since it says nothing of the reply (§5, `--resume`). A tool the
-  model called on an earlier turn of a conversation that then broke is still read (§9). A wrong
-  endpoint,
-  provider or template answers every request that way, and so does a target that breaks mid-run
-  (an expired session behind a proxy that serves a login page), so the run counts unreadable
-  replies in a row, each reply it reads (or a provider's filter block, §9) starting the count
-  again and a transport failure doing neither. At 5 in a row before any reply was read, or 20 in
-  a row after, it sends one benign request (`Please reply with the single word: ready.`, debited
-  and paced like any send, and filed with the recognition probes under `probes/`): a content
-  filter that answers attack prompts with a 200 block page lets that one through, so the run goes
-  on and the count starts again, the blocked attempts staying `inconclusive`. Only when the check
-  cannot be read either does the run stop (exit 3): `error: run on api did not complete: aborted
-  on UnreadableReplies: the target's first 5 replies in this run could not be read as replies (the
-  last: ResponseMalformed: ...), and none could, nor a benign check sent then: check that the
-  target file's endpoint is an OpenAI chat completions URL (or a server that speaks that API) and
-  its provider is openai (a filter in front of the endpoint that answers every request with a
-  block page reads the same). ...`, or `the target's last 20 replies in this run could not be read
-  as replies, in a row after ones that could ..., and a benign check sent then could not be read
-  either ...`. A resume of a run that read replies starts with the endpoint proven, so only 20 in
-  a row stop it. The advice is the adapter's own (a `provider: rest` target file is told the generic
-  template reads the text at `text`, since a target file cannot declare a template). With
-  concurrent specs, each one already sending stops at its own next unreadable reply, so the stop
-  costs at most the 5 (or 20) requests, the check and one per other spec in flight, and every
-  reply sent is stored. A run of fewer attempts that read nothing is `unreachable` (exit 3, below),
-  its reason giving the same advice. A non-retryable 4xx is not this: it still stops the run. Over
-  MCP stdio a line that is not JSON is skipped as stray output, so a server that writes nothing else
-  times out instead. An MCP server over stdio may write up to the same 4 MiB for one request, its
-  stray lines and its reply together. A REST template whose `text_path` starts at an index
-  (`0.generated_text`, Hugging Face's Inference API) reads a body that is a JSON array.
+  refuses to read, bytes that are not text), not a JSON object, or not the shape the provider or the
+  template declares (an OpenAI reply with no `choices`, an Anthropic one with no `content` array, a
+  REST reply with nothing at `text_path`), a WebSocket frame that is binary, not JSON or not an
+  object, a turn with no text, no tool call and no filter stop its file declares, and an MCP reply
+  that is not JSON-RPC, fails its attempt since 2026-10-11 (OD-21): `ResponseMalformed`,
+  `inconclusive` with the reason `unreadable_reply`, not retried within the run, debited, re-derived
+  by `dottore replay`, and the scan goes on; during a `-sV` probe pass that one probe fails. It used
+  to stop the run (exit 3) at the first one, so one hostile `<html>` reply ended a scan. Such an
+  attempt keeps its spec from passing, whatever the other attempts did (a `fail` elsewhere still
+  fails it): a wrapper that pastes the model's output into its JSON breaks on the quotes a jailbreak
+  that worked writes, so the reply that broke may be the exploit. It keeps what came back for review
+  under `request.metadata.unreadable_reply`: at most 4 KiB of the body through the redactor, the
+  body's size, and what to check. The summary says how many, never silenced by `-q` (`Unreadable
+  replies: 1 attempt(s) in 1 spec(s) (PI-DIRECT-001) got a reply that could not be read as the
+  provider's; ...`), and so does every report (`summary.unreadable_reply` in JSON, SARIF, JUnit,
+  HTML). A resume sends such an attempt again, since the target may have been fixed: a re-send the
+  adapter reads is the attempt in its place, and one that ends in an environment error or a block
+  leaves the unreadable reply standing, since it says nothing of the reply (§5, `--resume`). A tool
+  the model called on an earlier turn of a conversation that then broke is still read (§9). A wrong
+  endpoint, provider or template answers every request that way, and so does a target that breaks
+  mid-run (an expired session behind a proxy that serves a login page), so the run counts unreadable
+  replies in a row, each reply it reads (or a provider's filter block, §9) starting the count again
+  and a transport failure doing neither. At 5 in a row before any reply was read, or 20 in a row
+  after, it sends one benign request (`Please reply with the single word: ready.`, debited and paced
+  like any send, and filed with the recognition probes under `probes/`): a content filter that
+  answers attack prompts with a 200 block page lets that one through, so the run goes on and the
+  count starts again, the blocked attempts staying `inconclusive`. Only when the check cannot be
+  read either does the run stop (exit 3): `error: run on api did not complete: aborted on
+  UnreadableReplies: the target's first 5 replies in this run could not be read as replies (the
+  last: ResponseMalformed: ...), and none could, nor a benign check sent then: check that the target
+  file's endpoint is an OpenAI chat completions URL (or a server that speaks that API) and its
+  provider is openai (a filter in front of the endpoint that answers every request with a block page
+  reads the same). ...`, or `the target's last 20 replies in this run could not be read as replies,
+  in a row after ones that could ..., and a benign check sent then could not be read either ...`. A
+  resume of a run that read replies starts with the endpoint proven, so only 20 in a row stop it.
+  The advice is the adapter's own (a `provider: rest` target file is told the generic template reads
+  the text at `text`, since a target file cannot declare a template). With concurrent specs, each
+  one already sending stops at its own next unreadable reply, so the stop costs at most the 5 (or
+  20) requests, the check and one per other spec in flight, and every reply sent is stored. A run of
+  fewer attempts that read nothing is `unreachable` (exit 3, below), its reason giving the same
+  advice. A non-retryable 4xx is not this: it still stops the run. Over MCP stdio a line that is not
+  JSON is skipped as stray output, so a server that writes nothing else times out instead. An MCP
+  server over stdio may write up to the same 4 MiB for one request, its stray lines and its reply
+  together. A REST template whose `text_path` starts at an index (`0.generated_text`, Hugging Face's
+  Inference API) reads a body that is a JSON array.
 - **Half a character in a reply.** JSON can escape a lone surrogate (half of a UTF-16 pair),
   which no UTF-8 file, database or request can hold. Where a reply is parsed, and where a tool
   call's arguments are, each one is read as U+FFFD, the replacement character, and the attempt
@@ -2155,8 +2154,9 @@ an object in the reply (Anthropic's `input`, an OpenAI `function.arguments` writ
 WebSocket frame's calls), which are parsed with the reply: the same integer there made the whole
 reply unreadable, so one call was judged or not by the provider's wire shape. Anywhere else in a
 reply (its text, an id, a stop reason, the usage) such an integer still makes it unreadable: the
-attempt is `inconclusive`, not retried, never a pass (OD-21). Write patterns with possessive quantifiers (`\s*+`) where two parts could match the same
-spaces: a value is the target's text, and a pattern that backtracks costs the square of it:
+attempt is `inconclusive`, not retried, never a pass (OD-21). Write patterns with possessive
+quantifiers (`\s*+`) where two parts could match the same spaces: a value is the target's text, and
+a pattern that backtracks costs the square of it:
 
 ```yaml
 evaluators:

@@ -183,17 +183,17 @@ class ResponseMalformed(AdapterEnvError):
     """A success reply the adapter cannot read as one: not evaluated, and not retried (OD-21).
 
     Not JSON (brackets that do not balance, an integer of more than 4,300 digits outside a tool
-    call's arguments (u06 A-90), bytes that are
-    not text included), not a JSON object, or not the shape the provider or the template
-    declares (OpenAI's ``choices[0].message.content``, Anthropic's ``content`` array, a REST
-    template's ``text_path``, a WebSocket frame that is binary, not JSON or not an object, or a
-    turn with no text, no tool call and no filter's stop, an MCP reply that is not JSON-RPC). It
-    was an :class:`AdapterProductError`, and the runner stopped the whole campaign on the first one:
-    one hostile ``<html>`` reply ended a scan after 1 request. Decided 2026-10-11 under the
-    owner's delegation (best practice), revisable, as #65 decided for a reply nested too deeply:
-    the attempt is inconclusive and the campaign goes on. A wrong endpoint answers every request
-    this way, so the runner reads ``malformed_reply`` and stops a campaign whose first replies
-    all are unreadable, or which reads none of 20 in a row later (``core.execute``, u08 A-74).
+    call's arguments (u06 A-90), bytes that are not text included), not a JSON object, or not the
+    shape the provider or the template declares (OpenAI's ``choices[0].message.content``,
+    Anthropic's ``content`` array, a REST template's ``text_path``, a WebSocket frame that is
+    binary, not JSON or not an object, or a turn with no text, no tool call and no filter's stop, an
+    MCP reply that is not JSON-RPC). It was an :class:`AdapterProductError`, and the runner stopped
+    the whole campaign on the first one: one hostile ``<html>`` reply ended a scan after 1 request.
+    Decided 2026-10-11 under the owner's delegation (best practice), revisable, as #65 decided for a
+    reply nested too deeply: the attempt is inconclusive and the campaign goes on. A wrong endpoint
+    answers every request this way, so the runner reads ``malformed_reply`` and stops a campaign
+    whose first replies all are unreadable, or which reads none of 20 in a row later
+    (``core.execute``, u08 A-74).
 
     It carries what the attempt keeps for review (pre-merge audit of ``598f0858``, HIGH 1): an
     ``excerpt`` of the body, at most :data:`UNREADABLE_EXCERPT_BYTES` of UTF-8 through the
@@ -1459,7 +1459,7 @@ class BaseAdapter(ABC):
                 parsed_body, long_integers = loads_keeping_long_integers(raw)
                 payload = well_formed_json(parsed_body)
                 if long_integers:  # only a tool call's arguments may hold one (u06 A-90)
-                    check_long_integers(long_integers, self._calls_read(payload))
+                    check_long_integers(payload, self._calls_read(payload))
             except NestedTooDeeply as exc:
                 raise ResponseTooDeep(f"{label} is {exc}; not evaluated") from exc
             except ValueError as exc:  # non-JSON success body = malformed (OD-21)

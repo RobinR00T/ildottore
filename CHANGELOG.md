@@ -18,7 +18,8 @@ the file, schema copy, build or pipeline it names.
   integer as a `shared.toolcalls.LongInteger`, and only inside the arguments of a call the adapter
   reads: anywhere else (the text, an id, a stop reason, the usage, a REST template's body) the
   reply stays unreadable with the message it had, since a `LongInteger` is a `str` and a field read
-  as text would take its digits for the model's words.
+  as text would take its digits for the model's words; a WebSocket `text_path`, `model_path` or
+  `id_path` declared into a call's arguments reads none there.
 - **Judging rules 4** (2026-10-19). An `inconclusive` can become a verdict, so
   `JUDGING_RULES_VERSION` is 4 by an appended pin: a run halted under version 3 is refused by its
   resume before anything is sent, naming both, and `dottore --version` prints
