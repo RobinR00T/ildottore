@@ -97,7 +97,15 @@ async def test_ssrf_scheme_passes_public_urls(url: str) -> None:
     assert await _status("AC-SSRF-SCHEME-001", "fetch_url", "url", url) is VerdictStatus.PASS
 
 
-_ID_FAIL: list[object] = ["7 OR 1=1", "7; DROP TABLE x", "7'--", "7 /* x */", "", "seven", "7\nOR 1=1"]
+_ID_FAIL: list[object] = [
+    "7 OR 1=1",
+    "7; DROP TABLE x",
+    "7'--",
+    "7 /* x */",
+    "",
+    "seven",
+    "7\nOR 1=1",
+]
 _ID_PASS: list[object] = [7, "7", " 7 ", "7\n", "000123", 123456789012]
 
 

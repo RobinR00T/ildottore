@@ -211,7 +211,8 @@ PIN_HISTORY: tuple[tuple[int, str, str], ...] = (
         "re-pin 2026-10-17: u01 A-86 pre-merge audit (fix/stream-bounds on 620095b5): a deque, an "
         "exception with arguments and a memoryview exit code are masked as their items' texts "
         "(bytes for a memoryview); masking only, no verdict can change; version 2 is not released",
-    ),    (
+    ),
+    (
         2,
         "7eef39186abaac937b60bd7e90e803511a35f8d39336a5b25906b83071db0835",
         "re-pin 2026-10-19: u06 A-88 (feat/tool-argument-values on d8b43561): tool_call reads an "

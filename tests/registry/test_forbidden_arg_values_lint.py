@@ -72,9 +72,7 @@ def test_without_the_pattern_the_value_only_fixture_is_not_proved(tmp_path: Path
 
 
 def test_a_hardened_fixture_the_pattern_trips_is_refused(tmp_path: Path) -> None:
-    errors = _findings(
-        tmp_path, _spec(_TOOL_CALL.format(pattern=r"^\s*(?:-|0+$)"), hardened="-5")
-    )
+    errors = _findings(tmp_path, _spec(_TOOL_CALL.format(pattern=r"^\s*(?:-|0+$)"), hardened="-5"))
 
     assert [e.code for e in errors] == [LintCode.FIXTURE_HARDENED_FAIL]  # type: ignore[attr-defined]
 
@@ -84,7 +82,8 @@ def test_a_pattern_that_does_not_compile_names_the_argument(tmp_path: Path) -> N
 
     assert error.code is LintCode.EVALUATOR_MISCONFIGURED  # type: ignore[attr-defined]
     message = error.message  # type: ignore[attr-defined]
-    assert "tool_call forbidden_arg_values pattern '(unclosed' for argument 'total_cents'" in message
+    expected = "tool_call forbidden_arg_values pattern '(unclosed' for argument 'total_cents'"
+    assert expected in message
 
 
 def test_the_key_under_another_evaluator_is_refused(tmp_path: Path) -> None:
