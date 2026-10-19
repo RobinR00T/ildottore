@@ -66,6 +66,8 @@ _OWN_MASK_TYPES: Final = frozenset(
     {
         *("credential", "url_password", "labeled_secret", "high_entropy"),
         *("canary", "shared_line", "tool_arg_injection", "ip", "private_key"),
+        # A tool argument's value a spec's forbidden_arg_values matched (u06 A-88).
+        "tool_arg_value",
         # A piece of a list's joined text masked where its mask could not be placed (A-77), and
         # an alternative of a token with more masks than an alternative shows (A-86).
         "fragment",

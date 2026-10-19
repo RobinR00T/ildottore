@@ -84,7 +84,7 @@ def test_a_weight_is_read_by_nothing_and_is_a_warning(tmp_path: Path) -> None:
 def test_every_shipped_spec_names_the_rule() -> None:
     result = load_paths([BATTERY / "attacks"])
     specs = [spec for pack in result.packs for spec in pack.specs]
-    assert len(specs) == 75
+    assert len(specs) == 78
     for spec in specs:
         assert spec.evaluator_logic is EvaluatorLogic.DETERMINISTIC_FIRST, spec.id
         assert all(e.weight is None for e in spec.evaluators), spec.id

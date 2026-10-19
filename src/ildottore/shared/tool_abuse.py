@@ -8,7 +8,8 @@ backtick pattern the evaluator had dropped as quadratic, read an injection only 
 argument and skipped lists in the forbidden-argument walk (pre-merge audit of OD-38). So the
 checks live here, once: the allowlist a scene resolves to, which tools are destructive (the verbs
 and the scene's own ``destructive`` flags), the injection markers and the walk that finds them at
-any depth, and the forbidden-argument walk (u06 A-71). And what the operator's target file
+any depth, and the forbidden-argument walk (u06 A-71), and the forbidden-value walk with the
+compile of its patterns (u06 A-88). And what the operator's target file
 declares about the deployment's own tools (owner decision OD-43, u06 A-72): which granted tools a
 spec's calls may not be failed for by their name alone, and the note every verdict it changed
 carries, which the runner and the reports read too.
@@ -16,16 +17,22 @@ carries, which the runner and the reports read too.
 
 from __future__ import annotations
 
+import math
 import re
 from collections.abc import Iterable, Mapping, Sequence
+
+from ildottore.shared.patterns import SpecPatternError, compile_spec_pattern, quote
 
 __all__ = [
     "DESTRUCTIVE_VERBS",
     "INJECTION_RE",
     "OPERATOR_DECLARATION",
+    "arg_value_text",
     "cleared_verbs",
+    "compile_value_patterns",
     "destructive_flags",
     "forbidden_arg_hits",
+    "forbidden_value_hits",
     "handoff_shaped",
     "injection_hits",
     "is_destructive",
@@ -34,6 +41,7 @@ __all__ = [
     "operator_note",
     "scene_allowlist",
     "scene_tool_names",
+    "value_pattern_key",
 ]
 
 #: Tool-name substrings that denote a destructive or high-impact action. Matched as substrings,
@@ -229,6 +237,102 @@ def _walk_forbidden(value: object, forbidden: frozenset[str], hits: list[str]) -
     elif isinstance(value, (list, tuple)):
         for item in value:
             _walk_forbidden(item, forbidden, hits)
+
+
+def arg_value_text(value: object) -> str | None:
+    """The text a ``forbidden_arg_values`` pattern reads for one argument value (u06 A-88).
+
+    A string is itself. A number or a boolean is written as JSON writes it (``0``, ``-34999``,
+    ``-0.0``, ``NaN``, ``-Infinity``, ``true``) and ``None`` as ``null``, so a pattern can refuse
+    a total of zero or less whether the model wrote it as a number or as text. An integer too
+    long for ``str`` (past the interpreter's digit limit) keeps its sign, which is what a pattern
+    on an amount reads. A map or a list has no text of its own: its members are read instead.
+    """
+
+    if isinstance(value, str):
+        return value
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if value is None:
+        return "null"
+    if isinstance(value, int):
+        try:
+            return str(value)
+        except ValueError:
+            return f"{'-' if value < 0 else ''}<an integer too long to write>"
+    if isinstance(value, float):
+        if math.isnan(value):
+            return "NaN"
+        if math.isinf(value):
+            return "-Infinity" if value < 0 else "Infinity"
+        return repr(value)
+    return None
+
+
+def forbidden_value_hits(
+    args: object, patterns: Mapping[str, re.Pattern[str]]
+) -> list[tuple[str, str]]:
+    """Each ``(key, value text)`` in ``args`` whose value matches the pattern its key names.
+
+    ``patterns`` is keyed by argument name, stripped and case-folded (as
+    :func:`value_pattern_key` writes it); a key in a call is compared the same way, at any depth
+    of maps and lists. A value that is a list is read item by item, so ``[2499, 0]`` under
+    ``total_cents`` is caught; a map under the key is walked for its own keys. The key comes back
+    as the call wrote it, the value as :func:`arg_value_text` wrote it: the caller masks the
+    value before it reaches a verdict, since an argument a target wrote can hold anything.
+    """
+
+    if not patterns:
+        return []
+    hits: list[tuple[str, str]] = []
+    _walk_values(args, patterns, hits)
+    return hits
+
+
+def compile_value_patterns(
+    raw: Mapping[str, str] | None,
+) -> tuple[dict[str, re.Pattern[str]], str | None]:
+    """``forbidden_arg_values`` compiled, keyed by :func:`value_pattern_key`, or why not.
+
+    Returns the compiled patterns and ``None``, or nothing and a description of the first
+    pattern the engine refuses (the argument name and the reason, each through
+    :func:`~ildottore.shared.patterns.quote`): the evaluator abstains on it and lint refuses the
+    spec, as both do for ``tool_sequence``'s ``step_arg_patterns``. Two names that fold to one key
+    keep the last, as a mapping written twice does.
+    """
+
+    compiled: dict[str, re.Pattern[str]] = {}
+    for name, pattern in (raw or {}).items():
+        try:
+            compiled[value_pattern_key(name)] = compile_spec_pattern(pattern)
+        except SpecPatternError as exc:
+            return {}, f"invalid forbidden_arg_values regex for {quote(name)}: {quote(str(exc))}"
+    return compiled, None
+
+
+def value_pattern_key(name: str) -> str:
+    """An argument name as ``forbidden_arg_values`` compares it: stripped and case-folded."""
+
+    return name.strip().casefold()
+
+
+def _walk_values(
+    value: object, patterns: Mapping[str, re.Pattern[str]], hits: list[tuple[str, str]]
+) -> None:
+    if isinstance(value, Mapping):
+        for key, val in value.items():
+            if isinstance(key, str):
+                pattern = patterns.get(value_pattern_key(key))
+                if pattern is not None:
+                    items = val if isinstance(val, (list, tuple)) else (val,)
+                    for item in items:
+                        text = arg_value_text(item)
+                        if text is not None and pattern.search(text) is not None:
+                            hits.append((key, text))
+            _walk_values(val, patterns, hits)
+    elif isinstance(value, (list, tuple)):
+        for item in value:
+            _walk_values(item, patterns, hits)
 
 
 #: The words that open the note a verdict carries when the operator's target file is what kept a

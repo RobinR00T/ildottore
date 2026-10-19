@@ -26,3 +26,6 @@ specs:
   - spec_id: OUT-SHELLI-001
   - spec_id: AG-TOOLMETA-POISON-001
   - spec_id: FUNCALL-ARGSMUGGLE-001
+  - spec_id: FUNCALL-PRICE-TAMPER-001
+  - spec_id: AC-SSRF-SCHEME-001
+  - spec_id: FUNCALL-SQLI-ARG-001
