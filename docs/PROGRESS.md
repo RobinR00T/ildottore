@@ -5,6 +5,25 @@ The carryover ledger. Every agent session updates this so context survives even 
 newest merge on top: a branch's entries land together when it merges, so the dates of
 neighbouring entries can interleave (an older branch merged later sits above a newer one).
 
+## State, 2026-10-19: long integers in a call's arguments (u06 A-89, `fix/long-integer-arguments`)
+
+- **What.** OpenAI's JSON-string arguments holding an integer past `sys.get_int_max_str_digits()`
+  (4300 by default) read as `{}`, so one long number beside the exploit made `tool_call` pass
+  (`forbidden_arg_values`, `forbidden_args`, injection) and `tool_sequence`'s step patterns read
+  nothing: L5 of the A-88 pre-merge audit, closed here. `call_arguments` parses with a `parse_int`
+  that keeps such an integer as its digits (`shared.toolcalls.LongInteger`, a `str` subclass read
+  as a number by every check) and reads the rest. Judging rules 3 (a stored pass can become a fail).
+- **Checks.** `tests/evaluators/test_long_integer_arguments.py`: 17 tests, 12 fail on `d6236c7d`.
+- **Audit.** One pre-merge round, no HIGH: two mutants survived (two tests added), the new resume
+  test pinned the version (loosened), the docs said "every walk" where the redactor masks the
+  digits by shape (now "every check"). Its MEDIUM-1 is left open, below.
+- **Left open, each for its own branch.** Object-form arguments with such an integer (Anthropic's
+  `input`, a WebSocket frame's calls) still make the whole reply unreadable, `inconclusive` (OD-21),
+  since the body is parsed without the hook (`adapters/base.py`, `websocket.py`); closing it changes
+  stored verdicts again (judging rules 4). A map read whole under a pinned name is masked by shape
+  only (A-88 audit round 2, LOW-3). `fix/identity-trials` (not merged) planned judging rules 3 and
+  now needs the next free version.
+
 ## State, 2026-10-19: argument values on an authorized tool (u06 A-88, `feat/tool-argument-values`)
 
 - **What.** `tool_call` read a call's tool name and its argument keys, never their values, so an

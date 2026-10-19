@@ -32,7 +32,7 @@ from ildottore.shared.tool_abuse import (
     scene_allowlist,
     value_pattern_key,
 )
-from ildottore.shared.toolcalls import call_arguments, call_name
+from ildottore.shared.toolcalls import LongInteger, call_arguments, call_name
 
 # A stub evaluator: given the spec, the evaluator config and the fixture response, return a
 # verdict (fail = exploited). Deterministic, offline, no I/O.
@@ -195,6 +195,8 @@ def _stub_step_arg_match(call: Mapping[str, object], pattern: str) -> bool:
     compiled = compile_spec_pattern(pattern)
 
     def walk(value: object) -> bool:
+        if isinstance(value, LongInteger):
+            return False  # a number, as the evaluator reads it (A-89)
         if isinstance(value, str):
             return compiled.search(value) is not None
         if isinstance(value, dict):

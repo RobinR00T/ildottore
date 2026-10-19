@@ -2044,6 +2044,11 @@ above says so). A scope with a weak identity canary exits 3 in every mode (u01's
 `dottore replay` marks a fail resting on a canary the request carries
 (`tests/cli/test_scoring_followups_cli.py`).
 
+**A-89 (u06's clause; this unit's line, added 2026-10-19).** `JUDGING_RULES_VERSION` is 3, pinned by
+an appended line: a run halted under version 2 is refused by its resume before anything is sent,
+naming both (`tests/cli/test_resume_judging_rules.py`), and `dottore --version` prints `dottore
+0.1.0 (judging rules 3)`.
+
 **A-86 (u01's clause; this unit's half, items 2 and 4, added 2026-10-17).** *2. A dict or a set as
 an exit code.* `cli.app._status_text` read a code that holds text but is none (A-83 item 3) as
 bytes, a tuple or a list, and anything else through `str()`, which writes each item of a dict or a
