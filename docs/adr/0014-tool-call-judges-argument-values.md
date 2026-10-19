@@ -92,7 +92,7 @@ report. `forbidden_value_hits` returns, with each hit, whether its text was read
 evaluator masks that text as one `tool_arg_value` and its salted hash (`mask_value(whole=True)`),
 so two identical maps still correlate. A scalar, a string included, is masked as before: by its
 shape when the redactor knows one. Verdicts do not change, only the masks in `matched`, so judging
-rules 2 are re-pinned, not bumped.
+rules 3 (A-89, merged first) are re-pinned, not bumped.
 
 What it does not cover, left as it is: a text value with a shape in it keeps its residue in
 `matched` (`7 OR 1=1 -- «REDACTED:email»`), as every other piece of tool evidence masked by shape

@@ -14,8 +14,29 @@ the file, schema copy, build or pipeline it names.
   every other value stayed in clear in the verdict's `matched`. Now a map or an empty list read
   whole is one `«REDACTED:tool_arg_value:<hash>»`, with the redactor's salted hash; a scalar is
   masked by its shape as before, and the call in the attempt's record is masked by shape as every
-  tool call is. Verdicts do not change, only the masks, so judging rules 2 are re-pinned, not
+  tool call is. Verdicts do not change, only the masks, so judging rules 3 are re-pinned, not
   bumped (audit 2 of A-88, LOW-3).
+
+### Fixed (breaking for a run halted under judging rules 2: judging rules 3, u06 A-89)
+
+- **A call's JSON-string arguments with an integer longer than Python converts are read.**
+  `json.loads` converts each integer with `int`, which refuses more digits than
+  `sys.get_int_max_str_digits()` (4300 by default), so OpenAI's string form of
+  `{"total_cents": 0, "pad": <4301 digits>}` read as no arguments, `{}`, and `tool_call` passed it:
+  `forbidden_arg_values`, `forbidden_args`, the injection check and `tool_sequence`'s
+  `step_arg_patterns` judged nothing (L5 of the pre-merge audit of A-88, older than it). The
+  integer is now kept as its digits, sign included (`shared.toolcalls.LongInteger`, read as a
+  number by every check: its text is its JSON spelling, a map writes it unquoted, the string-only
+  patterns skip it), and the rest of the arguments are read; the in-band tool loop sends it back to
+  the target as a JSON string. Not taken: an `inconclusive` verdict, which would let one long number
+  turn a fail into "not evaluated", and raising the process-wide digit limit. Arguments that are an
+  object in the reply (Anthropic's `input`, a WebSocket frame's calls) are parsed with the reply,
+  so the same integer there still makes the reply unreadable (`inconclusive`, OD-21), as before.
+- **Judging rules 3** (2026-10-19). A stored pass can become a fail, so
+  `shared.judging_rules.JUDGING_RULES_VERSION` is 3 by an appended pin (`PIN_HISTORY`,
+  `judging_pins.frozen`): a run halted under version 2 is refused by its resume before anything is
+  sent, naming both, and `dottore --version` prints `dottore 0.1.0 (judging rules 3)`.
+  `JUDGING_RULES_SINCE` stays `2026-10-15`.
 
 ### Added (u06 A-88, ADR-0014)
 

@@ -23,6 +23,7 @@ import re
 from collections.abc import Iterable, Mapping, Sequence
 
 from ildottore.shared.patterns import SpecPatternError, compile_spec_pattern, quote
+from ildottore.shared.toolcalls import LongInteger
 
 __all__ = [
     "DESTRUCTIVE_VERBS",
@@ -203,6 +204,8 @@ def injection_hits(args: object) -> list[str]:
 
 
 def _walk_injection(value: object, hits: list[str]) -> None:
+    if isinstance(value, LongInteger):
+        return  # a number, as an int is (A-89)
     if isinstance(value, str):
         if INJECTION_RE.search(value):
             hits.append(value)
@@ -248,8 +251,10 @@ def arg_value_text(value: object) -> str | None:
     ``-0.0``, ``NaN``, ``-Infinity``, ``true``) and ``None`` as ``null``, so a pattern can refuse
     a total of zero or less whether the model wrote it as a number or as text. An integer too
     long for ``str`` (past the interpreter's digit limit) keeps its sign, which is what a pattern
-    on an amount reads. A map or a list has no text of its own here: under a pinned name it is
-    read as :func:`canonical_value_text` writes it.
+    on an amount reads. One too long for ``int`` in a call's JSON-string arguments is read as its
+    digits (:class:`~ildottore.shared.toolcalls.LongInteger`, A-89), the JSON spelling it had. A
+    map or a list has no text of its own here: under a pinned name it is read as
+    :func:`canonical_value_text` writes it.
     """
 
     if isinstance(value, str):
@@ -336,6 +341,8 @@ def canonical_value_text(value: object) -> str:
         return "{" + ",".join(f"{json.dumps(key)}:{val}" for key, val in members) + "}"
     if isinstance(value, (list, tuple)):
         return "[" + ",".join(canonical_value_text(item) for item in value) + "]"
+    if isinstance(value, LongInteger):
+        return str(value)  # a number: unquoted, as JSON wrote it (A-89)
     if isinstance(value, str):
         return json.dumps(value, ensure_ascii=False)
     text = arg_value_text(value)
