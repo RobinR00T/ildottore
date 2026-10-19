@@ -56,6 +56,7 @@ from ildottore.evaluators.base import BaseEvaluator, tool_args, tool_name
 from ildottore.shared.enums import EvaluatorType
 from ildottore.shared.models import EvalContext, Verdict
 from ildottore.shared.patterns import SpecPatternError, compile_spec_pattern, quote
+from ildottore.shared.toolcalls import LongInteger
 
 __all__ = ["ToolSequenceEvaluator"]
 
@@ -81,6 +82,8 @@ def _any_arg_matches(call: Mapping[str, object], pattern: re.Pattern[str]) -> bo
 
 
 def _walk_match(value: object, pattern: re.Pattern[str]) -> bool:
+    if isinstance(value, LongInteger):
+        return False  # a number, which a step pattern does not read (A-89)
     if isinstance(value, str):
         return pattern.search(value) is not None
     if isinstance(value, Mapping):

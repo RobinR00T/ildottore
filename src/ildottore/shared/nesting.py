@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Callable
 from itertools import accumulate
 from typing import Any
 
@@ -67,13 +68,14 @@ def _profile(text: str) -> tuple[int, bool]:
     return deepest, 2 * opened == len(skeleton)
 
 
-def bounded_loads(text: str | bytes) -> Any:
+def bounded_loads(text: str | bytes, *, parse_int: Callable[[str], Any] | None = None) -> Any:
     """``json.loads``, refusing a text nested deeper than :data:`MAX_DEPTH` before parsing it.
 
     Raises :class:`NestedTooDeeply` (a ``ValueError``) for the depth; a plain ``ValueError`` for
     brackets past the limit that do not balance; and what ``json.loads`` raises for anything else
     that is not JSON (``json.JSONDecodeError``, or ``UnicodeDecodeError`` for bytes that are not
-    text: ``ValueError`` s too). Bytes are decoded as ``json.loads`` decodes them.
+    text: ``ValueError`` s too). Bytes are decoded as ``json.loads`` decodes them. ``parse_int``
+    is ``json.loads``'s own: what reads each integer's digits (``int`` when it is ``None``).
     """
 
     if isinstance(text, bytes | bytearray):
@@ -89,6 +91,6 @@ def bounded_loads(text: str | bytes) -> Any:
         if deepest > MAX_DEPTH:
             raise NestedTooDeeply(f"nested more than {MAX_DEPTH} levels deep")
     try:
-        return json.loads(text)
+        return json.loads(text, parse_int=parse_int)
     except RecursionError as exc:  # the measure above stops it first: kept as a backstop
         raise NestedTooDeeply(f"nested more than {MAX_DEPTH} levels deep") from exc

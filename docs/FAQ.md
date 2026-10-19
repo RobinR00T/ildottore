@@ -203,7 +203,7 @@ reads `«REDACTED:canary:…»`), so they cannot be judged again. A run halted o
 resumed after the filter-cut rule (OD-42) kept 4 attempts judged `pass` beside 2 judged cut, and
 its summary said `Cut by the provider's output filter: 6 attempt(s) in 2 spec(s) came back cut or
 replaced` where all 10 were. So each run records the version of the judging rules when it starts
-(`dottore --version` prints it: `dottore 0.1.0 (judging rules 2)`), and a resume under other
+(`dottore --version` prints it: `dottore 0.1.0 (judging rules 3)`), and a resume under other
 rules, or of a run that records none (any run a version from before
 `shared.judging_rules.JUDGING_RULES_SINCE` halted), is refused with both named. So is a resume
 under other evaluator plugins than the run was judged with, and one under other code with the

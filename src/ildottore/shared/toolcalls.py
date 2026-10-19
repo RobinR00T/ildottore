@@ -13,7 +13,39 @@ from collections.abc import Mapping
 from ildottore.shared.nesting import NestedTooDeeply, bounded_loads
 from ildottore.shared.wellformed import well_formed_json
 
-__all__ = ["call_arguments", "call_id", "call_name", "check_argument_nesting"]
+__all__ = ["LongInteger", "call_arguments", "call_id", "call_name", "check_argument_nesting"]
+
+
+class LongInteger(str):
+    """An integer in a call's JSON-string arguments with more digits than ``int`` converts.
+
+    ``json.loads`` converts every integer with ``int``, which refuses more digits than the
+    interpreter's limit (``sys.get_int_max_str_digits``, 4300 by default; the limit bounds a
+    conversion whose cost grows as the square of its length). Refused, the whole string read as
+    no arguments, ``{}``, so one long number beside a smuggled key, a forbidden value or an
+    injection made ``tool_call`` pass (L5 of the pre-merge audit of A-88, u06 A-89). Such an
+    integer is kept as its digits, sign included, exactly as the text wrote them, and the rest of
+    the arguments are read. The evaluators read it as they read a number: its text is its JSON
+    spelling (``shared.tool_abuse.arg_value_text``), it is written unquoted in a map
+    (``canonical_value_text``), and the patterns that read only strings (the injection markers,
+    ``tool_sequence``'s ``step_arg_patterns``) skip it. Sent back to the target by the in-band
+    tool loop, it is a JSON string: a ``str`` subclass serializes where an object of its own
+    would raise in ``json.dumps``.
+    """
+
+    __slots__ = ()
+
+
+def _integer(digits: str) -> int | LongInteger:
+    """``int`` of a JSON integer's digits, or the digits kept when ``int`` refuses their length.
+
+    The JSON grammar has already checked them, so the one ``ValueError`` left is the limit.
+    """
+
+    try:
+        return int(digits)
+    except ValueError:
+        return LongInteger(digits)
 
 
 def call_name(call: Mapping[str, object]) -> str:
@@ -48,7 +80,8 @@ def call_arguments(call: Mapping[str, object]) -> dict[str, object]:
     call from elsewhere (a fixture) can read as ``{}`` for its depth, where ``json.loads``
     raised ``RecursionError``.
     A lone surrogate escaped in that string reads as U+FFFD, as it does in the reply around
-    it (A-47).
+    it (A-47). An integer in it with more digits than ``int`` converts reads as a
+    :class:`LongInteger`, the rest of the object around it as written (A-89).
     """
 
     value = _raw_arguments(call)
@@ -56,7 +89,7 @@ def call_arguments(call: Mapping[str, object]) -> dict[str, object]:
         return dict(value)
     if isinstance(value, str):
         try:
-            parsed = well_formed_json(bounded_loads(value))
+            parsed = well_formed_json(bounded_loads(value, parse_int=_integer))
         except ValueError:
             return {}
         return dict(parsed) if isinstance(parsed, dict) else {}
@@ -76,7 +109,7 @@ def check_argument_nesting(call: Mapping[str, object]) -> None:
     if not isinstance(value, str):
         return
     try:
-        bounded_loads(value)
+        bounded_loads(value, parse_int=_integer)
     except NestedTooDeeply:
         raise
     except ValueError:

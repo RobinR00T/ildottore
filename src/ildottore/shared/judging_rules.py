@@ -72,8 +72,9 @@ __all__ = [
 #: of the merge that introduced the version, the first that records it (OD-16, OD-19, OD-21, OD-38,
 #: OD-40, OD-41, OD-42 and OD-43 in force). ``2``: u08 A-85, a crossing of a canary the identity
 #: sweep's request carries is a fail that needs review, not a confirmed one; ``secret_shape``
-#: reads the redactor's documented key formats.
-JUDGING_RULES_VERSION: Final = 2
+#: reads the redactor's documented key formats. ``3``: u06 A-89, a call's JSON-string arguments
+#: holding an integer longer than ``int`` converts are read, where they read as ``{}`` and passed.
+JUDGING_RULES_VERSION: Final = 3
 
 #: The day runs began to record their rules (version 1 took its value), which the refusal of a run
 #: that records none quotes and the docs name (as ``JUDGING_RULES_SINCE``) instead of writing the
