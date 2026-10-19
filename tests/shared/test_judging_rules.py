@@ -214,7 +214,7 @@ PIN_HISTORY: tuple[tuple[int, str, str], ...] = (
     ),
     (
         2,
-        "799da61d6209410db8bbe8030642065d6b6851317270d6a7e27d04f8aafa7b52",
+        "8d0f56fb1a5237de51492dea812a213f4ed39c8ea5a2b5edaff1812e0300c372",
         "re-pin 2026-10-19: u06 A-88 (feat/tool-argument-values on d8b43561): tool_call reads an "
         "opt-in forbidden_arg_values, and three test_only specs use it; a spec without the key "
         "judges as before, no existing verdict changes; version 2 is not released",
@@ -224,7 +224,7 @@ PIN_HISTORY: tuple[tuple[int, str, str], ...] = (
 #: The digest each version is pinned to now: the last line of :data:`PIN_HISTORY` for it.
 PINNED: dict[int, str] = {
     1: "eea242b76899ce22c68bc80c4c6b51a92c22cd39d4763bc373f3cd8a612e9dec",
-    2: "799da61d6209410db8bbe8030642065d6b6851317270d6a7e27d04f8aafa7b52",
+    2: "8d0f56fb1a5237de51492dea812a213f4ed39c8ea5a2b5edaff1812e0300c372",
 }
 
 #: One ``<version> <digest>`` line per pin, appended to and never edited: the history must start

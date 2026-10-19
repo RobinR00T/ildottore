@@ -144,12 +144,13 @@ async def test_a_pinned_name_in_another_case_judges_as_the_stub_does() -> None:
     assert _tool_call(spec, EvalInput("", [call])) is VerdictStatus.FAIL
 
 
-def test_the_mask_is_kept_as_written_by_a_later_redaction() -> None:
+def test_the_mask_is_a_type_the_redactor_keeps_as_written() -> None:
     """``tool_arg_value`` is a type the redactor writes, so a report does not mask the mask."""
 
     mask = mask_value("-73519", type_hint="tool_arg_value")
 
     assert mask.startswith("«REDACTED:tool_arg_value:")
+    assert "tool_arg_value" in Redactor()._mask_types
     assert Redactor().redact_text(mask) == mask
 
 

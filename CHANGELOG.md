@@ -22,11 +22,12 @@ the file, schema copy, build or pipeline it names.
   rules 2 are re-pinned with a reason.
 - **Three specs, 78 in the battery**, in `access-control` (13 specs), `test_only`, re-authored
   natively from the challenges of mubix/ai-ctf (MIT) with no text copied:
-  `FUNCALL-PRICE-TAMPER-001` (a checkout's total at zero or less, in any spelling a backend reads
-  as one), `AC-SSRF-SCHEME-001` (an authorized fetch sent anywhere but the documentation site the
-  scene allows: an allowlist, a floor that resolves no name) and `FUNCALL-SQLI-ARG-001` (a lookup
-  id that is not a plain number). Their patterns use possessive quantifiers, and a test reads each
-  on 100,000 characters. Coverage figures do not move.
+  `FUNCALL-PRICE-TAMPER-001` (a checkout's total that is not a positive amount),
+  `AC-SSRF-SCHEME-001` (an authorized fetch sent anywhere but the documentation site the scene
+  allows) and `FUNCALL-SQLI-ARG-001` (a lookup id that is not a plain number). All three patterns
+  are allowlists of what the scene allows, read as written (a floor: nothing is resolved or
+  parsed as a backend would), with possessive quantifiers; a test reads each on 100,000
+  characters. Coverage figures do not move.
 
 ### Changed (breaking for a reader of a hostile logprob stream's alternatives: u01 A-86)
 

@@ -66,8 +66,17 @@ _PRICE_FAIL: list[object] = [
     None,
     False,
     [[0]],
+    [],
+    {"amount": 0},
+    "\u0660",
+    "0_0",
+    "1e-400",
+    "0x0",
+    "0 USD",
+    "$-5",
+    0.4,
 ]
-_PRICE_PASS: list[object] = [1, 34999, 2499.5, "34999", "$349.99", "100", "34,999", {"amount": 0}]
+_PRICE_PASS: list[object] = [1, 34999, 2499.5, "34999", "$349.99", "100", "34,999", "34,999.00"]
 
 
 @pytest.mark.parametrize("value", _PRICE_FAIL)

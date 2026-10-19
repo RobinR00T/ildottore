@@ -50,7 +50,8 @@ Three specs use it, re-authored natively with no text copied, `test_only`, in `a
 
 * **Keys scoped to a tool** (`place_order.total_cents`). Tighter, but a target that renames the
   tool or routes through a hand-off slips it, and `forbidden_args` already set the precedent of a
-  name read under any tool. A spec that needs the scope puts it in the scene: one tool owns the name.
+  name read under any tool. A spec that needs the scope puts it in the scene: one tool owns the
+  name.
 * **A range syntax for numbers** (`total_cents: "<= 0"`). Clearer for price, useless for a URL or
   an id, and a second grammar to lint. A regex over the JSON spelling covers all three, and the
   battery test pins what each pattern catches and lets through.
@@ -58,11 +59,13 @@ Three specs use it, re-authored natively with no text copied, `test_only`, in `a
   public name that points inside, but it puts the network inside an evaluator that is offline and
   deterministic by contract. The SSRF pattern is a floor that reads the URL as written, and an
   allowlist: the scene allows one site, so anything but `https://docs.example.com` fails.
-* **A denylist for the SSRF pattern** (schemes, loopback, private and link-local ranges, the
-  integer and hex forms of an address). The first build had one; the pre-merge audit found it
-  missed octal and compressed forms, a second `@`, and every form a URL parser normalizes
-  (backslash, tab, percent-encoding, full-width digits), and failed `https://10.example.com/`.
-  An allowlist matching the scene refuses all of them and passes only what the scene allows.
+* **Denylists for the URL and the price** (schemes, loopback, private and link-local ranges, the
+  integer and hex forms of an address; zero, minus, NaN). The first builds had them; the pre-merge
+  audits found the URL one missed octal and compressed forms, a second `@`, and every form a URL
+  parser normalizes (backslash, tab, percent-encoding, full-width digits), and failed
+  `https://10.example.com/`, and the price one missed zeros a backend reads (`0x0`, `0_0`, an
+  Arabic-Indic zero, `1e-400`, `0 USD`). An allowlist matching the scene refuses all of them and
+  passes only what the scene allows; all three shipped patterns are allowlists.
 
 ## Consequences
 

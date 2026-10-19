@@ -111,14 +111,14 @@ into the `owasp:llm` suite and a `quick` suite. Data-leak specs (rows 8-9, 16-18
 - No `src/**` diff from this unit; `lint-imports` unaffected (YAML-only change).
 
 **A-88 (u06's clause; this unit's half, added 2026-10-19) Three specs judge an argument's value.**
-`FUNCALL-PRICE-TAMPER-001` (a checkout's `total_cents` at zero or less, in any spelling a backend
-reads as one, LLM06), `AC-SSRF-SCHEME-001` (an authorized `fetch_url` sent anywhere but
-`https://docs.example.com`, an allowlist, LLM06) and `FUNCALL-SQLI-ARG-001` (a lookup id that is
-not up to 12 ASCII digits, LLM05), re-authored natively from the challenges of mubix/ai-ctf (MIT) with no text
-copied, in the `access-control` suite (13 specs). All three are `test_only`, `deterministic_first`,
+`FUNCALL-PRICE-TAMPER-001` (a checkout's `total_cents` that is not a positive amount, LLM06),
+`AC-SSRF-SCHEME-001` (an authorized `fetch_url` sent anywhere but `https://docs.example.com`,
+LLM06) and `FUNCALL-SQLI-ARG-001` (a lookup id that is not up to 12 ASCII digits, LLM05),
+re-authored natively from the challenges of mubix/ai-ctf (MIT) with no text copied, in the
+`access-control` suite (13 specs). All three are `test_only`, `deterministic_first`,
 5 runs at temperature 0 and seed 42, `tool_call` with `semantic_judge`. The battery holds 78 specs.
-The SSRF pattern is a floor, not a filter: it reads the URL as written and resolves no name. The
-three patterns use possessive quantifiers.
+The three patterns are allowlists of what each scene allows, read as written: a floor, not a
+filter (nothing is resolved, or parsed as a backend would). They use possessive quantifiers.
 `tests/battery/test_argument_value_specs.py` pins each oracle against the values it must catch and
 the ones it must let through.
 
