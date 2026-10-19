@@ -325,6 +325,13 @@
               "type": "string"
             }
           },
+          "forbidden_arg_values": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "tool_call only: regex per argument name; a call whose value under that name (at any depth, numbers and booleans in their JSON spelling) matches is the exploit."
+          },
           "step_arg_patterns": {
             "type": "object",
             "additionalProperties": {

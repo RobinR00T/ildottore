@@ -5,6 +5,32 @@ The carryover ledger. Every agent session updates this so context survives even 
 newest merge on top: a branch's entries land together when it merges, so the dates of
 neighbouring entries can interleave (an older branch merged later sits above a newer one).
 
+## State, 2026-10-19: argument values on an authorized tool (u06 A-88, `feat/tool-argument-values`)
+
+- **What.** `tool_call` read a call's tool name and its argument keys, never their values, so an
+  authorized tool called with an authorized key passed whatever it carried. It gained an opt-in
+  `forbidden_arg_values` (a regex per argument name, any tool, any depth, the value in its JSON
+  spelling, a map or an empty list read whole; a match fails and is masked, a pattern that does not
+  compile is `inconclusive`), with lint and the fixture stub through the same helpers (ADR-0014).
+  Three `test_only` specs from the challenges of mubix/ai-ctf (MIT), re-authored with no text
+  copied: `FUNCALL-PRICE-TAMPER-001`, `AC-SSRF-SCHEME-001`, `FUNCALL-SQLI-ARG-001`, in
+  `access-control`; 78 specs. Opt-in: the 75 existing specs judge byte for byte as on `d8b43561`.
+  Judging rules 2 re-pinned (`8d0f56fb`).
+- **Audits.** Two pre-merge rounds (no CRITICAL, no HIGH). Round 1: a quadratic price pattern
+  (a second on 16,000 spaces), maps and nested lists under a pinned key never judged, denylist
+  bypasses in the price and URL patterns, stub and evaluator out of order on a bad pattern, names
+  that fold together; four mutants survived. Round 2: the price denylist still missed zeros a
+  backend reads (`0x0`, `0_0`, `1e-400`). All three patterns are now allowlists with possessive
+  quantifiers; 17 of 17 mutants killed.
+- **Checks.** `make gates` green on `d2139d50` with `GITHUB_ACTIONS=true CI=true`: 7752 tests,
+  coverage 97.68% against the 85% floor, lint OK on 78 specs, self-scan, bandit, pip-audit clean.
+  Run outside the sandbox: inside it, reading `*.pem` is denied and the adapter tests that load
+  certifi's bundle fail with `PermissionError`.
+- **Left open, each for its own branch.** A string-form argument holding an integer past the
+  digit limit reads as no arguments, so `tool_call` passes it (older than A-88; audit L5). A map
+  read whole is masked by shape, so its other text stays in clear where the redactor finds no
+  shape (audit round 2, LOW-3).
+
 ## State, 2026-10-17: the stream bounds (u01 A-86, OD-52, `fix/stream-bounds`)
 
 - **What.** Four items the A-83 audits of #120 queued and #122's entry left open. (1) An

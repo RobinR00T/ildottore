@@ -21,6 +21,7 @@
 - promptfoo (157 plugins; framework presets owasp:llm/mitre:atlas/nist/eu:ai-act/gdpr/iso:42001): https://www.promptfoo.dev/docs/red-team/plugins/
 - Giskard LLM scan (traditional + LLM-assisted detectors): https://docs.giskard.ai/en/latest/knowledge/llm_vulnerabilities/index.html
 - AgentDojo (97 tasks / 629 security cases; utility+security jointly): https://www.emergentmind.com/topics/agentdojo-benchmark
+- mubix/ai-ctf (Rob Fuller, MIT; AI CTF of tool-abuse challenges: price tampering, SSRF through an authorized fetch, SQL in a tool argument). Source of the three argument-value specs of 2026-10-19, re-authored natively with no text copied (u06 A-88): https://github.com/mubix/ai-ctf
 
 ## Vendor guidance
 - Anthropic: how we contain Claude (defense-in-depth, RL against injection, automated red-team agent): https://www.anthropic.com/engineering/how-we-contain-claude

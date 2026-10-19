@@ -63,7 +63,7 @@ Two console scripts are installed: `dottore` and its short alias `dott`.
 
 ```bash
 .venv/bin/dottore --help
-.venv/bin/dottore registry ls          # 75 specs, fully offline
+.venv/bin/dottore registry ls          # 78 specs, fully offline
 .venv/bin/dottore lint src/ildottore/battery   # schema + policy + fixtures-prove-detection
 make test                              # the full test suite (or: make gates)
 ```

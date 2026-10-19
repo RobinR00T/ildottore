@@ -30,7 +30,7 @@ import re
 from collections.abc import Mapping
 from pathlib import Path
 
-from ildottore.shared import AttackSpec, EvaluatorType, VerdictStatus
+from ildottore.shared import AttackSpec, EvaluatorConfig, EvaluatorType, VerdictStatus
 from ildottore.shared.aisvs import (
     AISVS_NOT_TESTED_BY_DESIGN,
     AISVS_OUT_OF_REACH,
@@ -54,7 +54,7 @@ from ildottore.shared.iopc import IOPC_TAXONOMY_VERSION, unknown_codes
 from ildottore.shared.media import MediaError, render_media_part
 from ildottore.shared.patterns import SpecPatternError, compile_spec_pattern, quote
 from ildottore.shared.refusal_tells import STRONG_COMPLIANCE
-from ildottore.shared.tool_abuse import cleared_verbs, handoff_shaped
+from ildottore.shared.tool_abuse import cleared_verbs, handoff_shaped, value_pattern_key
 
 from .errors import LintCode, LintCounts, LintError, LintReport, Severity
 from .fixtures_engine import DEFAULT_STUB_TABLE, StubEvaluator, evaluate_fixture
@@ -318,7 +318,7 @@ def _check_fixtures(spec: AttackSpec, table: dict[EvaluatorType, StubEvaluator])
             ),
             ("regex pattern", None),
         )
-        pins = "" if step is None else f" for step {quote(step)}"
+        pins = _pins(field, step)
         return [
             LintError(
                 code=LintCode.EVALUATOR_MISCONFIGURED,
@@ -514,6 +514,7 @@ def _check_evaluator_config(spec: AttackSpec) -> list[LintError]:
     """
     errors: list[LintError] = []
     for cfg in spec.evaluators:
+        errors.extend(_check_value_patterns(spec, cfg))
         if cfg.type is EvaluatorType.TOOL_CALL:
             errors.extend(_check_tool_allowlist(spec, cfg.patterns or []))
             continue
@@ -532,6 +533,54 @@ def _check_evaluator_config(spec: AttackSpec) -> list[LintError]:
             )
     errors.extend(_check_cleared_tools(spec))
     return errors
+
+
+def _check_value_patterns(spec: AttackSpec, cfg: EvaluatorConfig) -> list[LintError]:
+    """Refuse a ``forbidden_arg_values`` no evaluator would read, or one that names no argument.
+
+    Only ``tool_call`` reads it (A-88): under another type the check the author wrote would never
+    run and the spec would read as testing it. A name that is blank once stripped pins nothing a
+    call writes, and two names that fold to one keep only the last pattern.
+    """
+
+    raw = cfg.forbidden_arg_values or {}
+    if not raw:
+        return []
+    if cfg.type is not EvaluatorType.TOOL_CALL:
+        return [
+            LintError(
+                code=LintCode.EVALUATOR_MISCONFIGURED,
+                message=(
+                    f"{cfg.type.value} declares forbidden_arg_values, which only tool_call "
+                    "reads: the argument values it pins would never be checked"
+                ),
+                spec_id=spec.id,
+            )
+        ]
+    if any(not name.strip() for name in raw):
+        return [
+            LintError(
+                code=LintCode.EVALUATOR_MISCONFIGURED,
+                message=(
+                    "tool_call forbidden_arg_values has a blank argument name: it pins no "
+                    "argument a call writes"
+                ),
+                spec_id=spec.id,
+            )
+        ]
+    folded = [value_pattern_key(name) for name in raw]
+    if len(set(folded)) != len(folded):
+        return [
+            LintError(
+                code=LintCode.EVALUATOR_MISCONFIGURED,
+                message=(
+                    "tool_call forbidden_arg_values names one argument twice (names are compared "
+                    "stripped and case-folded): only the last pattern would be checked"
+                ),
+                spec_id=spec.id,
+            )
+        ]
+    return []
 
 
 def _handoff_shaped(name: str, verbs: list[str]) -> bool:
@@ -715,9 +764,10 @@ MAX_PATTERN_FINDINGS = 10
 
 
 def _spec_patterns(spec: AttackSpec) -> list[tuple[str, str, str | None]]:
-    """Every regex the spec's evaluators compile, as ``(field, pattern, the step it pins)``.
+    """Every regex the spec's evaluators compile, as ``(field, pattern, what it pins)``.
 
-    The step is ``None`` for a ``regex_*`` pattern, which pins none.
+    What it pins is a step for ``step_arg_patterns``, an argument's name for
+    ``forbidden_arg_values`` (A-88), and ``None`` for a ``regex_*`` pattern, which pins none.
     """
 
     found: list[tuple[str, str, str | None]] = []
@@ -730,7 +780,25 @@ def _spec_patterns(spec: AttackSpec) -> list[tuple[str, str, str | None]]:
             field = "tool_sequence step_arg_patterns pattern"
             steps = (config.step_arg_patterns or {}).items()
             found.extend((field, pattern, step) for step, pattern in steps)
+        if config.type is EvaluatorType.TOOL_CALL:
+            # The value patterns pin an argument, not a step (A-88): said as such by `_pins`.
+            field = _VALUE_FIELD
+            names = (config.forbidden_arg_values or {}).items()
+            found.extend((field, pattern, name) for name, pattern in names)
     return found
+
+
+#: The field a ``tool_call`` ``forbidden_arg_values`` pattern is reported under (A-88).
+_VALUE_FIELD = "tool_call forbidden_arg_values pattern"
+
+
+def _pins(field: str, pinned: str | None) -> str:
+    """What a pattern pins, for its finding: the step of a chain, or an argument's name."""
+
+    if pinned is None:
+        return ""
+    what = "argument" if field == _VALUE_FIELD else "step"
+    return f" for {what} {quote(pinned)}"
 
 
 def uncompilable_patterns(spec: AttackSpec) -> list[str]:
@@ -752,7 +820,7 @@ def uncompilable_patterns(spec: AttackSpec) -> list[str]:
         try:
             compile_spec_pattern(pattern)
         except SpecPatternError as exc:
-            pins = "" if step is None else f" for step {quote(step)}"
+            pins = _pins(field, step)
             found.append(f"{field} {quote(pattern)}{pins} does not compile ({quote(str(exc))})")
             if len(found) > MAX_PATTERN_FINDINGS:
                 break
