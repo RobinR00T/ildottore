@@ -2132,28 +2132,29 @@ evaluators:
     forbidden_args: ["role", "bypass_review"]   # privileged fields the task must not populate
 ```
 
-The other four classes read a tool's name and an argument's key; none reads what the model
-writes as a value, so an authorized tool called with its own key passes whatever it carries: a
-checkout's total of zero, an authorized fetch pointed at `file:///`, a record id that is a query
-fragment. `forbidden_arg_values` pins a regex per argument name (the name compared stripped and
-case-folded, at any nesting depth of any call; the value matched case-insensitively, as written);
-a value under that name that matches fails. A number or a boolean is read as JSON writes it (`0`,
-`-34999`, `-0.0`, `NaN`, `true`) and `null` as `null`, so one pattern refuses an amount written
-as a number or as text; a list under the key is read item by item, nested lists down to their
-items, and a map, or an empty list, is read whole as one line of JSON with its keys sorted
-(`{"$ne":null}`), so a pattern that allows only a plain id refuses it too. The verdict names the
-argument and the tool and masks the value as the other tool evidence is masked: by its shape when
-the redactor knows one (an address inside a URL), else typed and hashed. Like `forbidden_args` it
-is opt-in, and a pattern that does not compile makes the evaluator `inconclusive`, never a quiet
-pass; `dottore lint` refuses the key under any other evaluator, with a blank argument name, or
-with two names that fold to one, since a check would never run (u06 A-88). OpenAI's JSON-string
-arguments holding an integer longer than Python converts (more digits than
-`sys.get_int_max_str_digits()`, 4300 by default) are read too, the integer as its digits, which is
-its JSON spelling: they read as no arguments until A-89, so one long number beside the exploit
-passed every check of `tool_call` and `tool_sequence`; the in-band tool loop sends that integer
-back to the target as a JSON string. Write patterns with
-possessive quantifiers (`\s*+`) where two parts could match the same spaces: a value is the
-target's text, and a pattern that backtracks costs the square of it:
+The other four classes read a tool's name and an argument's key; none reads what the model writes as
+a value, so an authorized tool called with its own key passes whatever it carries: a checkout's
+total of zero, an authorized fetch pointed at `file:///`, a record id that is a query fragment.
+`forbidden_arg_values` pins a regex per argument name (the name compared stripped and case-folded,
+at any nesting depth of any call; the value matched case-insensitively, as written); a value under
+that name that matches fails. A number or a boolean is read as JSON writes it (`0`, `-34999`,
+`-0.0`, `NaN`, `true`) and `null` as `null`, so one pattern refuses an amount written as a number or
+as text; a list under the key is read item by item, nested lists down to their items, and a map, or
+an empty list, is read whole as one line of JSON with its keys sorted (`{"$ne":null}`), so a pattern
+that allows only a plain id refuses it too. The verdict names the argument and the tool and masks
+the value as the other tool evidence is masked: by its shape when the redactor knows one (an address
+inside a URL), else typed and hashed. Like `forbidden_args` it is opt-in, and a pattern that does
+not compile makes the evaluator `inconclusive`, never a quiet pass; `dottore lint` refuses the key
+under any other evaluator, with a blank argument name, or with two names that fold to one, since a
+check would never run (u06 A-88). OpenAI's JSON-string arguments holding an integer longer than
+Python converts (more digits than `sys.get_int_max_str_digits()`, 4300 by default) are read too, the
+integer as its digits, which is its JSON spelling: they read as no arguments until A-89, so one long
+number beside the exploit passed every check of `tool_call` and `tool_sequence`; the in-band tool
+loop sends that integer back to the target as a JSON string. Arguments that are an object in the
+reply (Anthropic's `input`, a WebSocket frame's calls) are parsed with the reply, so the same
+integer there makes the reply unreadable: the attempt is `inconclusive`, not retried, never a pass
+(OD-21). Write patterns with possessive quantifiers (`\s*+`) where two parts could match the same
+spaces: a value is the target's text, and a pattern that backtracks costs the square of it:
 
 ```yaml
 evaluators:

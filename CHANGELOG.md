@@ -19,7 +19,9 @@ the file, schema copy, build or pipeline it names.
   number by every check: its text is its JSON spelling, a map writes it unquoted, the string-only
   patterns skip it), and the rest of the arguments are read; the in-band tool loop sends it back to
   the target as a JSON string. Not taken: an `inconclusive` verdict, which would let one long number
-  turn a fail into "not evaluated", and raising the process-wide digit limit.
+  turn a fail into "not evaluated", and raising the process-wide digit limit. Arguments that are an
+  object in the reply (Anthropic's `input`, a WebSocket frame's calls) are parsed with the reply,
+  so the same integer there still makes the reply unreadable (`inconclusive`, OD-21), as before.
 - **Judging rules 3** (2026-10-19). A stored pass can become a fail, so
   `shared.judging_rules.JUDGING_RULES_VERSION` is 3 by an appended pin (`PIN_HISTORY`,
   `judging_pins.frozen`): a run halted under version 2 is refused by its resume before anything is

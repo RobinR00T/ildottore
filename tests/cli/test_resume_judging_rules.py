@@ -158,9 +158,10 @@ def test_a_run_halted_under_rules_1_is_refused_by_rules_2_naming_both(tmp_path: 
 def test_a_run_halted_under_rules_2_is_refused_by_rules_3_naming_both(tmp_path: Path) -> None:
     """u06 A-89 bumped the rules to 3: a run halted under 2 may hold a pass on a call whose
     JSON-string arguments held an integer longer than ``int`` converts, read as no arguments,
-    which the new rules fail, so its resume is refused before anything is sent."""
+    which the new rules fail, so its resume is refused before anything is sent. Every later
+    version refuses it the same way."""
 
-    assert JUDGING_RULES_VERSION == 3
+    assert JUDGING_RULES_VERSION >= 3
     run_id, spec_dir = _halted(tmp_path)
     _rewrite(tmp_path, judging_rules=2)
     before, stored = _context(tmp_path), _stored(tmp_path)
@@ -170,7 +171,7 @@ def test_a_run_halted_under_rules_2_is_refused_by_rules_3_naming_both(tmp_path: 
 
     message = str(refused.value)
     assert "was judged by the rules of an older Il Dottore (judging rules 2," in message
-    assert "judging rules 3." in message
+    assert f"judging rules {JUDGING_RULES_VERSION}." in message
     assert "There is no flag for this" in message
     assert _context(tmp_path) == before and _stored(tmp_path) == stored
 

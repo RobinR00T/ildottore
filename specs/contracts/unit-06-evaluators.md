@@ -349,7 +349,7 @@ quantifiers in the price pattern (M1, a second on 16,000 spaces), a map or an em
 whole and nested lists to their items (M2), an allowlist for the price (M3, widened as a
 denylist first; round 2 of the audit found zeros it still missed) and for the URL (M4), the
 stub compiles before its no-calls pass (L1), lint refuses two names that fold to one (L2); a string-form argument holding an integer past the digit limit still reads as no arguments
-(L5, older than this clause, left for its own branch).
+(L5, older than this clause, left for its own branch; closed by A-89).
 
 **A-89 (this unit's clause, added 2026-10-19; a line in u12) A call's JSON-string arguments with an
 integer longer than `int` converts are read.** `json.loads` converts each integer with `int`, which
@@ -367,10 +367,15 @@ injection walk and both step-pattern walks (the evaluator's and the lint stub's)
 skip an `int`. `check_argument_nesting` parses with the same hook. Not taken: making the evaluator
 `inconclusive` on such arguments, which would let a target turn a fail into "not evaluated" with one
 long number (the reasoning of OD-28 for lone surrogates); raising the digit limit, which is
-process-wide and bounds a conversion whose cost is the square of its length. Stored verdicts can
-change (a pass becomes a fail), so `JUDGING_RULES_VERSION` is 3 (u12's line). Checked by
-`tests/evaluators/test_long_integer_arguments.py` (15 tests, at the interpreter's floor of 640
-digits and at 4300), 10 of which fail on `d6236c7d`, and by
+process-wide and bounds a conversion whose cost is the square of its length. Arguments that are an
+object in the reply (Anthropic's `input`, an OpenAI `function.arguments` written as an object, a
+WebSocket frame's calls) are parsed with the reply, without the hook, so the same integer there
+still makes the whole reply unreadable: `ResponseMalformed`, the attempt `inconclusive` and not
+retried (OD-21), never a pass, and twenty in a row halt the campaign; reading those bodies with the
+hook too is left for its own branch (the pre-merge audit's MEDIUM-1). Stored verdicts can change (a
+pass becomes a fail), so `JUDGING_RULES_VERSION` is 3 (u12's line). Checked by
+`tests/evaluators/test_long_integer_arguments.py` (17 tests, at the interpreter's floor of 640
+digits and at 4300), 12 of which fail on `d6236c7d`, and by
 `tests/cli/test_resume_judging_rules.py`.
 
 ## §8 Out of scope / forbidden
