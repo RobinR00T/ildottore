@@ -53,8 +53,8 @@ neighbouring entries can interleave (an older branch merged later sits above a n
 - **Left open, each for its own branch.** Object-form arguments with such an integer (Anthropic's
   `input`, a WebSocket frame's calls) still made the whole reply unreadable, `inconclusive` (OD-21):
   closed by A-90 (judging rules 4), above. A map read whole under a pinned name is masked by shape
-  only (A-88 audit round 2, LOW-3). `fix/identity-trials` (not merged) planned judging rules 3 and
-  now needs the next free version.
+  only (A-88 audit round 2, LOW-3): closed by #126, above. `fix/identity-trials` (not merged)
+  planned judging rules 3 and now needs the next free version.
 
 ## State, 2026-10-19: argument values on an authorized tool (u06 A-88, `feat/tool-argument-values`)
 
