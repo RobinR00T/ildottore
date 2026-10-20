@@ -27,6 +27,17 @@ neighbouring entries can interleave (an older branch merged later sits above a n
 - **Left open.** `fix/identity-trials` (not merged) now needs judging rules 5, or whichever is free
   when it lands. The SSE masking path and error bodies keep the plain parse (u06 A-90 says why).
 
+## State, 2026-10-19: a map read whole is hashed whole (u06 A-88, `u06-argval-hash-whole`)
+
+- **What.** Audit 2 of A-88 (LOW-3): a map or an empty list read whole under a pinned argument
+  was masked by shape, so its keys and every value the redactor has no shape for stayed in clear
+  in the verdict's `matched`. Now it is hashed whole as one `tool_arg_value`; a scalar is masked
+  by shape as before; the call in the attempt's record stays masked by shape, as every tool
+  call is (ADR-0014 says so). Verdicts do not change: judging rules 3 re-pinned (merged with A-89, #125). 5 tests, 4 of
+  which fail on `d6236c7d`. Closes the LOW-3 that A-89 lists as left open below.
+- **Audit.** One pre-merge round (no CRITICAL): the pin (HIGH), a manual that promised the
+  report held none of the map (MEDIUM), the hash's salt untested (LOW), all applied.
+
 ## State, 2026-10-19: long integers in a call's arguments (u06 A-89, `fix/long-integer-arguments`)
 
 - **What.** OpenAI's JSON-string arguments holding an integer past `sys.get_int_max_str_digits()`

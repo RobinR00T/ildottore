@@ -25,6 +25,16 @@ the file, schema copy, build or pipeline it names.
   resume before anything is sent, naming both, and `dottore --version` prints
   `dottore 0.1.0 (judging rules 4)`. `JUDGING_RULES_SINCE` stays `2026-10-15`.
 
+### Fixed (u06 A-88, ADR-0014 amended)
+
+- **A map read whole under a pinned argument is hashed whole in the verdict.** It was masked by
+  shape: the redactor typed what it knew inside the JSON (an address, a key) and the map's keys and
+  every other value stayed in clear in the verdict's `matched`. Now a map or an empty list read
+  whole is one `«REDACTED:tool_arg_value:<hash>»`, with the redactor's salted hash; a scalar is
+  masked by its shape as before, and the call in the attempt's record is masked by shape as every
+  tool call is. Verdicts do not change, only the masks, so judging rules 3 are re-pinned, not
+  bumped (audit 2 of A-88, LOW-3).
+
 ### Fixed (breaking for a run halted under judging rules 2: judging rules 3, u06 A-89)
 
 - **A call's JSON-string arguments with an integer longer than Python converts are read.**

@@ -15,7 +15,7 @@ import sys
 
 import pytest
 
-from ildottore.evaluators.base import mask_value
+from ildottore.evaluators.base import _DEFAULT_REDACTOR, mask_value
 from ildottore.evaluators.tool_call import ToolCallEvaluator
 from ildottore.redactor import Redactor
 from ildottore.registry.fixtures_engine import EvalInput, _tool_call
@@ -246,4 +246,48 @@ def test_a_key_is_matched_case_folded_and_returned_as_written() -> None:
 
     hits = forbidden_value_hits({"Url": "file:///x"}, {"url": re.compile("^file:", re.I)})
 
-    assert hits == [("Url", "file:///x")]
+    assert hits == [("Url", "file:///x", False)]
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        {"note": "write to alice@example.com", "filter": {"$ne": None}},
+        [{"note": "write to alice@example.com", "filter": {"$ne": None}}],
+        {"cc": ["alice@example.com", "bob@example.com"], "note": "the rest of the map"},
+    ],
+    ids=["a map", "a map in a list", "a map holding a list"],
+)
+async def test_a_value_read_whole_is_hashed_whole(value: object) -> None:
+    """A map read whole is masked as one value, never by the shapes the redactor knows in it.
+
+    Masked by shape, ``{"filter":{"$ne":null},"note":"write to «REDACTED:email»"}`` kept the rest
+    of the map in clear: every key, every value whose shape the redactor does not know (audit 2 of
+    A-88, LOW-3). Hashed whole, it is one ``tool_arg_value`` mask, as a scalar no shape matched is.
+    """
+
+    spec = _spec(forbidden_arg_values={"employee_id": _PLAIN_ID})
+    call = _call({"employee_id": value})
+
+    verdict = await _verdict(spec, [call])
+
+    assert verdict.status is VerdictStatus.FAIL
+    whole = [canonical_value_text(item) for item in value] if isinstance(value, list) else []
+    texts = whole or [canonical_value_text(value)]
+    assert verdict.matched == [
+        f"«REDACTED:tool_arg_value:{_DEFAULT_REDACTOR._digest(text)}»" for text in texts
+    ]
+    for clear in ("note", "$ne", "filter", "the rest", "write to", "example.com"):
+        assert all(clear not in item for item in verdict.matched)
+        assert clear not in verdict.reasoning
+
+
+async def test_a_scalar_is_still_masked_by_its_shape() -> None:
+    """Only text read whole is hashed whole: a string keeps the type of the shape it holds."""
+
+    spec = _spec(forbidden_arg_values={"employee_id": r"@"})
+    verdict = await _verdict(spec, [_call({"employee_id": "alice@example.com"})])
+
+    assert verdict.status is VerdictStatus.FAIL
+    assert verdict.matched == [mask_value("alice@example.com", type_hint="tool_arg_value")]
+    assert not verdict.matched[0].startswith("«REDACTED:tool_arg_value")
