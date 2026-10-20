@@ -21,7 +21,8 @@ neighbouring entries can interleave (an older branch merged later sits above a n
   (11), `tests/cli/test_attempt_identity_wiring.py` (6), `tests/shared/test_folding.py` (13), a
   scope refusal and a resume test for 4 to 5. Clause u08 A-87 with halves in u00, u01, u06, u07,
   u10, u11 and u12; OD-53 in the index.
-- **Gates.** `make gates` in CI mode green on the merged tree with these docs (2026-10-20, coverage 97.67%).
+- **Gates.** `make gates` in CI mode green on the merged tree with these docs (2026-10-20,
+  coverage 97.67%).
 - **Open.** The sweep's other identities' replies are still not stored; a re-encoded canary
   (homoglyphs, spaces, an encoding the target applies) still hides; `pii_detector` and
   `secret_shape` corroborate with a canary exactly; keeping a stored sweep on a resume needs a

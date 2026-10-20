@@ -2358,16 +2358,16 @@ Risk and confidence are **separate axes**:
   invisible format characters removed, so a target that re-cases `CANARY-B-7F3A91C2` or splits it
   with a zero-width space no longer hides the crossing; a spec's own canary below those floors is
   read exactly. The scope refuses two identity canaries that differ only in letter case or such
-  characters (exit 3, nothing sent). The verdict says why (`authz_leak: 1 tenant-scoped canary(ies) surfaced in a
-  non-owner identity, and the request every identity was sent carries each of them ...`, and
-  `echo_only: true`), the finding's line counts it (`resting on a canary the request carries,
-  which never confirms a finding on its own`), and `dottore replay` lists the attempt as
-  `fail (needs review: a canary the request carries)`. A crossing canary the request does not
-  carry still confirms the leak, and the stored verdict lists every canary that crossed, masked.
+  characters (exit 3, nothing sent). The verdict says why (`authz_leak: 1 tenant-scoped canary(ies)
+  surfaced in a non-owner identity, and the request every identity was sent carries each of them
+  ...`, and `echo_only: true`), the finding's line counts it (`resting on a canary the request
+  carries, which never confirms a finding on its own`), and `dottore replay` lists the attempt as
+  `fail (needs review: a canary the request carries)`. A crossing canary the request does not carry
+  still confirms the leak, and the stored verdict lists every canary that crossed, masked.
   `authz_leak`'s own verdict also names the ones the request carries (`... the request every
-  identity was sent carries 1 of them («REDACTED:canary:...»), which a reply may only echo, and
-  the others confirm the leak`); the attempt's stored verdict, the reports and `dottore replay`
-  show the confirmed fail with its masked matches, not that naming.
+  identity was sent carries 1 of them («REDACTED:canary:...»), which a reply may only echo, and the
+  others confirm the leak`); the attempt's stored verdict, the reports and `dottore replay` show the
+  confirmed fail with its masked matches, not that naming.
 
 Every report puts each finding in one of four **states** (the HTML report's sections, the
 `state` property of a SARIF result, the summary's `confirmed_count` and `needs_review_count`):
