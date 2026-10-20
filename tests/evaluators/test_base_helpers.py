@@ -46,6 +46,18 @@ def test_mask_value_salted_hash_is_stable_and_keyed() -> None:
     assert a != c  # different salt → non-correlatable across engagements
 
 
+def test_mask_value_whole_is_salted_and_keyed() -> None:
+    """``whole`` hashes the text with the redactor's salt, never by the shapes in it (A-88)."""
+
+    text = '{"cc":"alice@example.com","note":"x"}'
+    r1 = Redactor(salt="one")
+    r2 = Redactor(salt="two")
+    a = mask_value(text, type_hint="tool_arg_value", redactor=r1, whole=True)
+    assert a == f"«REDACTED:tool_arg_value:{r1._digest(text)}»"
+    assert a == mask_value(text, type_hint="tool_arg_value", redactor=r1, whole=True)
+    assert a != mask_value(text, type_hint="tool_arg_value", redactor=r2, whole=True)
+
+
 def test_mask_values_dedupes_and_preserves_order() -> None:
     out = mask_values(["CANARY-A", "CANARY-A", "CANARY-B"], type_hint="canary")
     assert len(out) == 2

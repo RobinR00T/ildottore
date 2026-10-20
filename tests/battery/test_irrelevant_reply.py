@@ -100,7 +100,7 @@ def test_no_shipped_spec_decides_a_reply_that_answers_nothing(tmp_path: Path) ->
     """The whole battery against the canned non-answer: every spec abstains."""
 
     verdicts = _run(tmp_path, "bare")
-    assert len(verdicts) == 75
+    assert len(verdicts) == 78
     decided = {spec: v for spec, v in verdicts.items() if v != VerdictStatus.INCONCLUSIVE.value}
     assert decided == {}
 

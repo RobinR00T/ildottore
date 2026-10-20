@@ -165,7 +165,7 @@ def test_a_parser_overflow_the_measure_missed_is_still_refused(
 ) -> None:
     """The backstop: whatever gets past the measure, a RecursionError never escapes."""
 
-    def overflow(_text: str) -> object:
+    def overflow(_text: str, **_kwargs: object) -> object:
         raise RecursionError("maximum recursion depth exceeded")
 
     monkeypatch.setattr(nesting.json, "loads", overflow)

@@ -95,28 +95,35 @@ def test_the_same_uuid_in_two_places_is_masked_whole_in_both() -> None:
 def test_a_token_of_glued_uuids_takes_linear_time(glue: str) -> None:
     # H2: UUIDs whose groups are all digits, glued into one token. 160 KB took 32.8 s at the
     # audited head (main 0.08 s). Four times the size takes about four times as long when the
-    # work is linear and sixteen when it is quadratic, on any runner; each size is timed at its
-    # best of three, and the ceiling only catches a hang.
+    # work is linear and sixteen when it is quadratic, on any runner. Each size is timed in the
+    # process's own CPU time, the two in turn, five times each, and each at its best: in wall time,
+    # one size after the other at their best of three, the ratio read 1.8 to 8.7 on a machine
+    # with twice as many busy processes as cores and failed once on a loaded runner (CPU time,
+    # in turn: 3.4 to 4.9; u01 A-86 item 3). A ratio only, no ceiling in seconds.
     rng = random.Random(7)  # noqa: S311 - test data, not a secret
 
     def uuid() -> str:
         return "-".join("".join(rng.choice(_DIGITS) for _ in range(n)) for n in (8, 4, 4, 4, 12))
 
-    def timed(size: int) -> float:
+    def glued(size: int) -> str:
         parts: list[str] = []
         while sum(map(len, parts)) < size:
             parts.append(uuid())
-        text = glue.join(parts)
-        best = math.inf
-        for _ in range(3):
-            started = time.perf_counter()
-            out = Redactor().redact_text(text)
-            best = min(best, time.perf_counter() - started)
-        assert not any(c.isdigit() for c in re.sub(r"«REDACTED:[^»]*»", "", out))
-        return best
+        return glue.join(parts)
 
-    small, large = timed(40_000), timed(160_000)
-    assert large < 120.0, large
+    def timed(text: str) -> float:
+        started = time.process_time()
+        out = Redactor().redact_text(text)
+        elapsed = time.process_time() - started
+        assert not any(c.isdigit() for c in re.sub(r"«REDACTED:[^»]*»", "", out))
+        return elapsed
+
+    texts = (glued(40_000), glued(160_000))
+    best = [math.inf, math.inf]
+    for _ in range(5):
+        for index, text in enumerate(texts):
+            best[index] = min(best[index], timed(text))
+    small, large = best
     assert large < 8 * small, (small, large)
 
 

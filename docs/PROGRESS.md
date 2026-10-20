@@ -5,6 +5,121 @@ The carryover ledger. Every agent session updates this so context survives even 
 newest merge on top: a branch's entries land together when it merges, so the dates of
 neighbouring entries can interleave (an older branch merged later sits above a newer one).
 
+## State, 2026-10-19: long integers in object-form arguments (u06 A-90, `fix/long-integer-object-arguments`)
+
+- **What.** MEDIUM-1 of the A-89 audit, closed: arguments a reply carries as a JSON object
+  (Anthropic's `input`, an OpenAI `function.arguments` written as an object, a WebSocket frame's
+  calls) holding an integer past the digit limit made the whole reply unreadable, `inconclusive`
+  (OD-21), where the string form is judged. Bodies and frames are parsed by
+  `shared.toolcalls.loads_keeping_long_integers`, and `check_long_integers` keeps such an integer
+  only inside the arguments of a call the adapter reads (matched by identity); anywhere else the
+  reply stays unreadable, so no reader takes a `LongInteger` for text or a figure. Judging
+  rules 4 (an `inconclusive` can become a verdict).
+- **Checks.** `tests/adapters/test_long_integer_object_arguments.py`: 21 tests; on the tree before
+  the change, 8 of the 19 that import there fail (`scratch/longint/red-before-longobj.log`, outside
+  the repo); a resume test for 3 to 4.
+- **Audit.** One pre-merge round, no HIGH. MEDIUM-1 (only the first kept integer was in effect
+  tested) and LOW-2/3 (a nested `tool_calls_path`, a decoy list, a second call): tests added, each
+  surviving mutant now killed. LOW-1: the check reads the integers the parsed reply holds, so a
+  duplicate key's dropped value no longer refuses it. LOW-4: a WebSocket `text_path`, `model_path`
+  or `id_path` declared into a call's arguments reads no digits. LOW-5: wording and wrapping. A
+  verification round found `final_path` uncovered (now guarded too) and a line past the limit.
+- **Left open.** `fix/identity-trials` (not merged) now needs judging rules 5, or whichever is free
+  when it lands. The SSE masking path and error bodies keep the plain parse (u06 A-90 says why).
+
+## State, 2026-10-19: a map read whole is hashed whole (u06 A-88, `u06-argval-hash-whole`)
+
+- **What.** Audit 2 of A-88 (LOW-3): a map or an empty list read whole under a pinned argument
+  was masked by shape, so its keys and every value the redactor has no shape for stayed in clear
+  in the verdict's `matched`. Now it is hashed whole as one `tool_arg_value`; a scalar is masked
+  by shape as before; the call in the attempt's record stays masked by shape, as every tool
+  call is (ADR-0014 says so). Verdicts do not change: judging rules 3 re-pinned (merged with A-89, #125). 5 tests, 4 of
+  which fail on `d6236c7d`. Closes the LOW-3 that A-89 lists as left open below.
+- **Audit.** One pre-merge round (no CRITICAL): the pin (HIGH), a manual that promised the
+  report held none of the map (MEDIUM), the hash's salt untested (LOW), all applied.
+
+## State, 2026-10-19: long integers in a call's arguments (u06 A-89, `fix/long-integer-arguments`)
+
+- **What.** OpenAI's JSON-string arguments holding an integer past `sys.get_int_max_str_digits()`
+  (4300 by default) read as `{}`, so one long number beside the exploit made `tool_call` pass
+  (`forbidden_arg_values`, `forbidden_args`, injection) and `tool_sequence`'s step patterns read
+  nothing: L5 of the A-88 pre-merge audit, closed here. `call_arguments` parses with a `parse_int`
+  that keeps such an integer as its digits (`shared.toolcalls.LongInteger`, a `str` subclass read
+  as a number by every check) and reads the rest. Judging rules 3 (a stored pass can become a fail).
+- **Checks.** `tests/evaluators/test_long_integer_arguments.py`: 17 tests, 12 fail on `d6236c7d`.
+- **Audit.** One pre-merge round, no HIGH: two mutants survived (two tests added), the new resume
+  test pinned the version (loosened), the docs said "every walk" where the redactor masks the
+  digits by shape (now "every check"). Its MEDIUM-1 is left open, below.
+- **Left open, each for its own branch.** Object-form arguments with such an integer (Anthropic's
+  `input`, a WebSocket frame's calls) still made the whole reply unreadable, `inconclusive` (OD-21):
+  closed by A-90 (judging rules 4), above. A map read whole under a pinned name is masked by shape
+  only (A-88 audit round 2, LOW-3): closed by #126, above. `fix/identity-trials` (not merged)
+  planned judging rules 3 and now needs the next free version.
+
+## State, 2026-10-19: argument values on an authorized tool (u06 A-88, `feat/tool-argument-values`)
+
+- **What.** `tool_call` read a call's tool name and its argument keys, never their values, so an
+  authorized tool called with an authorized key passed whatever it carried. It gained an opt-in
+  `forbidden_arg_values` (a regex per argument name, any tool, any depth, the value in its JSON
+  spelling, a map or an empty list read whole; a match fails and is masked, a pattern that does not
+  compile is `inconclusive`), with lint and the fixture stub through the same helpers (ADR-0014).
+  Three `test_only` specs from the challenges of mubix/ai-ctf (MIT), re-authored with no text
+  copied: `FUNCALL-PRICE-TAMPER-001`, `AC-SSRF-SCHEME-001`, `FUNCALL-SQLI-ARG-001`, in
+  `access-control`; 78 specs. Opt-in: the 75 existing specs judge byte for byte as on `d8b43561`.
+  Judging rules 2 re-pinned (`8d0f56fb`).
+- **Audits.** Two pre-merge rounds (no CRITICAL, no HIGH). Round 1: a quadratic price pattern
+  (a second on 16,000 spaces), maps and nested lists under a pinned key never judged, denylist
+  bypasses in the price and URL patterns, stub and evaluator out of order on a bad pattern, names
+  that fold together; four mutants survived. Round 2: the price denylist still missed zeros a
+  backend reads (`0x0`, `0_0`, `1e-400`). All three patterns are now allowlists with possessive
+  quantifiers; 17 of 17 mutants killed.
+- **Checks.** `make gates` green on `d2139d50` with `GITHUB_ACTIONS=true CI=true`: 7752 tests,
+  coverage 97.68% against the 85% floor, lint OK on 78 specs, self-scan, bandit, pip-audit clean.
+  Run outside the sandbox: inside it, reading `*.pem` is denied and the adapter tests that load
+  certifi's bundle fail with `PermissionError`.
+- **Left open, each for its own branch.** A string-form argument holding an integer past the
+  digit limit reads as no arguments, so `tool_call` passes it (older than A-88; audit L5). A map
+  read whole is masked by shape, so its other text stays in clear where the redactor finds no
+  shape (audit round 2, LOW-3).
+
+## State, 2026-10-17: the stream bounds (u01 A-86, OD-52, `fix/stream-bounds`)
+
+- **What.** Four items the A-83 audits of #120 queued and #122's entry left open. (1) An
+  alternative of a masked token with more than four masks shows one `«REDACTED:fragment»`
+  (`redactor.py`, OD-52, decided under the owner's delegation and revisable): a reply of glued
+  secrets in one-alternative tokens wrote 14.2, 56.2 and 223.5 MB at 8, 16 and 32 KiB on
+  `fef4963e`, now 0.22, 0.44 and 0.87 MB, and 4.89 MB at the 4 MiB reply cap; no verdict,
+  finding, score or exit code changes. (2) An exit code that holds text but is no tuple or list
+  (a dict, a set, a deque, an exception) is masked as the text it holds,
+  not through `str()`, which wrote a split credential whole (`cli/app.py`, u12; the deque and the
+  exception came from the pre-merge audit). (3) The glued-UUID timing test reads CPU time, its
+  sizes in turn, best of five. (4) The `test_usage_figures.py` failure under load did not
+  reproduce (8 runs under 45 CPU loops) and that test is unchanged. Judging rules 2 re-pinned by
+  appended lines (`8ef34497`, `06bb22a2`, masking only).
+- **Checks.** `make gates` green on the branch merged with `main` (`620095b5`): coverage 97.66%
+  against the 85% floor.
+- **Left open, each for its own branch.** The identity sweep's reproducibility (read every
+  attempt's reply against the owner map, count each trial once); replies read exactly (a re-cased
+  or zero-width-split identity canary in a reply hides the crossing); a campaign's target adapter
+  keeps its own 30 s HTTP timeout, which `--timeout` and the `-T` templates do not reach, so a
+  reply after 30 s is resent.
+
+## State, 2026-10-17: the CI example pinned (`docs/pin-ci-example`)
+
+- **What.** The CI example (`examples/ci-github-actions.yml`) installs `fef4963e`, `main` after
+  #119, #120 and #121, where #119 left a placeholder its own guard refused (a commit cannot carry
+  its own SHA). Its v0.1.0 caveat list gains A-83, A-84 and A-85; INSTALL names `5edeb0a7` (#119).
+  The A-85 text in the MANUAL, the CHANGELOG and u08 no longer says the stored verdict names the
+  carried canaries: only `authz_leak`'s own verdict does (audit LOW A). A comment in
+  `policy/scope.py` gives the 3-character label case of the canary floor (audit LOW B); comments
+  are outside the judging digest, so judging rules 2 stays pinned as it is.
+- **Left open, each for its own branch.** The identity sweep's reproducibility (read every
+  attempt's reply against the owner map, count each trial once; the A-85 audit's design); replies
+  read exactly (a re-cased or zero-width-split identity canary in a reply hides the crossing);
+  what an alternative of a logprob piece shows is unbounded (A-77; before a release); a dict or
+  set exit code prints a split credential; the glued-UUID timing test can flake on a loaded
+  runner; one unexplained failure of `tests/cli/test_usage_figures.py` under load.
+
 ## State, 2026-10-17: the scoring follow-ups, judging rules 2 (u08 A-85, `fix/scoring-followups`)
 
 - From `main` at `7d01521f`, the items the pre-merge audit of the scoring branch (#112) queued as

@@ -8,12 +8,115 @@ read it here.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterable, Iterator, Mapping
+from typing import Any
 
 from ildottore.shared.nesting import NestedTooDeeply, bounded_loads
 from ildottore.shared.wellformed import well_formed_json
 
-__all__ = ["call_arguments", "call_id", "call_name", "check_argument_nesting"]
+__all__ = [
+    "LongInteger",
+    "call_arguments",
+    "call_id",
+    "call_name",
+    "check_argument_nesting",
+    "check_long_integers",
+    "loads_keeping_long_integers",
+]
+
+
+class LongInteger(str):
+    """An integer in a call's JSON-string arguments with more digits than ``int`` converts.
+
+    ``json.loads`` converts every integer with ``int``, which refuses more digits than the
+    interpreter's limit (``sys.get_int_max_str_digits``, 4300 by default; the limit bounds a
+    conversion whose cost grows as the square of its length). Refused, the whole string read as
+    no arguments, ``{}``, so one long number beside a smuggled key, a forbidden value or an
+    injection made ``tool_call`` pass (L5 of the pre-merge audit of A-88, u06 A-89). Such an
+    integer is kept as its digits, sign included, exactly as the text wrote them, and the rest of
+    the arguments are read. The evaluators read it as they read a number: its text is its JSON
+    spelling (``shared.tool_abuse.arg_value_text``), it is written unquoted in a map
+    (``canonical_value_text``), and the patterns that read only strings (the injection markers,
+    ``tool_sequence``'s ``step_arg_patterns``) skip it. Sent back to the target by the in-band
+    tool loop, it is a JSON string: a ``str`` subclass serializes where an object of its own
+    would raise in ``json.dumps``.
+    """
+
+    __slots__ = ()
+
+
+def _integer(digits: str) -> int | LongInteger:
+    """``int`` of a JSON integer's digits, or the digits kept when ``int`` refuses their length.
+
+    The JSON grammar has already checked them, so the one ``ValueError`` left is the limit.
+    """
+
+    try:
+        return int(digits)
+    except ValueError:
+        return LongInteger(digits)
+
+
+def loads_keeping_long_integers(text: str | bytes) -> tuple[Any, list[LongInteger]]:
+    """A reply's JSON parsed as :func:`~ildottore.shared.nesting.bounded_loads` parses it, each
+    integer past the digit limit kept as a :class:`LongInteger`, and the ones kept (u06 A-90).
+
+    Arguments a reply carries as a JSON object (Anthropic's ``tool_use`` ``input``, OpenAI's
+    ``function.arguments`` written as an object, a WebSocket frame's calls) are parsed with the
+    reply, so one such integer in them made the whole reply unreadable, not evaluated (OD-21),
+    where the same call written as a JSON string is read (A-89). Only arguments may hold one:
+    the caller hands the parsed reply and the calls it read to :func:`check_long_integers`, which
+    refuses any other.
+    """
+
+    kept: list[LongInteger] = []
+
+    def read(digits: str) -> int | LongInteger:
+        value = _integer(digits)
+        if isinstance(value, LongInteger):
+            kept.append(value)
+        return value
+
+    return bounded_loads(text, parse_int=read), kept
+
+
+def check_long_integers(reply: object, calls: Iterable[object]) -> None:
+    """Raise the ``ValueError`` ``int`` raises for the first :class:`LongInteger` in ``reply``
+    that is not inside the arguments :func:`call_arguments` reads of one of ``calls``.
+
+    Anywhere else (the text, a stop reason, an id, the usage, a filter's code, a call's own
+    name or id, arguments that are themselves the integer) the reply stays unreadable, as it
+    was: a :class:`LongInteger` is a ``str``, and a field read as text would take its digits for
+    the model's words (u06 A-90). Each integer is matched by identity, so the same digits
+    written twice count as two. The integers are those the parsed ``reply`` holds, not every one
+    the parse met: a duplicate key drops the first value, as the string form drops it (pre-merge
+    audit of A-90, LOW-1).
+    """
+
+    inside: set[int] = set()
+    for call in calls:
+        if isinstance(call, Mapping):
+            arguments = _raw_arguments(call)
+            if isinstance(arguments, Mapping):
+                inside.update(id(number) for number in _long_integers(arguments))
+    for number in _long_integers(reply):
+        if id(number) not in inside:
+            int(number)  # the limit refuses it again: the error the reply's parse raised
+            raise ValueError(f"an integer of {len(number)} characters is past the digit limit")
+
+
+def _long_integers(value: object) -> Iterator[LongInteger]:
+    """Every :class:`LongInteger` under ``value``, in document order, by an explicit stack."""
+
+    stack = [value]
+    while stack:
+        item = stack.pop()
+        if isinstance(item, LongInteger):
+            yield item
+        elif isinstance(item, Mapping):
+            stack.extend(reversed(list(item.values())))
+        elif isinstance(item, list):
+            stack.extend(reversed(item))
 
 
 def call_name(call: Mapping[str, object]) -> str:
@@ -48,7 +151,8 @@ def call_arguments(call: Mapping[str, object]) -> dict[str, object]:
     call from elsewhere (a fixture) can read as ``{}`` for its depth, where ``json.loads``
     raised ``RecursionError``.
     A lone surrogate escaped in that string reads as U+FFFD, as it does in the reply around
-    it (A-47).
+    it (A-47). An integer in it with more digits than ``int`` converts reads as a
+    :class:`LongInteger`, the rest of the object around it as written (A-89).
     """
 
     value = _raw_arguments(call)
@@ -56,7 +160,7 @@ def call_arguments(call: Mapping[str, object]) -> dict[str, object]:
         return dict(value)
     if isinstance(value, str):
         try:
-            parsed = well_formed_json(bounded_loads(value))
+            parsed = well_formed_json(bounded_loads(value, parse_int=_integer))
         except ValueError:
             return {}
         return dict(parsed) if isinstance(parsed, dict) else {}
@@ -76,7 +180,7 @@ def check_argument_nesting(call: Mapping[str, object]) -> None:
     if not isinstance(value, str):
         return
     try:
-        bounded_loads(value)
+        bounded_loads(value, parse_int=_integer)
     except NestedTooDeeply:
         raise
     except ValueError:

@@ -17,7 +17,7 @@ mapping the code checks).
 
 ## What it does
 
-- **75 declarative attack specs across 14 suites** covering the OWASP LLM Top 10, MITRE
+- **78 declarative attack specs across 14 suites** covering the OWASP LLM Top 10, MITRE
   ATLAS, agentic/OWASP-Agents-2026 abuse and the Nova IoPC taxonomy, plus the OWASP AISVS
   controls a failure is evidence against (`dottore coverage --framework aisvs`).
   `dottore registry ls` lists them all.

@@ -197,12 +197,84 @@ PIN_HISTORY: tuple[tuple[int, str, str], ...] = (
         "(.yaml and .wav under src/ildottore/battery) and A-83's masking; version 2 is not "
         "released",
     ),
+    (
+        2,
+        "8ef344979b038047c1c6e78120685c7c88cebe8b80dfbeeb9c9b2aec27546dc0",
+        "re-pin 2026-10-17: u01 A-86 (fix/stream-bounds on fef4963e): an alternative of a token "
+        "past four masks shows one fragment, a dict or a set exit code is masked as its items' "
+        "texts; masking only, the evaluators judge the raw reply, no verdict can change; version "
+        "2 is not released",
+    ),
+    (
+        2,
+        "06bb22a2c83345c8cea8c238e6b2b642e8ef5236ba9d5879193899d1741c6082",
+        "re-pin 2026-10-17: u01 A-86 pre-merge audit (fix/stream-bounds on 620095b5): a deque, an "
+        "exception with arguments and a memoryview exit code are masked as their items' texts "
+        "(bytes for a memoryview); masking only, no verdict can change; version 2 is not released",
+    ),
+    (
+        2,
+        "8d0f56fb1a5237de51492dea812a213f4ed39c8ea5a2b5edaff1812e0300c372",
+        "re-pin 2026-10-19: u06 A-88 (feat/tool-argument-values on d8b43561): tool_call reads an "
+        "opt-in forbidden_arg_values, and three test_only specs use it; a spec without the key "
+        "judges as before, no existing verdict changes; version 2 is not released",
+    ),
+    (
+        3,
+        "bedc37ed4b3f66fd60f755711a9911094ad64e456056e09f708ff09928c00f26",
+        "u06 A-89 (fix/long-integer-arguments on d6236c7d): a call's JSON-string arguments "
+        "holding an integer longer than int converts are read, the integer kept as its digits, "
+        "where they read as {} and tool_call passed; a stored pass can become a fail",
+    ),
+    (
+        3,
+        "ee44c0fc64ebbda4663040f0c4246f342b398e7290de53f71fb48024642414b7",
+        "re-pin 2026-10-19: u06 A-88 audit 2 LOW-3 (u06-argval-hash-whole, merged with 4e4fa2f1): "
+        "a map or an empty list read whole under a pinned argument is hashed whole in matched; "
+        "masking only, no status changes",
+    ),
+    (
+        4,
+        "2099ec3dce34a24b9ae8cb98500c38a58089ea65a907cb2a7f36e50200a809df",
+        "u06 A-90 (fix/long-integer-object-arguments on fix/long-integer-arguments): arguments a "
+        "reply carries as a JSON object holding such an integer are read too, where the reply "
+        "was unreadable and the attempt not evaluated; an inconclusive can become a verdict",
+    ),
+    (
+        4,
+        "7589807e9974bc2c0977706d3d05c418042d69c73ae58bb0cbf9cc3f8bba5f68",
+        "re-pin, the pre-merge audit of A-90: the check reads the integers the parsed reply holds "
+        "(a duplicate key's dropped value is not refused), and a WebSocket text, model or id path "
+        "into a call's arguments reads no digits; version 4 is not released",
+    ),
+    (
+        4,
+        "a1609118af05b8a942c1982916c99c707552ac8324d804d3248aecac0bd67dc1",
+        "re-pin, the second audit of A-90: a WebSocket final_path into a call's arguments reads "
+        "no stop there either; version 4 is not released",
+    ),
+    (
+        4,
+        "86d4391094d167c454d0e05ec076a36ca10c585c57b1d00574a7e86e87c0fe40",
+        "re-pin, merge of main after #126 (u06 A-88, a map read whole hashed whole): version 4 "
+        "takes rules 3's masking change too; version 4 is not released",
+    ),
+    (
+        5,
+        "c352e9bd55c8e3b0629e4164411b64667327a5c3cd533e003a7cb84475ecf9c4",
+        "u08 A-87, every reply received under an identity read against the owner map, the "
+        "identity sweep one trial counted once, a canary read case-folded without format "
+        "characters; version 5 is not released",
+    ),
 )
 
 #: The digest each version is pinned to now: the last line of :data:`PIN_HISTORY` for it.
 PINNED: dict[int, str] = {
     1: "eea242b76899ce22c68bc80c4c6b51a92c22cd39d4763bc373f3cd8a612e9dec",
-    2: "06c484bf2ab4a62cd519d8981920682bf121b5372701c14675e08cf1506b9b66",
+    2: "8d0f56fb1a5237de51492dea812a213f4ed39c8ea5a2b5edaff1812e0300c372",
+    3: "ee44c0fc64ebbda4663040f0c4246f342b398e7290de53f71fb48024642414b7",
+    4: "86d4391094d167c454d0e05ec076a36ca10c585c57b1d00574a7e86e87c0fe40",
+    5: "c352e9bd55c8e3b0629e4164411b64667327a5c3cd533e003a7cb84475ecf9c4",
 }
 
 #: One ``<version> <digest>`` line per pin, appended to and never edited: the history must start

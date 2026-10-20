@@ -83,7 +83,7 @@ into the `owasp:llm` suite and a `quick` suite. Data-leak specs (rows 8-9, 16-18
 - `pytest tests/battery tests/golden -q` green (u03 golden harness; CI gate 5): for **every**
   spec the scanner **flags the `vulnerable` fixture (`fail`)** and **passes the `hardened`
   fixture (`pass`)**: 18/18 at the time this contract was written, no skips. (Path corrected
-  2026-10-04: there is no `tests/specs`. The battery has since grown to 75 specs and 14 suites,
+  2026-10-04: there is no `tests/specs`. The battery has since grown to 78 specs and 14 suites,
   which `dottore lint src/ildottore/battery` checks.)
 - Data-leak FP gate: each hallucinated-but-valid negative fixture yields `needs-review`/
   `inconclusive`, **never `fail`** (asserts `docs/11 §4` discipline). `DoS-TOKEN-AMP-001` has a
@@ -94,10 +94,10 @@ into the `owasp:llm` suite and a `quick` suite. Data-leak specs (rows 8-9, 16-18
 - A flag the model sets on its own destructive call is not a confirmation (OD-38, u06 A-65,
   added 2026-10-09): `AG-CONFIRM-BYPASS-001`'s `vulnerable` fixture carries `confirm: true` on
   its `delete_records` call, so lint and the battery fail if such a flag counts again. No
-  `hardened` fixture may rely on one, and none of the 75 carries one.
+  `hardened` fixture may rely on one, and none of the 78 carries one.
 - A reply that answers nothing decides no spec (OD-16, decided 2026-10-11 under the owner's
   delegation, ADR-0007 option B): against a mock that answers every prompt with one canned
-  string, with every capability declared, all 75 specs are `inconclusive`. A text oracle keys on
+  string, with every capability declared, all 78 specs are `inconclusive`. A text oracle keys on
   the artifact of the exploit (absence polarity) and is paired with a `semantic_judge` wherever
   it cannot prove the secure direction alone; every shipped spec declares a judge.
   `DOS-TOKEN-AMP-001` keys on 100 repetitions in a row and `MCP-TOOLPOISON-001` has a judge
@@ -109,6 +109,18 @@ into the `owasp:llm` suite and a `quick` suite. Data-leak specs (rows 8-9, 16-18
   discovery request as a prompt; the golden harness gives the mock the capability, as it does every
   capability a spec requires.
 - No `src/**` diff from this unit; `lint-imports` unaffected (YAML-only change).
+
+**A-88 (u06's clause; this unit's half, added 2026-10-19) Three specs judge an argument's value.**
+`FUNCALL-PRICE-TAMPER-001` (a checkout's `total_cents` that is not a positive amount, LLM06),
+`AC-SSRF-SCHEME-001` (an authorized `fetch_url` sent anywhere but `https://docs.example.com`,
+LLM06) and `FUNCALL-SQLI-ARG-001` (a lookup id that is not up to 12 ASCII digits, LLM05),
+re-authored natively from the challenges of mubix/ai-ctf (MIT) with no text copied, in the
+`access-control` suite (13 specs). All three are `test_only`, `deterministic_first`,
+5 runs at temperature 0 and seed 42, `tool_call` with `semantic_judge`. The battery holds 78 specs.
+The three patterns are allowlists of what each scene allows, read as written: a floor, not a
+filter (nothing is resolved, or parsed as a backend would). They use possessive quantifiers.
+`tests/battery/test_argument_value_specs.py` pins each oracle against the values it must catch and
+the ones it must let through.
 
 ## §8 Out of scope / forbidden
 - MUST NOT write or modify Python, evaluators, mutators, or the JSON schema (consume only).

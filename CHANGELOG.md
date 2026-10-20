@@ -7,6 +7,124 @@ the file, schema copy, build or pipeline it names.
 
 ## [Unreleased]
 
+### Fixed (breaking for a run halted under judging rules 3: judging rules 4, u06 A-90)
+
+- **Arguments a reply carries as a JSON object read an integer longer than Python converts too.**
+  Anthropic's `tool_use` `input`, an OpenAI `function.arguments` written as an object and a
+  WebSocket frame's calls are parsed with the reply, so one integer past
+  `sys.get_int_max_str_digits()` in them made the whole reply unreadable and the attempt
+  `inconclusive` (OD-21), where A-89 judges the same call written as a JSON string (MEDIUM-1 of the
+  pre-merge audit of A-89). A success body and a WebSocket frame are now parsed keeping such an
+  integer as a `shared.toolcalls.LongInteger`, and only inside the arguments of a call the adapter
+  reads: anywhere else (the text, an id, a stop reason, the usage, a REST template's body) the
+  reply stays unreadable with the message it had, since a `LongInteger` is a `str` and a field read
+  as text would take its digits for the model's words; a WebSocket `text_path`, `model_path`,
+  `id_path` or `final_path` declared into a call's arguments reads none there.
+- **Judging rules 4** (2026-10-19). An `inconclusive` can become a verdict, so
+  `JUDGING_RULES_VERSION` is 4 by an appended pin: a run halted under version 3 is refused by its
+  resume before anything is sent, naming both, and `dottore --version` prints
+  `dottore 0.1.0 (judging rules 4)`. `JUDGING_RULES_SINCE` stays `2026-10-15`.
+
+### Fixed (u06 A-88, ADR-0014 amended)
+
+- **A map read whole under a pinned argument is hashed whole in the verdict.** It was masked by
+  shape: the redactor typed what it knew inside the JSON (an address, a key) and the map's keys and
+  every other value stayed in clear in the verdict's `matched`. Now a map or an empty list read
+  whole is one `«REDACTED:tool_arg_value:<hash>»`, with the redactor's salted hash; a scalar is
+  masked by its shape as before, and the call in the attempt's record is masked by shape as every
+  tool call is. Verdicts do not change, only the masks, so judging rules 3 are re-pinned, not
+  bumped (audit 2 of A-88, LOW-3).
+
+### Fixed (breaking for a run halted under judging rules 2: judging rules 3, u06 A-89)
+
+- **A call's JSON-string arguments with an integer longer than Python converts are read.**
+  `json.loads` converts each integer with `int`, which refuses more digits than
+  `sys.get_int_max_str_digits()` (4300 by default), so OpenAI's string form of
+  `{"total_cents": 0, "pad": <4301 digits>}` read as no arguments, `{}`, and `tool_call` passed it:
+  `forbidden_arg_values`, `forbidden_args`, the injection check and `tool_sequence`'s
+  `step_arg_patterns` judged nothing (L5 of the pre-merge audit of A-88, older than it). The
+  integer is now kept as its digits, sign included (`shared.toolcalls.LongInteger`, read as a
+  number by every check: its text is its JSON spelling, a map writes it unquoted, the string-only
+  patterns skip it), and the rest of the arguments are read; the in-band tool loop sends it back to
+  the target as a JSON string. Not taken: an `inconclusive` verdict, which would let one long number
+  turn a fail into "not evaluated", and raising the process-wide digit limit. Arguments that are an
+  object in the reply (Anthropic's `input`, a WebSocket frame's calls) are parsed with the reply,
+  so the same integer there still made the reply unreadable (`inconclusive`, OD-21): read since
+  A-90, above.
+- **Judging rules 3** (2026-10-19). A stored pass can become a fail, so
+  `shared.judging_rules.JUDGING_RULES_VERSION` is 3 by an appended pin (`PIN_HISTORY`,
+  `judging_pins.frozen`): a run halted under version 2 is refused by its resume before anything is
+  sent, naming both, and `dottore --version` prints `dottore 0.1.0 (judging rules 3)`.
+  `JUDGING_RULES_SINCE` stays `2026-10-15`.
+
+### Added (u06 A-88, ADR-0014)
+
+- **`tool_call` judges the value of an argument a spec pins.** It read a call's tool name and the
+  names of its argument keys, never their values, so an authorized tool called with an authorized
+  key passed whatever it carried. `forbidden_arg_values` maps an argument name to a regex: under
+  any tool, at any depth, the name stripped and case-folded, the value read in its JSON spelling
+  (a list item by item, nested lists included; a map or an empty list whole, as one line of JSON
+  with sorted keys); a match fails, naming the argument and the tool, with the value masked as
+  other tool evidence is; a pattern that does not compile makes the evaluator `inconclusive`. Lint
+  compiles the patterns with the others (`run` refuses a spec whose pattern does not compile),
+  refuses the key under another evaluator, with a blank name or with two names that fold to one,
+  and judges a fixture through the same helpers. Opt-in: no shipped verdict changes, and judging
+  rules 2 are re-pinned with a reason.
+- **Three specs, 78 in the battery**, in `access-control` (13 specs), `test_only`, re-authored
+  natively from the challenges of mubix/ai-ctf (MIT) with no text copied:
+  `FUNCALL-PRICE-TAMPER-001` (a checkout's total that is not a positive amount),
+  `AC-SSRF-SCHEME-001` (an authorized fetch sent anywhere but the documentation site the scene
+  allows) and `FUNCALL-SQLI-ARG-001` (a lookup id that is not a plain number). All three patterns
+  are allowlists of what the scene allows, read as written (a floor: nothing is resolved or
+  parsed as a backend would), with possessive quantifiers; a test reads each on 100,000
+  characters. Coverage figures do not move.
+
+### Changed (breaking for a reader of a hostile logprob stream's alternatives: u01 A-86)
+
+- **An alternative of a masked token shows at most four masks, past them one `«REDACTED:fragment»`**
+  (OD-52, decided under the owner's delegation). A-77 had each alternative of a masked token show
+  every mask of the stretches the token lies in; on a reply of secrets glued together (`ghp_` keys
+  glued by U+0000, in 4-character tokens with one alternative each, which an OpenAI target answering
+  with `top_logprobs` can send) every alternative showed every mask of the reply, and the output
+  grew as the square of the reply: 8, 16 and 32 KiB wrote 14.2, 56.2 and 223.5 MB on `fef4963e` (64
+  KiB 840 MB and 2.1 GB of memory in the audit, about 6 GB written near the 4 MiB reply cap). Now
+  0.22, 0.44 and 0.87 MB, and at the reply cap 1.40 s, 114 MB of memory and 4.89 MB written. Through
+  the CLI against a stub, the evidence of one spec's three attempts at such an 8 KiB reply took 42
+  MB on `fef4963e` and 456 KB now (at a clean reply of the same size: 348 KB). What changes: in the
+  evidence and in every report, such an alternative's `token` (OpenAI's shape) or text (the stored
+  `top` pairs) reads `«REDACTED:fragment»` where it read a run of five masks or more, or the token's
+  own text where it was written as the token. Differential against `fef4963e` over 60,000
+  comparisons: every difference is such an alternative, none shows a run of 8 characters main hides,
+  and replies of prose with a secret here and there do not change (0 of 30,000). No verdict,
+  finding, score or exit code changes: no CI result changes.
+- **Fixed: a dict, a set, a deque or an exception as an exit code printed
+  a split credential whole.** `SystemExit({"k": "<credential split by a newline>"})` reached the
+  stray-exit line through `str()`, which writes each item's `repr`; a mapping is read as its keys'
+  and values' texts, any sequence (a deque too) or set as its items' texts and an exception as its
+  arguments' texts now, as a tuple was (u12's half; 7 cases through the console entry point, on
+  typer 0.26.8 and 0.27.3).
+- **Tests:** `test_a_token_of_glued_uuids_takes_linear_time` times its two sizes in the process's
+  CPU time, in turn, best of five (in wall time it read ratios of 1.8 to 8.7 against a bound of 8
+  with twice as many busy processes as cores, and failed once on a loaded runner); its 120 s ceiling
+  goes. A failure of `tests/cli/test_usage_figures.py` under load was not reproduced (8 runs under
+  45 CPU loops on 15 cores) and the test is unchanged. Found on the way and left to its own change:
+  a campaign's target adapter keeps an HTTP timeout of 30 s that `--timeout` and the `-T` templates
+  do not reach, so a reply after 30 s is resent (measured: a stub whose first reply came 33 s late
+  with `--timeout 120` served 4 requests for 3 attempts).
+- **Judging rules 2, re-pinned** by two appended lines (`8ef34497`, `06bb22a2`): masking only, no verdict can
+  change.
+
+### Changed (the CI example installs a pinned commit of `main`, no longer a placeholder; docs only)
+
+- `examples/ci-github-actions.yml` pins `ILDOTTORE_COMMIT` to `fef4963e` (`main` on 2026-10-17,
+  with A-83, A-84 and A-85), where it held a placeholder that its install step refused until a
+  commit of `main` carried the battery; its guard still refuses a tag, a branch or a short SHA.
+  Its list of what v0.1.0 predates names A-83, A-84 and A-85 too, and INSTALL names `5edeb0a7`
+  (#119) as the first commit whose wheel carries the battery. The MANUAL, the A-85 entry below and
+  u08 A-85 now say that `authz_leak`'s own verdict names the canaries the request carries and that
+  the stored verdict, the reports and `dottore replay` do not (pre-merge audit of the stacked
+  `48a000d4`, LOW A).
+
 ### Changed (breaking for a scope with a weak identity canary, a pipeline that gates on a cross-tenant or secret-shape finding, an older build reading the run, and a run halted under judging rules 1: judging rules 2, u08 A-85)
 
 - **Judging rules 2.** `shared.judging_rules.JUDGING_RULES_VERSION` is 2: the changes below alter
@@ -45,7 +163,8 @@ the file, schema copy, build or pipeline it names.
   fail. Never a pass, since the same occurrence is what a real leak of the named record shows
   (dropping it would let whoever writes the request hide a leak by naming the canary). A crossing
   of the spec's own canary, which the request does not carry, still confirms the leak beside it,
-  and the verdict lists both, masked, as `7d01521f` does, naming the one the request carries.
+  and the stored verdict lists both, masked, as `7d01521f` does (`authz_leak`'s own verdict
+  names the one the request carries; the reports and `dottore replay` do not show that naming).
   Only text the scanner wrote counts as the request (prompt, system prompt, image text, a
   `system`, `developer` or `user` message by its text, never a `tool_result` block); a target's
   own reply never does. The stored aggregate quotes the `authz_leak` review, the finding's line

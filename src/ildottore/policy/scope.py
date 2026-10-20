@@ -54,7 +54,9 @@ SCOPE_VERSION: Final = re.compile(r"1(?:\.[0-9]+)?")
 #: ``n`` distinct characters carry ``n * log2(n)`` bits, 24 to 33.2; a random 12-hex one 46% of the
 #: time), while the refusal promised 8 (audit of ``bc5ddcb1``, LOW 2). At 16 it refuses about one
 #: random 16-digit number in 200 (4,819 of a million draws), one random 16-hex token in 15,000
-#: (68), two lowercase ones in a million, and no letters-and-digits one of 100,000 draws.
+#: (68), two lowercase ones in a million, and no letters-and-digits one of 100,000 draws holding
+#: no label; a 3-character target id such as ``tgt`` refuses about one random 16-character
+#: letters-and-digits token in 1,400 that happens to hold it (a hex one never).
 MIN_CANARY_CHARS: Final = 16
 
 #: The fewest bits of character entropy a canary must carry (its length times the Shannon entropy

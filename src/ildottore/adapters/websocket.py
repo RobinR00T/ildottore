@@ -91,9 +91,14 @@ from ildottore.shared.models import (
     WebSocketExpect,
     WebSocketSpec,
 )
-from ildottore.shared.nesting import NestedTooDeeply, bounded_loads
+from ildottore.shared.nesting import NestedTooDeeply
 from ildottore.shared.provider_filter import blank_text, stop_provenance
-from ildottore.shared.toolcalls import check_argument_nesting
+from ildottore.shared.toolcalls import (
+    LongInteger,
+    check_argument_nesting,
+    check_long_integers,
+    loads_keeping_long_integers,
+)
 from ildottore.shared.wellformed import well_formed_json
 
 __all__ = [
@@ -702,8 +707,10 @@ class WebSocketAdapter:
                                 f"{self.id}: the server answered with an error frame "
                                 f"({quoted(reading.error_path)}: {self._shown(error)})"
                             )
+                    # A path declared into a call's arguments can reach a LongInteger, a str:
+                    # never the text, the model, the id or the stop (pre-merge audit of A-90).
                     fragment = get_path(frame, reading.text_path)
-                    if isinstance(fragment, str):
+                    if isinstance(fragment, str) and not isinstance(fragment, LongInteger):
                         parts.append(fragment)
                     if reading.tool_calls_path is not None:
                         raw_calls = get_path(frame, reading.tool_calls_path)
@@ -717,11 +724,11 @@ class WebSocketAdapter:
                             usage = dict(raw_usage)
                     if reading.model_path is not None:
                         model = get_path(frame, reading.model_path)
-                        if isinstance(model, str):
+                        if isinstance(model, str) and not isinstance(model, LongInteger):
                             ids["model"] = model
                     if reading.id_path is not None:
                         reply_id = get_path(frame, reading.id_path)
-                        if reply_id is not None:
+                        if reply_id is not None and not isinstance(reply_id, LongInteger):
                             ids["id"] = reply_id
                     if self._is_final(frame):
                         final = frame
@@ -737,6 +744,8 @@ class WebSocketAdapter:
             ) from exc
 
         finish = get_path(final, reading.final_path) if final is not None else None
+        if isinstance(finish, LongInteger):  # nor the stop (second audit of A-90)
+            finish = None
         stop = normalized_stop(finish if isinstance(finish, str) else None)
         text = "".join(parts)
         # A turn with no text is still a reply when it carries tool calls (an agent that only
@@ -827,7 +836,10 @@ class WebSocketAdapter:
             # parse, and half a character (a lone surrogate escaped in a string) read as U+FFFD,
             # since no UTF-8 writer downstream takes it (A-47; pre-merge audit of PR #87: a
             # plain json.loads let one such frame abort the campaign).
-            frame = well_formed_json(bounded_loads(raw))
+            parsed, long_integers = loads_keeping_long_integers(raw)
+            frame = well_formed_json(parsed)
+            if long_integers:  # only a tool call's arguments may hold one (u06 A-90)
+                check_long_integers(frame, self._calls_in(frame))
         except NestedTooDeeply as exc:
             raise too_deep from exc
         except ValueError as exc:
@@ -875,6 +887,16 @@ class WebSocketAdapter:
         ):
             closed.retryable = False  # the server refused what was sent; it would again
         return closed
+
+    def _calls_in(self, frame: object) -> list[object]:
+        """The tool calls the turn reads in ``frame``: the list at ``response.tool_calls_path``,
+        none when the block declares no such path or the frame is not an object (u06 A-90)."""
+
+        path = self.spec.response.tool_calls_path
+        if path is None or not isinstance(frame, Mapping):
+            return []
+        calls = get_path(frame, path)
+        return list(calls) if isinstance(calls, list) else []
 
     def _tool_call(self, call: Mapping[str, Any]) -> JsonDict:
         """A tool call read from a frame, refused when its JSON-text arguments nest too deeply.

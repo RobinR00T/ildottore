@@ -268,7 +268,7 @@ aggregate verdict; no per-evaluator verdict and nothing of the judge's exchange 
   and `combine` call it whatever `evaluator_logic` says, so the three agree on every input
   (`tests/evaluators/test_one_combination_rule.py`, a Hypothesis property over 300 drawn verdict
   lists and every value); `combine` lost `configs` and its weights. The schema gains
-  `deterministic_first`, which the 75 shipped specs declare; `all_pass`, `any_fail` and
+  `deterministic_first`, which the 78 shipped specs declare; `all_pass`, `any_fail` and
   `weighted` load and are a `DEPRECATED_COMBINATION` lint warning, and so is an evaluator
   `weight`, read by nothing. The amendment: a variant confirms only when, besides failing on
   every attempt above the threshold, at least one of its fails was deterministic
@@ -314,6 +314,102 @@ wrote is the request (an `assistant` or `tool` message, or a `tool_result` block
 and the JWT the redactor masks, with no copy of its own; the four formats it had keep their
 entropy gates, every other format gets 3.0 bits, and the PEM header stays its own rule
 (`tests/evaluators/test_authz_leak_echo.py`, `tests/evaluators/test_secret_shape_key_formats.py`).
+
+**A-88 (this unit's clause, added 2026-10-19; halves in u00, u02 and u13) `tool_call` judges the
+value of an argument a spec pins, not only its name.** Before it, the evaluator read a call's tool
+name and the names of its argument keys: an authorized tool called with an authorized key passed
+whatever it carried (a checkout's `total_cents` of zero or less, an authorized fetch's `file://`
+URL, a lookup id that is a SQL fragment), found in the challenges of mubix/ai-ctf (MIT) on
+2026-10-19. `EvaluatorConfig.forbidden_arg_values` maps an argument name to a regex:
+- the name is compared stripped and case-folded, under any tool, at any depth of the arguments
+  (a map in a list included), as `forbidden_args` reads its keys;
+- the value is read in its JSON spelling (`true`, `false`, `null`, `NaN`, `Infinity`, `-Infinity`,
+  an integer past the interpreter's digit limit as its sign and a placeholder), a list under the
+  name item by item, nested lists down to their items, a map or an empty list whole as one line
+  of JSON with sorted keys (`canonical_value_text`), and the walk goes on inside a map; the value
+  is matched case-insensitively, as written;
+- a match is a fail, its finding naming the argument (as the call wrote it, ASCII-quoted) and the
+  tool, the value masked as other tool evidence is (by shape when the redactor knows one, else
+  typed `tool_arg_value`, a type of the redactor's own, and hashed); a map or an empty list read
+  whole is hashed whole as one `tool_arg_value`, never masked by the shapes in it (amended
+  2026-10-19, audit 2 LOW-3: by shape, the rest of the map stayed in clear);
+- a pattern that does not compile makes the evaluator `inconclusive`, before anything else, never
+  a quiet pass;
+- opt-in: a spec without the key judges as before, so no shipped verdict changes and judging rules
+  2 are re-pinned, not bumped.
+The lint stub judges through the same walk (`shared/tool_abuse.py`: `forbidden_value_hits`,
+`value_pattern_key`), compiling the patterns before it reads the calls, as the evaluator does; a
+pattern the engine refuses is there the `SpecPatternError` the fixture proof reports (A-33), so
+lint and a run agree. Alternatives not taken
+(ADR-0014): keys scoped to a tool (`place_order.total_cents`), a range syntax for numbers, a
+resolver that reads where a URL's host points, and a denylist for the SSRF pattern (the pre-merge
+audit's M4). Checked by `tests/evaluators/test_forbidden_arg_values.py` (60 tests since the
+audit 2 amendment above) and `tests/battery/test_argument_value_specs.py` (100 tests, a linear-time read of each shipped
+pattern on 100,000 characters among them), which fail on `d8b43561`: the field, the helpers and
+the three specs are new there. **Amended 2026-10-19 after the pre-merge audit:** possessive
+quantifiers in the price pattern (M1, a second on 16,000 spaces), a map or an empty list read
+whole and nested lists to their items (M2), an allowlist for the price (M3, widened as a
+denylist first; round 2 of the audit found zeros it still missed) and for the URL (M4), the
+stub compiles before its no-calls pass (L1), lint refuses two names that fold to one (L2); a string-form argument holding an integer past the digit limit still reads as no arguments
+(L5, older than this clause, left for its own branch; closed by A-89).
+
+**A-89 (this unit's clause, added 2026-10-19; a line in u12) A call's JSON-string arguments with an
+integer longer than `int` converts are read.** `json.loads` converts each integer with `int`, which
+refuses more digits than the interpreter's limit (`sys.get_int_max_str_digits()`, 4300 by default)
+with a `ValueError`; `shared.toolcalls.call_arguments` read that as a string that is not JSON, `{}`,
+so a call whose arguments were `{"total_cents": 0, "pad": <4301 digits>}` passed
+`forbidden_arg_values`, and `{"role": "admin", ...}` passed `forbidden_args`, the injection check
+and `tool_sequence`'s `step_arg_patterns` alike (L5 of the pre-merge audit of A-88, older than it).
+The arguments are now parsed with a `parse_int` (`bounded_loads(..., parse_int=)`) that keeps such
+an integer as its digits, sign included, a `shared.toolcalls.LongInteger` (a `str` subclass, so the
+in-band tool loop's `json.dumps` of the arguments serializes it, as a string), and reads the rest as
+written; an integer inside the limit is an `int` as before. The evaluators read it as a number:
+`arg_value_text` gives its digits, its JSON spelling; `canonical_value_text` writes it unquoted; the
+injection walk and both step-pattern walks (the evaluator's and the lint stub's) skip it, as they
+skip an `int`. `check_argument_nesting` parses with the same hook. Not taken: making the evaluator
+`inconclusive` on such arguments, which would let a target turn a fail into "not evaluated" with one
+long number (the reasoning of OD-28 for lone surrogates); raising the digit limit, which is
+process-wide and bounds a conversion whose cost is the square of its length. Arguments that are an
+object in the reply (Anthropic's `input`, an OpenAI `function.arguments` written as an object, a
+WebSocket frame's calls) were parsed with the reply, without the hook, so the same integer there
+still made the whole reply unreadable (the pre-merge audit's MEDIUM-1; closed by A-90). Stored
+verdicts can change (a pass becomes a fail), so `JUDGING_RULES_VERSION` is 3 (u12's line). Checked
+by `tests/evaluators/test_long_integer_arguments.py` (17 tests, at the interpreter's floor of 640
+digits and at 4300), 12 of which fail on `d6236c7d`, and by
+`tests/cli/test_resume_judging_rules.py`.
+
+**A-90 (this unit's clause, added 2026-10-19; a line in u12) Arguments a reply carries as a JSON
+object read an integer longer than `int` converts too.** Anthropic's `tool_use` `input`, an OpenAI
+`function.arguments` written as an object and a WebSocket frame's calls (at
+`response.tool_calls_path`) are parsed with the reply, by `bounded_loads` without A-89's hook, so
+one such integer in them made the whole reply `ResponseMalformed`, the attempt `inconclusive`
+(OD-21), where the same call written as a JSON string is judged (A-89): the verdict on one logical
+call depended on the provider's wire shape (MEDIUM-1 of the pre-merge audit of A-89). A success body
+(`BaseAdapter._handle_final_response`: OpenAI, Anthropic, REST) and a WebSocket frame
+(`_recv_frame`) are now parsed by `shared.toolcalls.loads_keeping_long_integers`, which keeps each
+such integer as a `LongInteger` and returns the ones it kept; when there are any,
+`check_long_integers` raises the `ValueError` `int` raises for the first that is not inside the
+arguments `call_arguments` reads of a call the adapter reads in that body
+(`BaseAdapter._calls_read`, which asks the adapter's own `_parse_response`;
+`WebSocketAdapter._calls_in`, the list at `tool_calls_path`), matched by identity, so the same
+digits in the text and in an argument are two, among the integers the parsed reply holds (a
+duplicate key's dropped value is in no field, and the string form drops it too). A WebSocket path a
+block declares into those arguments (`text_path`, `model_path`, `id_path`, `final_path`) reads no
+text, model, id or stop there (an integer a `usage_path` reaches there is no count: `is_count` skips
+it). Such an integer anywhere else (the text, a call's name or id, arguments that are themselves the
+integer, a stop reason, an id, the usage, a block the adapter does not read as a call, every REST
+template body, a frame of a block that declares no `tool_calls_path`) keeps the reply unreadable,
+with the message it had: a `LongInteger` is a `str`, and a field read as text would take its digits
+for the model's words (OpenAI's `content`), so no reader takes one for text or a figure. Not
+changed: an SSE body's events and a JSON body's excerpt are read for masking only (`_event`,
+`_split_masked`), and an error body (`azure_prompt_filter`, `sampling_params_named`) is read for its
+codes; each keeps `bounded_loads` without the hook, so such an integer there reads as text to mask,
+or as no code, as before. Stored verdicts can change (an `inconclusive` becomes a verdict), so
+`JUDGING_RULES_VERSION` is 4 (u12's line). Checked by
+`tests/adapters/test_long_integer_object_arguments.py` (21 tests at the interpreter's floor of 640
+digits: Anthropic, OpenAI, REST and WebSocket); on the tree before it, the 19 that import there (all
+but the two of the helpers it adds) include 8 that fail, and by
+`tests/cli/test_resume_judging_rules.py`.
 
 ## §8 Out of scope / forbidden
 - MUST NOT call provider SDKs directly (only via `TargetAdapter`).

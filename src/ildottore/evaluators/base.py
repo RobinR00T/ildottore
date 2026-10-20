@@ -104,7 +104,9 @@ def tool_args(call: Mapping[str, object]) -> Mapping[str, object]:
     return call_arguments(call)
 
 
-def mask_value(value: str, *, type_hint: str, redactor: Redactor | None = None) -> str:
+def mask_value(
+    value: str, *, type_hint: str, redactor: Redactor | None = None, whole: bool = False
+) -> str:
     """Type+mask a sensitive ``value`` for evidence storage (``docs/11 §5`` DL2).
 
     Returns a ``«REDACTED:<type>[:<hash8>]»`` token; the raw value never survives.
@@ -114,8 +116,14 @@ def mask_value(value: str, *, type_hint: str, redactor: Redactor | None = None) 
     correlated without revealing it. The redactor keeps a mask as written only when its type is
     one the tool writes (``redactor._OWN_MASK_TYPES`` and its patterns' types): a ``type_hint``
     outside them is read as text again on the next redaction, so a new hint goes on that list.
+
+    ``whole`` skips the shapes: the value is one ``type_hint`` mask and its hash, whatever it
+    holds. It is for text that is no value of its own, such as a map written as JSON, where a
+    mask by shape would type the shapes it knows and keep the rest in clear (audit 2 of A-88).
     """
     red = redactor or _DEFAULT_REDACTOR
+    if whole:
+        return f"«REDACTED:{type_hint}:{red._digest(value)}»"
     masked = red.redact_text(value)
     # The redactor rewrites its two stash delimiters, so a value holding one came back
     # different with nothing masked, and was returned raw (pre-commit audit).

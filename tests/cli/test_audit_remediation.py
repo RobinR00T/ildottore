@@ -464,7 +464,7 @@ def test_the_shipped_battery_completes_under_its_own_default_budget(tmp_path: Pa
     doc = json.loads(report.read_text(encoding="utf-8"))
     assert doc["summary"]["status"]["state"] == "complete"
     specs = doc["summary"]["coverage"]["specs"]
-    assert specs["run"] == specs["total"] == 75
+    assert specs["run"] == specs["total"] == 78
 
 
 def test_the_ledger_measures_seconds_not_clock_reads() -> None:

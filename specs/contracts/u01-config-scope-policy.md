@@ -719,8 +719,9 @@ masks again as one, and the store's guard refused a URL password the redactor ha
 `main` exits 0: pre-merge audit of `c4bd2012`, HIGH 1). A mask that cannot be placed masks its
 stream (`«REDACTED:fragment»`, a type the tool writes, in the first piece). A token a mask covers
 has its alternatives masked once the item's every edit is made (an alternative written as the
-token shows what the token shows, any other the token's masks; a later edit used to undo them and
-leave 10 characters of a labelled password, MEDIUM 2), and wherever a token or an alternative is
+token shows what the token shows, any other the token's masks, and past four masks each shows one
+`«REDACTED:fragment»`, A-86; a later edit used to undo them and leave 10 characters of a labelled
+password, MEDIUM 2), and wherever a token or an alternative is
 masked, by its stream or on its own, the `bytes` OpenAI writes beside it go, since they spell it
 (LOW 4); so in a transcript's frame, where an OpenAI chunk streamed with logprobs holds one
 logprob item (found with the fourth pre-merge audit's fix: the chunks' `bytes` spelled a key an
@@ -1120,7 +1121,7 @@ tuple now, and only a piece across several builds one: 16 KiB and 64 KiB peak at
 under eight times the peak memory (`test_a_logprob_stream_s_memory_grows_with_its_length`). What a
 piece's alternatives show is still every mask of its stretch, which is A-77's output: bounding it
 (one mask, or `«REDACTED:fragment»` past a count) changes that output and is left for its own
-change.
+change (done in A-86: past four masks, one `«REDACTED:fragment»`).
 
 *Placing a reading back.* `read_both_ways` places a reading's masks with `tolerant=True`: the CLI
 masks in passes, and a later pass can read an earlier one's mask as a URL's user and rewrite it
@@ -1153,6 +1154,84 @@ before anything is sent, naming the identity and the reason, never the canary
 (`tests/policy/test_scope_canary_shape.py`). The redactor gains one accessor,
 `key_format_patterns()` (the late patterns without the UUID), which `secret_shape` reads: the A-78
 sentence above that the evaluator "keeps its own rules" held until A-85.
+
+**A-86 (added 2026-10-17; items 2 and 4 are u12's half) What an alternative of a masked token shows
+is bounded, an exit code that holds text (a dict, a set, a deque, an exception's arguments) is
+masked as that text, and the glued-UUID timing test reads CPU time.** Follow-ups the pre-merge
+audits of A-83 (#120, rounds 2 and 3) queued, the first three reproduced on `fef4963e` and the
+fourth not (item 4); decided under the owner's delegation (best practice, revisable), OD-52.
+
+*1. An alternative past four masks shows one fragment (OD-52).* A-77 masks the alternatives of a
+token a mask covers: one written as the token shows what the token shows, any other the token's
+masks, which are every mask of the stretches the token lies in. Where many masks merge into one
+stretch (secrets glued together, which the two readings of A-83 make common: `ghp_` keys glued by
+U+0000 are masked by both, and every placement overlaps), every alternative of every token there
+showed every one of them, so the output grew as tokens times masks. On `fef4963e`, that stream in
+4-character tokens with one alternative each: 8, 16 and 32 KiB of joined text took 0.89, 3.43 and
+13.59 s, peaked at 90, 250 and 901 MB and wrote 14.2, 56.2 and 223.5 MB (four times for each
+doubling); the audit measured 64 KiB at 55.6 s, 2.1 GB and 840 MB written, and about 6 GB near the 4
+MiB reply cap, which a target answering with `top_logprobs` reaches, since the OpenAI adapter asks
+for them. Now a token with more masks than `_ALTERNATIVE_MASKS` (4) has each alternative, whatever
+it was written as, show `«REDACTED:fragment»` alone (a type the tool writes, A-77's mask for a
+stream it cannot place), and its `bytes` go as before; up to four, the output is A-77's. The same
+stream: 8 to 64 KiB in 0.06, 0.12, 0.24 and 0.48 s, 0.22, 0.44, 0.87 and 1.74 MB written; at the
+reply cap (a 4.07 MB body, 184,000 characters joined) 1.40 s, 114 MB peak and 4.89 MB written, at
+half of it 0.67 s, 68 MB and 2.45 MB; with four alternatives written as the token, 1.50 and 3.01 MB
+of body 0.50 and 1.01 s, 51 and 81 MB, 1.99 and 3.98 MB written; the stored `top` pairs, 1.18 and
+2.35 MB of body 0.67 and 1.35 s (peaks are a process's, the input included). An alternative now
+shows at most four masks or one fragment, so what a stream's alternatives show is at most a constant
+times what came.
+
+*Why four.* Over the auditors' grammars cut into tokens of 1 to 4 characters (3,000 texts each), the
+masks a masked token touches: the A-78 grammar, 1,190 of 221,080 tokens touch more than four (0.54%,
+at most 7); the delimiter grammar of the A-83 audit, 4,937 of 226,390 (2.2%, at most 9); without
+delimiters, 95 of 218,516. A token of a reply with a secret here and there touches one, two at a
+boundary. Four leaves those as they were and bounds an alternative at about 150 characters.
+Alternatives not taken: (a) the first mask and a count, the audit's other proposal: a count is no
+mask the redactor knows, so it is a new grammar every reader and the store's guard would need, and
+the first mask of a merged stretch is not the token's own, often far from it; (b) the first four
+masks and then the fragment: five masks where one says it, the four unrelated to the token as often
+as not; (c) the fragment for every alternative of a masked token: bounded too, but it changes the
+output of every reply with a secret and loses the type a reviewer reads; (d) a bound in characters:
+the same bound, harder to state; (e) eight: no grammar text past it but one, and twice the output at
+the bound. Reversal: `_ALTERNATIVE_MASKS` and the two lines in `_mask_alternatives` that read it.
+
+*Measured against `fef4963e`.* The differential (main's redactor, a `git show` copy, loaded beside
+this one; the auditors' grammars, `scratch/fumask-audit/fz/gen_base.py` and `gen_adv.py`): 10,000
+cases (40% the A-78 grammar, 40% the delimiter grammar, 20% 5 to 30 secrets glued by U+0000, U+0001
+or nothing), each cut into tokens, in three shapes (OpenAI's `top_logprobs` with `bytes`, the stored
+`top` pairs, an event stream's chunks each holding a logprob item, as a transcript), through
+`mask_split` and `redact_split`: 60,000 comparisons, 10,083 differ (7,692 of the glued secrets,
+1,848 of the delimiter grammar, 543 of the A-78 grammar), 3,262,391 leaves. Every differing leaf is
+an alternative's text or `bytes` in an item the bound applied to, in some pass; the branch shows
+`«REDACTED:fragment»` there in all but 39, where it shows the token's masks of a later pass (four or
+fewer) where main showed the token's text: an alternative written as the token became the fragment
+in the first pass and is no longer written as the token in the next, which masks more. No leaf shows
+a run of 8 characters outside its masks that main's same leaf does not; with the bound lifted the
+two are equal on all 60,000; every `redact_split` output is a fixed point (read again, each string,
+and each joined text the store's guard reads). Replies of prose with up to two secrets (5,000, in
+the same six ways): no difference. No verdict reads an alternative's text: the evaluators judge the
+raw reply, `logprob_membership` reads the figures only, and what changes is what the evidence and
+the reports keep; judging rules stay 2, re-pinned (u12's half). Tests:
+`tests/test_redactor_alternatives_bound.py` (7; 5 fail on `fef4963e`, the two at and under the bound
+hold main's output; ratios on two sizes: four times the stream, under six times the output and under
+eight times the peak memory) and `tests/cli/test_alternatives_bound_e2e.py` (through the CLI against
+a loopback stub, the evidence and the report of the hostile reply within twice a clean reply's of
+the same size: 1.3 and 1.1 times now, the evidence 42 MB against 348 KB, 122 times, on `fef4963e`).
+
+*3. The glued-UUID timing test.*
+`tests/test_redactor_number_cuts.py::test_a_token_of_glued_uuids_takes_linear_time` timed 40 KB and
+160 KB in wall time, one size after the other, each at its best of three, against a ratio of 8, and
+failed once on a loaded runner. With 30 CPU loops on 15 cores, 20 repeats: that form read 1.8 to
+8.7; the sizes in turn, best of five, in wall time, 3.1 to 7.2; in the process's CPU time
+(`time.process_time`), in turn, best of five, 3.4 to 4.9 (4.0 idle). The test takes the last form,
+still a ratio; its 120 s ceiling, an absolute limit, goes. 24 runs under that load passed. The other
+ratio tests of the redactor time in wall time still
+(`test_merging_many_masks_into_one_stretch_stays_linear`); none has failed.
+
+*Not covered.* A token with four masks or fewer still has each alternative show all of them, and a
+token's own text shows every mask of a stretch it is the first piece of, once (A-77): both linear.
+Evidence and reports written before A-86 keep what they showed.
 
 ## §8 Out of scope / forbidden
 - MUST NOT execute attacks, send requests, or import adapters/evaluators/core/store/reporting.
@@ -1238,3 +1317,16 @@ sentence above that the evaluator "keeps its own rules" held until A-85.
   calls it, so the 8 specs that declare `requires_policy` never send from `dottore`. Recommended
   (`00-INDEX.md`): one `run` option that loads a pack through that loader, printed in the plan and
   recorded with the run, landing with OD-11's `--allow-pii-elicitation` (u12 §9).
+- **OD-52** (numbered 2026-10-17, A-86 item 1) what an alternative of a masked token shows.
+  **Decided 2026-10-17 under the owner's delegation (best practice), revisable, built (A-86): the
+  token's masks up to four, as A-77 wrote them; past four, one `«REDACTED:fragment»` for each
+  alternative, whatever it was written as.** The question: A-77 had an alternative show every mask
+  of the stretches its token lies in, and on a hostile stream (secrets glued by U+0000, in short
+  tokens with alternatives) that is every mask of the reply for every alternative, an output in the
+  square of the reply (64 KiB wrote 840 MB, about 6 GB near the reply cap). Why: a redactor's output
+  must stay a constant times its input, and the bound changes nothing a reply with a secret here and
+  there shows (a token touches one mask, two at a boundary; 0.54% of the tokens of the dense A-78
+  grammar touch more than four). Alternatives not taken, with the reasons in A-86: the first mask
+  and a count; the first four masks and then the fragment; the fragment for every alternative of a
+  masked token; a bound in characters; a bound of eight. Reversal: `redactor._ALTERNATIVE_MASKS` and
+  the two lines of `_mask_alternatives` that read it; the evidence then shows A-77's output again.

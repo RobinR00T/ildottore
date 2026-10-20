@@ -27,7 +27,7 @@ from ildottore.shared.folding import folded
         ("CA\U000e0041NARY", "canary"),  # a tag character
         ("A‮B", "ab"),  # a bidi control
         ("Straße", "strasse"),
-        ("K", "k"),  # the Kelvin sign
+        ("\u212a", "k"),  # the Kelvin sign
         ("plain ascii", "plain ascii"),
         ("", ""),
     ],
@@ -51,4 +51,4 @@ def test_the_table_is_every_format_character_and_nothing_else() -> None:
 def test_a_space_or_a_letter_is_kept() -> None:
     """Only invisible format characters go: a space, a hyphen or a confusable letter stays."""
 
-    assert folded("C A N A-RаY") == "c a n a-rаy"
+    assert folded("C A N\u00a0A-R\u0430Y") == "c a n\u00a0a-r\u0430y"
