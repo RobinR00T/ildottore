@@ -330,7 +330,9 @@ URL, a lookup id that is a SQL fragment), found in the challenges of mubix/ai-ct
   is matched case-insensitively, as written;
 - a match is a fail, its finding naming the argument (as the call wrote it, ASCII-quoted) and the
   tool, the value masked as other tool evidence is (by shape when the redactor knows one, else
-  typed `tool_arg_value`, a type of the redactor's own, and hashed);
+  typed `tool_arg_value`, a type of the redactor's own, and hashed); a map or an empty list read
+  whole is hashed whole as one `tool_arg_value`, never masked by the shapes in it (amended
+  2026-10-19, audit 2 LOW-3: by shape, the rest of the map stayed in clear);
 - a pattern that does not compile makes the evaluator `inconclusive`, before anything else, never
   a quiet pass;
 - opt-in: a spec without the key judges as before, so no shipped verdict changes and judging rules
@@ -341,8 +343,8 @@ pattern the engine refuses is there the `SpecPatternError` the fixture proof rep
 lint and a run agree. Alternatives not taken
 (ADR-0014): keys scoped to a tool (`place_order.total_cents`), a range syntax for numbers, a
 resolver that reads where a URL's host points, and a denylist for the SSRF pattern (the pre-merge
-audit's M4). Checked by `tests/evaluators/test_forbidden_arg_values.py` (56 tests) and
-`tests/battery/test_argument_value_specs.py` (100 tests, a linear-time read of each shipped
+audit's M4). Checked by `tests/evaluators/test_forbidden_arg_values.py` (60 tests since the
+audit 2 amendment above) and `tests/battery/test_argument_value_specs.py` (100 tests, a linear-time read of each shipped
 pattern on 100,000 characters among them), which fail on `d8b43561`: the field, the helpers and
 the three specs are new there. **Amended 2026-10-19 after the pre-merge audit:** possessive
 quantifiers in the price pattern (M1, a second on 16,000 spaces), a map or an empty list read

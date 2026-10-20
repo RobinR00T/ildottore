@@ -226,13 +226,20 @@ PIN_HISTORY: tuple[tuple[int, str, str], ...] = (
         "holding an integer longer than int converts are read, the integer kept as its digits, "
         "where they read as {} and tool_call passed; a stored pass can become a fail",
     ),
+    (
+        3,
+        "ee44c0fc64ebbda4663040f0c4246f342b398e7290de53f71fb48024642414b7",
+        "re-pin 2026-10-19: u06 A-88 audit 2 LOW-3 (u06-argval-hash-whole, merged with 4e4fa2f1): "
+        "a map or an empty list read whole under a pinned argument is hashed whole in matched; "
+        "masking only, no status changes",
+    ),
 )
 
 #: The digest each version is pinned to now: the last line of :data:`PIN_HISTORY` for it.
 PINNED: dict[int, str] = {
     1: "eea242b76899ce22c68bc80c4c6b51a92c22cd39d4763bc373f3cd8a612e9dec",
     2: "8d0f56fb1a5237de51492dea812a213f4ed39c8ea5a2b5edaff1812e0300c372",
-    3: "bedc37ed4b3f66fd60f755711a9911094ad64e456056e09f708ff09928c00f26",
+    3: "ee44c0fc64ebbda4663040f0c4246f342b398e7290de53f71fb48024642414b7",
 }
 
 #: One ``<version> <digest>`` line per pin, appended to and never edited: the history must start
