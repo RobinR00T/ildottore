@@ -70,10 +70,13 @@ def foldable(canary: str) -> bool:
     One the scope's floors accept for an identity canary (:func:`ildottore.policy.scope.
     weak_canary`: 16 characters or more, no space, 36 bits of character entropy), so no ordinary
     text holds it in any case: 900 random ones, the battery's ``ZYNAP_CANARY_<run id>`` among
-    them, were in none of 2,852 benign files, exactly or folded. An identity canary always is
-    (the scope refuses a weaker one). A spec's own canary below the floors (nothing shape-checks
-    it) is read exactly, as before: folded, a word such as ``TOKEN`` or ``Secret`` was in six
-    times more of those files (73 to 420, 39 to 234), each one more false fail.
+    them, were in none of 2,852 benign files, exactly or folded. The floors measure the folded
+    form (u08 A-93): ``ab`` padded with the 16 variation selectors passed them as written, was
+    read folded as ``ab``, and failed every reply holding ``ab``; it is read exactly now, as the
+    word canary it is. An identity canary always is foldable (the scope refuses a weaker one). A
+    spec's own canary below the floors (nothing shape-checks it) is read exactly, as before:
+    folded, a word such as ``TOKEN`` or ``Secret`` was in six times more of those files (73 to
+    420, 39 to 234), each one more false fail.
     """
 
     return weak_canary(canary, []) is None

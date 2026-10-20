@@ -31,7 +31,7 @@ from __future__ import annotations
 
 from typing import Final
 
-__all__ = ["INVISIBLE_RANGES", "folded"]
+__all__ = ["INVISIBLE_RANGES", "folded", "visible"]
 
 #: ``Default_Ignorable_Code_Point`` as of Unicode 16.0 (``DerivedCoreProperties.txt``), reserved
 #: code points included, as Unicode asks of a renderer.
@@ -59,9 +59,15 @@ _DROP: Final = dict.fromkeys(
 )
 
 
+def visible(text: str) -> str:
+    """``text`` with its invisible characters removed, letter case kept (u08 A-93)."""
+
+    if text.isascii():  # no invisible character is ASCII
+        return text
+    return text.translate(_DROP)
+
+
 def folded(text: str) -> str:
     """``text`` with its invisible characters removed, then case-folded."""
 
-    if text.isascii():  # no invisible character is ASCII
-        return text.casefold()
-    return text.translate(_DROP).casefold()
+    return visible(text).casefold()

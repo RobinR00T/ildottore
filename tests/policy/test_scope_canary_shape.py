@@ -18,12 +18,22 @@ from pathlib import Path
 
 import pytest
 
+from ildottore.evaluators.base import foldable
 from ildottore.policy.errors import ScopeError
 from ildottore.policy.scope import (
     MIN_CANARY_BITS,
     MIN_CANARY_CHARS,
     load_scope,
     weak_canary,
+)
+from ildottore.shared.folding import folded
+
+#: Distinct invisible characters (u08 A-93): the 16 variation selectors, and 15 format
+#: characters (U+200B to U+200F, U+202A to U+202E, U+2060 to U+2064): varied as written, so
+#: they carry the entropy the floors ask for until they are removed.
+_SELECTORS = "".join(map(chr, range(0xFE00, 0xFE10)))
+_FORMATS = "".join(
+    map(chr, [*range(0x200B, 0x2010), *range(0x202A, 0x202F), *range(0x2060, 0x2065)])
 )
 
 
@@ -244,3 +254,98 @@ def test_two_canaries_that_fold_alike_are_refused(tmp_path: Path, other: str) ->
         load_scope(path)
     assert "differs from it only in letter case or invisible characters" in str(refused.value)
     assert "3f9c1e7a5b2d8064" not in str(refused.value).casefold()
+
+
+_HIDDEN = "once its invisible characters are removed, as authz_leak reads it"
+
+
+@pytest.mark.parametrize(
+    ("canary", "why"),
+    [
+        ("ab" + _SELECTORS, _SHORT),
+        ("ab" + _FORMATS, _SHORT),
+        ("CANARY" + _FORMATS[:10], _SHORT),
+        (
+            "ab\u034f\u3164\u115f\u1160\u17b4\u17b5\u180b\u180c\u180d\u180e\u180f\uffa0\u061c\u00ad",
+            _SHORT,
+        ),
+        (_SELECTORS, _SHORT),
+        ("abcdabcd" + _SELECTORS[:4] + "abcdabcd", _REGULAR),
+        ("AaBbCcDdAaBbCcDd", _REGULAR),
+    ],
+    ids=[
+        "variation-selectors",
+        "format-characters",
+        "word-joiners",
+        "grapheme-joiner-hangul-filler",
+        "only-invisible",
+        "regular-once-unpadded",
+        "regular-once-case-folded",
+    ],
+)
+def test_the_floors_measure_the_canary_as_it_is_read(tmp_path: Path, canary: str, why: str) -> None:
+    """u08 A-93 (L3 of the A-92 audit): ``authz_leak`` and ``secret_leakage`` read a canary of the
+    floors folded (``shared.folding.folded``), so the floors measure that form. On ``65203f18``
+    they measured it as written: ``ab`` and the 16 variation selectors (or, before A-92 too, 15
+    distinct format characters) passed, and every reply holding ``ab`` read as the identity's data
+    received, a confirmed Critical. The canary is not quoted."""
+
+    with pytest.raises(ScopeError) as refused:
+        load_scope(_scope(tmp_path, canary))
+    message = str(refused.value)
+    assert why in message
+    if folded(canary) != canary.casefold():
+        assert _HIDDEN in message
+    assert repr(canary) not in message and canary not in message
+    assert weak_canary(canary, []) is not None
+
+
+def test_a_canary_with_no_invisible_character_reads_as_before() -> None:
+    """The reason names the invisible characters only when there were some to remove."""
+
+    why = weak_canary("abcdabcdabcdabcd", [])
+    assert why is not None and _REGULAR in why and _HIDDEN not in why
+    assert weak_canary("CANARY-B-3f9c1e7a5b2d8064", ["acme", "tenant-a", "tenant-b"]) is None
+
+
+def test_a_label_is_looked_for_in_the_canary_as_it_is_read() -> None:
+    """A name split inside the canary by invisible characters is still that name."""
+
+    canary = "tenant\u200b-b-\u200c\u200d\u2060\u2061\u2062" + "2026-10-16"
+    assert weak_canary(canary.replace("\u200b", ""), ["tenant-b"]) is not None
+    why = weak_canary(canary, ["tenant-b"])
+    assert why is not None and why.startswith(_HOLDS)
+
+
+@pytest.mark.parametrize(
+    "canary",
+    ["Straßenbahnhöfe", "Fußballstadions", "\ufb03" * 16, "ΐΰﬀﬁﬂﬃﬄﬅ"],
+    ids=["sharp-s-15", "sharp-s-15-b", "ligature-repeated", "expanding-8"],
+)
+def test_case_folding_that_lengthens_a_canary_does_not_let_it_pass(canary: str) -> None:
+    """Pre-merge audit of A-93, MEDIUM 1: ``ß`` folds to ``ss`` and ``ﬃ`` to ``ffi``, so measured
+    folded alone a 15-character word reached 16 and a repeated ligature 44 bits. The floors hold
+    for the visible form too, so each stays refused, as on ``65203f18``."""
+
+    assert weak_canary(canary, []) is not None
+    assert not foldable(canary)
+
+
+def test_a_label_with_an_invisible_character_is_looked_for_as_it_is_read(tmp_path: Path) -> None:
+    """Pre-merge audit of A-93, LOW 3: the labels are folded as the canary is, so an identity
+    named with a zero-width space inside still names the canary that holds it."""
+
+    with pytest.raises(ScopeError) as refused:
+        load_scope(_scope(tmp_path, "tenant-b-2026-10-16-x", name="tenant\u200b-b"))
+    assert _HOLDS in str(refused.value)
+    assert weak_canary("tenant-b-2026-10-16-x", ["tenant\u200b-b"]) is not None
+
+
+def test_a_label_short_only_once_folded_is_still_taken_out() -> None:
+    """Delta audit of A-93, LOW 1: a name of three characters as written, one of them invisible, is
+    two as read; it is still taken out of the canary, so what is left is measured, as on
+    ``65203f18``."""
+
+    canary = "ab\u200b" * 6 + "cdefghij"
+    why = weak_canary(canary, ["tgt", "ab\u200b"])
+    assert why is not None and why.startswith(_HOLDS)
