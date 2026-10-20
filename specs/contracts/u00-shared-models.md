@@ -235,6 +235,15 @@ first version's `Verdict.identity_sweep` (the sweep's own count) was dropped wit
 `forbidden_arg_values: dict[str, str] | None` (argument name to regex), and the attack-spec schema
 the object of strings beside `step_arg_patterns`; absent, nothing changes.
 
+**A-87 (u08's clause; this unit's half, added 2026-10-17, amended 2026-10-20).** `EvalContext` gains
+`reply_identities`, the scope identities the reply under evaluation was received as: set on every
+attempt of a spec the identity sweep compares, empty when the target file's credential is none of
+theirs, `None` for the sweep's own comparison or no sweep. `shared.enums.IDENTITY_SWEEP` names the
+`mutation` an identity sweep's trial is stored under, which no mutator may take.
+`shared.folding.folded` (format characters, Unicode category `Cf`, removed, then `str.casefold`) is
+the one reading of a canary in a request and in a reply. Optional and behaviour-free for every
+caller that sets none; no stored field is new, so an older build reads a run of this one.
+
 ## §8 Out of scope / forbidden
 - MUST NOT import any other `ildottore` package or any provider SDK / httpx / Jinja / Typer.
 - MUST NOT implement behavior: no scoring/banding math (u07), no evaluation (u06), no I/O,

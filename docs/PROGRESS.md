@@ -5,6 +5,28 @@ The carryover ledger. Every agent session updates this so context survives even 
 newest merge on top: a branch's entries land together when it merges, so the dates of
 neighbouring entries can interleave (an older branch merged later sits above a newer one).
 
+## State, 2026-10-20: identity trials, judging rules 5 (u08 A-87, OD-53, `fix/identity-trials`)
+
+- **What.** The design A-85's item 3 left to a branch of its own. Every reply received under an
+  identity the attempts are sent as is read against the scope's canary owner map; the identity sweep
+  is one trial of its spec, stored as an attempt (`mutation: identity_sweep`) and counted once
+  (reproducibility the best variant, never below the pooled rate; never a confirmation); a canary of
+  the scope's floors is read case-folded without format characters (`shared.folding`), in replies
+  and tool-call arguments, and the scope refuses two that fold alike. Judging rules 5: the branch
+  held its bump as 3, and main took 3 (A-89) and 4 (A-90) first, so the merge of main `93b3f2a3`
+  made it 5, pinned on the merged tree.
+- **Checks.** `tests/cli/test_identity_trials_cli.py` (25, through the CLI against a loopback stub),
+  `tests/core/test_identity_trials.py` (9), `tests/evaluators/test_authz_leak_received.py` (18),
+  `tests/evaluators/test_secret_leakage_fold.py` (12), `tests/scoring/test_identity_sweep_trial.py`
+  (11), `tests/cli/test_attempt_identity_wiring.py` (6), `tests/shared/test_folding.py` (13), a
+  scope refusal and a resume test for 4 to 5. Clause u08 A-87 with halves in u00, u01, u06, u07,
+  u10, u11 and u12; OD-53 in the index.
+- **Gates.** `make gates` in CI mode green on the merged tree with these docs (2026-10-20, coverage 97.67%).
+- **Open.** The sweep's other identities' replies are still not stored; a re-encoded canary
+  (homoglyphs, spaces, an encoding the target applies) still hides; `pii_detector` and
+  `secret_shape` corroborate with a canary exactly; keeping a stored sweep on a resume needs a
+  change of the estimate (u08 A-87, not taken).
+
 ## State, 2026-10-19: long integers in object-form arguments (u06 A-90, `fix/long-integer-object-arguments`)
 
 - **What.** MEDIUM-1 of the A-89 audit, closed: arguments a reply carries as a JSON object

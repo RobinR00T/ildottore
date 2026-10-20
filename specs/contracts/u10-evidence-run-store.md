@@ -286,6 +286,14 @@ the modes that send nothing, and for `replay --run-db`), both through `paths.nea
 `EvidenceStoreError` (an `OSError`) naming the root. Checked by
 `tests/store/test_store_open_errors.py` and `tests/cli/test_evidence_root_preflight.py`.
 
+**A-87 (u08's clause; this unit's half, added 2026-10-17, amended 2026-10-20).** The identity
+sweep's trial is stored as an ordinary attempt record of its spec (`<spec>::identity_sweep#<n>`,
+`request.metadata.identity_sweep` naming the identities sent, those that answered and those the
+attempts are sent as), with only the reply of the identity the attempts are sent as. No field is
+new: an older build's `dottore replay` and `dottore diff` read such a run, the replay counting the
+trial in its pooled rate. A resume keeps a stored trial and never sends it again under its id
+(`core.runner.resume_progress` counts it among the kept attempts).
+
 ## §8 Out of scope / forbidden
 - MUST NOT compute scores/severity (u07), evaluate responses (u06), or render reports (u11) -
   store only what it is given.

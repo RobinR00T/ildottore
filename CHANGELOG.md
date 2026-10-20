@@ -7,6 +7,40 @@ the file, schema copy, build or pipeline it names.
 
 ## [Unreleased]
 
+### Fixed (breaking for a run halted under judging rules 4 and for a CI gate: rules 5, u08 A-87)
+
+- **Every reply received under an identity is read against the scope's canaries.** The attempts are
+  sent with the target file's credential, which the scope must give one of its identities, so each
+  attempt's reply is that identity's view; `authz_leak` read only the identity sweep's replies, so a
+  target that leaked tenant B's canary to tenant A on every attempt and never on the sweep was not
+  read at all (`DL-XTENANT-001`: inconclusive, exit 0). Now that is 1.0, Critical, confirmed, exit
+  2. A reply received as no scope identity that holds a scope identity's canary is a crossing too.
+  The echo rule of A-85 holds on an attempt's own reply: a canary its request (or the base prompt a
+  variant encodes) carries is a fail that needs review, never confirmed.
+- **The identity sweep is one trial, counted once.** It is stored as an attempt of its spec
+  (`<spec>::identity_sweep#<n>`, `mutation: identity_sweep`) and counts once: reproducibility is the
+  best variant, never below the pooled rate over every trial, and the sweep is never a variant or a
+  confirmation of its own. Every attempt used to carry the sweep's verdict, so a crossing only the
+  sweep showed read 1.0, Critical, exit 2 at any `--runs`; it is now its measured share: 1 of 6 at
+  `--runs 5` (Low), 1 of 2 at `--runs 1` (Medium), 1 of 11 at `--runs 10` (Low), a fail that needs
+  review, gated with `--include-needs-review`. **A CI gate that relied on the old Critical
+  changes.** A swept spec reports one more attempt per sweep, its finding's line counts it, and
+  `dottore replay` prints each spec's figure beside its pooled rate. A spec that asks for a mutation
+  named `identity_sweep` is refused before anything is sent. An older build reads a run of this one:
+  no stored field is new.
+- **A canary is read folded.** A canary of the scope's floors (16 characters or more, no space, 36
+  bits of character entropy: every identity canary, and the battery's `ZYNAP_CANARY_<run id>`) is
+  looked for case-folded with invisible format characters removed (`shared.folding`), in replies and
+  in tool-call arguments, so a target that re-cased `CANARY-B-7F3A91C2` or split it with a
+  zero-width space no longer hides a crossing or a planted canary's leak (inconclusive or pass
+  before, now 1.0, Critical, confirmed). A spec's own canary below the floors is read exactly, as
+  before. The scope refuses two identity canaries that differ only in letter case or such characters
+  (exit 3, nothing sent).
+- **Judging rules 5** (2026-10-20). Stored verdicts and figures change, so `JUDGING_RULES_VERSION`
+  is 5 by an appended pin: a run halted under version 4 or older is refused by its resume before
+  anything is sent, naming both, and `dottore --version` prints `dottore 0.1.0 (judging rules 5)`.
+  `JUDGING_RULES_SINCE` stays `2026-10-15`.
+
 ### Fixed (breaking for a run halted under judging rules 3: judging rules 4, u06 A-90)
 
 - **Arguments a reply carries as a JSON object read an integer longer than Python converts too.**

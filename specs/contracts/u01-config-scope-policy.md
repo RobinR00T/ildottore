@@ -1233,6 +1233,13 @@ ratio tests of the redactor time in wall time still
 token's own text shows every mask of a stretch it is the first piece of, once (A-77): both linear.
 Evidence and reports written before A-86 keep what they showed.
 
+**A-87 (u08's clause; this unit's half, added 2026-10-17, amended 2026-10-20).** `load_scope`
+refuses two identities whose canaries are equal once folded (`shared.folding.folded`: letter case
+and invisible format characters), naming both identities and never the canary, since `authz_leak`
+reads them as one canary and each owner's own would read as the other's leak (exit 3, nothing sent).
+`weak_canary` is unchanged; `evaluators.base.foldable` calls it with no labels to decide which
+canaries are read folded (u06's half).
+
 ## §8 Out of scope / forbidden
 - MUST NOT execute attacks, send requests, or import adapters/evaluators/core/store/reporting.
 - MUST NOT persist or print raw secrets/PII (redactor is the only path).
