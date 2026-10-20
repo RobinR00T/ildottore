@@ -39,7 +39,7 @@ the docs name for that date, and the pin made on that tree, replacing the provis
 day before. Version ``2`` (u08 A-85, 2026-10-16) changes verdicts and figures: a crossing of a
 canary the request carries is a fail that needs review, never a confirmed one, and
 ``secret_shape`` detects every key format the redactor masks; its pin is made on the tree that
-lands it. Version ``5`` (u08 A-87, 2026-10-17) changes them again: each attempt's own reply is
+lands it. Version ``5`` (u08 A-87, 2026-10-20) changes them again: each attempt's own reply is
 read against the scope's canary owner map, the identity sweep is one trial of its spec counted
 once, and a canary of the scope's floors is read case-folded with its format characters removed.
 """

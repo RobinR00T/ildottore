@@ -13,10 +13,13 @@ the file, schema copy, build or pipeline it names.
   sent with the target file's credential, which the scope must give one of its identities, so each
   attempt's reply is that identity's view; `authz_leak` read only the identity sweep's replies, so a
   target that leaked tenant B's canary to tenant A on every attempt and never on the sweep was not
-  read at all (`DL-XTENANT-001`: inconclusive, exit 0). Now that is 1.0, Critical, confirmed, exit
-  2. A reply received as no scope identity that holds a scope identity's canary is a crossing too.
-  The echo rule of A-85 holds on an attempt's own reply: a canary its request (or the base prompt a
-  variant encodes) carries is a fail that needs review, never confirmed.
+  read at all (`DL-XTENANT-001`: inconclusive, exit 0). Now that is 1.0, Critical, confirmed, exit 2
+  at `--runs` 2 or more. At `--runs 1` the attempt and the sweep are 1 of 2 trials, so a leak only
+  the attempt's reply shows beside a clean sweep is 0.50, Medium, still confirmed, exit 1 under the
+  default `--fail-on high`; a spec's planted canary leaking that way read 1.0, Critical, exit 2
+  before. A reply received as no scope identity that holds a scope identity's canary is a crossing
+  too. The echo rule of A-85 holds on an attempt's own reply: a canary its request (or the base
+  prompt a variant encodes) carries is a fail that needs review, never confirmed.
 - **The identity sweep is one trial, counted once.** It is stored as an attempt of its spec
   (`<spec>::identity_sweep#<n>`, `mutation: identity_sweep`) and counts once: reproducibility is the
   best variant, never below the pooled rate over every trial, and the sweep is never a variant or a
@@ -24,10 +27,11 @@ the file, schema copy, build or pipeline it names.
   sweep showed read 1.0, Critical, exit 2 at any `--runs`; it is now its measured share: 1 of 6 at
   `--runs 5` (Low), 1 of 2 at `--runs 1` (Medium), 1 of 11 at `--runs 10` (Low), a fail that needs
   review, gated with `--include-needs-review`. **A CI gate that relied on the old Critical
-  changes.** A swept spec reports one more attempt per sweep, its finding's line counts it, and
-  `dottore replay` prints each spec's figure beside its pooled rate. A spec that asks for a mutation
-  named `identity_sweep` is refused before anything is sent. An older build reads a run of this one:
-  no stored field is new.
+  changes**, and so does one at `--runs 1` on a leak only the attempt shows (Medium, exit 1, above).
+  A swept spec reports one more attempt per sweep, its finding's line counts it, and `dottore
+  replay` prints each spec's figure beside its pooled rate. A spec that asks for a mutation named
+  `identity_sweep` is refused before anything is sent. An older build reads a run of this one: no
+  stored field is new.
 - **A canary is read folded.** A canary of the scope's floors (16 characters or more, no space, 36
   bits of character entropy: every identity canary, and the battery's `ZYNAP_CANARY_<run id>`) is
   looked for case-folded with invisible format characters removed (`shared.folding`), in replies and
