@@ -237,7 +237,9 @@ def test_a_run_halted_inside_the_identity_sweep_is_resumed_with_its_spend(
 ) -> None:
     """1: the second identity's request was refused; 2: both swept, the attempt refused.
 
-    Either way no reply was stored, and the resume was refused although requests went out.
+    Either way no attempt reply was stored, and the resume was refused although requests went
+    out. Since u08 A-87 a whole sweep is stored as one trial of its spec: at 2 the halted run keeps
+    it, and the resume's own sweep is a trial of its own.
     """
 
     port, state = stub
@@ -246,13 +248,21 @@ def test_a_run_halted_inside_the_identity_sweep_is_resumed_with_its_spend(
 
     assert got["sent_by_halt"] == ceiling
     assert got["spent_by_halt"] == ceiling, "the spend of the halted run is recorded"
-    assert got["stored"] == [], "a sweep is not an attempt: nothing to store"
-    assert "stored no answered attempt before it stopped" in got["resume_output"]
+    trials = ["DL-XTENANT-001::identity_sweep#0"] if ceiling == 2 else []
+    assert [a["attempt_id"] for a in got["stored"]] == trials, "a part of a sweep is not stored"
+    if ceiling == 1:
+        assert "stored no answered attempt before it stopped" in got["resume_output"]
+    else:
+        assert "keeps 1 attempt(s) across 1 spec(s)" in got["resume_output"]
     # The sweep (two identities) and the one attempt, all sent again.
     assert got["resume_sent"] == (3, 0)
     assert got["spent_after"] == ceiling + 3, "the resumed run's spend includes the halted one"
     attempts = _attempts(got["report"], "DL-XTENANT-001")
-    assert [a["attempt_id"] for a in attempts] == ["DL-XTENANT-001::identity#0"]
+    assert sorted(a["attempt_id"] for a in attempts) == [
+        "DL-XTENANT-001::identity#0",
+        *trials,
+        f"DL-XTENANT-001::identity_sweep#{len(trials)}",
+    ]
 
 
 @pytest.mark.parametrize(("runs", "ceiling"), [(1, 1), (1, 2), (2, 3)])
@@ -281,9 +291,11 @@ def test_a_sweeping_spec_whose_only_reply_went_unjudged_sweeps_and_is_judged_aga
     got = _halt_estimate_resume(tmp_path, state, base, ["--budget-requests", str(ceiling)])
 
     assert got["sent_by_halt"] == got["spent_by_halt"] == ceiling
-    assert [(a["attempt_id"], a["verdict"]) for a in got["stored"]] == [
-        ("DL-XTENANT-001::identity#0", None)
-    ]
+    assert [
+        (a["attempt_id"], a["verdict"])
+        for a in got["stored"]
+        if a["mutation"] != "identity_sweep"  # the sweep's trial is judged without the judge
+    ] == [("DL-XTENANT-001::identity#0", None)]
     assert got["resume_sent"] == (3, 2)
     assert got["estimate"] == got["resume_sent"], "--estimate --resume prices what is sent"
     assert got["spent_after"] == ceiling + 3 + 2
@@ -327,14 +339,20 @@ def test_a_sweeping_spec_halted_inside_its_batch_keeps_its_answer_and_sweeps_aga
     got = _halt_estimate_resume(tmp_path, state, base, ["--budget-requests", "3"])
 
     assert got["sent_by_halt"] == got["spent_by_halt"] == 3
-    assert [a["attempt_id"] for a in got["stored"]] == ["DL-XTENANT-001::identity#0"]
-    # The spec is not finished, so the sweep goes out again with the attempt still missing.
+    assert sorted(a["attempt_id"] for a in got["stored"]) == [
+        "DL-XTENANT-001::identity#0",
+        "DL-XTENANT-001::identity_sweep#0",
+    ]
+    # The spec is not finished, so the sweep goes out again with the attempt still missing: a
+    # trial of its own (u08 A-87), the first one kept and counted once.
     assert got["resume_sent"] == (3, 0)
     assert got["spent_after"] == 3 + 3
     attempts = _attempts(got["report"], "DL-XTENANT-001")
     assert sorted(a["attempt_id"] for a in attempts) == [
         "DL-XTENANT-001::identity#0",
         "DL-XTENANT-001::identity#1",
+        "DL-XTENANT-001::identity_sweep#0",
+        "DL-XTENANT-001::identity_sweep#1",
     ]
 
 

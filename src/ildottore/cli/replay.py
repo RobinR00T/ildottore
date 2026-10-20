@@ -13,6 +13,8 @@ from pathlib import Path
 
 from ildottore.core.runner import SAMPLING_NOT_SENT
 from ildottore.redactor import visible_controls
+from ildottore.scoring.risk import reproducibility_from_attempts
+from ildottore.shared.enums import IDENTITY_SWEEP, VerdictStatus
 from ildottore.shared.models import Attempt
 from ildottore.shared.provider_filter import (
     blocked_by_provider_filter,
@@ -88,7 +90,11 @@ def replay_checked(
 
 
 def render_replay(result: ReplayResult) -> str:
-    """Render a one-line-per-attempt replay report + a reproducibility footer."""
+    """Render a one-line-per-attempt replay report + a reproducibility footer.
+
+    The footer gives the pooled rate over the run and each spec's reproducibility by the report's
+    rule (:func:`_by_spec`, u08 A-87).
+    """
 
     lines = [f"run: {result.run_id}"]
     for attempt in result.attempts:
@@ -131,6 +137,7 @@ def render_replay(result: ReplayResult) -> str:
         f"pooled rate: {result.reproducibility():.2f} (every attempt of the run; a report's "
         "reproducibility is per spec, best variant)"
     )
+    lines.extend(_by_spec(result))
     blocked = result.blocked_by_provider_filter()
     if blocked:
         lines.append(
@@ -185,6 +192,36 @@ def render_replay(result: ReplayResult) -> str:
             "are not temperature-0 deterministic and the rate is over the model's own sampling"
         )
     return "\n".join(lines)
+
+
+def _by_spec(result: ReplayResult) -> list[str]:
+    """Each spec's reproducibility, by the rule the report scores it with (u08 A-87).
+
+    ``scoring.risk.reproducibility_from_attempts`` over the spec's stored attempts, one per id:
+    the best variant, never below the pooled rate over every trial, an identity sweep's trial
+    counted once. The pooled rate above mixes every spec, so it could not be set beside the
+    report's figure; this line is the report's figure, read back from the evidence.
+    """
+
+    by_spec: dict[str, list[Attempt]] = {}
+    for attempt in result.effective_attempts():
+        by_spec.setdefault(attempt.spec_id, []).append(attempt)
+    lines = []
+    for spec_id, attempts in sorted(by_spec.items()):
+        exploited = sum(
+            1
+            for a in attempts
+            if a.error is None and a.verdict is not None and a.verdict.status is VerdictStatus.FAIL
+        )
+        swept = sum(1 for a in attempts if a.mutation == IDENTITY_SWEEP)
+        lines.append(
+            f"  reproducibility of {visible_controls(spec_id)}: "
+            f"{reproducibility_from_attempts(attempts):.2f} ({exploited} of {len(attempts)} "
+            "trials exploited"
+            + (f", {swept} of them an identity sweep's" if swept else "")
+            + "; the report's figure)"
+        )
+    return lines
 
 
 def _declared(attempt: Attempt) -> bool:

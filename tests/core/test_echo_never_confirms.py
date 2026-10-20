@@ -5,6 +5,10 @@ judge reported on cut text the same way: the finding fails (never a pass), needs
 counted, and gates ``--fail-on`` only with ``--include-needs-review``. The runner's
 ``_is_confirmed`` and the scorer's ``gate_state`` read one predicate,
 ``shared.combination.never_confirms``, so the two cannot disagree.
+
+Every reply tenant A gets says the same here, the attempts' and the sweep's alike: since u08
+A-87 each attempt's own reply is read against the owner map, with the echo rule, and the sweep
+is one trial beside them.
 """
 
 from __future__ import annotations
@@ -31,7 +35,7 @@ def _campaign(tmp_path: Path, *, tenant_a: str, spec: AttackSpec) -> CampaignRes
     a = MockTarget(MockScenario(response=tenant_a), id="tenant-a")
     b = MockTarget(MockScenario(response=f"my own record {_CANARY}"), id="tenant-b")
     probes = [
-        IdentityProbe(identity_id="tenant-a", adapter=a, canary=None),
+        IdentityProbe(identity_id="tenant-a", adapter=a, canary=None, sends_attempts=True),
         IdentityProbe(identity_id="tenant-b", adapter=b, canary=_CANARY),
     ]
     runs = SqliteRunStore(tmp_path / "runs.sqlite")
@@ -42,7 +46,7 @@ def _campaign(tmp_path: Path, *, tenant_a: str, spec: AttackSpec) -> CampaignRes
         scorer=DefaultRiskScorer(),
         evidence_store=FsEvidenceStore(tmp_path / "ev", journal=runs),
         run_store=runs,
-        adapter_factory=mock_adapter_factory(make_scenario("only my own records")),
+        adapter_factory=mock_adapter_factory(make_scenario(tenant_a)),
         endpoint_for=lambda _t, _s: "https://api.example.test/v1/chat",
         identity_adapters=lambda _t: probes,
         n=5,
@@ -64,8 +68,9 @@ def test_an_echo_crossing_fails_needs_review_and_is_counted(tmp_path: Path) -> N
     )
     (finding,) = result.findings
     assert (finding.status, finding.confirmed) == (VerdictStatus.FAIL, False)
-    # Counted as any fail: every attempt carries it (the sweep's own counting is not this branch's).
+    # Counted as any fail: every reply of tenant A echoes it, the sweep's trial among them.
     assert finding.risk.reproducibility == 1.0
+    assert len(finding.attempts) == 6
     assert finding.risk.band is ScanBand.CRITICAL
     assert "resting on a canary the request carries" in finding.reasoning
     verdicts = [a.verdict for a in finding.attempts if a.verdict is not None]

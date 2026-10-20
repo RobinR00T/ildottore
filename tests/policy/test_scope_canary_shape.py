@@ -204,3 +204,34 @@ def test_the_templates_commented_tenant_identity_loads(tmp_path: Path) -> None:
     assert target is not None
     assert [i.name for i in target.identities] == ["default", "tenant-b"]
     assert target.identities[1].canary == "CANARY-B-3f9c1e7a5b2d8064"
+
+
+@pytest.mark.parametrize(
+    "other",
+    [
+        "CANARY-B-3F9C1E7A5B2D8064",
+        "canary-b-3f9c1e7a5b2d8064",
+        "CANARY-B-3f9c1e7a​5b2d8064",
+        "CANARY-B-3f9c1e7a5b2d8064⁠",
+    ],
+    ids=["upper", "lower", "zero-width-space", "word-joiner"],
+)
+def test_two_canaries_that_fold_alike_are_refused(tmp_path: Path, other: str) -> None:
+    """``authz_leak`` reads a canary case-folded, format characters removed (u08 A-87): two that
+    differ only there are one canary to it, and each owner's own would read as the other's leak.
+    The canary is not quoted."""
+
+    path = tmp_path / "scope.yaml"
+    path.write_text(
+        'version: "1.0"\ntargets:\n'
+        "  - id: acme\n    base_url: https://api.example.test\n    identities:\n"
+        "      - name: tenant-a\n        auth_ref: env://KEY_A\n"
+        f"        canary: {json.dumps(other)}\n"
+        "      - name: tenant-two\n        auth_ref: env://KEY_B\n"
+        '        canary: "CANARY-B-3f9c1e7a5b2d8064"\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(ScopeError) as refused:
+        load_scope(path)
+    assert "differs from it only in letter case or invisible characters" in str(refused.value)
+    assert "3f9c1e7a5b2d8064" not in str(refused.value).casefold()

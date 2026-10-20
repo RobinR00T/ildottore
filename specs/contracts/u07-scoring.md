@@ -89,6 +89,14 @@ and the SARIF level is mapped by the SARIF reporter.)
   exactly (multi-target suite → correct `spec × target` cells + category rollups).
 - `ruff check`, `ruff format --check`, `mypy src/ildottore/scoring` clean; `lint-imports` green.
 
+**A-87 (u08's clause; this unit's half, added 2026-10-17, amended 2026-10-20).**
+`scoring.risk.reproducibility_from_attempts` reads an identity sweep's trial (`mutation`
+`identity_sweep`) as one trial, never a variant of its own: the rate is the best variant with
+`MIN_VARIANT_ATTEMPTS` trials or more, never below the pooled rate over every trial, the sweeps
+included. A crossing only the sweep shows is its measured share (1 of 6 at `--runs 5`, Low; 1 of 2
+at `--runs 1`, Medium), where every attempt used to carry the sweep's verdict and read 5 of 5; a
+sweep that showed nothing never lowers the variant that leaks.
+
 ## §8 Out of scope / forbidden
 - MUST NOT multiply confidence into risk (ADR-0003): hard fence.
 - MUST NOT call LLMs, providers, or evaluators (consumes their `Verdict` output only).

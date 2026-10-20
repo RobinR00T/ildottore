@@ -339,6 +339,12 @@ from `confirmed`, SARIF keeps it at most `warning` without `--include-needs-revi
 it as a failure of its band. The report schema keeps a verdict's fields open; an older build
 refuses such a run in `diff` and `replay`.
 
+**A-87 (u08's clause; this unit's half, added 2026-10-17, amended 2026-10-20).** No reporter
+changes: every report reads the finding's `risk`, so the identity sweep's trial reaches the JSON,
+HTML, SARIF, JUnit and terminal outputs through u07's reproducibility. A swept spec reports one more
+attempt per sweep (`mutation: identity_sweep`), and its finding's line says how many of the trials
+were the sweep's (`1 of the 6 is the identity sweep's`).
+
 ## §8 Out of scope / forbidden
 - MUST NOT compute risk scores, bands, or confirmed/needs-review state (that is u07): only read.
 - MUST NOT read/persist to the run or evidence store beyond the injected read interface (u10).

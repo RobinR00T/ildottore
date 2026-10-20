@@ -2089,6 +2089,15 @@ That changes what a slow target's run reports, so it is left to a change of its 
 the reports keep, the evaluators judge the raw reply, and the exit status printed is that of an exit
 no command raises. Version 2 is re-pinned by an appended line (u12 A-81).
 
+**A-87 (u08's clause; this unit's half, added 2026-10-17, amended 2026-10-20).**
+`JUDGING_RULES_VERSION` is 5, pinned by an appended line, so a run halted under 1 to 4 is refused by
+its resume (exit 3, nothing sent, naming both); `dottore --version` prints `dottore 0.1.0 (judging
+rules 5)`. The wiring marks each identity the attempts are sent as (`IdentityProbe.sends_attempts`:
+its `auth_ref` is the target file's credential, or neither names one). `dottore replay` prints each
+spec's figure by u07's function beside its pooled rate (`reproducibility of <spec>: <r> (<k> of <n>
+trials exploited, <s> of them an identity sweep's; the report's figure)`). CI results that change
+are listed in u08 A-87.
+
 ## §8 Out of scope / forbidden
 - MUST NOT implement attack/mutation/evaluation/scoring/reporting/fingerprint logic (u05-u11,
   u13): only wire and call them. MUST NOT own `cli/lint.py` (u02) or edit any spec YAML.

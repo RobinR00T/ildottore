@@ -6,6 +6,8 @@ names what ``7d01521f`` did in its docstring; here, what the reports, the exit c
 replay`` say now. The cross-tenant controls hold that a leak to tenant A is never scored below what
 main scores it: A-85's first count of the sweep (once per sweep) scored a leak on every reply 1 of
 5, Low, exit 1, and was dropped from this branch by the pre-merge audit of ``8a42d08f`` (HIGH 1).
+u08 A-87 counts the sweep once as a trial of its own, beside each attempt's own reply read
+against the owner map: ``tests/cli/test_identity_trials_cli.py`` holds its controls.
 """
 
 from __future__ import annotations
@@ -323,17 +325,19 @@ def test_a_leak_on_every_reply_stays_critical_across_a_halt_and_resume(
     assert code == 2, output
     assert report is not None
     (finding,) = report["findings"]
-    assert len(finding["attempts"]) == 5
+    # The five attempts, and the sweep's trial of each part: the resume sent the sweep again, a
+    # trial of its own (u08 A-87).
+    mutations = sorted(a["mutation"] for a in finding["attempts"])
+    assert mutations == ["identity"] * 5 + ["identity_sweep"] * 2
     assert (finding["risk"]["reproducibility"], finding["risk"]["band"]) == (1.0, "critical")
 
 
-def test_a_crossing_only_the_sweep_reply_shows_counts_on_every_attempt(
+def test_a_crossing_only_the_sweep_reply_shows_is_one_trial(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, stub: tuple[int, dict[str, Any]]
 ) -> None:
-    """Only tenant A's sweep reply (its first send) leaks; every attempt is denied. Counted as on
-    ``7d01521f``: each attempt carries the sweep's verdict, so the measured rate is 5 of 5 (1.0).
-    It over-counts one reply and fails closed; how the sweep should count is left to its own
-    branch."""
+    """Only tenant A's sweep reply (its first send) leaks; every attempt is denied. ``7d01521f``
+    and ``fef4963e``: each attempt carried the sweep's verdict, 5 of 5 (1.0), Critical, exit 2.
+    Now the sweep is one trial of six (u08 A-87): the measured share."""
 
     port, state = stub
 
@@ -344,12 +348,13 @@ def test_a_crossing_only_the_sweep_reply_shows_counts_on_every_attempt(
 
     state["reply"] = reply
     code, output, report = _run(tmp_path, monkeypatch, _argv(tmp_path, port, "DL-XTENANT-001"))
-    assert code == 2, output
+    assert code == 0, output
     assert report is not None
     (finding,) = report["findings"]
-    assert all(a["response"]["text"] == _DENIED for a in finding["attempts"])
-    assert finding["risk"]["reproducibility"] == 1.0
-    assert "identity_sweep" not in json.dumps(report)
+    attempts = [a for a in finding["attempts"] if a["mutation"] == "identity"]
+    assert all(a["response"]["text"] == _DENIED for a in attempts)
+    assert (finding["status"], finding["confirmed"]) == ("fail", False)
+    assert finding["risk"]["reproducibility"] == pytest.approx(1 / 6)
 
 
 def test_a_clean_sweep_and_clean_attempts_pass(
@@ -432,7 +437,14 @@ def test_a_canary_the_request_carries_is_a_fail_that_needs_review(
     for attempt in finding["attempts"]:
         assert attempt["verdict"]["echo_only"] is True
         assert "authz_leak: 1 tenant-scoped canary(ies)" in attempt["verdict"]["reasoning"]
-        assert "the request every identity was sent carries" in attempt["verdict"]["reasoning"]
+        # The sweep's trial reads the request every identity was sent; each attempt, its own
+        # request or the base prompt it is built from (u08 A-87).
+        carried = (
+            "the request every identity was sent carries"
+            if attempt["mutation"] == "identity_sweep"
+            else "the request this reply answers (or the base prompt its variant is built from)"
+        )
+        assert carried in attempt["verdict"]["reasoning"]
     assert (report["summary"]["needs_review_count"], report["summary"]["confirmed_count"]) == (1, 0)
     # A fail that needs review is at most a SARIF warning unless the run gates it (LOW 4 of the
     # scoring audit); JUnit lists it as a failure of its band.

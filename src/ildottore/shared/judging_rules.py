@@ -39,7 +39,9 @@ the docs name for that date, and the pin made on that tree, replacing the provis
 day before. Version ``2`` (u08 A-85, 2026-10-16) changes verdicts and figures: a crossing of a
 canary the request carries is a fail that needs review, never a confirmed one, and
 ``secret_shape`` detects every key format the redactor masks; its pin is made on the tree that
-lands it.
+lands it. Version ``5`` (u08 A-87, 2026-10-20) changes them again: each attempt's own reply is
+read against the scope's canary owner map, the identity sweep is one trial of its spec counted
+once, and a canary of the scope's floors is read case-folded with its format characters removed.
 """
 
 from __future__ import annotations
@@ -76,8 +78,10 @@ __all__ = [
 #: holding an integer longer than ``int`` converts are read, where they read as ``{}`` and passed.
 #: ``4``: u06 A-90, so are arguments a reply carries as a JSON object (Anthropic's ``input``, an
 #: OpenAI ``function.arguments`` written as an object, a WebSocket frame's calls), where the
-#: integer made the reply unreadable, not evaluated.
-JUDGING_RULES_VERSION: Final = 4
+#: integer made the reply unreadable, not evaluated. ``5``: u08 A-87, every reply received under an
+#: identity is read against the owner map, the identity sweep is one trial counted once, and a
+#: canary is read case-folded without format characters.
+JUDGING_RULES_VERSION: Final = 5
 
 #: The day runs began to record their rules (version 1 took its value), which the refusal of a run
 #: that records none quotes and the docs name (as ``JUDGING_RULES_SINCE``) instead of writing the
