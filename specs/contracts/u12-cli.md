@@ -2089,6 +2089,11 @@ That changes what a slow target's run reports, so it is left to a change of its 
 the reports keep, the evaluators judge the raw reply, and the exit status printed is that of an exit
 no command raises. Version 2 is re-pinned by an appended line (u12 A-81).
 
+**A-92 (u08's clause; this unit's line, added 2026-10-20).** `JUDGING_RULES_VERSION` is 6, pinned by
+an appended line: a run halted under version 5 is refused by its resume before anything is sent,
+naming both (`tests/cli/test_resume_judging_rules.py`), and `dottore --version` prints `dottore
+0.1.0 (judging rules 6)`.
+
 **A-87 (u08's clause; this unit's half, added 2026-10-17, amended 2026-10-20).**
 `JUDGING_RULES_VERSION` is 5, pinned by an appended line, so a run halted under 1 to 4 is refused by
 its resume (exit 3, nothing sent, naming both); `dottore --version` prints `dottore 0.1.0 (judging

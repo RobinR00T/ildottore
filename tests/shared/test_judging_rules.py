@@ -267,11 +267,19 @@ PIN_HISTORY: tuple[tuple[int, str, str], ...] = (
         "characters; version 5 is not released",
     ),
     (
-        5,
-        "a8686c6fe3664fc0489e2284f44f57d9c40e4dc0ee3f9b8774bba27dc2a6dd14",
-        "re-pin 2026-10-20: u01 A-91, two identities sharing a credential (one auth_ref, or two "
-        "variables holding one key) are refused before anything is sent; no stored verdict "
-        "changes",
+        6,
+        "47293b7afb2a5409bff93319a9fa384621c3ecbe8b9a261be8bb428e05d0f4f7",
+        "u08 A-92 (fix/fold-default-ignorables on 01d6bdc5): a canary is read without the default "
+        "ignorable code points too (a variation selector, the combining grapheme joiner, a Hangul "
+        "filler hid a crossing), both sets pinned to Unicode 16.0; an inconclusive or a pass can "
+        "become a fail",
+    ),
+    (
+        6,
+        "bc665fd800e2a139ed81dbf5d56f2089e29e550184472bb8561eece819b47c7c",
+        "re-pin 2026-10-20: u01 A-91 (fix/shared-identity-credentials, merged with 65203f18), two "
+        "identities sharing a credential (one auth_ref, or two variables holding one key) are "
+        "refused before anything is sent; no stored verdict changes",
     ),
 )
 
@@ -281,7 +289,8 @@ PINNED: dict[int, str] = {
     2: "8d0f56fb1a5237de51492dea812a213f4ed39c8ea5a2b5edaff1812e0300c372",
     3: "ee44c0fc64ebbda4663040f0c4246f342b398e7290de53f71fb48024642414b7",
     4: "86d4391094d167c454d0e05ec076a36ca10c585c57b1d00574a7e86e87c0fe40",
-    5: "a8686c6fe3664fc0489e2284f44f57d9c40e4dc0ee3f9b8774bba27dc2a6dd14",
+    5: "c352e9bd55c8e3b0629e4164411b64667327a5c3cd533e003a7cb84475ecf9c4",
+    6: "bc665fd800e2a139ed81dbf5d56f2089e29e550184472bb8561eece819b47c7c",
 }
 
 #: One ``<version> <digest>`` line per pin, appended to and never edited: the history must start

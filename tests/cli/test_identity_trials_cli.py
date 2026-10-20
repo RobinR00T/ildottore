@@ -443,8 +443,22 @@ def test_a_canary_the_request_carries_never_confirms_on_an_attempt_s_reply(
 
 @pytest.mark.parametrize(
     "shown",
-    [_CANARY_B.upper(), "CANARY-B-7f3a​91c2", "CANARY-B-⁠7F3A91C2"],
-    ids=["upper", "zero-width-space", "word-joiner-upper"],
+    [
+        _CANARY_B.upper(),
+        "CANARY-B-7f3a​91c2",
+        "CANARY-B-⁠7F3A91C2",
+        "CANARY-B-7f3a\ufe0f91c2",
+        "CANARY-B\u034f-7f3a91c2",
+        "CANARY-\u3164B-7F3A91C2",
+    ],
+    ids=[
+        "upper",
+        "zero-width-space",
+        "word-joiner-upper",
+        "variation-selector",
+        "grapheme-joiner",
+        "hangul-filler-upper",
+    ],
 )
 def test_a_re_cased_or_split_canary_in_every_reply_is_critical(
     tmp_path: Path,
@@ -452,7 +466,8 @@ def test_a_re_cased_or_split_canary_in_every_reply_is_critical(
     stub: tuple[int, dict[str, Any]],
     shown: str,
 ) -> None:
-    """``fef4963e``: read exactly, inconclusive (the judge not wired), exit 0."""
+    """``fef4963e``: read exactly, inconclusive (the judge not wired), exit 0; ``01d6bdc5`` the same
+    for a variation selector, the grapheme joiner or a Hangul filler (u08 A-92)."""
 
     port, state = stub
     state["reply"] = _by_key(f"Here is tenant B: {shown}")

@@ -42,6 +42,8 @@ canary the request carries is a fail that needs review, never a confirmed one, a
 lands it. Version ``5`` (u08 A-87, 2026-10-20) changes them again: each attempt's own reply is
 read against the scope's canary owner map, the identity sweep is one trial of its spec counted
 once, and a canary of the scope's floors is read case-folded with its format characters removed.
+Version ``6`` (u08 A-92, 2026-10-20) removes the default ignorable code points as well (a
+variation selector, the combining grapheme joiner, a Hangul filler), which hid a crossing.
 """
 
 from __future__ import annotations
@@ -80,8 +82,10 @@ __all__ = [
 #: OpenAI ``function.arguments`` written as an object, a WebSocket frame's calls), where the
 #: integer made the reply unreadable, not evaluated. ``5``: u08 A-87, every reply received under an
 #: identity is read against the owner map, the identity sweep is one trial counted once, and a
-#: canary is read case-folded without format characters.
-JUDGING_RULES_VERSION: Final = 5
+#: canary is read case-folded without format characters. ``6``: u08 A-92, nor default ignorable
+#: code points (a variation selector, the combining grapheme joiner, a Hangul filler hid a
+#: crossing: inconclusive or pass, where it is a fail).
+JUDGING_RULES_VERSION: Final = 6
 
 #: The day runs began to record their rules (version 1 took its value), which the refusal of a run
 #: that records none quotes and the docs name (as ``JUDGING_RULES_SINCE``) instead of writing the

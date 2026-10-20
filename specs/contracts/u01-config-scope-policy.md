@@ -1273,8 +1273,9 @@ credential ...`, exit 3, neither key nor variable quoted). An unset variable is 
 `unset_credentials` (A-82); a stdio MCP target, launched locally and sent no key, is not checked
 by value, as A-78 leaves its identities unchecked.
 
-*Rules.* No stored verdict changes: a scope this refuses never reaches a send. Judging rules stay
-5; the digest covers every file, so version 5 is re-pinned by an appended line (u12 A-81).
+*Rules.* No stored verdict changes: a scope this refuses never reaches a send. The branch first
+re-pinned version 5; main took 6 (u08 A-92) before it landed, so on the merge of main `65203f18`
+the current version, 6, is re-pinned by an appended line on the merged tree (u12 A-81).
 
 *Not covered.* Two keys for one account (a provider that issues several keys to one tenant) are two
 credentials to this check and still one caller to the target; the scope cannot see that, and the
@@ -1293,6 +1294,11 @@ called directly), `tests/cli/test_short_credential_cli.py` (the stdio case on tw
 `tests/cli/test_resume_halted_mid_batch.py`, `tests/cli/test_sampling_defaults.py` and
 `tests/core/test_authz_leak_corroboration.py` swept two `env://NONE` identities against a loopback
 stub; tenant B now carries its own key (`env://TENANT_B_KEY`), their figures unchanged.
+
+**A-92 (u08's clause; this unit's half, added 2026-10-20).** The refusal's "invisible characters"
+now holds: two identity canaries that differ only by a variation selector, the combining grapheme
+joiner or a Hangul filler are refused too (`tests/policy/test_scope_canary_shape.py`), since
+`shared.folding.folded` removes the default ignorable code points.
 
 ## §8 Out of scope / forbidden
 - MUST NOT execute attacks, send requests, or import adapters/evaluators/core/store/reporting.
