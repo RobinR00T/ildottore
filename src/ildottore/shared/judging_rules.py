@@ -39,7 +39,9 @@ the docs name for that date, and the pin made on that tree, replacing the provis
 day before. Version ``2`` (u08 A-85, 2026-10-16) changes verdicts and figures: a crossing of a
 canary the request carries is a fail that needs review, never a confirmed one, and
 ``secret_shape`` detects every key format the redactor masks; its pin is made on the tree that
-lands it.
+lands it. Version ``3`` (u08 A-87, 2026-10-17) changes them again: each attempt's own reply is
+read against the scope's canary owner map, the identity sweep is one trial of its spec counted
+once, and a canary of the scope's floors is read case-folded with its format characters removed.
 """
 
 from __future__ import annotations
@@ -72,8 +74,10 @@ __all__ = [
 #: of the merge that introduced the version, the first that records it (OD-16, OD-19, OD-21, OD-38,
 #: OD-40, OD-41, OD-42 and OD-43 in force). ``2``: u08 A-85, a crossing of a canary the identity
 #: sweep's request carries is a fail that needs review, not a confirmed one; ``secret_shape``
-#: reads the redactor's documented key formats.
-JUDGING_RULES_VERSION: Final = 2
+#: reads the redactor's documented key formats. ``3``: u08 A-87, every reply received under an
+#: identity is read against the owner map, the identity sweep is one trial counted once, and a
+#: canary is read case-folded without format characters.
+JUDGING_RULES_VERSION: Final = 3
 
 #: The day runs began to record their rules (version 1 took its value), which the refusal of a run
 #: that records none quotes and the docs name (as ``JUDGING_RULES_SINCE``) instead of writing the

@@ -134,22 +134,27 @@ def test_a_run_judged_by_older_rules_is_refused_naming_both(
     assert _context(tmp_path) == before and _stored(tmp_path) == stored, "a refusal writes nothing"
 
 
-def test_a_run_halted_under_rules_1_is_refused_by_rules_2_naming_both(tmp_path: Path) -> None:
+@pytest.mark.parametrize("older", [1, 2])
+def test_a_run_halted_under_older_rules_is_refused_by_rules_3_naming_both(
+    tmp_path: Path, older: int
+) -> None:
     """u08 A-85 bumped the rules to 2: a run halted under 1 kept verdicts the new rules would not
-    give (an echoed canary a confirmed fail, a sweep's crossing on every attempt), so its resume
-    is refused before anything is sent, naming both versions, with no flag to waive it."""
+    give (an echoed canary a confirmed fail, a sweep's crossing on every attempt). u08 A-87 bumped
+    them to 3: a run halted under 2 kept attempts carrying the sweep's verdict and no trial of the
+    sweep, and replies read exactly. Either resume is refused before anything is sent, naming both
+    versions, with no flag to waive it."""
 
-    assert JUDGING_RULES_VERSION == 2
+    assert JUDGING_RULES_VERSION == 3
     run_id, spec_dir = _halted(tmp_path)
-    _rewrite(tmp_path, judging_rules=1)
+    _rewrite(tmp_path, judging_rules=older)
     before, stored = _context(tmp_path), _stored(tmp_path)
 
     with pytest.raises(ValueError) as refused:
         execute_run(_opts(tmp_path, resume=run_id, budget_requests=100), [spec_dir])
 
     message = str(refused.value)
-    assert "was judged by the rules of an older Il Dottore (judging rules 1," in message
-    assert "judging rules 2." in message
+    assert f"was judged by the rules of an older Il Dottore (judging rules {older}," in message
+    assert "judging rules 3." in message
     assert "There is no flag for this" in message
     assert _context(tmp_path) == before and _stored(tmp_path) == stored
 
