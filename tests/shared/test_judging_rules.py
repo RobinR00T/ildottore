@@ -233,6 +233,32 @@ PIN_HISTORY: tuple[tuple[int, str, str], ...] = (
         "a map or an empty list read whole under a pinned argument is hashed whole in matched; "
         "masking only, no status changes",
     ),
+    (
+        4,
+        "2099ec3dce34a24b9ae8cb98500c38a58089ea65a907cb2a7f36e50200a809df",
+        "u06 A-90 (fix/long-integer-object-arguments on fix/long-integer-arguments): arguments a "
+        "reply carries as a JSON object holding such an integer are read too, where the reply "
+        "was unreadable and the attempt not evaluated; an inconclusive can become a verdict",
+    ),
+    (
+        4,
+        "7589807e9974bc2c0977706d3d05c418042d69c73ae58bb0cbf9cc3f8bba5f68",
+        "re-pin, the pre-merge audit of A-90: the check reads the integers the parsed reply holds "
+        "(a duplicate key's dropped value is not refused), and a WebSocket text, model or id path "
+        "into a call's arguments reads no digits; version 4 is not released",
+    ),
+    (
+        4,
+        "a1609118af05b8a942c1982916c99c707552ac8324d804d3248aecac0bd67dc1",
+        "re-pin, the second audit of A-90: a WebSocket final_path into a call's arguments reads "
+        "no stop there either; version 4 is not released",
+    ),
+    (
+        4,
+        "86d4391094d167c454d0e05ec076a36ca10c585c57b1d00574a7e86e87c0fe40",
+        "re-pin, merge of main after #126 (u06 A-88, a map read whole hashed whole): version 4 "
+        "takes rules 3's masking change too; version 4 is not released",
+    ),
 )
 
 #: The digest each version is pinned to now: the last line of :data:`PIN_HISTORY` for it.
@@ -240,6 +266,7 @@ PINNED: dict[int, str] = {
     1: "eea242b76899ce22c68bc80c4c6b51a92c22cd39d4763bc373f3cd8a612e9dec",
     2: "8d0f56fb1a5237de51492dea812a213f4ed39c8ea5a2b5edaff1812e0300c372",
     3: "ee44c0fc64ebbda4663040f0c4246f342b398e7290de53f71fb48024642414b7",
+    4: "86d4391094d167c454d0e05ec076a36ca10c585c57b1d00574a7e86e87c0fe40",
 }
 
 #: One ``<version> <digest>`` line per pin, appended to and never edited: the history must start

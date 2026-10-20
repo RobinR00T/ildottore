@@ -5,6 +5,28 @@ The carryover ledger. Every agent session updates this so context survives even 
 newest merge on top: a branch's entries land together when it merges, so the dates of
 neighbouring entries can interleave (an older branch merged later sits above a newer one).
 
+## State, 2026-10-19: long integers in object-form arguments (u06 A-90, `fix/long-integer-object-arguments`)
+
+- **What.** MEDIUM-1 of the A-89 audit, closed: arguments a reply carries as a JSON object
+  (Anthropic's `input`, an OpenAI `function.arguments` written as an object, a WebSocket frame's
+  calls) holding an integer past the digit limit made the whole reply unreadable, `inconclusive`
+  (OD-21), where the string form is judged. Bodies and frames are parsed by
+  `shared.toolcalls.loads_keeping_long_integers`, and `check_long_integers` keeps such an integer
+  only inside the arguments of a call the adapter reads (matched by identity); anywhere else the
+  reply stays unreadable, so no reader takes a `LongInteger` for text or a figure. Judging
+  rules 4 (an `inconclusive` can become a verdict).
+- **Checks.** `tests/adapters/test_long_integer_object_arguments.py`: 21 tests; on the tree before
+  the change, 8 of the 19 that import there fail (`scratch/longint/red-before-longobj.log`, outside
+  the repo); a resume test for 3 to 4.
+- **Audit.** One pre-merge round, no HIGH. MEDIUM-1 (only the first kept integer was in effect
+  tested) and LOW-2/3 (a nested `tool_calls_path`, a decoy list, a second call): tests added, each
+  surviving mutant now killed. LOW-1: the check reads the integers the parsed reply holds, so a
+  duplicate key's dropped value no longer refuses it. LOW-4: a WebSocket `text_path`, `model_path`
+  or `id_path` declared into a call's arguments reads no digits. LOW-5: wording and wrapping. A
+  verification round found `final_path` uncovered (now guarded too) and a line past the limit.
+- **Left open.** `fix/identity-trials` (not merged) now needs judging rules 5, or whichever is free
+  when it lands. The SSE masking path and error bodies keep the plain parse (u06 A-90 says why).
+
 ## State, 2026-10-19: a map read whole is hashed whole (u06 A-88, `u06-argval-hash-whole`)
 
 - **What.** Audit 2 of A-88 (LOW-3): a map or an empty list read whole under a pinned argument
@@ -29,11 +51,10 @@ neighbouring entries can interleave (an older branch merged later sits above a n
   test pinned the version (loosened), the docs said "every walk" where the redactor masks the
   digits by shape (now "every check"). Its MEDIUM-1 is left open, below.
 - **Left open, each for its own branch.** Object-form arguments with such an integer (Anthropic's
-  `input`, a WebSocket frame's calls) still make the whole reply unreadable, `inconclusive` (OD-21),
-  since the body is parsed without the hook (`adapters/base.py`, `websocket.py`); closing it changes
-  stored verdicts again (judging rules 4). A map read whole under a pinned name is masked by shape
-  only (A-88 audit round 2, LOW-3). `fix/identity-trials` (not merged) planned judging rules 3 and
-  now needs the next free version.
+  `input`, a WebSocket frame's calls) still made the whole reply unreadable, `inconclusive` (OD-21):
+  closed by A-90 (judging rules 4), above. A map read whole under a pinned name is masked by shape
+  only (A-88 audit round 2, LOW-3): closed by #126, above. `fix/identity-trials` (not merged)
+  planned judging rules 3 and now needs the next free version.
 
 ## State, 2026-10-19: argument values on an authorized tool (u06 A-88, `feat/tool-argument-values`)
 

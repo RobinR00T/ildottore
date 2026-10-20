@@ -74,7 +74,10 @@ __all__ = [
 #: sweep's request carries is a fail that needs review, not a confirmed one; ``secret_shape``
 #: reads the redactor's documented key formats. ``3``: u06 A-89, a call's JSON-string arguments
 #: holding an integer longer than ``int`` converts are read, where they read as ``{}`` and passed.
-JUDGING_RULES_VERSION: Final = 3
+#: ``4``: u06 A-90, so are arguments a reply carries as a JSON object (Anthropic's ``input``, an
+#: OpenAI ``function.arguments`` written as an object, a WebSocket frame's calls), where the
+#: integer made the reply unreadable, not evaluated.
+JUDGING_RULES_VERSION: Final = 4
 
 #: The day runs began to record their rules (version 1 took its value), which the refusal of a run
 #: that records none quotes and the docs name (as ``JUDGING_RULES_SINCE``) instead of writing the

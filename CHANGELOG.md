@@ -7,6 +7,24 @@ the file, schema copy, build or pipeline it names.
 
 ## [Unreleased]
 
+### Fixed (breaking for a run halted under judging rules 3: judging rules 4, u06 A-90)
+
+- **Arguments a reply carries as a JSON object read an integer longer than Python converts too.**
+  Anthropic's `tool_use` `input`, an OpenAI `function.arguments` written as an object and a
+  WebSocket frame's calls are parsed with the reply, so one integer past
+  `sys.get_int_max_str_digits()` in them made the whole reply unreadable and the attempt
+  `inconclusive` (OD-21), where A-89 judges the same call written as a JSON string (MEDIUM-1 of the
+  pre-merge audit of A-89). A success body and a WebSocket frame are now parsed keeping such an
+  integer as a `shared.toolcalls.LongInteger`, and only inside the arguments of a call the adapter
+  reads: anywhere else (the text, an id, a stop reason, the usage, a REST template's body) the
+  reply stays unreadable with the message it had, since a `LongInteger` is a `str` and a field read
+  as text would take its digits for the model's words; a WebSocket `text_path`, `model_path`,
+  `id_path` or `final_path` declared into a call's arguments reads none there.
+- **Judging rules 4** (2026-10-19). An `inconclusive` can become a verdict, so
+  `JUDGING_RULES_VERSION` is 4 by an appended pin: a run halted under version 3 is refused by its
+  resume before anything is sent, naming both, and `dottore --version` prints
+  `dottore 0.1.0 (judging rules 4)`. `JUDGING_RULES_SINCE` stays `2026-10-15`.
+
 ### Fixed (u06 A-88, ADR-0014 amended)
 
 - **A map read whole under a pinned argument is hashed whole in the verdict.** It was masked by
@@ -31,7 +49,8 @@ the file, schema copy, build or pipeline it names.
   the target as a JSON string. Not taken: an `inconclusive` verdict, which would let one long number
   turn a fail into "not evaluated", and raising the process-wide digit limit. Arguments that are an
   object in the reply (Anthropic's `input`, a WebSocket frame's calls) are parsed with the reply,
-  so the same integer there still makes the reply unreadable (`inconclusive`, OD-21), as before.
+  so the same integer there still made the reply unreadable (`inconclusive`, OD-21): read since
+  A-90, above.
 - **Judging rules 3** (2026-10-19). A stored pass can become a fail, so
   `shared.judging_rules.JUDGING_RULES_VERSION` is 3 by an appended pin (`PIN_HISTORY`,
   `judging_pins.frozen`): a run halted under version 2 is refused by its resume before anything is
