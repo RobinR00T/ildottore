@@ -7,6 +7,24 @@ the file, schema copy, build or pipeline it names.
 
 ## [Unreleased]
 
+### Fixed (breaking for a run halted under judging rules 5 and for a CI gate: rules 6, u08 A-92)
+
+- **A canary split by a default ignorable code point is the canary.** A-87 read a canary of the
+  scope's floors with the format characters (Unicode category `Cf`) removed, so a variation selector
+  (U+FE0F, U+FE00 to U+FE0E, U+E0100 to U+E01EF), the combining grapheme joiner U+034F or a Hangul
+  filler (U+115F, U+1160, U+3164, U+FFA0), which show as nothing just the same, still hid a crossing
+  (`DL-XTENANT-001`: inconclusive, exit 0) and a planted canary's leak (pass). Every default
+  ignorable code point is now removed too, both sets pinned to Unicode 16.0 so the reading does not
+  change with the Python's own Unicode table (3.11 has 14.0). Such a reply is now a fail: 1.0,
+  Critical, confirmed, exit 2 where the leak shows on every trial, as A-87 measured for a zero-width
+  space. On a benign corpus of 11,134 files, 27 of which hold such characters (1,290 in all, 1,271
+  of them U+FE0F), no ordinary text matched a canary, before or after. Control characters (U+0000 to
+  U+001F, U+007F to U+009F) are not removed, as before. The scope refuses two identity canaries that
+  differ only by such a character too (exit 3, nothing sent). Pre-merge audit of A-87, LOW 2.
+- **Judging rules 6** (2026-10-20). `JUDGING_RULES_VERSION` is 6 by an appended pin: a run halted
+  under version 5 or older is refused by its resume before anything is sent, naming both, and
+  `dottore --version` prints `dottore 0.1.0 (judging rules 6)`.
+
 ### Fixed (breaking for a run halted under judging rules 4 and for a CI gate: rules 5, u08 A-87)
 
 - **Every reply received under an identity is read against the scope's canaries.** The attempts are

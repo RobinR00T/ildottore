@@ -244,6 +244,11 @@ theirs, `None` for the sweep's own comparison or no sweep. `shared.enums.IDENTIT
 the one reading of a canary in a request and in a reply. Optional and behaviour-free for every
 caller that sets none; no stored field is new, so an older build reads a run of this one.
 
+**A-92 (u08's clause; this unit's half, added 2026-10-20).** `shared.folding.folded` removes every
+default ignorable code point too (the variation selectors, U+034F, the Hangul fillers), and every
+format character, both sets pinned to Unicode 16.0 in `shared.folding.INVISIBLE_RANGES` (4,206 code
+points) rather than read from the interpreter's table; still no `ildottore` import.
+
 ## §8 Out of scope / forbidden
 - MUST NOT import any other `ildottore` package or any provider SDK / httpx / Jinja / Typer.
 - MUST NOT implement behavior: no scoring/banding math (u07), no evaluation (u06), no I/O,

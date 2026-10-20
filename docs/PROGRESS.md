@@ -5,6 +5,28 @@ The carryover ledger. Every agent session updates this so context survives even 
 newest merge on top: a branch's entries land together when it merges, so the dates of
 neighbouring entries can interleave (an older branch merged later sits above a newer one).
 
+## State, 2026-10-20: a canary read without default ignorables, judging rules 6 (u08 A-92)
+
+- **What.** `fix/fold-default-ignorables`, LOW 2 of A-87's pre-merge audit: the fold removed only
+  `Cf`, so a variation selector, the combining grapheme joiner U+034F or a Hangul filler inside a
+  canary still hid a crossing (inconclusive, exit 0) or a planted canary's leak (pass).
+  `shared.folding.folded` now removes every `Default_Ignorable_Code_Point` and every `Cf`, pinned to
+  Unicode 16.0 (4,206 code points), no longer read from the interpreter (3.11 has 14.0). Judging
+  rules 6, pinned on main `01d6bdc5`.
+- **Measured first.** Benign corpus, 11,134 files and 168.9 million characters (this repository,
+  the Python 3.14 standard library and site-packages, two `node_modules` trees), 1,290 default
+  ignorable code points outside `Cf` in them: 600 random canaries the floors accept and the
+  battery's planted shape matched none before or after; 15 weak spec canaries, the same files.
+  Narrowing the message to "format (Cf) characters" was the alternative, not taken.
+- **Checks.** `tests/shared/test_folding.py` (30), new cases in
+  `tests/evaluators/test_authz_leak_received.py` (5), `tests/evaluators/test_secret_leakage_fold.py`
+  (3), `tests/policy/test_scope_canary_shape.py` (2), `tests/cli/test_identity_trials_cli.py` (3,
+  through the CLI: exit 2, 1.0, Critical), the version 5 resume in
+  `tests/cli/test_resume_judging_rules.py`; 30 new cases fail on `01d6bdc5`, and so does the
+  resume.
+- **Left open.** LOW 1 of the same audit (identities that share a credential) is on its own branch;
+  whichever lands second takes the next judging rules version or re-pins on the merged tree.
+
 ## State, 2026-10-20: identity trials, judging rules 5 (u08 A-87, OD-53, `fix/identity-trials`)
 
 - **What.** The design A-85's item 3 left to a branch of its own. Every reply received under an

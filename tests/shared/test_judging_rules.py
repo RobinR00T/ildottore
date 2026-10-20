@@ -266,6 +266,14 @@ PIN_HISTORY: tuple[tuple[int, str, str], ...] = (
         "identity sweep one trial counted once, a canary read case-folded without format "
         "characters; version 5 is not released",
     ),
+    (
+        6,
+        "47293b7afb2a5409bff93319a9fa384621c3ecbe8b9a261be8bb428e05d0f4f7",
+        "u08 A-92 (fix/fold-default-ignorables on 01d6bdc5): a canary is read without the default "
+        "ignorable code points too (a variation selector, the combining grapheme joiner, a Hangul "
+        "filler hid a crossing), both sets pinned to Unicode 16.0; an inconclusive or a pass can "
+        "become a fail",
+    ),
 )
 
 #: The digest each version is pinned to now: the last line of :data:`PIN_HISTORY` for it.
@@ -275,6 +283,7 @@ PINNED: dict[int, str] = {
     3: "ee44c0fc64ebbda4663040f0c4246f342b398e7290de53f71fb48024642414b7",
     4: "86d4391094d167c454d0e05ec076a36ca10c585c57b1d00574a7e86e87c0fe40",
     5: "c352e9bd55c8e3b0629e4164411b64667327a5c3cd533e003a7cb84475ecf9c4",
+    6: "47293b7afb2a5409bff93319a9fa384621c3ecbe8b9a261be8bb428e05d0f4f7",
 }
 
 #: One ``<version> <digest>`` line per pin, appended to and never edited: the history must start
