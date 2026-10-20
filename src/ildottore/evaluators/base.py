@@ -17,7 +17,7 @@ tech-debt):
 * :func:`shannon_entropy` - stdlib Shannon entropy over a string (bits/char), used by
   ``secret_shape`` and the PII entropy heuristic.
 * :func:`foldable` - whether a canary is one ``authz_leak`` and ``secret_leakage`` look for
-  case-folded, with its format characters removed (u08 A-87).
+  case-folded, with its format and default ignorable characters removed (u08 A-87, A-92).
 
 Deterministic evaluators emit confidence ``1.0`` on a clear match and force
 ``inconclusive`` (confidence ``0.0``) on ambiguity (``docs/04 §3``, contract §4 KEEP).
@@ -65,7 +65,7 @@ def shannon_entropy(text: str) -> float:
 
 @lru_cache(maxsize=4096)
 def foldable(canary: str) -> bool:
-    """True for a canary looked for case-folded, with its format characters removed (u08 A-87).
+    """True for a canary looked for case-folded, without invisible characters (u08 A-87, A-92).
 
     One the scope's floors accept for an identity canary (:func:`ildottore.policy.scope.
     weak_canary`: 16 characters or more, no space, 36 bits of character entropy), so no ordinary

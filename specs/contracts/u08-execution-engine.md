@@ -1279,6 +1279,41 @@ the replay line, their figures equal, and 5 pass on both), `tests/core/test_iden
 on every attempt.
 
 
+**A-92 A canary is read without the default ignorable code points too (added 2026-10-20; halves in
+u00, u01, u06 and u12).** A-87 reads a canary of the scope's floors with the format characters
+(Unicode category `Cf`) removed, and the scope's refusal says "invisible characters"; but the
+default ignorable code points outside `Cf` show as nothing too: the variation selectors (U+FE00 to
+U+FE0F, U+E0100 to U+E01EF), the combining grapheme joiner U+034F, the Hangul fillers (U+115F,
+U+1160, U+3164, U+FFA0), the Mongolian free variation selectors (U+180B to U+180D, U+180F), two
+Khmer inherent vowels and the reserved code points of those blocks. A reply that split
+`CANARY-B-7f3a91c2` with one of them hid the crossing on `01d6bdc5` (inconclusive, exit 0), and a
+planted canary's leak split that way passed: the pre-merge audit of A-87, LOW 2. **Decided
+2026-10-20 under the owner's delegation (best practice), revisable:** `shared.folding.folded`
+removes every `Default_Ignorable_Code_Point` and the rest of `Cf` (the prepended concatenation
+marks, the interlinear annotation characters, the Egyptian hieroglyph format controls), 4,206 code
+points, both sets pinned to Unicode 16.0 as the redactor pins its format characters, so a verdict no
+longer depends on the Python's Unicode table (3.11 has 14.0, and the fold read the interpreter's).
+Measured before deciding, by A-87's corpus method: 11,134 benign files, 168.9 million characters
+(this repository, the Python 3.14 standard library and site-packages, two `node_modules` trees)
+holding 1,290 default ignorable code points outside `Cf` in 27 files, 1,271 of them U+FE0F; 600
+random canaries the floors accept and the battery's planted shape matched none, before or after, and
+the files holding each of 15 weak spec canaries did not change. A substring of the `Cf` fold stays
+one: removing more characters from both sides keeps it. Which canary a reply is read as can change
+where one identity canary holds another (`S` inside `L`): a reply holding `S` and then `L`'s tail
+split by U+FE0F read as `S`, a crossing, and now reads as `L`, its own canary, as the same text
+written plainly always did. Control characters (U+0000 to U+001F, U+007F to U+009F) are not removed,
+as under A-87. Not taken: narrowing the refusal to "format (Cf) characters" (it names the gap
+instead of closing it, and the target picks the character); NFKC (a fullwidth or confusable letter
+is another letter here, A-87); the interpreter's tables (Python has no
+`Default_Ignorable_Code_Point`, and its `Cf` moves with its Unicode version). Judging rules 6: an
+inconclusive or a pass can become a fail. Checked by `tests/shared/test_folding.py` (30), new cases
+in `tests/evaluators/test_authz_leak_received.py` (5, the nested canaries among them),
+`tests/evaluators/test_secret_leakage_fold.py` (3) and `tests/policy/test_scope_canary_shape.py`
+(2), through the CLI against a loopback stub in `tests/cli/test_identity_trials_cli.py` (3: exit 2,
+1.0, Critical, confirmed), and the version 5 resume in `tests/cli/test_resume_judging_rules.py`; 30
+of the new cases fail on `01d6bdc5`, and so does the version 5 resume. Reversal: drop
+`_DEFAULT_IGNORABLE_RANGES` from `shared.folding.INVISIBLE_RANGES` (judging rules 7). Owner: human.
+
 ## §8 Out of scope / forbidden
 - MUST NOT import adapter/evaluator/scorer/store **concretes**: interfaces only; composition is
   u12. `lint-imports` enforces.

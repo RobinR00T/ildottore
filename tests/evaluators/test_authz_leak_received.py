@@ -7,11 +7,12 @@ and not on the sweep scored nothing, and one that leaked on the sweep only score
 The runner now names the identities an attempt's reply was received as
 (``EvalContext.reply_identities``) and ``authz_leak`` reads that reply alone against the map.
 
-A canary is looked for case-folded, with every format character removed, in the replies as in
-the request (``shared.folding``): read exactly, a reply that re-cased an identity canary or split
-it with a zero-width character hid the crossing (inconclusive, exit 0, through the CLI on
-``fef4963e``). A canary below the scope's floors (a spec's own, which nothing shape-checks) is
-still read exactly: folded, a word such as ``TOKEN`` is in six times more of a benign corpus.
+A canary is looked for case-folded, with every format character (since u08 A-92, every default
+ignorable code point too) removed, in the replies as in the request (``shared.folding``): read
+exactly, a reply that re-cased an identity canary or split it with a zero-width character hid the
+crossing (inconclusive, exit 0, through the CLI on ``fef4963e``). A canary below the scope's floors
+(a spec's own, which nothing shape-checks) is still read exactly: folded, a word such as ``TOKEN``
+is in six times more of a benign corpus.
 """
 
 from __future__ import annotations
@@ -140,11 +141,28 @@ async def test_a_carried_canary_beside_one_not_carried_still_confirms() -> None:
         "﻿CANARY-B-7F3A91C2",
         "CANARY­-B-7f3a91c2",
         "CANARY-B-7f3a91c2".replace("-", "-\U000e0041"),
+        "CANARY-B-7f3a\ufe0f91c2",
+        "CANARY-B\u034f-7f3a91c2",
+        "CANARY-\u3164B-7f3a91c2",
+        "CANARY-B-7\U000e0100f3a91c2",
     ],
-    ids=["upper", "lower", "zero-width-space", "word-joiner", "bom-upper", "soft-hyphen", "tag"],
+    ids=[
+        "upper",
+        "lower",
+        "zero-width-space",
+        "word-joiner",
+        "bom-upper",
+        "soft-hyphen",
+        "tag",
+        "variation-selector",
+        "grapheme-joiner",
+        "hangul-filler",
+        "variation-selector-supplement",
+    ],
 )
 async def test_a_re_cased_or_split_canary_in_the_reply_is_still_the_canary(shown: str) -> None:
-    """``fef4963e``: read exactly, each of these hid the crossing."""
+    """``fef4963e``: read exactly, each of these hid the crossing; ``01d6bdc5`` (the ``Cf`` fold):
+    a variation selector, the grapheme joiner or a Hangul filler still did (audit of A-87, L2)."""
 
     attempt = await _verdict(_received(f"Here is tenant B: {shown}"))
     assert attempt.status is VerdictStatus.FAIL
@@ -188,3 +206,21 @@ async def test_an_ordinary_text_holds_no_folded_canary() -> None:
         "record is ready, tenant A. ﻿ Nothing else."
     )
     assert (await _verdict(_received(benign))).status is VerdictStatus.PASS
+
+
+async def test_an_identity_canary_inside_another_reads_as_the_longer_one_split_or_not() -> None:
+    """u08 A-92 (its audit, L2): ``S`` (tenant B's) inside ``L`` (tenant A's, ``S`` and a tail). A
+    reply holding ``L`` written plainly is A's own canary, no crossing, on main and here; split by
+    a variation selector between ``S`` and its tail it read as ``S``, a crossing, on ``01d6bdc5``,
+    and now reads as ``L`` like the plain text. Which canary a reply is read as can change; a
+    substring of the old fold stays one."""
+
+    short = "CANARY-B-7f3a91c2d8e0b4a6"
+    long = short + "-a-91c2d7e4b0f3"
+    owners = {long: "tenant-a", short: "tenant-b"}
+    plain = await _verdict(_received(f"mine {long}", owners=owners))
+    split = await _verdict(_received(f"mine {short}\ufe0f-a-91c2d7e4b0f3", owners=owners))
+    alone = await _verdict(_received(f"theirs {short}\ufe0f and more", owners=owners))
+    assert plain.status is VerdictStatus.PASS
+    assert split.status is VerdictStatus.PASS
+    assert alone.status is VerdictStatus.FAIL  # ``S`` with no tail is still tenant B's crossing

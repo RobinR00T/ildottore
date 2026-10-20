@@ -213,11 +213,20 @@ def test_the_templates_commented_tenant_identity_loads(tmp_path: Path) -> None:
         "canary-b-3f9c1e7a5b2d8064",
         "CANARY-B-3f9c1e7a​5b2d8064",
         "CANARY-B-3f9c1e7a5b2d8064⁠",
+        "CANARY-B-3f9c1e7a\ufe0f5b2d8064",
+        "CANARY-B-\u31643f9c1e7a5b2d8064",
     ],
-    ids=["upper", "lower", "zero-width-space", "word-joiner"],
+    ids=[
+        "upper",
+        "lower",
+        "zero-width-space",
+        "word-joiner",
+        "variation-selector",
+        "hangul-filler",
+    ],
 )
 def test_two_canaries_that_fold_alike_are_refused(tmp_path: Path, other: str) -> None:
-    """``authz_leak`` reads a canary case-folded, format characters removed (u08 A-87): two that
+    """``authz_leak`` reads a canary case-folded, invisible characters removed (u08 A-87): two that
     differ only there are one canary to it, and each owner's own would read as the other's leak.
     The canary is not quoted."""
 

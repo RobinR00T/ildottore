@@ -160,9 +160,9 @@ def _refuse_shared_identities(file_path: Path, entry: ScopeTarget) -> None:
     pair to compare, and with three, two merged (pre-merge audit of PR #45). A canary maps back
     to the identity that owns it, so two owners of one canary made each one's own canary read
     as the other's leak. ``authz_leak`` reads a canary case-folded, with its format characters
-    removed (``shared.folding``, u08 A-87), so two canaries that differ only there are one
-    canary to it, and are refused alike. The canary is not quoted: it is a marker the target
-    must not learn.
+    and default ignorable code points removed (``shared.folding``, u08 A-87, A-92), so two
+    canaries that differ only there are one canary to it, and are refused alike. The canary is
+    not quoted: it is a marker the target must not learn.
     """
 
     names: set[str] = set()

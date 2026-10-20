@@ -1240,6 +1240,11 @@ reads them as one canary and each owner's own would read as the other's leak (ex
 `weak_canary` is unchanged; `evaluators.base.foldable` calls it with no labels to decide which
 canaries are read folded (u06's half).
 
+**A-92 (u08's clause; this unit's half, added 2026-10-20).** The refusal's "invisible characters"
+now holds: two identity canaries that differ only by a variation selector, the combining grapheme
+joiner or a Hangul filler are refused too (`tests/policy/test_scope_canary_shape.py`), since
+`shared.folding.folded` removes the default ignorable code points.
+
 ## §8 Out of scope / forbidden
 - MUST NOT execute attacks, send requests, or import adapters/evaluators/core/store/reporting.
 - MUST NOT persist or print raw secrets/PII (redactor is the only path).
