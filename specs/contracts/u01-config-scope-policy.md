@@ -1282,8 +1282,8 @@ operator must declare one identity per tenant. The scope check runs on every loa
 target and command (as the canary check does), so one `auth_ref` on two identities is refused even
 for a run that sweeps no identity; the key check runs only for a run that sweeps, and not for a
 stdio MCP target, where `env://A` and `env://B` still load although no key is sent and both are one
-caller. The refusal comes before the scope's other identity checks (`_refuse_unnamed_variables`)
-and, at the pre-flight, before the per-identity short-key check: two identities sharing one short
+caller. The refusal comes after the duplicate-name check and before the canary and variable-name
+checks (`_refuse_unnamed_variables`), and, at the pre-flight, before the per-identity short-key check: two identities sharing one short
 key are told they share it, not that it is short.
 
 *Checks.* `tests/test_pr45_followups.py` (the scope refusal, exact comparison, `env://NONE`),
