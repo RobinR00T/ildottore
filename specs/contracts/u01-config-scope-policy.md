@@ -1284,8 +1284,8 @@ target and command (as the canary check does), so one `auth_ref` on two identiti
 for a run that sweeps no identity; the key check runs only for a run that sweeps, and not for a
 stdio MCP target, where `env://A` and `env://B` still load although no key is sent and both are one
 caller. The refusal comes after the duplicate-name check and before the canary and variable-name
-checks (`_refuse_unnamed_variables`), and, at the pre-flight, before the per-identity short-key check: two identities sharing one short
-key are told they share it, not that it is short.
+checks (`_refuse_unnamed_variables`), and, at the pre-flight, before the per-identity short-key
+check: two identities sharing one short key are told they share it, not that it is short.
 
 *Checks.* `tests/test_pr45_followups.py` (the scope refusal, exact comparison, `env://NONE`),
 `tests/cli/test_identity_trials_cli.py` (both refusals through the CLI, live,

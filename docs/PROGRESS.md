@@ -16,7 +16,8 @@ neighbouring entries can interleave (an older branch merged later sits above a n
   one `auth_ref` on two identities (two `env://NONE` too); `check_identity_credentials` and
   `build_identity_probes` refuse two references holding one key before anything is sent, in every
   mode. Identities are named, never the reference or the key. Exit 3.
-- **Rules.** No stored verdict changes; judging rules 6 re-pinned by an appended line on the merged tree (main took 6, u08 A-92, first).
+- **Rules.** No stored verdict changes; judging rules 6 re-pinned by an appended line on the merged
+  tree (main took 6, u08 A-92, first).
 - **Not covered.** Two keys a provider issues to one account are two credentials here.
 
 ## State, 2026-10-20: a canary read without default ignorables, judging rules 6 (u08 A-92)
