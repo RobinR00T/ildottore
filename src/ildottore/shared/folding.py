@@ -29,9 +29,10 @@ files, 27 of them holding 1,290 default ignorables outside ``Cf``, u08 A-92). Co
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from typing import Final
 
-__all__ = ["INVISIBLE_RANGES", "folded"]
+__all__ = ["INVISIBLE_RANGES", "folded", "folded_spans"]
 
 #: ``Default_Ignorable_Code_Point`` as of Unicode 16.0 (``DerivedCoreProperties.txt``), reserved
 #: code points included, as Unicode asks of a renderer.
@@ -65,3 +66,66 @@ def folded(text: str) -> str:
     if text.isascii():  # no invisible character is ASCII
         return text.casefold()
     return text.translate(_DROP).casefold()
+
+
+def folded_spans(text: str, needle: str) -> Iterator[tuple[int, int]]:
+    """Each stretch of ``text`` whose fold holds ``needle``, in order, overlapping ones as one.
+
+    ``needle`` is folded already (:func:`folded`) and not empty. A stretch runs from the first
+    character of ``text`` that the match folds from to the last, the invisible characters inside
+    included: what the evidence store masks for a canary a reply holds re-cased or split, as the
+    evaluators read it (u10 A-94). A match that starts or ends inside a character folding to more
+    than one (``ß`` to ``ss``) takes the whole character. Linear in the text: the fold, a
+    ``find`` per match, and one walk over the characters up to the last match for a text that is
+    not ASCII (ASCII folds one character to one).
+    """
+
+    if not needle:
+        raise ValueError("folded_spans needs a needle that folds to something")
+    clean = folded(text)
+    found = clean.find(needle)
+    if found == -1:
+        return
+    ascii_text = text.isascii()
+    walked = cursor = 0  # the folded length of text[:cursor]
+
+    def _at(index: int) -> int:
+        # The character of `text` the folded index `index` comes from; asked in growing order.
+        nonlocal walked, cursor
+        if ascii_text:
+            return index
+        while True:
+            char = text[cursor]
+            width = 0 if ord(char) in _DROP else len(char.casefold())
+            if walked + width > index:
+                return cursor
+            walked += width
+            cursor += 1
+
+    def _stretches() -> Iterator[tuple[int, int]]:
+        # In the folded text, overlapping matches as one.
+        nonlocal found
+        start, end = found, found + len(needle)
+        found = clean.find(needle, found + 1)
+        while found != -1:
+            if found >= end:  # this match does not touch the stretch open
+                yield start, end
+                start = found
+            end = found + len(needle)
+            found = clean.find(needle, found + 1)
+        yield start, end
+
+    # In `text`, two stretches that end and start in one character folding to more than one (`ß`
+    # holds two matches of `s`) are one.
+    group: tuple[int, int] | None = None
+    for start, end in _stretches():
+        first = _at(start)
+        last = _at(end - 1) + 1
+        if group is not None and first < group[1]:
+            group = (group[0], last)
+            continue
+        if group is not None:
+            yield group
+        group = (first, last)
+    if group is not None:
+        yield group

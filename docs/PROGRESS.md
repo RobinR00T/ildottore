@@ -5,6 +5,37 @@ The carryover ledger. Every agent session updates this so context survives even 
 newest merge on top: a branch's entries land together when it merges, so the dates of
 neighbouring entries can interleave (an older branch merged later sits above a newer one).
 
+## State, 2026-10-20: a canary masked at rest as it is read (u10 A-94, `fix/evidence-folded-canary`)
+
+- **What.** L4 of the A-92 pre-merge audit: the evidence store registered each planted canary as an
+  exact pattern, so a canary re-cased or split by U+200B, U+FE0F, U+3164 or U+034F stayed readable
+  on disk while the evaluators read it folded. Found on the way: the scope's identity canaries were
+  never given to the store, so one the entropy rule missed was stored in clear (through the CLI on
+  `65203f18`, `canary-b-7f3a91c2` in the stored reply beside the `fail`). `shared.folding.
+  folded_spans` places a folded match in the text as written; `Redactor.register_spans` masks what
+  a finder returns (the redactor still imports nothing in-repo); `FsEvidenceStore` takes
+  `folded_canaries` and `canary_folds` (`evaluators.base.foldable`, from the wiring), and fills
+  `{{run_id}}` from the run being stored; `cli.wiring.declared_canaries` adds every identity canary.
+- **Decided.** Masking only, no verdict change: judging rules 6 re-pinned by an appended line. A
+  canary below the floors stays exact (folding a word canary would mask the word across the
+  evidence), as the evaluators read it.
+- **Checks.** `tests/store/test_folded_canary_at_rest.py` (29: 22 fail on `65203f18`, those
+  through `build_runner` by their assertions; a Hypothesis property of `folded_spans` against a
+  character-by-character reference found two matches inside one `ß` yielding overlapping
+  stretches, fixed before commit), and 3 cases through the CLI in
+  `tests/cli/test_identity_trials_cli.py`, which fail on `65203f18` with the canary readable in the
+  stored attempt.
+- **Audit.** Pre-commit (opus): no defect in the mechanism over 200,000 differential cases, a
+  30,000-text idempotency fuzz and 21 adversarial texts; M1 (a seeded spec's canary, bound to its
+  `run_token`, was not folded), M2 (an identity canary holding `{{run_id}}` registered a stem of one
+  letter that masked every `a`), and five LOWs (a duplicated MANUAL line, weak or misleading tests,
+  the run id left set after a `put`), all applied. Delta audit: the seeded canary was still
+  missed on a mock or `--hardened` route (no `real_target`); `build_runner` takes `canary_target`,
+  the target the runner binds with, and a test through it fails when the store is given
+  `real_target` instead.
+- **Left open.** L3 of the same audit (canary floors read on the folded canary) is on its own branch
+  (A-93, judging rules 7); whichever lands second merges main and re-pins.
+
 ## State, 2026-10-20: a canary read without default ignorables, judging rules 6 (u08 A-92)
 
 - **What.** `fix/fold-default-ignorables`, LOW 2 of A-87's pre-merge audit: the fold removed only

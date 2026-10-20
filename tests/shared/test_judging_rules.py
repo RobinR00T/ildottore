@@ -274,6 +274,13 @@ PIN_HISTORY: tuple[tuple[int, str, str], ...] = (
         "filler hid a crossing), both sets pinned to Unicode 16.0; an inconclusive or a pass can "
         "become a fail",
     ),
+    (
+        6,
+        "aaa0f847faa47e1e6549f66444a6e26a0f3168d58d1c211261f5cd02d03ffe94",
+        "re-pin 2026-10-20: u10 A-94 (fix/evidence-folded-canary on 65203f18): the evidence store "
+        "masks a canary as the evaluators read it (re-cased, split by an invisible character) and "
+        "gets every identity canary of the scope; what is stored changes, no verdict does",
+    ),
 )
 
 #: The digest each version is pinned to now: the last line of :data:`PIN_HISTORY` for it.
@@ -283,7 +290,7 @@ PINNED: dict[int, str] = {
     3: "ee44c0fc64ebbda4663040f0c4246f342b398e7290de53f71fb48024642414b7",
     4: "86d4391094d167c454d0e05ec076a36ca10c585c57b1d00574a7e86e87c0fe40",
     5: "c352e9bd55c8e3b0629e4164411b64667327a5c3cd533e003a7cb84475ecf9c4",
-    6: "47293b7afb2a5409bff93319a9fa384621c3ecbe8b9a261be8bb428e05d0f4f7",
+    6: "aaa0f847faa47e1e6549f66444a6e26a0f3168d58d1c211261f5cd02d03ffe94",
 }
 
 #: One ``<version> <digest>`` line per pin, appended to and never edited: the history must start

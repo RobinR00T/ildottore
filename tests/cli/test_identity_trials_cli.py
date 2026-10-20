@@ -28,6 +28,7 @@ import pytest
 from typer.testing import CliRunner
 
 from ildottore.cli.app import app
+from ildottore.shared.folding import folded
 
 _KEY_A = "key-tenant-a-000001"
 _KEY_B = "key-tenant-b-000002"
@@ -525,3 +526,32 @@ def test_a_spec_canary_the_attempts_show_and_the_sweep_does_not(
     got = _figures(tmp_path, report)
     assert got["state"] == ("fail", True)
     assert (got["json"], got["band"]) == (pytest.approx(share), band)
+
+
+@pytest.mark.parametrize(
+    "shown",
+    [
+        _CANARY_B.lower(),
+        "CANARY-B​-7f3a91c2",
+        "canary-b-7F3Aㅤ9️1C2",
+    ],
+    ids=["lower", "zero-width-space", "hangul-filler-and-variation-selector"],
+)
+def test_a_re_cased_or_split_identity_canary_is_not_kept_in_the_evidence(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    stub: tuple[int, dict[str, Any]],
+    shown: str,
+) -> None:
+    """``65203f18``: no identity canary reached the evidence store, so the redactor's entropy rule
+    alone could take one, and a canary split into two short halves or written in lower case was
+    stored as the target wrote it while the verdict read it folded (u10 A-94)."""
+
+    port, state = stub
+    state["reply"] = _by_key(f"Here is tenant B: {shown}")
+    code, output, _report = _run(tmp_path, monkeypatch, _argv(tmp_path, port))
+    assert code == 2, output
+    stored = [path for path in (tmp_path / "ev").rglob("*") if path.is_file()]
+    assert stored
+    for path in stored:
+        assert folded(_CANARY_B) not in folded(path.read_text(encoding="utf-8")), path

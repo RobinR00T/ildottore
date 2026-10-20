@@ -72,7 +72,9 @@ from ildottore.core.runner import (
     sweeps_identities,
     unsent_fields,
 )
+from ildottore.core.setup_delivery import seeded_canaries
 from ildottore.evaluators import build_default_registry as build_evaluator_registry
+from ildottore.evaluators.base import foldable
 from ildottore.fingerprint import FingerprintEngine
 from ildottore.fingerprint.layers import CarrierLayer, default_layers
 from ildottore.mutators import build_default_registry as build_mutator_registry
@@ -165,6 +167,7 @@ __all__ = [
     "build_scope_with_digest",
     "check_target_credential",
     "comprehending_adapter_factory",
+    "declared_canaries",
     "deterministic_clock",
     "fingerprint_probe",
     "hardened_adapter_factory",
@@ -439,36 +442,43 @@ def build_evidence_store(
     root: Path,
     *,
     planted_canaries: list[str] | None = None,
+    folded_canaries: list[str] | None = None,
     journal: SqliteRunStore | None = None,
 ) -> FsEvidenceStore:
     """Content-addressed, redact-at-rest evidence store rooted at ``root`` (u10).
 
     ``journal`` (the campaign's run store) records every attempt artifact as it is written.
+    ``folded_canaries`` are masked as the evaluators read them, the ones ``foldable`` accepts
+    once the run id is filled in (u10 A-94).
     """
 
-    return FsEvidenceStore(root, planted_canaries=planted_canaries, journal=journal)
+    return FsEvidenceStore(
+        root,
+        planted_canaries=planted_canaries,
+        folded_canaries=folded_canaries,
+        canary_folds=foldable,
+        journal=journal,
+    )
 
 
-def planted_secrets(specs: list[AttackSpec]) -> list[str]:
-    """Secret literals the scan knows about, to mask at rest even if a target leaks them (DL2).
+def declared_canaries(
+    specs: list[AttackSpec], scope: Scope | None = None, target: Target | None = None
+) -> list[str]:
+    """Every canary the scan plants, as declared, ``{{run_id}}`` unfilled, each once (DL2).
 
-    Collects each spec's ``setup.canaries`` and its ``secret_leakage`` ``canary_ref`` values.
-    A templated canary (``ZYNAP_CANARY_{{run_id}}``) cannot match a substituted value
-    verbatim, so its stable stem (before ``{{``) is registered instead, the evidence
-    redactor then masks the concrete token. This closes the gap where a leaked engagement
-    secret (a shape the built-in patterns don't know) persisted in clear in evidence.
+    Each spec's ``setup.canaries`` and its evaluators' ``canary_ref`` values, the canary of every
+    identity ``scope`` declares (u10 A-94): the identity sweep reads one in another identity's
+    reply as that identity's data, and none reached the evidence store, so one the entropy rule
+    does not take (``orchid-falcon-river-31`` passes the scope's floors) was stored as the target
+    wrote it; and, for ``target``, each seeded spec's canary as its ``run_token`` binds it
+    (``setup_delivery.seeded_canaries``), which no run id fills (pre-commit audit of A-94, M1).
     """
 
     out: list[str] = []
-    seen: set[str] = set()
 
     def _add(value: str | None) -> None:
-        if not value:
-            return
-        stem = value.split("{{", 1)[0].rstrip("_") if "{{" in value else value
-        if stem and stem not in seen:
-            seen.add(stem)
-            out.append(stem)
+        if value and value not in out:
+            out.append(value)
 
     for spec in specs:
         if spec.setup is not None and spec.setup.canaries:
@@ -476,6 +486,40 @@ def planted_secrets(specs: list[AttackSpec]) -> list[str]:
                 _add(canary)
         for cfg in spec.evaluators:
             _add(cfg.canary_ref)
+    for entry in scope.targets if scope is not None else ():
+        for identity in entry.identities:
+            _add(identity.canary)
+    if target is not None:
+        for spec in specs:
+            for canary in seeded_canaries(spec, target):
+                _add(canary)
+    return out
+
+
+def planted_secrets(
+    specs: list[AttackSpec], scope: Scope | None = None, target: Target | None = None
+) -> list[str]:
+    """Secret literals the scan knows about, to mask at rest even if a target leaks them (DL2).
+
+    The stems of :func:`declared_canaries`, but an identity canary's only when it holds no
+    ``{{run_id}}``: the scope accepts any canary that holds it, so its stem can be one letter, which
+    masked every ``a`` of the evidence (pre-commit audit of A-94, M2); the store's folded match
+    finds it whole, the run id filled. A templated canary (``ZYNAP_CANARY_{{run_id}}``)
+    cannot match a substituted value verbatim, so its stable stem (before ``{{``) is registered
+    instead, the evidence redactor then masks the concrete token. This closes the gap where a
+    leaked engagement secret (a shape the built-in patterns don't know) persisted in clear in
+    evidence. The evidence store also masks each declared canary as the evaluators read it
+    (``FsEvidenceStore``'s ``folded_canaries``, u10 A-94).
+    """
+
+    own = set(declared_canaries(specs, target=target))
+    out: list[str] = []
+    for value in declared_canaries(specs, scope, target):
+        if "{{" in value and value not in own:  # an identity's, found whole by the store
+            continue
+        stem = value.split("{{", 1)[0].rstrip("_") if "{{" in value else value
+        if stem and stem not in out:
+            out.append(stem)
     return out
 
 
@@ -2458,6 +2502,7 @@ def build_runner(
     hardened: bool = False,
     mock_scenario: str | None = None,
     real_target: Target | None = None,
+    canary_target: Target | None = None,
     judge_target: Target | None = None,
     spend_sink: Callable[[Spend], None] | None = None,
     apply_sampling_defaults: bool = True,
@@ -2472,6 +2517,9 @@ def build_runner(
     (``inconclusive``). When ``mock_scenario`` is ``None`` the legacy ``hardened`` flag
     decides (``True`` ⇒ hardened, ``False`` ⇒ vulnerable) - preserving prior behavior.
 
+    ``canary_target`` is the target the runner binds each spec's canary with (a seeded one to its
+    ``run_token``), which the evidence store masks as declared; ``real_target`` when not given
+    (u10 A-94: a mock or ``--hardened`` route has no ``real_target`` and still binds).
     ``real_target`` (u04, contract §5 acceptance) overrides all of the above with
     :func:`real_adapter_factory`: the campaign sends real requests to ``real_target``'s
     declared provider/endpoint. There is no offline fixture to replay for a live
@@ -2490,8 +2538,13 @@ def build_runner(
     mutators = build_mutator_registry()
     scorer = DefaultRiskScorer()
     runs = build_run_store(run_db)
+    # The target the runner binds a seeded canary with, a mock or `--hardened` one too (u10 A-94).
+    bound_by = canary_target if canary_target is not None else real_target
     evidence = build_evidence_store(
-        evidence_root, planted_canaries=planted_secrets(specs), journal=runs
+        evidence_root,
+        planted_canaries=planted_secrets(specs, scope, bound_by),
+        folded_canaries=declared_canaries(specs, scope, bound_by),
+        journal=runs,
     )
     # A live judge model (--judge) supplies semantic_judge for real runs (and overrides
     # the deterministic scenario-judge offline if given). Absent one, a live run leaves

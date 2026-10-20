@@ -1381,7 +1381,15 @@ beside the package version), and a resume under other rules, or of a run that re
 version from before `shared.judging_rules.JUDGING_RULES_SINCE` halted), is refused before anything
 is sent: finish it with the version that started it, or start a fresh run. The
 kept replies are not judged again because they cannot be: they are stored redacted, a leaked
-canary as `«REDACTED:canary:…»`, and the evaluators look for the raw value.
+canary as `«REDACTED:canary:…»`, and the evaluators look for the raw value. The evidence masks
+every canary the run plants, each spec's (a seeded one as its `run_token` binds it) and each
+identity's of the scope, and masks it as the
+evaluators read it: a reply that holds `canary-b-7f3a91c2` for `CANARY-B-7f3a91c2`, or the canary
+split by a zero-width space, a variation selector or a Hangul filler, is stored with one
+`«REDACTED:canary:…»` over the whole of it (u10 A-94; until then such a reply was stored as the
+target wrote it, beside the `fail` it was judged). A spec's own canary below the floors (shorter
+than 16 characters, say) is masked exactly as written, as it is read, and an identity canary
+holding `{{run_id}}` only whole, with the run id.
 
 `3` also means **the run did not finish**: a hard budget ceiling halted it, or the target was
 authorized but answered nothing at all (every attempt failed on transport, or got a reply that
