@@ -24,6 +24,8 @@ from dataclasses import replace
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+import pytest
+
 from ildottore.adapters.mock import MockScenario
 from ildottore.cli.run import TargetPlan, _answered_requests, budgets_for, estimate_plan
 from ildottore.core.runner import CampaignRunner, IdentityProbe, sweeps_identities
@@ -50,6 +52,13 @@ from ildottore.shared.models import (
 from ildottore.shared.package_data import BATTERY
 
 from .conftest import AllowAllPolicy, make_spec, mock_adapter_factory, no_sleep
+
+
+@pytest.fixture(autouse=True)
+def _tenant_b_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Tenant B carries its own key: one credential on two identities is refused (u01 A-91).
+    monkeypatch.setenv("TENANT_B_KEY", "key-tenant-b-000002")
+
 
 _REPO = Path(__file__).resolve().parents[2]
 _RUN = "r1"
@@ -724,7 +733,7 @@ def test_the_dry_run_prices_the_sweep(tmp_path: Path) -> None:
         "(local Ollama needs no key)\n"
     )
     two = one.replace(
-        line, line + "      - name: tenant-b\n" + '        auth_ref: "env://NONE"\n', 1
+        line, line + "      - name: tenant-b\n" + '        auth_ref: "env://TENANT_B_KEY"\n', 1
     )
     assert two != one
     args = ["run", "--dry-run", "--runs", "1", "--spec", "EMB-XTENANT-RETRIEVAL-001", "-t"]
@@ -785,7 +794,7 @@ def test_the_command_line_prices_what_the_sweep_sends_and_what_a_resume_skips(
             f'    endpoints:\n      - host: "127.0.0.1:{port}"\n'
             '        path_prefixes: ["/v1/chat/completions"]\n'
             '    identities:\n      - name: tenant-a\n        auth_ref: "env://NONE"\n'
-            '      - name: tenant-b\n        auth_ref: "env://NONE"\n'
+            '      - name: tenant-b\n        auth_ref: "env://TENANT_B_KEY"\n'
         )
         (tmp_path / "target.yaml").write_text(
             f'id: stub\ntype: chatbot\nprovider: openai\nendpoint: "{endpoint}"\nmodel: m\n'

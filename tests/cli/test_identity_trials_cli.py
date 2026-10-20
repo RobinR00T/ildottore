@@ -556,3 +556,31 @@ def test_two_variables_holding_one_key_are_refused_before_anything_is_sent(
     assert "identities 'tenant-a' and 'tenant-two' resolve to the same credential" in flat
     assert _KEY_A not in output
     assert "KEY_C" not in output
+
+
+def test_the_probes_refuse_two_variables_holding_one_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    """u01 A-91: ``build_identity_probes`` refuses on its own, whatever ran before it."""
+
+    from ildottore.cli import wiring
+    from ildottore.policy.scope import Identity, Scope, ScopeTarget
+    from ildottore.shared.enums import TargetType
+    from ildottore.shared.models import Target
+
+    monkeypatch.setenv("KEY_A", _KEY_A)
+    monkeypatch.setenv("KEY_C", _KEY_A)
+    endpoint = "https://a.example.com/v1/chat/completions"
+    identities = [
+        Identity(name="tenant-a", auth_ref="env://KEY_A"),
+        Identity(name="tenant-two", auth_ref="env://KEY_C"),
+    ]
+    scope = Scope(
+        version="1.0",
+        targets=[ScopeTarget(id="tgt", base_url=endpoint, identities=identities)],
+    )
+    target = Target(
+        id="tgt", type=TargetType.MODEL, provider="openai", endpoint=endpoint, model="m"
+    )
+    with pytest.raises(ValueError, match="resolve to the same credential") as caught:
+        wiring.build_identity_probes(scope, target)
+    assert _KEY_A not in str(caught.value)
+    assert "KEY_C" not in str(caught.value)

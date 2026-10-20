@@ -1278,11 +1278,21 @@ by value, as A-78 leaves its identities unchecked.
 
 *Not covered.* Two keys for one account (a provider that issues several keys to one tenant) are two
 credentials to this check and still one caller to the target; the scope cannot see that, and the
-operator must declare one identity per tenant.
+operator must declare one identity per tenant. The scope check runs on every load, for every
+target and command (as the canary check does), so one `auth_ref` on two identities is refused even
+for a run that sweeps no identity; the key check runs only for a run that sweeps, and not for a
+stdio MCP target, where `env://A` and `env://B` still load although no key is sent and both are one
+caller. The refusal comes before the scope's other identity checks (`_refuse_unnamed_variables`)
+and, at the pre-flight, before the per-identity short-key check: two identities sharing one short
+key are told they share it, not that it is short.
 
 *Checks.* `tests/test_pr45_followups.py` (the scope refusal, exact comparison, `env://NONE`),
-`tests/cli/test_identity_trials_cli.py` (both refusals through the CLI, live and `--dry-run`, no
-send, nothing quoted), `tests/cli/test_short_credential_cli.py` (the stdio case on two variables).
+`tests/cli/test_identity_trials_cli.py` (both refusals through the CLI, live,
+`--dry-run`, `-sn` and `--estimate`, no send, nothing quoted; and `build_identity_probes`
+called directly), `tests/cli/test_short_credential_cli.py` (the stdio case on two variables).
+`tests/cli/test_resume_halted_mid_batch.py`, `tests/cli/test_sampling_defaults.py` and
+`tests/core/test_authz_leak_corroboration.py` swept two `env://NONE` identities against a loopback
+stub; tenant B now carries its own key (`env://TENANT_B_KEY`), their figures unchanged.
 
 ## §8 Out of scope / forbidden
 - MUST NOT execute attacks, send requests, or import adapters/evaluators/core/store/reporting.

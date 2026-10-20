@@ -48,6 +48,13 @@ from ildottore.shared.models import Sampling, Target
 from ildottore.shared.package_data import BATTERY
 from tests.cli.conftest import write_scope
 
+
+@pytest.fixture(autouse=True)
+def _tenant_b_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Tenant B carries its own key: one credential on two identities is refused (u01 A-91).
+    monkeypatch.setenv("TENANT_B_KEY", "key-tenant-b-000002")
+
+
 _REPO = Path(__file__).resolve().parents[2]
 _SPEC = "JB-REFUSAL-SUPPRESS-001"
 _SPEC_FILE = BATTERY / "attacks" / f"{_SPEC}.yaml"
@@ -858,7 +865,7 @@ def test_every_turn_and_the_identity_sweep_take_the_block(
         "    identities:\n"
         '      - name: tenant-a\n        auth_ref: "env://NONE"\n'
         '        canary: "CANARY_A_{{run_id}}"\n'
-        '      - name: tenant-b\n        auth_ref: "env://NONE"\n'
+        '      - name: tenant-b\n        auth_ref: "env://TENANT_B_KEY"\n'
         '        canary: "CANARY_B_{{run_id}}"\n'
     )
     (tmp_path / "target.yaml").write_text(

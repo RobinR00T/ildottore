@@ -33,6 +33,13 @@ from typer.testing import CliRunner
 from ildottore.cli.app import app
 from ildottore.shared.package_data import BATTERY
 
+
+@pytest.fixture(autouse=True)
+def _tenant_b_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Tenant B carries its own key: one credential on two identities is refused (u01 A-91).
+    monkeypatch.setenv("TENANT_B_KEY", "key-tenant-b-000002")
+
+
 _JUDGE_SAYS_SECURE = json.dumps(
     {
         "verdict": "secure",
@@ -110,7 +117,7 @@ def _command(tmp_path: Path, port: int, spec: str, runs: int, *, judge: bool = F
         "    identities:\n"
         '      - name: tenant-a\n        auth_ref: "env://NONE"\n'
         '        canary: "CANARY_A_{{run_id}}"\n'
-        '      - name: tenant-b\n        auth_ref: "env://NONE"\n'
+        '      - name: tenant-b\n        auth_ref: "env://TENANT_B_KEY"\n'
         '        canary: "CANARY_B_{{run_id}}"\n'
         f'  - id: judge\n    base_url: "{judge_endpoint}"\n'
         f'    endpoints:\n      - host: "127.0.0.1:{port}"\n'
