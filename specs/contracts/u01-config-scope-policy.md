@@ -24,7 +24,8 @@ authenticity a non-goal until key management exists (OD-2). Since 2026-10-05,
 `load_scope_with_digest()` returns the scope with the `scope_hash()` of the bytes it parsed, and
 `dottore run` records it in the run store and every report, audit D-17. Since 2026-10-06 a key
 written twice in one YAML mapping is refused with both positions, through `safe_yaml`, and two
-identities of one target with the same name or the same canary are refused. Since 2026-10-07 a
+identities of one target with the same name or the same canary are refused, and since 2026-10-20
+two with the same credential (A-91). Since 2026-10-07 a
 scope or policy pack that is too large or too deep with its aliases expanded is refused before
 it is built, by the spec loader's own measure, A-37.) Provide
 `PolicyEngine.check(target, endpoint, spec)`
@@ -1239,6 +1240,49 @@ and invisible format characters), naming both identities and never the canary, s
 reads them as one canary and each owner's own would read as the other's leak (exit 3, nothing sent).
 `weak_canary` is unchanged; `evaluators.base.foldable` calls it with no labels to decide which
 canaries are read folded (u06's half).
+
+**A-91 Two identities of one target that share a credential are refused (added 2026-10-20; the
+pre-merge audit of u08 A-87, L1, queued for a branch of its own; decided under the owner's
+delegation, best practice, revisable).** The identity sweep and the attempts tell identities apart
+only by the credential they send (u08 A-87: an identity "sends the attempts" when its `auth_ref` is
+the target file's), so two identities with one `auth_ref` were one caller under two names. Measured
+on `01d6bdc5` through the CLI stub of `tests/cli/test_identity_trials_cli.py`, tenant B declared
+with `env://KEY_A`, `DL-XTENANT-001` at `--runs 5` against a target leaking B's canary to A on
+every reply: the sweep read A's reply as a crossing into B, the attempts, received as both, read
+none, 0.17, Low, exit 0, where one identity per credential gives 1.0, Critical, exit 2. The same
+door invents a leak: against a clean target that shows each key its own tenant's canary, the sweep
+reads A's canary in the reply "B" received and calls it a crossing, 0.17, Low, a fail that needs
+review (gated with `--include-needs-review`), where two keys give no fail (`inconclusive`). Two
+references naming different variables that hold one key (`env://KEY_C` set to A's key) do the
+same on the clean target (0.17, Low, fail); on the leaking one they happened to read 1.0, since
+the attempts are read as A only.
+
+*Decision.* Refused, not read as one: reading them as one would run a scope other than the one
+written and report a cross-tenant check that compared a principal with itself, and an operator who
+wrote two tenants meant two keys. `load_scope` refuses two identities of one target with the same
+`auth_ref`, compared exactly (`env://A` and `env://a` name two POSIX variables), `env://NONE`
+included (two identities without a credential are one anonymous caller), naming both identities and
+never the reference (a key pasted where a variable's name belongs is refused by A-82, unquoted):
+`scope file <path> target 't': identities 'a' and 'c' declare the same auth_ref, so the identity
+sweep would compare one caller with itself; each identity needs its own credential`, exit 3,
+nothing sent. Two references naming different variables that hold one key (compared stripped, as
+`resolve_auth_ref` sends them) are refused by `cli.wiring.check_identity_credentials`, which a run
+calls in every mode before anything is sent for a plan that sweeps, and again by
+`build_identity_probes` (`target 'tgt': identities 'tenant-a' and 'tenant-two' resolve to the same
+credential ...`, exit 3, neither key nor variable quoted). An unset variable is left to
+`unset_credentials` (A-82); a stdio MCP target, launched locally and sent no key, is not checked
+by value, as A-78 leaves its identities unchecked.
+
+*Rules.* No stored verdict changes: a scope this refuses never reaches a send. Judging rules stay
+5; the digest covers every file, so version 5 is re-pinned by an appended line (u12 A-81).
+
+*Not covered.* Two keys for one account (a provider that issues several keys to one tenant) are two
+credentials to this check and still one caller to the target; the scope cannot see that, and the
+operator must declare one identity per tenant.
+
+*Checks.* `tests/test_pr45_followups.py` (the scope refusal, exact comparison, `env://NONE`),
+`tests/cli/test_identity_trials_cli.py` (both refusals through the CLI, live and `--dry-run`, no
+send, nothing quoted), `tests/cli/test_short_credential_cli.py` (the stdio case on two variables).
 
 ## §8 Out of scope / forbidden
 - MUST NOT execute attacks, send requests, or import adapters/evaluators/core/store/reporting.

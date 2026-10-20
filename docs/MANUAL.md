@@ -458,7 +458,13 @@ targets:                         # >=1; a target whose id is absent here is refu
 
 Each target declares its own `endpoints` allowlist and `identities`. Two identities of one target
 with the same `name`, or with the same `canary`, are refused: the identity sweep keys each response
-by name, and a canary maps back to the one identity that owns it. A canary is the marker planted in
+by name, and a canary maps back to the one identity that owns it. Two with the same `auth_ref`
+(two `env://NONE` included) are refused too, and so, before anything is sent, are two references
+naming different variables that hold one key (u01 A-91): the sweep tells identities apart only by
+their credential, so one credential under two names compared a caller with itself: it hid a leak
+(0.17, Low, exit 0 where one identity per credential gave 1.0, Critical) and made a clean target a
+fail that needs review (0.17, Low, where two keys gave none). Give each tenant its own
+key; neither the reference nor the key is quoted. A canary is the marker planted in
 that identity's data, at least 16 random characters, and one a reply can hold by chance is
 refused (u08 A-85): shorter than 16 characters, holding a space, part of an identity's name or the
 target id, in any case, holding one (of 3 characters or more) when what is left without it falls
@@ -2359,7 +2365,8 @@ Risk and confidence are **separate axes**:
   identity canary) is read in a reply case-folded and with invisible format characters removed, so a
   target that re-cases `CANARY-B-7F3A91C2` or splits it with a zero-width space no longer hides the
   crossing; a spec's own canary below those floors is read exactly. The scope refuses two identity
-  canaries that differ only in letter case or such characters (exit 3, nothing sent). The verdict
+  canaries that differ only in letter case or such characters, and two identities with one
+credential (u01 A-91, §4.1) (exit 3, nothing sent). The verdict
   says why (on the identity sweep's trial `authz_leak: 1 tenant-scoped canary(ies) surfaced in a
   non-owner identity, and the request every identity was sent carries each of them ...`; on an
   attempt's own reply `... surfaced in the reply received as tenant-a, which the scope does not give

@@ -1278,6 +1278,12 @@ the replay line, their figures equal, and 5 pass on both), `tests/core/test_iden
 `tests/cli/test_resume_halted_mid_batch.py` read what the sweep found or left out on its trial, not
 on every attempt.
 
+*Credentials (u01 A-91, added 2026-10-20).* The owner map and "sent as" both rest on one identity
+per credential: two identities with one `auth_ref` made the sweep read a tenant's own canary as a
+crossing and the attempts, received as both, read none (pre-merge audit of A-87, L1; 0.17, Low, exit
+0 where 1.0, Critical), and made a clean target a fail that needs review. The scope refuses such
+identities and the run refuses two references holding one key before anything is sent, so every
+probe this unit builds is a distinct caller.
 
 ## §8 Out of scope / forbidden
 - MUST NOT import adapter/evaluator/scorer/store **concretes**: interfaces only; composition is

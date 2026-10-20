@@ -5,6 +5,20 @@ The carryover ledger. Every agent session updates this so context survives even 
 newest merge on top: a branch's entries land together when it merges, so the dates of
 neighbouring entries can interleave (an older branch merged later sits above a newer one).
 
+## State, 2026-10-20: identities sharing a credential refused (u01 A-91, `fix/shared-identity-credentials`)
+
+- **What.** The pre-merge audit of A-87 (L1) queued it: two identities of one target with one
+  `auth_ref` were one caller under two names. Measured on `01d6bdc5` through the CLI stub: a target
+  leaking B's canary to A on every reply read 0.17, Low, exit 0 (one key each: 1.0, Critical), and a
+  clean target that shows each key its own canary read 0.17, Low, a fail that needs review (one key
+  each: inconclusive); two variables holding one key did the same on the clean target.
+- **Decision (owner's delegation, best practice).** Refused, not read as one. `load_scope` refuses
+  one `auth_ref` on two identities (two `env://NONE` too); `check_identity_credentials` and
+  `build_identity_probes` refuse two references holding one key before anything is sent, in every
+  mode. Identities are named, never the reference or the key. Exit 3.
+- **Rules.** No stored verdict changes; judging rules 5 re-pinned by an appended line.
+- **Not covered.** Two keys a provider issues to one account are two credentials here.
+
 ## State, 2026-10-20: identity trials, judging rules 5 (u08 A-87, OD-53, `fix/identity-trials`)
 
 - **What.** The design A-85's item 3 left to a branch of its own. Every reply received under an
