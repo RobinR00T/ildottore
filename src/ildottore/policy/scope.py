@@ -26,7 +26,7 @@ from ildottore.policy.errors import ScopeChecksumError, ScopeError
 from ildottore.shared.config_errors import quoted, validation_problems, yaml_problem
 from ildottore.shared.credential_refs import ENV_NAME_RULE, env_name_of, is_env_name
 from ildottore.shared.files import read_failure, read_text_capped
-from ildottore.shared.folding import folded
+from ildottore.shared.folding import folded, visible
 
 
 class Endpoint(BaseModel):
@@ -201,6 +201,16 @@ def weak_canary(canary: str, labels: list[str]) -> str | None:
     :data:`MIN_LABEL_CHARS` or more, in any case) must pass the same floors without it, read
     case-folded (``tenant-b-2026-10-16`` does not, ``CANARY-TENANT-B-3f9c1e7a5b2d8064`` does:
     refusing every canary that held a label refused random ones, audit of ``bc5ddcb1``, LOW 4).
+    Every floor measures the canary as ``authz_leak`` and ``secret_leakage`` read it
+    (:func:`~ildottore.shared.folding.folded`: case-folded, invisible characters removed), not as
+    written: ``ab`` and the 16 variation selectors passed as written and read as ``ab``, so every
+    reply holding ``ab`` was a confirmed Critical (u08 A-93, L3 of the A-92 audit; with 15
+    distinct format characters it did before A-92 too). The entropy is that of the folded form,
+    so letter case adds none (``AaBbCcDdAaBbCcDd`` carries 32 bits, not 48). The floors hold for
+    the visible form too (invisible characters removed, case kept), since case folding can lengthen
+    a canary (``ß`` reads as ``ss``): ``Straßenbahnhöfe`` is 15 characters and stays refused. Length
+    times entropy never drops as characters are added, so every canary these floors accept, the
+    floors as written accepted too (pre-merge audit of A-93, MEDIUM 1).
     A canary holding the run id (:data:`RUN_ID_PLACEHOLDER`) is a new token in every run. A
     heuristic that catches obvious shapes only: a structured id (``invoice-2026-0001``), an
     address, a version or a timestamp of 16 characters or more passes, and so does a long word.
@@ -208,25 +218,39 @@ def weak_canary(canary: str, labels: list[str]) -> str | None:
 
     if RUN_ID_PLACEHOLDER in canary:
         return None
-    if len(canary) < MIN_CANARY_CHARS:
-        return f"it is shorter than {MIN_CANARY_CHARS} characters"
+    form, shown = folded(canary), visible(canary)
+    hidden = (
+        ""
+        if shown == canary
+        else ", once its invisible characters are removed, as authz_leak reads it"
+    )
+    if min(len(form), len(shown)) < MIN_CANARY_CHARS:
+        return f"it is shorter than {MIN_CANARY_CHARS} characters{hidden}"
     if any(char.isspace() for char in canary):
         return "it holds a space, so it reads as words"
-    folded = canary.casefold()
-    names = sorted({label.casefold() for label in labels}, key=len, reverse=True)
-    if any(folded in name for name in names):
-        return "it is part of an identity's name or the target id, which a reply can name"
-    rest = folded
-    for name in names:
-        if len(name) >= MIN_LABEL_CHARS:
-            rest = rest.replace(name, "")
-    if rest != folded and (why := _weak_token(rest)) is not None:
+    names = sorted({folded(label) for label in labels}, key=len, reverse=True)
+    if any(form in name for name in names):
+        return f"it is part of an identity's name or the target id, which a reply can name{hidden}"
+    # A label long enough as written or as read is taken out, so the floors accept no canary the
+    # floors as written refused (a name of three characters with an invisible one among them).
+    rest = form
+    for name in sorted(
+        {
+            folded(label)
+            for label in labels
+            if max(len(label), len(folded(label))) >= MIN_LABEL_CHARS
+        },
+        key=len,
+        reverse=True,
+    ):
+        rest = rest.replace(name, "")
+    if rest != form and (why := _weak_token(rest)) is not None:
         return (
             "it holds an identity's name or the target id, which a reply can name, and what is "
-            f"left without it {why}"
+            f"left without it {why}{hidden}"
         )
-    why = _weak_token(canary)
-    return None if why is None else f"it {why}"
+    why = _weak_token(form) or _weak_token(shown)
+    return None if why is None else f"it {why}{hidden}"
 
 
 def _weak_token(token: str) -> str | None:
@@ -264,10 +288,10 @@ def _refuse_weak_canaries(file_path: Path, entry: ScopeTarget) -> None:
                 f"scope file {file_path} target {quoted(entry.id)} identity "
                 f"{quoted(identity.name)}: its canary can appear in a reply by chance ({why}), "
                 "and authz_leak would read it there as that identity's data received; a canary is "
-                f"a token of at least {MIN_CANARY_CHARS} random characters with no space, not "
-                "part of an identity's name or the target id, and still that long without any it "
-                "holds: write one (as CANARY-<16 random hex digits>) and plant it in that "
-                "identity's data"
+                f"a token of at least {MIN_CANARY_CHARS} random characters (invisible ones do "
+                "not count) with no space, not part of an identity's name or the target id, and "
+                "still that long without any it holds: write one (as CANARY-<16 random hex "
+                "digits>) and plant it in that identity's data"
             )
 
 

@@ -1245,6 +1245,15 @@ now holds: two identity canaries that differ only by a variation selector, the c
 joiner or a Hangul filler are refused too (`tests/policy/test_scope_canary_shape.py`), since
 `shared.folding.folded` removes the default ignorable code points.
 
+**A-93 (u08's clause; this unit's half, added 2026-10-20).** `weak_canary` measures every floor on
+`shared.folding.folded(canary)` (length, entropy, and the labels, folded the same way) and on
+`shared.folding.visible(canary)` (invisible characters removed, case kept, so a fold that lengthens
+a canary, `ß` to `ss`, lets nothing pass), not on the canary as written: `ab` and the 16 variation
+selectors is refused as shorter than 16 characters, and the reason adds `once its invisible
+characters are removed, as authz_leak reads it` when the fold removed any. The A-87 sentence above,
+"`weak_canary` is unchanged", held until this clause. Checked by
+`tests/policy/test_scope_canary_shape.py` (15 new cases, 9 failing on `65203f18`).
+
 **A-94 (u10's clause; this unit's half, added 2026-10-20).** `Redactor.register_spans(kind, value,
 find)` masks each stretch a finder returns, as `kind` hashed by `value`, one mask per stretch
 whatever it holds, asked between the masks already in the text and never across one; the finders

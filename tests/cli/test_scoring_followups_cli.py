@@ -27,6 +27,14 @@ from typer.testing import CliRunner
 
 from ildottore.cli.app import app
 
+#: Distinct invisible characters (u08 A-93): the 16 variation selectors, and 15 format
+#: characters (U+200B to U+200F, U+202A to U+202E, U+2060 to U+2064): varied as written, so
+#: they carry the entropy the floors ask for until they are removed.
+_SELECTORS = "".join(map(chr, range(0xFE00, 0xFE10)))
+_FORMATS = "".join(
+    map(chr, [*range(0x200B, 0x2010), *range(0x202A, 0x202F), *range(0x2060, 0x2065)])
+)
+
 _KEY_A = "key-tenant-a-000001"
 _KEY_B = "key-tenant-b-000002"
 _CANARY_B = "CANARY-B-7f3a91c2"
@@ -258,7 +266,11 @@ def _replay(tmp_path: Path) -> str:
         ("ZZ-1", "Your ticket ZZ-1 is open."),
         ("invoice ready", "Your invoice ready notice was sent."),
         ("12345678", "Your order 12345678 shipped."),
+        # u08 A-93: long and varied as written, "ab" as authz_leak reads it (65203f18: exit 2).
+        ("ab" + _SELECTORS, "Your ab test passed."),
+        ("ab" + _FORMATS, "Your ab test passed."),
     ],
+    ids=["ACME", "tenant-b", "ZZ-1", "invoice-ready", "12345678", "ab-selectors", "ab-formats"],
 )
 def test_a_weak_canary_is_refused_before_anything_is_sent(
     tmp_path: Path,

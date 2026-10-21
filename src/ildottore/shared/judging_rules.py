@@ -44,6 +44,8 @@ read against the scope's canary owner map, the identity sweep is one trial of it
 once, and a canary of the scope's floors is read case-folded with its format characters removed.
 Version ``6`` (u08 A-92, 2026-10-20) removes the default ignorable code points as well (a
 variation selector, the combining grapheme joiner, a Hangul filler), which hid a crossing.
+Version ``7`` (u08 A-93, 2026-10-20) measures the canary floors on the folded canary, so a short
+word padded with invisible characters is read exactly, where it read folded as the word.
 """
 
 from __future__ import annotations
@@ -84,8 +86,10 @@ __all__ = [
 #: identity is read against the owner map, the identity sweep is one trial counted once, and a
 #: canary is read case-folded without format characters. ``6``: u08 A-92, nor default ignorable
 #: code points (a variation selector, the combining grapheme joiner, a Hangul filler hid a
-#: crossing: inconclusive or pass, where it is a fail).
-JUDGING_RULES_VERSION: Final = 6
+#: crossing: inconclusive or pass, where it is a fail). ``7``: u08 A-93, the canary floors measure
+#: the folded canary, so ``ab`` padded with invisible characters is read exactly, not folded to
+#: ``ab`` (every reply holding ``ab`` was a fail).
+JUDGING_RULES_VERSION: Final = 7
 
 #: The day runs began to record their rules (version 1 took its value), which the refusal of a run
 #: that records none quotes and the docs name (as ``JUDGING_RULES_SINCE``) instead of writing the

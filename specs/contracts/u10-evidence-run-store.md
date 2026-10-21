@@ -316,7 +316,7 @@ holding `{{run_id}}` gets no exact stem pattern (the scope accepts any canary ho
 stem can be one letter, which masked every `a` of the evidence: pre-commit audit, M2); the folded
 match finds it whole. `_store` clears the run id after the redaction it runs. No verdict changes (the evaluators judge
 the raw reply); the bytes stored for an attempt holding a canary do, so the judging digest moves
-and version 6 is re-pinned by an appended line. Checked by
+and version 7 is re-pinned by an appended line. Checked by
 `tests/store/test_folded_canary_at_rest.py` and, through the CLI,
 `tests/cli/test_identity_trials_cli.py::test_a_re_cased_or_split_identity_canary_is_not_kept_in_the_evidence`.
 
