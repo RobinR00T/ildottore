@@ -47,9 +47,16 @@ noted, over the wire.
 
 ## Near-term (candidates, not committed)
 
+- ⬜ **Full battery against a hosted model**: run the whole battery, and `-sV`, against a hosted
+  commercial model and record the results. Every live pass so far ran against local targets (a
+  local Ollama model, a local reproduction of a vulnerable chatbot); it needs provider API keys and
+  spend. Runbook, measured cost and order:
+  [`docs/16-live-validation.md`](docs/16-live-validation.md).
 - ⬜ **Live validation matrix**: run the multimodal (image + audio) battery end-to-end against real
   vision/audio models (a local Ollama vision model and/or a hosted provider) and record the
   results. The attacks are golden-proven offline; a live pass is the highest-credibility next step.
+  Audio input targets only OpenAI `input_audio` today, so the audio half needs that provider's API
+  keys and spend.
 - 🟡 **Multimodal breadth**: the image side now covers a direct override, a document-image
   injection, a **payload split across two carriers** and a **visual-to-agentic bridge** (an image
   driving an unauthorized tool call). Remaining gap: audio input still targets only OpenAI
