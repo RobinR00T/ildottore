@@ -2102,7 +2102,7 @@ identity's of the scope, and the target's seeded ones as their `run_token` binds
 `real_target` when not given: a mock or `--hardened` route has none); `planted_secrets` takes the scope and the target too, so those are
 masked exactly as well, but for an identity canary holding `{{run_id}}`, whose stem can be one
 letter. Judging rules 7 is re-pinned by an appended line
-(no verdict changes), so a run halted on `4673bb54` is refused by its resume by the digest.
+(no verdict changes), so a run halted on `30cc2d6a` is refused by its resume by the digest.
 
 **A-92 (u08's clause; this unit's line, added 2026-10-20).** `JUDGING_RULES_VERSION` is 6, pinned by
 an appended line: a run halted under version 5 is refused by its resume before anything is sent,

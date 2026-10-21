@@ -141,6 +141,7 @@ def _argv(
     extra: tuple[str, ...] = (),
     canary_b: str = _CANARY_B,
     canary_a: str | None = None,
+    auth_b: str = "env://KEY_B",
 ) -> list[str]:
     endpoint = f"http://127.0.0.1:{port}/v1/chat/completions"
     own = f"        canary: {json.dumps(canary_a)}\n" if canary_a is not None else ""
@@ -150,7 +151,7 @@ def _argv(
         '        path_prefixes: ["/v1/chat/completions"]\n    identities:\n'
         '      - name: tenant-a\n        auth_ref: "env://KEY_A"\n'
         + own
-        + '      - name: tenant-two\n        auth_ref: "env://KEY_B"\n'
+        + f'      - name: tenant-two\n        auth_ref: "{auth_b}"\n'
         + f"        canary: {json.dumps(canary_b)}\n"
     )
     (tmp_path / "target.yaml").write_text(
@@ -526,6 +527,79 @@ def test_a_spec_canary_the_attempts_show_and_the_sweep_does_not(
     got = _figures(tmp_path, report)
     assert got["state"] == ("fail", True)
     assert (got["json"], got["band"]) == (pytest.approx(share), band)
+
+
+@pytest.mark.parametrize("mode", [(), ("--dry-run",), ("-sn",), ("--estimate",)])
+def test_two_identities_with_one_auth_ref_are_refused_before_anything_is_sent(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    stub: tuple[int, dict[str, Any]],
+    mode: tuple[str, ...],
+) -> None:
+    """u01 A-91. ``01d6bdc5``: the sweep read A's reply as a crossing into B, the attempts, received
+    as both, read none: 0.17, Low, exit 0 (one identity per credential: 1.0, Critical, exit 2)."""
+
+    port, state = stub
+    state["reply"] = _by_key(_LEAK)
+    argv = _argv(tmp_path, port, auth_b="env://KEY_A") + list(mode)
+    code, output, report = _run(tmp_path, monkeypatch, argv)
+    assert code == 3, output
+    assert state["sends"] == {}
+    assert report is None
+    flat = " ".join(output.split())
+    assert "identities 'tenant-a' and 'tenant-two' declare the same auth_ref" in flat
+    assert "KEY_A" not in output
+
+
+@pytest.mark.parametrize("mode", [(), ("--dry-run",), ("-sn",), ("--estimate",)])
+def test_two_variables_holding_one_key_are_refused_before_anything_is_sent(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    stub: tuple[int, dict[str, Any]],
+    mode: tuple[str, ...],
+) -> None:
+    """u01 A-91: ``env://KEY_C`` holding tenant A's key is tenant A under another name."""
+
+    port, state = stub
+    state["reply"] = _by_key(_LEAK)
+    monkeypatch.setenv("KEY_C", f" {_KEY_A}\n")  # stripped, as the run sends it
+    argv = _argv(tmp_path, port, auth_b="env://KEY_C") + list(mode)
+    code, output, report = _run(tmp_path, monkeypatch, argv)
+    assert code == 3, output
+    assert state["sends"] == {}
+    assert report is None
+    flat = " ".join(output.split())
+    assert "identities 'tenant-a' and 'tenant-two' resolve to the same credential" in flat
+    assert _KEY_A not in output
+    assert "KEY_C" not in output
+
+
+def test_the_probes_refuse_two_variables_holding_one_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    """u01 A-91: ``build_identity_probes`` refuses on its own, whatever ran before it."""
+
+    from ildottore.cli import wiring
+    from ildottore.policy.scope import Identity, Scope, ScopeTarget
+    from ildottore.shared.enums import TargetType
+    from ildottore.shared.models import Target
+
+    monkeypatch.setenv("KEY_A", _KEY_A)
+    monkeypatch.setenv("KEY_C", _KEY_A)
+    endpoint = "https://a.example.com/v1/chat/completions"
+    identities = [
+        Identity(name="tenant-a", auth_ref="env://KEY_A"),
+        Identity(name="tenant-two", auth_ref="env://KEY_C"),
+    ]
+    scope = Scope(
+        version="1.0",
+        targets=[ScopeTarget(id="tgt", base_url=endpoint, identities=identities)],
+    )
+    target = Target(
+        id="tgt", type=TargetType.MODEL, provider="openai", endpoint=endpoint, model="m"
+    )
+    with pytest.raises(ValueError, match="resolve to the same credential") as caught:
+        wiring.build_identity_probes(scope, target)
+    assert _KEY_A not in str(caught.value)
+    assert "KEY_C" not in str(caught.value)
 
 
 @pytest.mark.parametrize(

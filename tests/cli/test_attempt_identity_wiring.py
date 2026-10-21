@@ -3,7 +3,8 @@
 The target file's ``auth_ref`` must be one of the scope's identities' (``_authorized_api_key``),
 so the attempts are that identity's view, and the runner reads each attempt's reply against the
 owner map as received by it. Neither naming a credential (no ``auth_ref``, or ``env://NONE``) is
-the same send; a credential two identities share makes the reply both of theirs.
+the same send. Two identities never share a credential: the scope refuses one ``auth_ref`` on two,
+and the probes refuse two references holding one key (u01 A-91).
 """
 
 from __future__ import annotations
@@ -54,16 +55,21 @@ _NONE = Identity(name="anonymous", auth_ref="env://NONE")
         ((_A, _B), None, []),
         ((_A, _NONE), None, ["anonymous"]),
         ((_A, _NONE), "env://NONE", ["anonymous"]),
-        (
-            (_A, Identity(name="tenant-a-reports", auth_ref="env://A_KEY")),
-            "env://A_KEY",
-            ["tenant-a", "tenant-a-reports"],
-        ),
     ],
-    ids=["as-a", "as-b", "no-credential", "none-and-env-none", "env-none", "shared-credential"],
+    ids=["as-a", "as-b", "no-credential", "none-and-env-none", "env-none"],
 )
 def test_each_probe_says_whether_the_attempts_are_sent_as_it(
     identities: tuple[Identity, ...], auth_ref: str | None, attempts_as: list[str]
 ) -> None:
     probes = wiring.build_identity_probes(_scope(*identities), _target(auth_ref))
     assert [p.identity_id for p in probes if p.sends_attempts] == attempts_as
+
+
+def test_two_references_holding_one_key_are_refused(monkeypatch: pytest.MonkeyPatch) -> None:
+    """u01 A-91: one key under two names is one caller; ``01d6bdc5`` sent the attempts as both."""
+
+    monkeypatch.setenv("A_KEY", "key-tenant-a-000001")
+    monkeypatch.setenv("A_REPORTS_KEY", "key-tenant-a-000001")
+    reports = Identity(name="tenant-a-reports", auth_ref="env://A_REPORTS_KEY")
+    with pytest.raises(ValueError, match="'tenant-a' and 'tenant-a-reports' resolve to the same"):
+        wiring.build_identity_probes(_scope(_A, reports), _target("env://A_KEY"))

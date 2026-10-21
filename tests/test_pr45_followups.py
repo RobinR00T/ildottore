@@ -52,6 +52,35 @@ def test_two_identities_with_one_canary_are_refused_without_quoting_it(tmp_path:
     assert _CANARY not in str(caught.value)
 
 
+@pytest.mark.parametrize("ref", ["env://A", "env://NONE"])
+def test_two_identities_with_one_auth_ref_are_refused_without_quoting_it(
+    tmp_path: Path, ref: str
+) -> None:
+    """u01 A-91: one credential is one caller, whatever the names; two without one are one too."""
+
+    scope = _scope(
+        tmp_path,
+        f"      - {{name: a, auth_ref: '{ref}', canary: {_CANARY}-a}}\n"
+        "      - {name: b, auth_ref: 'env://B'}\n"
+        f"      - {{name: c, auth_ref: '{ref}', canary: {_CANARY}-c}}\n",
+    )
+    with pytest.raises(ScopeError, match="identities 'a' and 'c' declare the same auth_ref") as e:
+        load_scope_with_digest(scope)
+    assert ref not in str(e.value)
+
+
+def test_auth_refs_differing_in_letter_case_name_different_variables(tmp_path: Path) -> None:
+    """``env://A`` and ``env://a`` are two variables on POSIX; ``_refuse_shared_keys`` compares
+    what they hold before anything is sent."""
+
+    scope = _scope(
+        tmp_path,
+        "      - {name: a, auth_ref: 'env://A'}\n      - {name: b, auth_ref: 'env://a'}\n",
+    )
+    loaded, _ = load_scope_with_digest(scope)
+    assert [i.auth_ref for i in loaded.targets[0].identities] == ["env://A", "env://a"]
+
+
 def test_distinct_identities_still_load(tmp_path: Path) -> None:
     scope = _scope(
         tmp_path,

@@ -20,7 +20,7 @@ from __future__ import annotations
 import os
 import re
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -80,6 +80,7 @@ from ildottore.fingerprint.layers import CarrierLayer, default_layers
 from ildottore.mutators import build_default_registry as build_mutator_registry
 from ildottore.policy import (
     EndpointAllowlist,
+    Identity,
     PolicyEngine,
     PolicyPack,
     Scope,
@@ -1253,11 +1254,15 @@ def check_identity_credentials(scope: Scope, target: Target) -> None:
     ``MIN_CREDENTIAL_LEN`` (u04 A-78). `--dry-run`, `-sn` and `--estimate` checked only the
     target's and the judge's credentials, so they exited 0 for a scope whose run then stopped
     at exit 3 (pre-merge audit of A-78, L4). Raises ``ValueError`` with the run's message.
+
+    Two identities whose references name different variables holding one key are refused here
+    too (:func:`_refuse_shared_keys`, u01 A-91), before anything is sent.
     """
 
     scope_target = scope.target(target.id)
     if scope_target is None or len(scope_target.identities) < 2 or _launched_locally(target):
         return
+    _refuse_shared_keys(target.id, scope_target.identities)
     for ident in scope_target.identities:
         if _variable_unset(ident.auth_ref):
             continue  # no credential: `unset_credentials` names it when the sweep would send it
@@ -1269,6 +1274,33 @@ def check_identity_credentials(scope: Scope, target: Target) -> None:
             )
         except CredentialTooShort as exc:
             raise ValueError(str(exc)) from None
+
+
+def _refuse_shared_keys(target_id: str, identities: Sequence[Identity]) -> None:
+    """Refuse two identities whose different ``auth_ref`` resolve to one key (u01 A-91).
+
+    The scope refuses two identities with one ``auth_ref``; ``env://KEY_A`` and ``env://KEY_B``
+    holding the same key are the same caller under two names, and the sweep read them as two
+    (pre-merge audit of A-87, L1). Compared stripped, as :func:`resolve_auth_ref` sends them. An
+    unset variable is skipped (:func:`unset_credentials` names it). Neither the key nor the
+    variables are quoted: the identities are named. Raises ``ValueError``.
+    """
+
+    holders: dict[str, str] = {}
+    for ident in identities:
+        if _variable_unset(ident.auth_ref):
+            continue
+        key = resolve_auth_ref(ident.auth_ref)
+        if key is None:
+            continue  # env://NONE: the scope refuses two of them
+        holder = holders.get(key)
+        if holder is not None:
+            raise ValueError(
+                f"target {quoted(target_id)}: identities {quoted(holder)} and "
+                f"{quoted(ident.name)} resolve to the same credential, so the identity sweep "
+                "would compare one caller with itself; give each identity its own key"
+            )
+        holders[key] = ident.name
 
 
 def _variable_unset(auth_ref: str | None) -> bool:
@@ -1724,6 +1756,8 @@ def build_identity_probes(scope: Scope, target: Target) -> list[IdentityProbe]:
     scope_target = scope.target(target.id)
     if scope_target is None or len(scope_target.identities) < 2:
         return []
+    if not _launched_locally(target):
+        _refuse_shared_keys(target.id, scope_target.identities)  # u01 A-91
     attempts_as = _credential_of(target.auth_ref)
     allowlist = EndpointAllowlist(scope_target.endpoints)
     commands = tuple(scope_target.commands)

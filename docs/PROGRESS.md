@@ -34,8 +34,24 @@ neighbouring entries can interleave (an older branch merged later sits above a n
   the target the runner binds with, and a test through it fails when the store is given
   `real_target` instead.
 - **Merged after A-93.** L3 of the same audit (canary floors read on the folded canary, judging
-  rules 7) landed first as `4673bb54`; this branch merged it and re-pins version 7 by an appended
-  line, version 6's pin left as it was.
+  rules 7) landed first as `4673bb54`, then u01 A-91 as `30cc2d6a` (its own re-pin of version 7);
+  this branch merged both and re-pins version 7 by an appended line, main's pins left as they
+  were.
+
+## State, 2026-10-20: identities sharing a credential refused (u01 A-91, `fix/shared-identity-credentials`)
+
+- **What.** The pre-merge audit of A-87 (L1) queued it: two identities of one target with one
+  `auth_ref` were one caller under two names. Measured on `01d6bdc5` through the CLI stub: a target
+  leaking B's canary to A on every reply read 0.17, Low, exit 0 (one key each: 1.0, Critical), and a
+  clean target that shows each key its own canary read 0.17, Low, a fail that needs review (one key
+  each: inconclusive); two variables holding one key did the same on the clean target.
+- **Decision (owner's delegation, best practice).** Refused, not read as one. `load_scope` refuses
+  one `auth_ref` on two identities (two `env://NONE` too); `check_identity_credentials` and
+  `build_identity_probes` refuse two references holding one key before anything is sent, in every
+  mode. Identities are named, never the reference or the key. Exit 3.
+- **Rules.** No stored verdict changes; judging rules 7 re-pinned by an appended line on the merged
+  tree (main took 6, u08 A-92, and 7, u08 A-93, first).
+- **Not covered.** Two keys a provider issues to one account are two credentials here.
 
 ## State, 2026-10-20: the canary floors measure the folded canary, judging rules 7 (u08 A-93)
 

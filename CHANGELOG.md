@@ -7,7 +7,7 @@ the file, schema copy, build or pipeline it names.
 
 ## [Unreleased]
 
-### Fixed (breaking for a run halted on `4673bb54`: judging rules 7 re-pinned, u10 A-94)
+### Fixed (breaking for a run halted on `30cc2d6a`: judging rules 7 re-pinned, u10 A-94)
 
 - **A canary is masked at rest as the evaluators read it.** The evidence store matched a planted
   canary exactly, so a reply holding it in lower case, or split by a zero-width space, a variation
@@ -24,8 +24,25 @@ the file, schema copy, build or pipeline it names.
   whole, the run id filled: its stem can be one letter. A templated canary (`ZYNAP_CANARY_{{run_id}}`) found
   whole is now one mask, where its stem was masked and the run id after it kept. No verdict
   changes; the bytes stored for an attempt holding a canary do, so judging rules 7 is re-pinned by
-  an appended line and a run halted on `4673bb54` is refused by its resume (by the digest, naming
+  an appended line and a run halted on `30cc2d6a` is refused by its resume (by the digest, naming
   the files). Audit of A-92, L4.
+
+### Changed (breaking for a scope whose identities share a credential: u01 A-91)
+
+- **Two identities of one target that share a credential are refused.** The identity sweep and the
+  attempts tell identities apart only by the credential they send, so two identities with one
+  `auth_ref` were one caller under two names: the sweep read tenant A's own canary in the reply
+  received as "tenant B" as a crossing, while the attempts, received as both, read none, and a
+  target leaking B's canary to A on every reply scored 0.17, Low, exit 0 (one identity per
+  credential: 1.0, Critical, exit 2), and a clean target that shows each key its own canary read
+  as a fail that needs review (0.17, Low) where two keys give none; two variables holding one key
+  did the same on the clean target. Now `load_scope` refuses two identities with the same
+  `auth_ref`, two `env://NONE` included (`identities 'tenant-a' and 'tenant-two' declare the same
+  auth_ref ...`, exit 3, nothing sent, the reference not quoted), and before anything is sent, in
+  every mode (`--dry-run`, `-sn` and `--estimate` too), a run refuses two references that name
+  different variables holding one key (`... resolve to the same credential ...`, exit 3, neither
+  the key nor the variables quoted). Reading them as one identity was not taken: it would run a
+  scope other than the one written. Not a stored verdict change: judging rules stay 7, re-pinned.
 
 ### Fixed (breaking for a scope file and for a run halted under judging rules 6: rules 7, u08 A-93)
 

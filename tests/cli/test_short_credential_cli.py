@@ -229,8 +229,13 @@ def test_a_stdio_mcp_target_s_identities_are_not_checked(monkeypatch: pytest.Mon
     from ildottore.shared.enums import TargetType
     from ildottore.shared.models import Target
 
+    # Two variables, two short keys: one credential under two names is refused first (u01 A-91).
     monkeypatch.setenv("SHORT", SHORT)
-    identities = [Identity(name=n, auth_ref="env://SHORT") for n in ("default", "second")]
+    monkeypatch.setenv("SHORT_TWO", SHORT[::-1])
+    identities = [
+        Identity(name="default", auth_ref="env://SHORT"),
+        Identity(name="second", auth_ref="env://SHORT_TWO"),
+    ]
     scope = Scope(
         version="1.0",
         targets=[ScopeTarget(id="live", base_url="stdio://local", identities=identities)],
