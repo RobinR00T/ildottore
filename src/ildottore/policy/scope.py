@@ -153,7 +153,7 @@ class Sha256Verifier:
 
 
 def _refuse_shared_identities(file_path: Path, entry: ScopeTarget) -> None:
-    """Refuse two identities of one target with the same name or the same canary.
+    """Refuse two identities of one target with the same name, credential or canary.
 
     The identity sweep keys each response by identity name, so with two ``tenant`` entries the
     second response replaced the first: two identities read as one and ``authz_leak`` had no
@@ -163,9 +163,22 @@ def _refuse_shared_identities(file_path: Path, entry: ScopeTarget) -> None:
     and default ignorable code points removed (``shared.folding``, u08 A-87, A-92), so two
     canaries that differ only there are one canary to it, and are refused alike. The canary is
     not quoted: it is a marker the target must not learn.
+
+    An identity is its credential: the sweep and the attempts tell identities apart only by the
+    ``auth_ref`` they send, so two identities with one ``auth_ref`` are one principal under two
+    names. The sweep called A's reply a crossing into B while the attempts, received as both,
+    read none, and a planted leak scored 0.17 Low, exit 0, where one identity per credential gave
+    1.0 Critical (pre-merge audit of A-87, L1; u01 A-91). Refused rather than read as one, which
+    would run a scope other than the one written and report a cross-tenant check that compared a
+    principal with itself. Two ``env://NONE`` are refused alike: two identities without a
+    credential are one anonymous caller. The ``auth_ref`` is not quoted (a key pasted where its
+    variable's name belongs is refused later, never shown); two references that name different
+    variables holding one key are refused before anything is sent
+    (``cli.wiring.check_identity_credentials``).
     """
 
     names: set[str] = set()
+    credentials: dict[str, str] = {}
     canaries: set[str] = set()
     for identity in entry.identities:
         if identity.name in names:
@@ -174,6 +187,14 @@ def _refuse_shared_identities(file_path: Path, entry: ScopeTarget) -> None:
                 f"{quoted(identity.name)} more than once; each identity needs its own name"
             )
         names.add(identity.name)
+        holder = credentials.get(identity.auth_ref)
+        if holder is not None:
+            raise ScopeError(
+                f"scope file {file_path} target {quoted(entry.id)}: identities {quoted(holder)} "
+                f"and {quoted(identity.name)} declare the same auth_ref, so the identity sweep "
+                "would compare one caller with itself; each identity needs its own credential"
+            )
+        credentials[identity.auth_ref] = identity.name
         if identity.canary:  # the runner ignores an empty one
             form = folded(identity.canary)
             if form in canaries:
