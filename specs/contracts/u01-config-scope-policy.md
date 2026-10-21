@@ -1310,6 +1310,14 @@ characters are removed, as authz_leak reads it` when the fold removed any. The A
 "`weak_canary` is unchanged", held until this clause. Checked by
 `tests/policy/test_scope_canary_shape.py` (15 new cases, 9 failing on `65203f18`).
 
+**A-94 (u10's clause; this unit's half, added 2026-10-20).** `Redactor.register_spans(kind, value,
+find)` masks each stretch a finder returns, as `kind` hashed by `value`, one mask per stretch
+whatever it holds, asked between the masks already in the text and never across one; the finders
+run where a registered pattern runs (after the credentials and the URL rule, before the
+built-ins), `without_entropy` keeps them, and the module still imports no `ildottore` package (the
+evidence store passes a finder built on `shared.folding`). A redactor with no finder registered
+redacts as before.
+
 ## §8 Out of scope / forbidden
 - MUST NOT execute attacks, send requests, or import adapters/evaluators/core/store/reporting.
 - MUST NOT persist or print raw secrets/PII (redactor is the only path).

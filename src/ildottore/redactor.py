@@ -1119,6 +1119,32 @@ class Pattern:
         return not self.hints or any(hint in text for hint in self.hints)
 
 
+#: Where a value shows in a text: ``(start, end)`` stretches in order, none overlapping (A-94).
+SpanFinder = Callable[[str], Iterable[tuple[int, int]]]
+
+
+def _replace_found(text: str, find: SpanFinder, replace: Callable[[str], str]) -> str:
+    """``text`` with each stretch ``find`` returns replaced, asked between its stash tokens (A-94).
+
+    A stash token stands for a mask set aside in this pass, so no stretch runs into one.
+    """
+
+    pieces: list[str] = []
+    cursor = 0
+    for token in [*_STASH_TOKEN.finditer(text), None]:
+        stop = len(text) if token is None else token.start()
+        segment = text[cursor:stop]
+        at = 0
+        for start, end in find(segment):
+            pieces += (segment[at:start], replace(segment[start:end]))
+            at = end
+        pieces.append(segment[at:])
+        if token is not None:
+            pieces.append(token.group(0))
+            cursor = token.end()
+    return "".join(pieces)
+
+
 def _luhn_ok(digits: str) -> bool:
     """Luhn checksum (card numbers) - reduces valid-shape false positives."""
 
@@ -1374,6 +1400,8 @@ class Redactor:
         else:
             raise TypeError("late is a bool or a frozenset of late pattern types")
         self._uuid_cuts = uuid_cuts
+        # Values matched by a finder of their own (`register_spans`, u10 A-94): kind, value, finder.
+        self._finders: list[tuple[str, str, SpanFinder]] = []
         # The mask types kept as written (`_redact_once`), kept in step with `register`: the
         # tool's own rules', its patterns', and the A-78 types whichever redactor wrote them.
         self._mask_types = (
@@ -1406,6 +1434,21 @@ class Redactor:
         self._patterns.insert(0, pattern)
         self._mask_types = self._mask_types | {pattern.type}
 
+    def register_spans(self, kind: str, value: str, find: SpanFinder) -> None:
+        """Mask each stretch ``find`` returns in a text, as ``kind`` hashed by ``value`` (u10 A-94).
+
+        For a value a regex does not say how to match: the evidence store's canary, read as the
+        evaluators read it (case-folded, through the invisible characters, ``shared.folding``),
+        which this module does not import. The stretches run before the registered patterns, after
+        the credentials and the URL rule, as a registered pattern does, and each is one mask
+        whatever it holds, under the digest of ``value``, so a canary found re-cased or split is
+        masked as the one found as written is. ``find`` is asked once per text between the masks
+        already in it, never across one.
+        """
+
+        self._finders.append((kind, value, find))
+        self._mask_types = self._mask_types | {kind}
+
     def without_entropy(self) -> Redactor:
         """This redactor minus the entropy fallback: same salt, patterns and known credentials.
 
@@ -1425,6 +1468,8 @@ class Redactor:
         )
         twin._set_late([pattern for pattern in self._late if pattern is not _UUID_PATTERN])
         twin._salt = self._salt
+        twin._finders = list(self._finders)
+        twin._mask_types = self._mask_types
         return twin
 
     def _digest(self, value: str) -> str:
@@ -1646,6 +1691,14 @@ class Redactor:
             return m.group(1) + mask + m.group(3)
 
         working = _URL_USERINFO.sub(_url_password, working)
+
+        for kind, value, find in self._finders:
+            mask = self._hashed_mask(kind, value)
+
+            def _found(stretch: str, mask: str = mask) -> str:
+                return _keep(mask, _as_written(stretch))
+
+            working = _replace_found(working, find, _found)
 
         for pattern in self._patterns:
             # A labelled number first, whole: the plain pattern would take its unglued tail and

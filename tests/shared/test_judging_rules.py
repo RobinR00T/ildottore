@@ -288,6 +288,14 @@ PIN_HISTORY: tuple[tuple[int, str, str], ...] = (
         "identities sharing a credential (one auth_ref, or two variables holding one key) are "
         "refused before anything is sent; no stored verdict changes",
     ),
+    (
+        7,
+        "c5650a08150487badb91d9d35bf571dbdcb93530dfe47cf58c104c9f809cee77",
+        "re-pin 2026-10-21: u10 A-94 (fix/evidence-folded-canary, merged with 30cc2d6a): the "
+        "evidence store masks a canary as the evaluators read it (re-cased, split by an invisible "
+        "character) and gets every identity canary of the scope; what is stored changes, no "
+        "verdict does",
+    ),
 )
 
 #: The digest each version is pinned to now: the last line of :data:`PIN_HISTORY` for it.
@@ -298,7 +306,7 @@ PINNED: dict[int, str] = {
     4: "86d4391094d167c454d0e05ec076a36ca10c585c57b1d00574a7e86e87c0fe40",
     5: "c352e9bd55c8e3b0629e4164411b64667327a5c3cd533e003a7cb84475ecf9c4",
     6: "47293b7afb2a5409bff93319a9fa384621c3ecbe8b9a261be8bb428e05d0f4f7",
-    7: "68120a3be571b6039312da6090141deac6fb13316717f8c72ae75f408aa3d9b4",
+    7: "c5650a08150487badb91d9d35bf571dbdcb93530dfe47cf58c104c9f809cee77",
 }
 
 #: One ``<version> <digest>`` line per pin, appended to and never edited: the history must start

@@ -3233,6 +3233,7 @@ def _run_one_target(
         n=n,
         mock_scenario=mock_scenario,
         real_target=real_target,
+        canary_target=target,
         judge_target=judge_target,
         # Recorded however the campaign stops, Ctrl-C included, so a resume's ceiling is right.
         spend_sink=lambda spend: _record_spend_quietly(run_db, campaign_run_id, spend),

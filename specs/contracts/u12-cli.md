@@ -2095,6 +2095,15 @@ naming both (`tests/cli/test_resume_judging_rules.py`), `dottore --version` prin
 (judging rules 7)`, and a scope whose canary is short or regular once folded is refused before
 anything is sent, exit 3, the canary not quoted (`tests/cli/test_scoring_followups_cli.py`).
 
+**A-94 (u10's clause; this unit's line, added 2026-10-20).** `build_runner` gives the evidence store
+every canary the scan plants as declared (`cli.wiring.declared_canaries`: the specs', every
+identity's of the scope, and the target's seeded ones as their `run_token` binds them) and
+`evaluators.base.foldable`, the target being the one the runner binds with (`canary_target`,
+`real_target` when not given: a mock or `--hardened` route has none); `planted_secrets` takes the scope and the target too, so those are
+masked exactly as well, but for an identity canary holding `{{run_id}}`, whose stem can be one
+letter. Judging rules 7 is re-pinned by an appended line
+(no verdict changes), so a run halted on `30cc2d6a` is refused by its resume by the digest.
+
 **A-92 (u08's clause; this unit's line, added 2026-10-20).** `JUDGING_RULES_VERSION` is 6, pinned by
 an appended line: a run halted under version 5 is refused by its resume before anything is sent,
 naming both (`tests/cli/test_resume_judging_rules.py`), and `dottore --version` prints `dottore

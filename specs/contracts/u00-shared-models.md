@@ -249,6 +249,11 @@ default ignorable code point too (the variation selectors, U+034F, the Hangul fi
 format character, both sets pinned to Unicode 16.0 in `shared.folding.INVISIBLE_RANGES` (4,206 code
 points) rather than read from the interpreter's table; still no `ildottore` import.
 
+**A-94 (u10's clause; this unit's half, added 2026-10-20).** `shared.folding.folded_spans(text,
+needle)` yields each stretch of `text` whose fold holds `needle`, in order, overlapping ones as
+one (two matches inside one character that folds to more than one, `ß`, included), linear in the
+text; an empty needle is refused. Still no `ildottore` import.
+
 ## §8 Out of scope / forbidden
 - MUST NOT import any other `ildottore` package or any provider SDK / httpx / Jinja / Typer.
 - MUST NOT implement behavior: no scoring/banding math (u07), no evaluation (u06), no I/O,

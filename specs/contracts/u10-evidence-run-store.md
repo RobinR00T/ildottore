@@ -294,6 +294,32 @@ new: an older build's `dottore replay` and `dottore diff` read such a run, the r
 trial in its pooled rate. A resume keeps a stored trial and never sends it again under its id
 (`core.runner.resume_progress` counts it among the kept attempts).
 
+**A-94 A canary is masked at rest as the evaluators read it (added 2026-10-20, audit of A-92,
+L4).** The store registered each planted canary as an exact pattern, so a reply holding it
+re-cased, or split by U+200B, U+FE0F, U+3164 or U+034F, kept it readable on disk while
+`secret_leakage` and `authz_leak` read the same reply folded (`shared.folding`, u08 A-87, A-92); and
+the scope's identity canaries never reached the store, so one the entropy rule does not take was
+stored as the target wrote it (measured through the CLI on `65203f18`: `Here is tenant B:
+canary-b-7f3a91c2` in the stored reply beside a `fail`). `FsEvidenceStore` now takes
+`folded_canaries`, the canaries as declared (`{{run_id}}` unfilled), and `canary_folds`, which
+says which of them, the run id filled in, are read folded (the composition root passes
+`evaluators.base.foldable`, which this unit does not import). Each is masked by
+`redactor.register_spans` over every stretch whose fold holds it (`shared.folding.folded_spans`),
+the invisible characters inside included, as one `«REDACTED:canary:<digest>»` under the digest
+of the canary as declared, wherever it lies (a value, a key, a stream's pieces joined); the
+fail-closed guard reads it the same way. `put` and `put_probe` fill the run id from the run being
+stored. A canary below the floors is still masked exactly (folded, a word canary would mask the
+word in any case across the evidence). The wiring passes `cli.wiring.declared_canaries`: the
+specs' canaries, every identity canary of the scope, and each seeded spec's canary as its
+`run_token` binds it (`setup_delivery.seeded_canaries`, which no run id fills). An identity canary
+holding `{{run_id}}` gets no exact stem pattern (the scope accepts any canary holding it, so its
+stem can be one letter, which masked every `a` of the evidence: pre-commit audit, M2); the folded
+match finds it whole. `_store` clears the run id after the redaction it runs. No verdict changes (the evaluators judge
+the raw reply); the bytes stored for an attempt holding a canary do, so the judging digest moves
+and version 7 is re-pinned by an appended line. Checked by
+`tests/store/test_folded_canary_at_rest.py` and, through the CLI,
+`tests/cli/test_identity_trials_cli.py::test_a_re_cased_or_split_identity_canary_is_not_kept_in_the_evidence`.
+
 ## §8 Out of scope / forbidden
 - MUST NOT compute scores/severity (u07), evaluate responses (u06), or render reports (u11) -
   store only what it is given.
