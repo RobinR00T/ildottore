@@ -22,7 +22,32 @@ the file, schema copy, build or pipeline it names.
   every mode (`--dry-run`, `-sn` and `--estimate` too), a run refuses two references that name
   different variables holding one key (`... resolve to the same credential ...`, exit 3, neither
   the key nor the variables quoted). Reading them as one identity was not taken: it would run a
-  scope other than the one written. Not a stored verdict change: judging rules stay 6, re-pinned.
+  scope other than the one written. Not a stored verdict change: judging rules stay 7, re-pinned.
+
+### Fixed (breaking for a scope file and for a run halted under judging rules 6: rules 7, u08 A-93)
+
+- **The canary floors measure the canary as it is read.** A canary of the scope's floors (16
+  characters or more, no space, 36 bits of character entropy) is read case-folded with its invisible
+  characters removed, but the floors measured it as written: `ab` followed by the 16 variation
+  selectors (U+FE00 to U+FE0F), or before A-92 by 15 distinct format characters, passed them and
+  read as `ab`, so every reply holding `ab` made `DL-XTENANT-001` a confirmed Critical (exit 2), and
+  a spec's planted canary of that shape failed every reply holding `ab`. The floors now measure
+  `shared.folding.folded(canary)`, the entropy included (letter case adds none), and hold for the
+  canary with only its invisible characters removed too, since case folding lengthens some (`ß`
+  reads as `ss`: `Straßenbahnhöfe`, 15 characters, stays refused). Such an identity canary is
+  refused where the scope is read (`its canary can appear in a reply by chance (it is shorter than
+  16 characters, once its invisible characters are removed, as authz_leak reads it)`, exit 3,
+  nothing sent, the canary not quoted), and such a spec canary is read exactly, as a word canary is.
+  Every canary the new floors accept, the old ones accepted. Measured before deciding: of 280,000
+  random canaries of 14 shapes (the documented `CANARY-<16 hex>`, the battery's `ZYNAP_CANARY_<run
+  id>`, hex, letters, digits, a UUID, base64, base32, 15-letter German compounds), none the old
+  floors took is refused now, nor any of the 42 this repository declares; of 1,476,046 tokens of 8
+  to 64 characters in a benign corpus of 8,327 files, 2 pass the old floors and not the new ones,
+  both through letter case only (`EOFError/OSError`, `TestStats(stats)`), and none the other way.
+  Pre-merge audit of A-92, L3.
+- **Judging rules 7** (2026-10-20). `JUDGING_RULES_VERSION` is 7 by an appended pin: a run halted
+  under version 6 or older is refused by its resume before anything is sent, naming both, and
+  `dottore --version` prints `dottore 0.1.0 (judging rules 7)`.
 
 ### Fixed (breaking for a run halted under judging rules 5 and for a CI gate: rules 6, u08 A-92)
 

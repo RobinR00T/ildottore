@@ -275,9 +275,16 @@ PIN_HISTORY: tuple[tuple[int, str, str], ...] = (
         "become a fail",
     ),
     (
-        6,
-        "bc665fd800e2a139ed81dbf5d56f2089e29e550184472bb8561eece819b47c7c",
-        "re-pin 2026-10-20: u01 A-91 (fix/shared-identity-credentials, merged with 65203f18), two "
+        7,
+        "42267c76083955ff723878c0db06d412e9bccf0a2fd206dc0016bc8b6459e11f",
+        "u08 A-93 (fix/canary-floors-folded on 65203f18): the canary floors measure the folded "
+        "canary, so a short word padded with invisible characters is read exactly, not folded to "
+        "the word; a fail can become a pass",
+    ),
+    (
+        7,
+        "68120a3be571b6039312da6090141deac6fb13316717f8c72ae75f408aa3d9b4",
+        "re-pin 2026-10-21: u01 A-91 (fix/shared-identity-credentials, merged with 4673bb54), two "
         "identities sharing a credential (one auth_ref, or two variables holding one key) are "
         "refused before anything is sent; no stored verdict changes",
     ),
@@ -290,7 +297,8 @@ PINNED: dict[int, str] = {
     3: "ee44c0fc64ebbda4663040f0c4246f342b398e7290de53f71fb48024642414b7",
     4: "86d4391094d167c454d0e05ec076a36ca10c585c57b1d00574a7e86e87c0fe40",
     5: "c352e9bd55c8e3b0629e4164411b64667327a5c3cd533e003a7cb84475ecf9c4",
-    6: "bc665fd800e2a139ed81dbf5d56f2089e29e550184472bb8561eece819b47c7c",
+    6: "47293b7afb2a5409bff93319a9fa384621c3ecbe8b9a261be8bb428e05d0f4f7",
+    7: "68120a3be571b6039312da6090141deac6fb13316717f8c72ae75f408aa3d9b4",
 }
 
 #: One ``<version> <digest>`` line per pin, appended to and never edited: the history must start

@@ -16,9 +16,35 @@ neighbouring entries can interleave (an older branch merged later sits above a n
   one `auth_ref` on two identities (two `env://NONE` too); `check_identity_credentials` and
   `build_identity_probes` refuse two references holding one key before anything is sent, in every
   mode. Identities are named, never the reference or the key. Exit 3.
-- **Rules.** No stored verdict changes; judging rules 6 re-pinned by an appended line on the merged
-  tree (main took 6, u08 A-92, first).
+- **Rules.** No stored verdict changes; judging rules 7 re-pinned by an appended line on the merged
+  tree (main took 6, u08 A-92, and 7, u08 A-93, first).
 - **Not covered.** Two keys a provider issues to one account are two credentials here.
+
+## State, 2026-10-20: the canary floors measure the folded canary, judging rules 7 (u08 A-93)
+
+- **What.** `fix/canary-floors-folded`, L3 of A-92's pre-merge audit: `policy.scope.weak_canary`
+  and `evaluators.base.foldable` measured a canary as written while `authz_leak` and
+  `secret_leakage` read it folded, so `ab` and the 16 variation selectors (or, before A-92, 15
+  distinct format characters) passed the floors and read as `ab`: every reply holding `ab` was a
+  confirmed Critical (exit 2 on `65203f18`). The floors, the entropy and the label check now
+  measure `shared.folding.folded(canary)`, and hold for `shared.folding.visible(canary)` too
+  (invisible characters removed, case kept), since case folding lengthens some canaries (`ß`
+  reads as `ss`): measured folded alone, `Straßenbahnhöfe` (15 characters) passed where
+  `65203f18` refused it (this branch's pre-merge audit, MEDIUM 1). The refusal says so when there
+  were invisible characters to remove. Judging rules 7, pinned on main `65203f18`.
+- **Measured first** (`_ildottore-tren/scratch/foldfloor/floor_corpus.py`, outside the repo and
+  not published): 280,000 random canaries of 14 shapes, none newly refused; the repository's 42
+  declared canaries, none changed; 1,476,046 tokens of 8 to 64 characters in 8,327 benign files
+  (this repository, the Python 3.14 standard library, two `node_modules` trees), 2 newly refused,
+  through letter case only, none newly accepted. The new floors accept a subset of the old ones
+  (length times entropy never drops as characters are added), so no new text is read folded.
+- **Checks.** New cases in `tests/policy/test_scope_canary_shape.py` (15),
+  `tests/evaluators/test_secret_leakage_fold.py` (3), `tests/cli/test_scoring_followups_cli.py`
+  (2, through the CLI: exit 3, nothing sent, where `65203f18` exits 2), the version 6 resume in
+  `tests/cli/test_resume_judging_rules.py`; 14 new cases fail on `65203f18`, and so does the
+  resume.
+- **Left open.** L4 of the same audit (the evidence store masks a split canary exactly) is on its
+  own branch.
 
 ## State, 2026-10-20: a canary read without default ignorables, judging rules 6 (u08 A-92)
 

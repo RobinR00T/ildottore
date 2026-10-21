@@ -1274,8 +1274,9 @@ credential ...`, exit 3, neither key nor variable quoted). An unset variable is 
 by value, as A-78 leaves its identities unchecked.
 
 *Rules.* No stored verdict changes: a scope this refuses never reaches a send. The branch first
-re-pinned version 5; main took 6 (u08 A-92) before it landed, so on the merge of main `65203f18`
-the current version, 6, is re-pinned by an appended line on the merged tree (u12 A-81).
+re-pinned version 5; main took 6 (u08 A-92) and 7 (u08 A-93) before it landed, so on the merge of
+main `4673bb54` (2026-10-21) the current version, 7, is re-pinned by an appended line on the merged
+tree (u12 A-81).
 
 *Not covered.* Two keys for one account (a provider that issues several keys to one tenant) are two
 credentials to this check and still one caller to the target; the scope cannot see that, and the
@@ -1299,6 +1300,15 @@ stub; tenant B now carries its own key (`env://TENANT_B_KEY`), their figures unc
 now holds: two identity canaries that differ only by a variation selector, the combining grapheme
 joiner or a Hangul filler are refused too (`tests/policy/test_scope_canary_shape.py`), since
 `shared.folding.folded` removes the default ignorable code points.
+
+**A-93 (u08's clause; this unit's half, added 2026-10-20).** `weak_canary` measures every floor on
+`shared.folding.folded(canary)` (length, entropy, and the labels, folded the same way) and on
+`shared.folding.visible(canary)` (invisible characters removed, case kept, so a fold that lengthens
+a canary, `ß` to `ss`, lets nothing pass), not on the canary as written: `ab` and the 16 variation
+selectors is refused as shorter than 16 characters, and the reason adds `once its invisible
+characters are removed, as authz_leak reads it` when the fold removed any. The A-87 sentence above,
+"`weak_canary` is unchanged", held until this clause. Checked by
+`tests/policy/test_scope_canary_shape.py` (15 new cases, 9 failing on `65203f18`).
 
 ## §8 Out of scope / forbidden
 - MUST NOT execute attacks, send requests, or import adapters/evaluators/core/store/reporting.

@@ -1320,6 +1320,41 @@ in `tests/evaluators/test_authz_leak_received.py` (5, the nested canaries among 
 of the new cases fail on `01d6bdc5`, and so does the version 5 resume. Reversal: drop
 `_DEFAULT_IGNORABLE_RANGES` from `shared.folding.INVISIBLE_RANGES` (judging rules 7). Owner: human.
 
+**A-93 The canary floors measure the canary as it is read (added 2026-10-20; halves in u01, u06 and
+u12).** A-87 and A-92 read a canary of the scope's floors folded (`shared.folding.folded`:
+case-folded, the format characters and the default ignorable code points removed), and
+`evaluators.base.foldable` decides which canaries those are by `policy.scope.weak_canary`; but the
+floors measured the canary as written. `ab` followed by the 16 variation selectors (U+FE00 to
+U+FE0F) is 18 characters and 75 bits as written, `ab` as read: an identity canary of that shape
+passed the scope, and every reply holding `ab` was a crossing, a confirmed Critical through the CLI
+on `65203f18` (exit 2); a spec's planted canary of that shape failed every reply holding `ab`. With
+15 distinct format characters it did on main before A-92 too. L3 of A-92's pre-merge audit.
+**Decided 2026-10-20 under the owner's delegation (best practice), revisable:** the length, the
+entropy and the label check measure `folded(canary)` (the labels folded the same way), so letter
+case adds no entropy, and the length and entropy floors hold for `visible(canary)` too (invisible
+characters removed, case kept): case folding lengthens some canaries (`ß` reads as `ss`, `ﬃ` as
+`ffi`), and measured folded alone `Straßenbahnhöfe`, 15 characters, passed where `65203f18` refused
+it (this branch's pre-merge audit, MEDIUM 1). Length times entropy never drops as characters are
+added, so every canary these floors accept, the floors as written accepted (a label long enough as
+written or as read is taken out); and the reason says `once its invisible characters are removed, as
+authz_leak reads it` when the fold removed any. An identity canary below the floors once folded is
+refused where the scope is read (exit 3, nothing sent, the canary not quoted); a spec canary below
+them is read exactly, as a word canary is. Measured before deciding (outside the repository):
+280,000 random canaries of 14 shapes (the documented `CANARY-<16 hex>`, the battery's
+`ZYNAP_CANARY_<run id>`, hex, letters, digits, a UUID, base64, base32), none the old floors accepted
+is refused now; none of the 42 canaries the repository declares changes; of 1,476,046 tokens of 8 to
+64 characters in 8,327 benign files (this repository, the Python 3.14 standard library, two
+`node_modules` trees), 2 pass the old floors and not the new ones, through letter case only, and
+none the other way, so no new text is read folded. Not taken: refusing any canary that holds an
+invisible character (a planted canary need not be ASCII, and the floors already decide), and
+measuring length folded but entropy as written (a canary is matched folded, so its case is not
+evidence). Judging rules 7: a fail can become a pass. Checked by
+`tests/policy/test_scope_canary_shape.py` (15 new cases, 9 failing on `65203f18`),
+`tests/evaluators/test_secret_leakage_fold.py` (3, failing on `65203f18`), through the CLI against a
+loopback stub in `tests/cli/test_scoring_followups_cli.py` (2: exit 3, nothing sent, where
+`65203f18` exits 2), and the version 6 resume in `tests/cli/test_resume_judging_rules.py`. Reversal:
+measure `canary` again in `weak_canary` (judging rules 8). Owner: human.
+
 ## §8 Out of scope / forbidden
 - MUST NOT import adapter/evaluator/scorer/store **concretes**: interfaces only; composition is
   u12. `lint-imports` enforces.
