@@ -2372,11 +2372,12 @@ Risk and confidence are **separate axes**:
   to Unicode 16.0), so a target that re-cases `CANARY-B-7F3A91C2` or splits it with a zero-width
   space, a variation selector or a Hangul filler no longer hides the crossing (u08 A-87, A-92); a
   spec's own canary below those floors is read exactly. The scope refuses two identity canaries that
-  differ only in letter case or such characters, and two identities with one credential (u01 A-91,
-  §4.1) (exit 3, nothing sent). The verdict says why (on the identity sweep's trial `authz_leak: 1
-  tenant-scoped canary(ies) surfaced in a non-owner identity,
-  and the request every identity was sent carries each of them ...`; on an attempt's own reply `...
-  surfaced in the reply received as tenant-a, which the scope does not give them, and the request
+  differ only in letter case or such characters, and two identities with one `auth_ref` (exit 3,
+  nothing sent; a run also refuses two variables holding one key, u01 A-91, §4.1). The verdict says
+  why (on the identity sweep's trial `authz_leak: 1 tenant-scoped canary(ies) surfaced in a
+  non-owner identity, and the request every identity was sent carries each of them ...`; on an
+  attempt's own reply `... surfaced in the reply received as tenant-a, which the scope does not give
+  them, and the request
   this reply answers (or the base prompt its variant is built from) carries ...`; both with
   `echo_only: true`), the finding's line counts it (`resting on a canary the request carries, which
   never confirms a finding on its own`), and `dottore replay` lists the attempt as `fail (needs
