@@ -1,9 +1,10 @@
 """Reporting unit (u11) - renders a finished ``TestRun`` + findings to report artifacts.
 
 One :class:`~ildottore.shared.protocols.Reporter` per format (``json``, ``html``, ``sarif``,
-``junit``). Each is pure/deterministic given ``(run, findings)`` and masks all secrets/PII via
-the central redactor before serialization (single choke point in :mod:`.masking`). Importing
-this package registers every built-in reporter, so :func:`get_reporter` can resolve any format.
+``junit``, plus the ``navigator`` layer written by ``-oN``). Each is pure/deterministic given
+``(run, findings)`` and masks all secrets/PII via the central redactor before serialization
+(single choke point in :mod:`.masking`). Importing this package registers every built-in
+reporter, so :func:`get_reporter` can resolve any format.
 """
 
 from __future__ import annotations
@@ -18,6 +19,7 @@ from ildottore.reporting.html_reporter import HtmlReporter
 from ildottore.reporting.json_reporter import JsonReporter, report_schema
 from ildottore.reporting.junit_reporter import JunitReporter
 from ildottore.reporting.masking import MaskingContext, Redactor, default_redactor
+from ildottore.reporting.navigator_reporter import NavigatorReporter
 from ildottore.reporting.sarif_reporter import SarifReporter
 from ildottore.reporting.summary import RunStatus, RunSummary, build_run_summary
 
@@ -27,6 +29,7 @@ __all__ = [
     "JsonReporter",
     "JunitReporter",
     "MaskingContext",
+    "NavigatorReporter",
     "Redactor",
     "RunStatus",
     "RunSummary",

@@ -295,6 +295,15 @@
         "tactics": [],
         "total": 16
       },
+      "attack": {
+        "domain": "enterprise",
+        "edition": "20.0",
+        "exercised": 0,
+        "pct": 0.0,
+        "tactics": [],
+        "techniques": [],
+        "total": 15
+      },
       "iopc": {
         "edition": "live-2026-09-19",
         "impacts": {

@@ -24,6 +24,7 @@ from pydantic import (
 )
 
 from ildottore.shared.enums import (
+    AttackOccurrence,
     Category,
     EvaluatorLogic,
     EvaluatorType,
@@ -117,6 +118,34 @@ class IoPC(_SchemaMirror):
 
     techniques: list[Annotated[str, Field(pattern=_IOPC_TECHNIQUE_PATTERN)]] | None = None
     impacts: list[Annotated[str, Field(pattern=_IOPC_IMPACT_PATTERN)]] | None = None
+
+
+# A MITRE ATT&CK technique ID (``shared.attack``), same anchor note as above.
+_ATTACK_TECHNIQUE_PATTERN = r"^T[0-9]{4}(\.[0-9]{3})?$"
+# An Enterprise tactic shortname as the STIX bundle writes it (``command-and-control``).
+_ATTACK_TACTIC_PATTERN = r"^[a-z]+(-[a-z]+)*$"
+
+
+class AttackTechniqueMapping(_SchemaMirror):
+    """One ``mitre_attack.techniques`` entry: a technique ID, how the spec exercises it, and
+    optionally which of the technique's tactics the claim is restricted to (``shared.attack``)."""
+
+    id: str = Field(pattern=_ATTACK_TECHNIQUE_PATTERN)
+    occurrence: AttackOccurrence
+    tactics: list[Annotated[str, Field(pattern=_ATTACK_TACTIC_PATTERN)]] | None = None
+
+
+class MitreAttack(_SchemaMirror):
+    """``mitre_attack`` - MITRE ATT&CK Enterprise mapping (``docs/17``).
+
+    Optional so third-party packs keep validating. ``domain`` is ``enterprise`` only today: the
+    pin is derived from the Enterprise bundle, and a Mobile or ICS ID would validate against
+    nothing. An ID outside the pin, a retired one, or a tactic the technique does not sit under
+    is a lint error, not a silent zero.
+    """
+
+    domain: Literal["enterprise"] = "enterprise"
+    techniques: list[AttackTechniqueMapping] = Field(min_length=1)
 
 
 #: The flags of a scene tool the evaluators read, each a boolean or null when present: a quoted
@@ -275,6 +304,8 @@ class AttackSpec(_SchemaMirror):
     category: Category
     owasp: str = Field(pattern=_OWASP_PATTERN)
     mitre_atlas: MitreAtlas
+    #: MITRE ATT&CK Enterprise techniques this spec exercises, each with how (``shared.attack``).
+    mitre_attack: MitreAttack | None = None
     nist_ai_rmf: str
     iopc: IoPC | None = None
     #: OWASP AISVS 1.0 requirement IDs whose control a FAIL of this spec is evidence against.

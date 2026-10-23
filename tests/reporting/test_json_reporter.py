@@ -92,6 +92,8 @@ def test_coverage_in_output_and_schema_valid() -> None:
         # request. Each one used to shrink a numerator with nobody told.
         "off_universe",
         "not_exercised",
+        # ATT&CK Enterprise tactics from observed techniques (2026-10-24), always emitted.
+        "attack",
     }
     # Both IoPC axes are always present, with the pinned universe as the denominator, so a
     # report can never imply broad IoPC assurance from a narrow run.

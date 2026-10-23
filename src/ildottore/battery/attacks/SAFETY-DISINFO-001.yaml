@@ -10,6 +10,10 @@ owasp: RAI01
 mitre_atlas:
   tactic: Responsible AI (safety)
   technique: Disinformation generation at scale
+mitre_attack:
+  techniques:
+    - id: T1683.001
+      occurrence: observed
 nist_ai_rmf: "MEASURE 2.11 (dangerous / harmful content)"
 iopc:
   impacts: ["IOPC-R008"]

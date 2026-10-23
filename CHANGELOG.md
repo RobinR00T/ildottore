@@ -7,6 +7,40 @@ the file, schema copy, build or pipeline it names.
 
 ## [Unreleased]
 
+### Added (judging rules 7 re-pinned, u02 A-95)
+
+- **MITRE ATT&CK Enterprise v20.0 as a fifth coverage axis, with Navigator layers.** v20.0
+  (2026-10-13) added the techniques an AI agent is observed performing (`T1698` Indirect and
+  `T1699` Direct Prompt Injection, `T1700` AI-Enabled Exfiltration, `T1685.007` Impair Autonomous
+  Defenses, `T1682` Query Public AI Services, `T1683` Generate Content, `T1027.018` Invisible
+  Unicode), renamed Defense Evasion to Stealth and split out Defense Impairment. The universe is
+  pinned as data (`src/ildottore/shared/data/attack-enterprise-20.0.json`: 15 tactics in matrix
+  order, 706 current techniques, 161 retired with their replacement) derived from the official
+  STIX bundle by `scripts/attack_universe.py` (`check` says whether a newer release exists,
+  `refresh` re-derives and names which shipped specs declare a retired ID, `diff` compares two
+  pins). A spec's optional `mitre_attack.techniques` block lists `{id, occurrence, tactics?}`:
+  `observed` (the target's own action or reply is the technique) counts its tactics,
+  `capability-only` (an artefact that would enable it elsewhere) is listed and never counted; a
+  retired, unknown or duplicated ID is `UNKNOWN_FRAMEWORK_CODE` naming the replacement, a
+  `tactics` restriction outside the technique's tactics is `FRAMEWORK_CLAIM_CONTRADICTED`
+  (A-95). 41 of the 78 shipped specs are mapped (18 techniques, 14 observed, 4 capability-only),
+  each with its rationale and the deliberately unmapped specs in `docs/17`: **8 of 15 tactics,
+  53%**, the seven uncovered all roadmap. `dottore coverage` prints the axis with every other,
+  `--framework attack` prints the techniques behind it with their occurrence and specs, `--json`
+  carries them as `attack_techniques`, and `--navigator-layer PATH` writes the battery as an
+  ATT&CK Navigator layer (format 4.5, `versions.attack` `"20"`, one cell per tactic a technique
+  is drawn under, declaring specs in the comment). `dottore run -oN PATH` writes the same matrix
+  coloured by the run's verdicts (exploited, not exploited, inconclusive; capability-only drawn
+  and not counted; specs that sent nothing scorable absent), built from spec ids, spec names,
+  technique ids, the run id and target ids only, through the masking gate like every reporter;
+  it is a companion to a report, so `-oA` still writes four files. The run reports carry the
+  axis too: `summary.coverage.attack` in JSON (optional in `report-1.0`, with `edition` and
+  `domain`), a line in the HTML and the terminal block, `mitre_attack_enterprise` in the SARIF
+  `framework_editions` and a JUnit `edition.mitre_attack_enterprise` property. The method is the
+  Feedly *Map ATT&CK Techniques* skill's, reduced to what a harness can observe (`docs/17`,
+  `docs/REFERENCES.md`). No verdict changes; the package's bytes do, so judging rules 7 is
+  re-pinned by an appended line.
+
 ### Fixed (breaking for a run halted on `30cc2d6a`: judging rules 7 re-pinned, u10 A-94)
 
 - **A canary is masked at rest as the evaluators read it.** The evidence store matched a planted

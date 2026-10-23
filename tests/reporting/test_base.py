@@ -20,10 +20,10 @@ from tests.reporting.conftest import make_finding, make_run
 
 
 def test_all_formats_registered() -> None:
-    assert set(list_formats()) == {"json", "html", "sarif", "junit"}
+    assert set(list_formats()) == {"json", "html", "sarif", "junit", "navigator"}
 
 
-@pytest.mark.parametrize("fmt", ["json", "html", "sarif", "junit"])
+@pytest.mark.parametrize("fmt", ["json", "html", "sarif", "junit", "navigator"])
 def test_get_reporter_by_str(fmt: str) -> None:
     reporter = get_reporter(fmt)
     assert isinstance(reporter, BaseReporter)

@@ -272,6 +272,7 @@ def framework_editions() -> dict[str, str]:
     """The edition of every framework a finding is mapped to, for the machine formats (A-14)."""
 
     from ildottore.shared.aisvs import AISVS_VERSION
+    from ildottore.shared.attack import ATTACK_VERSION
     from ildottore.shared.iopc import IOPC_TAXONOMY_VERSION
 
     return {
@@ -279,4 +280,5 @@ def framework_editions() -> dict[str, str]:
         "mitre_atlas": ATLAS_MATRIX_RELEASE,
         "nova_iopc": IOPC_TAXONOMY_VERSION,
         "owasp_aisvs": AISVS_VERSION,
+        "mitre_attack_enterprise": ATTACK_VERSION,
     }

@@ -18,6 +18,7 @@ from ildottore.redactor import log_safe_json
 from ildottore.reporting.base import BaseReporter, register_reporter
 from ildottore.reporting.masking import MaskingContext
 from ildottore.reporting.summary import Coverage, ModelComparison, RunSummary
+from ildottore.shared.attack import ATTACK_DOMAIN, ATTACK_VERSION
 from ildottore.shared.enums import ReportFormat
 from ildottore.shared.frameworks import ATLAS_MATRIX_RELEASE, OWASP_LLM_EDITION
 from ildottore.shared.iopc import IOPC_TAXONOMY_VERSION
@@ -99,6 +100,17 @@ def _coverage_to_wire(coverage: Coverage) -> dict[str, Any]:
                 "total": coverage.iopc_impacts_total,
                 "pct": coverage.iopc_impacts_pct,
             },
+        },
+        # Tactics only, from observed techniques (``shared.attack``); the techniques are listed
+        # so a reader can rebuild the figure, and the Navigator layer (``-oN``) draws them.
+        "attack": {
+            "edition": ATTACK_VERSION,
+            "domain": ATTACK_DOMAIN,
+            "tactics": list(coverage.attack_tactics),
+            "techniques": list(coverage.attack_techniques),
+            "exercised": coverage.attack_exercised,
+            "total": coverage.attack_total,
+            "pct": coverage.attack_pct,
         },
         "off_universe": [
             {"spec_id": spec_id, "field": field, "value": value}

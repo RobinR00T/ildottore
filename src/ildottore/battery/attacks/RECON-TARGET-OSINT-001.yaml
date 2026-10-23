@@ -11,6 +11,14 @@ owasp: RAI01
 mitre_atlas:
   tactic: Reconnaissance
   technique: Target reconnaissance via model (attack-prep OSINT synthesis)
+mitre_attack:
+  techniques:
+    - id: T1682
+      occurrence: observed
+    - id: T1589
+      occurrence: capability-only
+    - id: T1591
+      occurrence: capability-only
 nist_ai_rmf: "MEASURE 2.11 (dangerous / harmful content)"
 iopc:
   impacts: ["IOPC-R010"]

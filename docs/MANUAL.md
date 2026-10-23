@@ -1257,6 +1257,7 @@ required.
 | Flag | Meaning |
 |------|---------|
 | `-oJ/-oH/-oS/-oX PATH` | write JSON / HTML / SARIF / JUnit |
+| `-oN PATH` | write an ATT&CK Navigator layer (format 4.5) coloured by this run's verdicts: exploited, not exploited, inconclusive; capability-only techniques drawn and not counted; specs that sent nothing scorable absent (docs/17). A companion to a report, not a report: it is never part of `-oA` |
 | `-oA PATH` | write all four to `<prefix>.json`, `.html`, `.sarif` and `.xml`. The prefix is extended, never cut: `-oA report.v2` writes `report.v2.json`, `report.v2.html` and so on. A prefix that already ends in one of those four extensions (any case) drops it first, so `-oA report.json` writes `report.json`, `report.html`, `report.sarif`, `report.xml`. An explicit `-oJ`/`-oH`/`-oS`/`-oX` replaces that one format's `-oA` path |
 | `--fail-on BAND` | CI gate: `info\|low\|medium\|high\|critical` (default `high`; `info` gates on any confirmed finding). A fail only the judge reported is never confirmed (OD-19, since 2026-10-11), so it does not trip this gate; `--include-needs-review` makes it, and also every intermittent fail (a variant that did not fail on every attempt). `dottore diff` reads statuses, not confirmation, so it counts a judge-only fail as `NEW_FAIL` either way |
 | `--include-needs-review` | also gate unconfirmed exploits: a `fail` that is not confirmed, because no mutation variant failed on every attempt, its mean confidence is below the spec's `confidence_threshold`, or only the judge reported its fails (§9). Undecided (`inconclusive`) results never gate, with or without it. With it, the SARIF report gives such a fail its band's level, as for a confirmed one (§11) |
@@ -1534,7 +1535,7 @@ temperature-0 repeatable]` to its fingerprint line.
 ```
 dottore fleet CONFIG [--out DIR] [--run] [--judge PATH] [--runs N] [-p CATEGORIES]
               [--spec-path PATH]... [--evidence-root PATH] [--run-db PATH]
-              [-oJ PATH] [-oH PATH] [-oS PATH] [-oX PATH] [-oA PREFIX]
+              [-oJ PATH] [-oH PATH] [-oS PATH] [-oX PATH] [-oN PATH] [-oA PREFIX]
 ```
 
 Expands `CONFIG` (a `fleet.yaml`) into an authorization scope plus one target file per model
@@ -1874,25 +1875,29 @@ to paste into a document.
 dottore coverage                      # every axis, with the gaps named
 dottore coverage --framework iopc     # one framework
 dottore coverage --framework aisvs    # OWASP AISVS, one line per level
+dottore coverage --framework attack   # MITRE ATT&CK Enterprise tactics, with the techniques behind them
+dottore coverage --navigator-layer battery.json   # also write the battery as an ATT&CK Navigator layer
 dottore coverage --suite nova-iopc    # what a single suite covers
 dottore coverage --json               # for a dashboard or a report generator
 dottore coverage --no-gaps            # the figures alone, no list of uncovered codes
 ```
 
 `--gaps`, the default, lists the codes not covered in the three groups below; `--no-gaps` prints
-only the figures (the block that follows, without the lists), and with `--json` leaves each
-axis's `missing`, `out_of_reach` and `not_tested_by_design` lists out.
+only the figures (the block that follows, without the lists; the ATT&CK technique list stays,
+it is the detail behind a figure, not a gap list), and with `--json` leaves each axis's
+`missing`, `out_of_reach` and `not_tested_by_design` lists out.
 
 ```
 Battery coverage (78 specs, no scan performed)
 
-  OWASP LLM Top 10 (2025)              8/10   80%
-  MITRE ATLAS tactics (2026.09)       13/16   81%
-  IoPC techniques (live-2026-09-19)   27/30   90%
-  IoPC impacts (live-2026-09-19)      23/23  100%
-  OWASP AISVS 1.0, level 1             5/51    9%
-  OWASP AISVS 1.0, level 2            12/95   12%
-  OWASP AISVS 1.0, level 3             0/45    0%
+  OWASP LLM Top 10 (2025)                    8/10   80%
+  MITRE ATLAS tactics (2026.09)             13/16   81%
+  IoPC techniques (live-2026-09-19)         27/30   90%
+  IoPC impacts (live-2026-09-19)            23/23  100%
+  OWASP AISVS 1.0, level 1                   5/51    9%
+  OWASP AISVS 1.0, level 2                  12/95   12%
+  OWASP AISVS 1.0, level 3                   0/45    0%
+  MITRE ATT&CK Enterprise tactics (v20.0)    8/15   53%
 
   Out of reach for a black-box runtime scanner, OWASP LLM Top 10 (2025):
     LLM03
@@ -1943,6 +1948,19 @@ them: re-running the same battery after a model change and comparing the runs wi
 diff` (C3.2, C11.1.2; `diff` compares verdicts per spec id and does not check that both runs used
 the same spec content, so pin the battery version beside the runs), or using a campaign's stored
 probes as test traffic for the operator's logging and alerting (C12.1, C12.2).
+
+**ATT&CK Enterprise counts tactics from observed techniques only.** A spec's `mitre_attack`
+block (docs/17) lists techniques with an `occurrence`: `observed` when the technique's behaviour is
+the target's own action or reply during the test (a mock cron entry written, a credential store
+read, an injected instruction obeyed), `capability-only` when the target only produced an artefact
+that would enable it elsewhere (malware source, a phishing lure). Only observed techniques light
+a tactic; capability-only ones are printed in the technique list under the figures (with
+`--framework all` or `attack`) and counted nowhere. The universe is ATT&CK Enterprise **v20.0**
+(2026-10-13), pinned as data and refreshed by `scripts/attack_universe.py`; a retired ID
+(`T1562`, revoked into `T1685` in v20) is a lint error naming the replacement, and `dottore
+coverage` reports it under `off_universe` rather than counting it. `--navigator-layer PATH`
+writes the same specs as an ATT&CK Navigator layer (format 4.5), one cell per tactic a technique
+is drawn under, the declaring specs in each cell's comment.
 
 Read the 17 covered requirements with four cautions. **Nine** of them (C5.2.2, C5.2.4, C8.1.3,
 C9.3.5, C9.3.6, C9.5.2, C9.5.3, C9.5.4, C10.4.2) rest only on specs that need something the
@@ -2652,7 +2670,9 @@ whose every attempt was cut with a canary in each exits 2, not 3.
 ## 10. Reports, evidence and reproducibility
 
 - **Formats.** `-oJ` JSON, `-oH` HTML (a complete UTF-8 document), `-oS` SARIF (for
-  code-scanning), `-oX` JUnit (for CI test reporting), `-oA <prefix>` writes all four. In
+  code-scanning), `-oX` JUnit (for CI test reporting), `-oA <prefix>` writes all four; `-oN`
+  writes an ATT&CK Navigator layer beside them (never part of `-oA`: a layer holds no finding,
+  no evidence and no verdict detail, docs/17). In
   SARIF a result's `kind` says what was concluded: `fail` (with a level from the band, at most
   `warning` for a fail that needs review unless the run passed `--include-needs-review`, since
   2026-10-11, §11), `pass`,
@@ -2720,9 +2740,13 @@ whose every attempt was cut with a canary in each exits 2, not 3.
 - **Framework editions.** OWASP renumbers and ATLAS renames between releases, so the machine
   formats say which edition a code belongs to. The JSON summary carries an `edition` on each
   coverage axis (`summary.coverage.owasp.edition` is `2025`, `atlas` is `2026.09`, `iopc` is
-  `live-2026-09-19`); the SARIF run carries `framework_editions` in its `properties`; and every
-  JUnit test suite carries `edition.owasp_llm_top10`, `edition.mitre_atlas`,
-  `edition.nova_iopc` and `edition.owasp_aisvs` properties (AISVS `1.0`).
+  `live-2026-09-19`, `attack` is `20.0` with its `domain`); the SARIF run carries
+  `framework_editions` in its `properties`; and every JUnit test suite carries
+  `edition.owasp_llm_top10`, `edition.mitre_atlas`, `edition.nova_iopc`, `edition.owasp_aisvs`
+  (AISVS `1.0`) and `edition.mitre_attack_enterprise` (`20.0`) properties. The JSON
+  `summary.coverage.attack` block (since 2026-10-24, optional in `report-1.0`) carries the tactic
+  names exercised, the technique IDs the exercised specs declare, and the figure; the HTML and
+  the terminal print the same line.
 - **The scope a run went out under.** Every report names the authorization record of the
   invocation that wrote it, by the SHA-256 of the scope text it parsed: `run.scope_sha256` in
   JSON, `scope_sha256` in the SARIF run `properties`, a `scope_sha256` property on every JUnit
@@ -2866,7 +2890,7 @@ not checked. See [`06-extensibility-suites.md`](06-extensibility-suites.md),
 | `error: the run store at <path> failed: <reason>` (exit 3) | Another sqlite3 error while the run used the store (a full disk, a corrupted file). Fix the cause, then `--resume` the run if it had started its attack traffic. |
 | `error: cannot write evidence under <root>: <reason>` (exit 3, before anything is sent) | `--evidence-root` is a regular file (`it is not a directory`), lies under one, or the run cannot create or write `<root>/<run-id>/attempts` (`Permission denied`, a full disk). Fix the path or its permissions; nothing was sent and nothing counts against a ceiling. Until 2026-10-12 the first attempt's write found it, after its batch was paid for. |
 | `error: unexpected <Class>: <message> (an internal error, not a scan result; ...)` (exit 3) | An exception no command expected: a bug in dottore, or a condition it does not handle yet. Rerun the same command as `dottore -v <command> ...` (or `run ... -v`) to print the traceback, masked as every error is, and report it with that output. The exit code is 3, never 1, so a gate does not read it as findings below `--fail-on`. |
-| `error: the <format> report would overwrite <input>` (exit 3, before anything is sent) | A report path (`-oJ`, `-oH`, `-oS`, `-oX`, or an `-oA` expansion) is the `--scope` file, a target file, the `--judge` file, the fleet file, the run store (or its `-wal`/`-shm`/`-journal`), or a file of the spec path, through a symlink, a hard link or another spelling on a case-insensitive volume included. Write the report elsewhere. |
+| `error: the <format> report would overwrite <input>` (exit 3, before anything is sent) | A report path (`-oJ`, `-oH`, `-oS`, `-oX`, `-oN`, or an `-oA` expansion) is the `--scope` file, a target file, the `--judge` file, the fleet file, the run store (or its `-wal`/`-shm`/`-journal`), or a file of the spec path, through a symlink, a hard link or another spelling on a case-insensitive volume included. Write the report elsewhere. |
 | `error: the <format> report would write inside the evidence store, in <dir>: ...` (exit 3, before anything is sent) | The report path is inside a run's directory under `--evidence-root`, where only the run's own artifacts belong. Write it beside them (`<evidence-root>/report.json` is fine) or elsewhere. |
 | `note: there is no specs/ directory here, so this reads the built-in battery inside the installed package: <path> ...` (or `note: this is Il Dottore's own checkout, whose specs/ holds the unit contracts, so ...`; under GitHub Actions also a `::warning::` line) | No `--spec-path` and no `specs/` in the working directory (or its root is Il Dottore's own checkout), so the command reads the built-in battery the package carries. Pass `--spec-path` to read your own pack. `dottore lint` does not fall back: it refuses with `spec path not found: specs` (exit 3). |
 | `error: spec path not found: <path>. Pass --spec-path <dir>; ...` (exit 3) | No spec path was given and there is neither a `specs/` directory where the command runs nor a built-in battery in the installed package: an install of a commit from before u12 A-84, whose wheel carried neither the battery nor the schema a spec is validated against (passing a checkout's `specs/` to it failed on the schema, `unexpected FileNotFoundError: ... attack-spec.schema.json`). Install a later commit (INSTALL.md). `registry ls` and `describe` say the same; `coverage` says to pass the spec path to it, `dottore coverage <dir>`. A `--spec-path` given that does not exist is the next row. It read `1 spec file(s) failed to load ...: ?: path not found: specs` until 2026-10-12, and `fleet --run` had no `--spec-path` at all. |

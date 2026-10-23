@@ -13,6 +13,20 @@
   (2026-10-01). Mapped by falsification only: a failing spec is evidence a control is absent or
   ineffective, a passing one never verifies it (clause A-28). CC-BY-SA 4.0, so this repository
   reproduces IDs, levels and section headings and never the requirement text.
+- MITRE ATT&CK Enterprise v20.0 (2026-10-13): https://attack.mitre.org/ , STIX 2.1 bundle
+  `enterprise-attack/enterprise-attack-20.0.json` from https://github.com/mitre-attack/attack-stix-data
+  (SHA-256 `81113ba98afa2928f3dcff62022539f7ce30c315c32e14422f11ff95ce534352`), derived into
+  `src/ildottore/shared/data/attack-enterprise-20.0.json` by `scripts/attack_universe.py` on
+  2026-10-24. A fifth coverage axis (`docs/17`): tactics from techniques a target is *observed*
+  performing. IDs, names and tactic memberships only, under MITRE's terms of use
+  (https://attack.mitre.org/resources/legal-and-branding/terms-of-use/).
+- ATT&CK Navigator (layer format 4.5, Navigator 5.3.2): https://mitre-attack.github.io/attack-navigator/ .
+  `dottore coverage --navigator-layer` and `dottore run -oN` write layers it opens.
+- Feedly TI Essentials, *Claude skill 04: Map ATT&CK techniques* (read 2026-10-24):
+  https://feedly.com/ti-essentials/posts/claude-skill-04-map-att-and-ck-techniques . The mapping
+  method (release check, ID verification against the bundle, retired IDs with replacement,
+  tactic restriction, Navigator output) was borrowed; its report-oriented occurrence statuses
+  (`reported`, `source-assessed`) and confidence were not, since a harness is its own observer.
 
 ## Tools (design references)
 - NVIDIA garak (LLM vuln scanner; 50+ probe modules, run-all default,

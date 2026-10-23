@@ -456,6 +456,7 @@ def test_coverage_numerators_are_subsets_of_their_denominators(
 
     from ildottore.reporting.summary import build_battery_coverage
     from ildottore.shared.aisvs import aisvs_universe
+    from ildottore.shared.attack import attack_tactic_universe
     from ildottore.shared.frameworks import ATLAS_TACTIC_UNIVERSE, OWASP_LLM_UNIVERSE
     from ildottore.shared.iopc import IOPC_IMPACT_UNIVERSE, IOPC_TECHNIQUE_UNIVERSE
 
@@ -467,6 +468,7 @@ def test_coverage_numerators_are_subsets_of_their_denominators(
         "aisvs_l1": aisvs_universe(1),
         "aisvs_l2": aisvs_universe(2),
         "aisvs_l3": aisvs_universe(3),
+        "attack": attack_tactic_universe(),
     }
     coverage = build_battery_coverage(list(specs_by_id.values()))
     assert {a.key for a in coverage.axes} == set(pinned), "an axis appeared or vanished"
@@ -543,3 +545,28 @@ def test_shipped_nist_mappings_are_well_formed(specs_by_id: dict[str, AttackSpec
         for token in nist_subcategories(spec.nist_ai_rmf)
     }
     assert functions <= {"GOVERN", "MAP", "MEASURE", "MANAGE"}, functions
+
+
+def test_every_declared_attack_technique_is_current_and_declared_once(
+    specs_by_id: dict[str, AttackSpec],
+) -> None:
+    """A shipped spec never names a retired or unknown ATT&CK ID, nor the same one twice.
+
+    The linter refuses both, but the battery is read by ``dottore coverage`` without lint,
+    and a stale ID is the one slip a release bump makes likely: v20.0 revoked ``T1562`` and
+    re-homed the log-clearing sub-techniques of ``T1070``. The pin keeps the retired set for
+    exactly this test.
+    """
+
+    from ildottore.shared.attack import attack_techniques, unknown_attack_ids
+
+    current = attack_techniques()
+    for spec in specs_by_id.values():
+        if spec.mitre_attack is None:
+            continue
+        ids = [m.id for m in spec.mitre_attack.techniques]
+        assert unknown_attack_ids(ids) == [], spec.id
+        assert len(ids) == len(set(ids)), f"{spec.id}: a technique is declared twice"
+        for mapping in spec.mitre_attack.techniques:
+            for tactic in mapping.tactics or ():
+                assert tactic in current[mapping.id].tactics, f"{spec.id}: {mapping.id} {tactic}"

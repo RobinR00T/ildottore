@@ -30,7 +30,14 @@ from ildottore.shared.aisvs import (
     AISVS_VERSION,
     aisvs_universe,
 )
-from ildottore.shared.enums import SETUP_NOT_REACHED, VerdictStatus
+from ildottore.shared.attack import (
+    ATTACK_VERSION,
+    attack_tactic_universe,
+    attack_techniques,
+    restrict_tactics,
+    tactic_name,
+)
+from ildottore.shared.enums import SETUP_NOT_REACHED, AttackOccurrence, VerdictStatus
 from ildottore.shared.frameworks import (
     ATLAS_MATRIX_RELEASE,
     ATLAS_OUT_OF_MATRIX,
@@ -82,6 +89,7 @@ __all__ = [
     "build_battery_coverage",
     "build_run_summary",
     "declared_attempt_ids",
+    "finding_exercised",
     "finding_state",
     "operator_declarations",
     "pct_display",
@@ -189,6 +197,15 @@ class Coverage:
     #: are outside their pinned universe. A run does not lint, so without this the numerator
     #: shrinks and the report reads as if nothing were missing.
     off_universe: tuple[tuple[str, str, str], ...] = ()
+    #: distinct ATT&CK Enterprise tactic names exercised, from ``observed`` techniques only
+    #: (``shared.attack``): a ``capability-only`` entry is in ``attack_techniques`` and in no
+    #: numerator. Pinned to one release like the other axes; the edition travels on the wire.
+    attack_tactics: tuple[str, ...] = ()
+    attack_exercised: int = 0
+    attack_total: int = 0
+    attack_pct: float = 0.0
+    #: distinct ATT&CK technique IDs the exercised specs declare, observed or not, sorted.
+    attack_techniques: tuple[str, ...] = ()
     #: Specs that produced a finding but no reply that could be scored: nothing sent
     #: (policy-blocked, or skipped for a capability the target does not declare), or every send
     #: ended in an environment error or was refused by the provider's input filter (OD-41), or
@@ -392,6 +409,20 @@ def _build_comparison(
 _UNSENT: tuple[str, ...] = ("setup_not_seeded", "setup_not_delivered")
 
 
+def finding_exercised(finding: Finding) -> bool:
+    """True when at least one attempt of the finding exercised the target (see ``_exercised``)
+    and the finding is not one the runner marked as sent nothing.
+
+    The per-finding test the coverage figures use; a reporter that colours by what a run did
+    (the Navigator layer) applies the same one, per finding, so a spec exercised on one target
+    and blocked on another is treated the same way in the figure and in the layer.
+    """
+
+    if (finding.reasoning or "").startswith(_UNSENT):
+        return False
+    return any(_exercised(a) for a in finding.attempts)
+
+
 def _exercised(attempt: Attempt) -> bool:
     """True when the attempt reached the target and its scene reached the model.
 
@@ -435,6 +466,8 @@ def _build_coverage(
     atlas_seen: set[str] = set()
     iopc_tech_seen: set[str] = set()
     iopc_impact_seen: set[str] = set()
+    attack_seen: set[str] = set()
+    attack_declared: dict[str, tuple[str, set[str]]] = {}
     off_universe: list[tuple[str, str, str]] = []
     not_exercised: list[str] = []
     specs_pass = 0
@@ -461,9 +494,7 @@ def _build_coverage(
         # where the untrusted content was, was never fetched (delta audit of OD-18 A).
         # A spec the seeding gate stopped on a resume keeps the attempts a stored run had sent,
         # unscored: they do not exercise it (delta audit of OD-18 B).
-        if not any(_exercised(a) for a in finding.attempts) or (finding.reasoning or "").startswith(
-            _UNSENT
-        ):
+        if not finding_exercised(finding):
             not_exercised.append(spec.id)
             continue
 
@@ -490,8 +521,10 @@ def _build_coverage(
                     iopc_impact_seen.add(code)
                 else:
                     off_universe.append((spec.id, "iopc.impacts", code))
+        _collect_attack(spec, attack_seen, attack_declared, off_universe)
 
     owasp_exercised = len(owasp_seen)
+    attack_total = len(attack_tactic_universe())
     atlas_exercised = len(atlas_seen)
     total = len(findings)
     return Coverage(
@@ -520,6 +553,11 @@ def _build_coverage(
         iopc_impacts_pct=(
             len(iopc_impact_seen) / len(IOPC_IMPACT_UNIVERSE) if IOPC_IMPACT_UNIVERSE else 0.0
         ),
+        attack_tactics=tuple(t for t in attack_tactic_universe() if t in attack_seen),
+        attack_exercised=len(attack_seen),
+        attack_total=attack_total,
+        attack_pct=(len(attack_seen) / attack_total if attack_total else 0.0),
+        attack_techniques=tuple(sorted(attack_declared, key=lambda tid: _natural((tid,)))),
         off_universe=tuple(sorted(set(off_universe))),
         not_exercised=tuple(sorted(set(not_exercised))),
     )
@@ -711,6 +749,13 @@ class BatteryCoverage:
     #: numerator and no spec count. Same reasoning as ``off_universe``, one level up: a spec
     #: whose framework value fails the schema used to vanish from "75 specs" with rc 0.
     unloaded: tuple[tuple[str, str], ...] = ()
+    #: ``(technique_id, name, occurrence, spec_ids)`` for every ATT&CK technique the specs
+    #: declare, current in the pin, sorted by ID. The ``attack`` axis counts **tactics** and
+    #: only from ``observed`` entries; this is the technique-level detail behind it, with the
+    #: ``capability-only`` entries listed so a reader sees what the battery can elicit but
+    #: never counts (``shared.attack`` says why). A technique declared observed by one spec and
+    #: capability-only by another is listed once, as observed.
+    attack_techniques: tuple[tuple[str, str, str, tuple[str, ...]], ...] = ()
 
 
 def _natural(entry: tuple[str, ...]) -> list[object]:
@@ -798,9 +843,13 @@ def build_battery_coverage(specs: Iterable[AttackSpec]) -> BatteryCoverage:
     tech: set[str] = set()
     impact: set[str] = set()
     aisvs: set[str] = set()
+    attack: set[str] = set()
+    # technique id -> (occurrence, spec ids); observed wins over capability-only.
+    declared: dict[str, tuple[str, set[str]]] = {}
     off: list[tuple[str, str, str]] = []
 
     for spec in spec_list:
+        _collect_attack(spec, attack, declared, off)
         if spec.owasp in OWASP_LLM_UNIVERSE:
             owasp.add(spec.owasp)
         elif spec.owasp not in OWASP_RAI_UNIVERSE:
@@ -869,6 +918,58 @@ def build_battery_coverage(specs: Iterable[AttackSpec]) -> BatteryCoverage:
                 )
                 for level in AISVS_LEVELS
             ),
+            _axis(
+                "attack",
+                f"MITRE ATT&CK Enterprise tactics (v{ATTACK_VERSION})",
+                attack_tactic_universe(),
+                attack,
+            ),
         ),
         off_universe=tuple(sorted(set(off))),
+        attack_techniques=tuple(
+            (tid, attack_techniques()[tid].name, occurrence, tuple(sorted(spec_ids)))
+            for tid, (occurrence, spec_ids) in sorted(
+                declared.items(), key=lambda kv: _natural((kv[0],))
+            )
+        ),
     )
+
+
+def _collect_attack(
+    spec: AttackSpec,
+    tactics: set[str],
+    declared: dict[str, tuple[str, set[str]]],
+    off: list[tuple[str, str, str]],
+) -> None:
+    """Fold one spec's ``mitre_attack`` block into the tactic numerator and the technique list.
+
+    Only ``observed`` techniques reach the numerator, and only under the tactics they sit
+    under in the pin (narrowed by the spec's ``tactics`` restriction when it gives one). A
+    retired or unknown ID, and a restriction naming a tactic the technique is not under, are
+    reported as off-universe rather than counted: the linter refuses both, coverage does not
+    lint (A-13). A ``capability-only`` entry is listed in ``attack_techniques`` and counts for
+    nothing, which is the one place this axis is stricter than the IoPC one: the battery can
+    make a target *write* ransomware without any tactic of the ransomware having happened.
+    """
+
+    if spec.mitre_attack is None:
+        return
+    current = attack_techniques()
+    for mapping in spec.mitre_attack.techniques:
+        technique = current.get(mapping.id)
+        if technique is None:
+            off.append((spec.id, "mitre_attack.techniques", mapping.id))
+            continue
+        occurrence, spec_ids = declared.get(mapping.id, (str(mapping.occurrence), set()))
+        if mapping.occurrence is AttackOccurrence.OBSERVED:
+            occurrence = str(AttackOccurrence.OBSERVED)
+        spec_ids.add(spec.id)
+        declared[mapping.id] = (occurrence, spec_ids)
+        if mapping.occurrence is not AttackOccurrence.OBSERVED:
+            continue
+        kept, rejected = restrict_tactics(technique, mapping.tactics)
+        off.extend(
+            (spec.id, f"mitre_attack.techniques[{mapping.id}].tactics", shortname)
+            for shortname in rejected
+        )
+        tactics.update(tactic_name(shortname) for shortname in kept)

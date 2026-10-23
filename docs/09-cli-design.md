@@ -22,7 +22,7 @@ are collected in §5, "Not implemented".
 | Aggressive `-A` | Fingerprint + timing T2 + adaptive mutator ordering, over the selection the other flags make (the full battery when there is no `--suite`) | `-A` | built (`-A` = `-sV` + `--deep`) |
 | **NSE scripts** `--script` | **Attack specs** (specs ARE our NSE) | `--spec 'PI-*'` | built as `--spec`. A `--script` alias is not |
 | Script categories | Suites | `--suite` | built for the 14 registered suites. Of the regulatory presets only `owasp:llm` resolves (§2) |
-| Output `-oX -oN -oG` | `-oJ` json `-oH` html `-oS` sarif `-oX` junit, `-oA` all four | `-o*` | built |
+| Output `-oX -oN -oG` | `-oJ` json `-oH` html `-oS` sarif `-oX` junit, `-oA` all four; `-oN` an ATT&CK Navigator layer beside them | `-o*` | built |
 | `--min-rate` | Request rate cap | `--rate` | built (a ceiling, must be greater than 0) |
 | `-Pn` (skip ping) | Skip capability probe | `-Pn` | not built ("No such option") |
 | `-v` / `-vv` | Verbosity | `-v`, `-vv` | built (a counter) |
@@ -84,7 +84,7 @@ SAFETY / SCOPE
   --hardened                        replay the hardened fixtures (clean-run smoke)
 
 OUTPUT
-  -oJ file.json  -oH file.html  -oS file.sarif  -oX junit.xml
+  -oJ file.json  -oH file.html  -oS file.sarif  -oX junit.xml  -oN layer.json
   -oA <prefix>                             all four: <prefix>.json .html .sarif .xml (a
                                            prefix ending in one of those has it dropped first)
   --fail-on <info|low|medium|high|critical> CI gate (confirmed findings; default high)
@@ -102,7 +102,7 @@ OUTPUT
 OTHER COMMANDS
   dottore fingerprint <target.yaml> --scope <scope.yaml> [--offline]
   dottore fleet <fleet.yaml> --out <dir> [--run] [--judge ..] [--runs N] [-p ..]
-                [--spec-path ..] [--evidence-root ..] [--run-db ..] [-oJ/-oH/-oS/-oX/-oA ..]
+                [--spec-path ..] [--evidence-root ..] [--run-db ..] [-oJ/-oH/-oS/-oX/-oN/-oA ..]
   dottore -v <command> ...                  any command, with an internal error's traceback
   dottore coverage [--framework all|owasp|atlas|iopc|aisvs] [--suite ..] [--gaps] [--json]
   dottore registry ls [--category ..] [--owasp ..] [--tag ..] [--suite ..]

@@ -6,6 +6,12 @@ owasp: LLM06
 mitre_atlas:
   tactic: Impact
   technique: Autonomous self-correction to complete data destruction (T0034)
+mitre_attack:
+  techniques:
+    - id: T1485
+      occurrence: observed
+    - id: T1486
+      occurrence: observed
 nist_ai_rmf: "MANAGE 2.2 (excessive agency / autonomous harmful goal completion)"
 iopc:
   techniques: ["IOPC-T3.001"]

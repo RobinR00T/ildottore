@@ -29,6 +29,7 @@ from ildottore.reporting.summary import (
     operator_declarations,
     pct_display,
 )
+from ildottore.shared.attack import ATTACK_VERSION
 from ildottore.shared.enums import ScanBand
 from ildottore.shared.iopc import IOPC_IMPACTS, IOPC_TAXONOMY_VERSION
 from ildottore.shared.models import AttackSpec, Finding, Target
@@ -197,6 +198,12 @@ def coverage_lines(
             f"({pct_display(cov.iopc_techniques_exercised, cov.iopc_techniques_total)}) · "
             f"IoPC impacts: {cov.iopc_impacts_exercised}/{cov.iopc_impacts_total} "
             f"({pct_display(cov.iopc_impacts_exercised, cov.iopc_impacts_total)})"
+        ),
+        (
+            f"Coverage - MITRE ATT&CK Enterprise tactics (v{ATTACK_VERSION}): "
+            f"{cov.attack_exercised}/{cov.attack_total} "
+            f"({pct_display(cov.attack_exercised, cov.attack_total)}), "
+            f"from {len(cov.attack_techniques)} declared technique(s), observed ones counted"
         ),
         # The harm classes in words. A bare "IOPC-R012" tells an operator nothing; the point
         # of carrying the impact axis is that this line is readable without the taxonomy open.

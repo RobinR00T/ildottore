@@ -35,10 +35,11 @@ from ildottore.shared import (
     Severity,
     TargetType,
 )
-from ildottore.shared.enums import Capability
+from ildottore.shared.enums import AttackOccurrence, Capability
 from ildottore.shared.models import (
     Attack,
     AttackSpec,
+    AttackTechniqueMapping,
     Budget,
     Capabilities,
     EvaluatorConfig,
@@ -46,6 +47,7 @@ from ildottore.shared.models import (
     Fixtures,
     IoPC,
     MitreAtlas,
+    MitreAttack,
     Sampling,
     Scoring,
     Setup,
@@ -121,6 +123,11 @@ _NODE_MODEL_PAIRS: dict[str, tuple[dict[str, Any], type[BaseModel]]] = {
         FixtureCase,
     ),
     "mitre_atlas": (SCHEMA["properties"]["mitre_atlas"], MitreAtlas),
+    "mitre_attack": (SCHEMA["properties"]["mitre_attack"], MitreAttack),
+    "mitre_attack.techniques.items": (
+        SCHEMA["properties"]["mitre_attack"]["properties"]["techniques"]["items"],
+        AttackTechniqueMapping,
+    ),
     "iopc": (SCHEMA["properties"]["iopc"], IoPC),
 }
 
@@ -149,6 +156,12 @@ _ENUM_PAIRS: dict[str, tuple[list[str], type[Any]]] = {
         EvaluatorType,
     ),
     "evaluator_logic": (SCHEMA["properties"]["evaluator_logic"]["enum"], EvaluatorLogic),
+    "mitre_attack.techniques.occurrence": (
+        SCHEMA["properties"]["mitre_attack"]["properties"]["techniques"]["items"]["properties"][
+            "occurrence"
+        ]["enum"],
+        AttackOccurrence,
+    ),
 }
 
 

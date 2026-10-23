@@ -19,7 +19,9 @@ mapping the code checks).
 
 - **78 declarative attack specs across 14 suites** covering the OWASP LLM Top 10, MITRE
   ATLAS, agentic/OWASP-Agents-2026 abuse and the Nova IoPC taxonomy, plus the OWASP AISVS
-  controls a failure is evidence against (`dottore coverage --framework aisvs`).
+  controls a failure is evidence against (`dottore coverage --framework aisvs`) and the MITRE
+  ATT&CK Enterprise v20.0 techniques an agent is observed performing (`--framework attack`,
+  `--navigator-layer` for the ATT&CK Navigator, `-oN` on a run).
   `dottore registry ls` lists them all.
 - **Fingerprint** a target's model + guardrails before attacking (`-sV`).
 - **Multi-turn** attacks (Crescendo, Linear, Sequential, Bad-Likert, Tree) whose turns are
@@ -121,6 +123,7 @@ docs/
   14-deepteam-gap-analysis.md   # coverage map vs the DeepTeam taxonomy
   15-nova-iopc-gap-analysis.md  # coverage map vs the Nova IoPC taxonomy
   16-live-validation.md         # live-run runbook: what is verified, what it costs
+  17-mitre-attack-mapping.md    # coverage map vs MITRE ATT&CK Enterprise v20.0, Navigator layers
   RESPONSIBLE-USE.md            # authorization + safe-by-design charter
   REFERENCES.md                 # sources (OWASP, garak, PyRIT, promptfoo, vendors)
   adr/                          # architecture decision records
