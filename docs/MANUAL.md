@@ -1205,6 +1205,12 @@ type it (`dottore run ...`). `dottore target.yaml --scope scope.yaml` is a usage
 and exits; `--help` after `dottore` or
 after any command prints its options, the list `dottore(1)` gives per command.
 
+On an interactive terminal the root help (`dottore --help`, a bare `dottore`) comes under the
+Il Dottore logo: in 24-bit colour when the terminal declares it (`COLORTERM` is `truecolor` or
+`24bit`, `NO_COLOR` unset, `TERM` not `dumb`), plain ASCII otherwise. Off a terminal, which is
+where a script, a pipe or a pager reads the help, nothing is added, so `dottore --help | grep`
+sees the help alone; a command's help (`dottore run --help`) never carries it.
+
 ### `dottore run`, run a campaign
 
 ```

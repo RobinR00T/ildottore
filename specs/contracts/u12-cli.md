@@ -24,6 +24,10 @@ scriptable exit code. Commands: `run` (designed as the default when a target is 
 it must be typed: `dottore target.yaml` answers "No such command"), `fingerprint` (`-sV`),
 `lint` (mounted from u02), `registry`, `describe`, `new-spec`, `replay`. The **scope/allowlist
 gate is never bypassable**: not by `-A`, not by any flag (`docs/09 §5`, `docs/01 §6`).
+The root help (`dottore --help`, a bare `dottore`) carries the Il Dottore logo above it on an
+interactive terminal only (`cli/banner.py`: colour with `COLORTERM` `truecolor`/`24bit`,
+`NO_COLOR` unset and `TERM` not `dumb`, plain otherwise); off a terminal and in every
+command's own help the output is unchanged, so scripts that read the help see no art.
 
 ## §3 Dependencies & interface contracts
 - Depends on **all** units (W5 integration). Constructs concretes and injects them **only**

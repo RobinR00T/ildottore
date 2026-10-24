@@ -5,6 +5,32 @@ The carryover ledger. Every agent session updates this so context survives even 
 newest merge on top: a branch's entries land together when it merges, so the dates of
 neighbouring entries can interleave (an older branch merged later sits above a newer one).
 
+## State, 2026-10-24: the logo above the root help (`feat/banner`)
+
+- **What.** As elSereno prints its night watchman above its help, `dottore --help` and a bare
+  `dottore` print the Il Dottore logo above the root help on an interactive terminal:
+  `cli/banner.py` (`Env`, `show`, `env_for`, `plain`, `ansi`, `write`), the art in
+  `cli/banner.txt` and `cli/banner_ansi.txt` (56 columns, 31 lines; a caricature of the author
+  drawn as vector shapes with Pillow, sampled cell by cell with the feature colour winning over
+  the skin, in a one-off script kept outside the repository), the hook in
+  `_MaskedGroup.format_help` for the root context only. The decision is elSereno's: never off a
+  terminal, colour only with `COLORTERM` `truecolor`/`24bit`, `NO_COLOR` unset and `TERM` not
+  `dumb`. Written straight to stdout before `super().format_help`: Typer prints the help with
+  rich as that method runs and echoes click's formatter text after it, and a bare `dottore`
+  drops that text (the first cut put the logo under the help, and nowhere on a bare `dottore`).
+- **Verified.** `tests/cli/test_banner.py` (parity of the two copies, ASCII and width, the
+  `show` table, `env_for` on a closed stream, the four CLI paths through `CliRunner` with the
+  terminal faked), and the six cases on a real pseudo-terminal (`pty.fork`, outside the sandbox,
+  which has no pty devices): colour, bare, no `COLORTERM`, `NO_COLOR`, `TERM=dumb`, `run --help`.
+- **Judging rules 7 re-pinned** (`7cbd07d44c56…`): `cli/app.py` and `cli/banner.py` are in the
+  entry point's import closure, so they are covered; the two art files are left out by name
+  (`DATA_EXEMPT`, bytes no verdict sees), since `.txt` as a data suffix would have made a stray
+  `notes.txt` a change of the judging code. No verdict path touched.
+- **Docs.** `README.md`, `USAGE.md`, `docs/MANUAL.md` §5, `man/man1/dottore.1` (`--help`),
+  `CHANGELOG.md`, `specs/contracts/u12-cli.md` §2.
+- **Gates.** `make gates` green on 2026-10-24 at 11:35 (9 min 39 s): coverage 97.69 %, self-scan 0
+  high/critical, bandit and pip-audit clean.
+
 ## State, 2026-10-24: MITRE ATT&CK Enterprise v20.0 as a fifth axis (u02 A-95, `feat/mitre-attack-axis`)
 
 - **What.** Daniel asked for the Feedly *Map ATT&CK Techniques* Claude skill to be applied to Il

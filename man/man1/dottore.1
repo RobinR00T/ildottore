@@ -357,7 +357,21 @@ also prints the resolved plan. A counter, repeatable (-vv).
 Print the version and the judging rules (dottore 0.1.0 (judging rules 7)) and exit.
 .TP
 .B --help
-Show the help of dottore or of the command it follows, and exit.
+Show the help of dottore or of the command it follows, and exit. On an interactive terminal the
+root help (also a bare
+.BR dottore )
+comes under the Il Dottore logo, in 24-bit colour when
+.B COLORTERM
+is
+.I truecolor
+or
+.IR 24bit ,
+.B NO_COLOR
+is unset and
+.B TERM
+is not
+.IR dumb ,
+plain ASCII otherwise; off a terminal (a pipe, a pager, a script) the logo is not printed.
 .SH "OPTIONS OF THE OTHER COMMANDS"
 As each
 .B dottore \fICOMMAND\fR --help

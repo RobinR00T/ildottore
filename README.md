@@ -55,6 +55,9 @@ Scanning something real, with a bill attached?
 [`docs/16-live-validation.md`](docs/16-live-validation.md) is the runbook: what is and is not
 verified today, what it costs (measured, not guessed), and the order to run it in.
 
+On a terminal, `dottore --help` prints the logo above the help (24-bit colour where
+`COLORTERM` declares it, plain with `NO_COLOR` or `TERM=dumb`); in a pipe or a script, never.
+
 New here? Read [`USAGE.md`](USAGE.md) (practical guide) then [`examples/`](examples/)
 (copy-pasteable scenarios, from "no server, no key" to a full fleet). Full reference:
 [`docs/MANUAL.md`](docs/MANUAL.md). Install options, a runtime install from a commit with no
