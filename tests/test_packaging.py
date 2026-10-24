@@ -50,6 +50,13 @@ def _read_by_the_program() -> list[Path]:
     return sorted({Path(f).resolve() for f in files} | {ATTACK_SPEC_SCHEMA.resolve()})
 
 
+def _shipped_with_the_cli() -> list[Path]:
+    """The logo ``dottore --help`` prints on a terminal: read by the program, outside the digest
+    (it judges nothing)."""
+
+    return [PACKAGE / "cli" / "banner.txt", PACKAGE / "cli" / "banner_ansi.txt"]
+
+
 def test_the_battery_and_the_schema_are_inside_the_package() -> None:
     assert package_path() == PACKAGE
     assert BATTERY == PACKAGE / "battery"
@@ -92,7 +99,8 @@ def test_gitignore_matches_none_of_them() -> None:
 
     if not (REPO / ".git").exists():
         pytest.skip("not a git checkout (an sdist)")
-    names = "\n".join(str(path.relative_to(REPO)) for path in _read_by_the_program()) + "\n"
+    shipped = _read_by_the_program() + _shipped_with_the_cli()
+    names = "\n".join(str(path.relative_to(REPO)) for path in shipped) + "\n"
     ignored = subprocess.run(  # noqa: S603 - git on this checkout, fixed arguments
         ["git", "-C", str(REPO), "check-ignore", "--no-index", "--stdin"],  # noqa: S607
         input=names,
@@ -130,7 +138,8 @@ def _build(kind: str, project: Path, out: Path) -> Path:
 
 
 def _expected_members() -> set[str]:
-    return {f"ildottore/{path.relative_to(PACKAGE).as_posix()}" for path in _read_by_the_program()}
+    shipped = _read_by_the_program() + _shipped_with_the_cli()
+    return {f"ildottore/{path.relative_to(PACKAGE).as_posix()}" for path in shipped}
 
 
 def _dottore(site: Path | None, cwd: Path, *argv: str) -> subprocess.CompletedProcess[str]:

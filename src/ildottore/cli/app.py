@@ -25,13 +25,14 @@ from collections.abc import Callable, Mapping, Sequence, Set
 from functools import partial
 from itertools import chain
 from pathlib import Path
-from typing import Annotated, Any, NoReturn
+from typing import IO, Annotated, Any, NoReturn
 
 import typer
 from typer.core import TyperGroup, TyperOption
 
 from ildottore import __version__
 from ildottore.adapters.base import AdapterError
+from ildottore.cli import banner, wiring
 from ildottore.cli import calibrate as calibrate_mod
 from ildottore.cli import coverage as coverage_mod
 from ildottore.cli import describe as describe_mod
@@ -43,7 +44,6 @@ from ildottore.cli import registry as registry_mod
 from ildottore.cli import render_media as render_media_mod
 from ildottore.cli import replay as replay_mod
 from ildottore.cli import run as run_mod
-from ildottore.cli import wiring
 from ildottore.cli.exit_codes import ExitCode
 from ildottore.cli.flags import DEFAULT_TEMPLATE
 from ildottore.cli.lint import run_lint
@@ -449,6 +449,10 @@ def run_masked(call: Callable[[], Any]) -> NoReturn:
     sys.exit(status)
 
 
+#: How the root help reads the terminal and the colour variables; tests swap it to fake one.
+_banner_env_for: Callable[[IO[Any] | None], banner.Env] = banner.env_for
+
+
 class _MaskedGroup(OperationalErrorGroup):
     """The root command, whose usage errors go through the CLI's mask on every path (u12 A-82).
 
@@ -479,6 +483,19 @@ class _MaskedGroup(OperationalErrorGroup):
         except _CLICK_ERRORS as exc:
             _mask_in_place(exc)
             raise
+
+    def format_help(self, ctx: Any, formatter: Any) -> None:
+        # The logo above the root help only: bare `dottore`, `dottore --help`. A sub-command's
+        # help is its own command's, and off a terminal (`banner.show`) nothing is added, so a
+        # script or a pipe reading the help gets exactly what it got before. Written to stdout
+        # here, not through `formatter`: Typer prints the help with rich straight to the
+        # console as this method runs and echoes the formatter's text after it, and a bare
+        # `dottore` (`NoArgsIsHelpError`) never prints that text at all.
+        if ctx.parent is None:
+            shown, colour = banner.show(_banner_env_for(sys.stdout))
+            if shown:
+                banner.write(sys.stdout, colour=colour)
+        super().format_help(ctx, formatter)
 
     def invoke(self, ctx: Any) -> Any:
         try:

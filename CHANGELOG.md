@@ -7,6 +7,23 @@ the file, schema copy, build or pipeline it names.
 
 ## [Unreleased]
 
+### Added (judging rules 7 re-pinned: the logo above the root help)
+
+- **`dottore --help` and a bare `dottore` print the Il Dottore logo above the root help on an
+  interactive terminal.** A caricature of the author as 31 lines of ASCII (56 columns) with the
+  name under it, shipped as two package files (`cli/banner.txt`, plain; `cli/banner_ansi.txt`,
+  the same art in 24-bit `38;2` colour, byte-identical to the plain copy once stripped, which a
+  test holds). Colour only where it prints: `COLORTERM` set to `truecolor` or `24bit`,
+  `NO_COLOR` unset, `TERM` other than `dumb`; plain otherwise. Nothing is added off a terminal
+  (a pipe, a file, a pager, a script, the test runner), so what a script gets from
+  `dottore --help` is what it got before, and a command's own help (`dottore run --help`,
+  `dottore registry ls --help`) never carries it. Written to stdout before Typer's rich help,
+  not through click's help formatter, which Typer echoes after the rich output and a bare
+  `dottore` (`NoArgsIsHelpError`) drops. No verdict changes; the package's code does (`cli/app.py`,
+  `cli/banner.py`, both in the entry point's import closure), so judging rules 7 is re-pinned by
+  an appended line; the two art files are bytes no verdict sees and are left out of the digest by
+  name (`DATA_EXEMPT`).
+
 ### Added (judging rules 7 re-pinned, u02 A-95)
 
 - **MITRE ATT&CK Enterprise v20.0 as a fifth coverage axis, with Navigator layers.** v20.0

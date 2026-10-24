@@ -21,6 +21,12 @@ python3 -m venv .venv
 
 Full options (offline dev, local models, hosted keys): [`INSTALL.md`](INSTALL.md).
 
+On an interactive terminal, `dottore --help` and a bare `dottore` print the Il Dottore logo
+above the root help, in 24-bit colour where the terminal declares it (`COLORTERM` set to
+`truecolor` or `24bit`), plain otherwise or with `NO_COLOR` set or `TERM=dumb`. Off a
+terminal (a pipe, a file, a script reading the help) nothing is added, and a command's own
+help (`dottore run --help`) never carries it.
+
 ## 60-second quickstart
 
 You need two files: a **scope** (your authorization record) and a **target**.

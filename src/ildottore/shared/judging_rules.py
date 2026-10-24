@@ -60,6 +60,7 @@ from pathlib import Path
 from typing import Final
 
 __all__ = [
+    "DATA_EXEMPT",
     "DATA_SUFFIXES",
     "JUDGING_EXEMPT",
     "JUDGING_RULES_SINCE",
@@ -122,6 +123,15 @@ JUDGING_EXEMPT: Final = {
 #: audit: one refused every resume). A new kind of asset under ``battery/`` fails
 #: ``tests/shared/test_judging_rules.py`` until its suffix is added here.
 DATA_SUFFIXES: Final = frozenset({".yaml", ".sql", ".json", ".j2", ".wav"})
+
+#: Files the package does read that the digest leaves out, by path under the package, each with
+#: its reason: bytes no verdict ever sees, which the suffix check of
+#: ``tests/shared/test_judging_rules.py`` would otherwise refuse as unclassified. A ``.txt``
+#: elsewhere stays a stray file (``notes.txt`` is that test's example), not data.
+DATA_EXEMPT: Final = {
+    "cli/banner.txt": "the logo the root help prints on a terminal: shown, never judged",
+    "cli/banner_ansi.txt": "the same logo in 24-bit colour: shown, never judged",
+}
 
 #: Hex digits of a per-file digest, which a refusal uses to name the files that changed.
 FILE_DIGEST_LENGTH: Final = 8
