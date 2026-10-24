@@ -8,7 +8,8 @@ neighbouring entries can interleave (an older branch merged later sits above a n
 ## State, 2026-10-24: the same static checks locally and on CI (`chore/pin-ruff`)
 
 - **What.** The static checks of the `dev` extra pinned exactly (`ruff==0.17.2`, `mypy==2.4.0`,
-  both type-stub packages) instead of open ranges. CI resolved the ranges
+  `import-linter==2.15`, both type-stub packages) instead of open ranges, and the runtime floor
+  of rich raised from 13.8.0 to 14.2.0. CI resolved the ranges
   to the newest releases, the shared local venv had older ones (ruff 0.15.20, mypy 2.1.0,
   import-linter 2.13), and a rule only the newer ruff knows (RUF036) failed a branch on CI after
   `make gates` had passed locally. `scripts/dependency_floors.py` now accepts `name==X` as its
@@ -18,9 +19,9 @@ neighbouring entries can interleave (an older branch merged later sits above a n
   worktree, never: install the pinned versions by name, `pip install "ruff==0.17.2" ...`, so the
   shared venv's editable install keeps pointing at the main checkout). The shared venv already
   has them. bandit and pip-audit stay outside the extra, as before.
-- **Open.** import-linter stays `>=2.0`: from 2.13 it needs `rich>=14.2.0`, above the runtime
-  floor (`rich>=13.8.0`) the `floors` job pins, and the first push of this branch failed that job
-  on it. Pinning it needs the runtime floor of rich raised to 14.2.0, a decision for the owner.
+- **rich 14.2.0.** import-linter from 2.13 needs `rich>=14.2.0`, above the old runtime floor
+  (13.8.0) the `floors` job pins, and the first push of this branch failed that job on it. The
+  owner chose (2026-10-24, 23:11) to raise the runtime floor to 14.2.0 and keep the pin.
 - **Gates.** `make gates` green with the pinned versions (10 min 26 s): ruff, ruff format, mypy
   strict (173 files), import-linter (4 contracts kept), spec lint (0 errors, 78 specs), 8062 tests
   passed and 3 skipped, coverage 97.69%, self-scan 0 high or critical, bandit clean, pip-audit no

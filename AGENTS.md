@@ -102,7 +102,7 @@ Full method: `docs/00-ai-build-playbook.md`.
   neither is the coverage gate. A "all green" claim is only true after `make gates`, which runs
   every check of `.github/workflows/ci.yml` plus bandit and pip-audit (CI runs neither). Twice
   a green claim was wrong because only `ruff check` had been run. The same wall needs the same
-  tools: ruff, mypy and the type stubs are pinned exactly in the `dev` extra, so
+  tools: ruff, mypy, import-linter and the type stubs are pinned exactly in the `dev` extra, so
   after a bump (or in an old venv) re-install them before trusting a local lint (2026-10-24: CI's
   newer ruff failed a rule the local one did not know).
 - **Detect em/en dashes with Python, never a zsh `grep` using a `$'..'` glyph pattern** (in zsh
