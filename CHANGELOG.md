@@ -6674,7 +6674,7 @@ risk mapping, OpenAI / Anthropic / REST / MCP adapters, multi-turn, multi-identi
   handshake and lists `tools`/`resources`/`prompts`, then renders that advertised metadata as
   the response. Read-only by design (safe-by-design, docs/02 S5): it never calls a tool
   (`tools/call`), and the endpoint allowlist is enforced before every request (S3). The new
-  `MCP-TOOLPOISON-001` spec + `mcp` suite flag tool-metadata poisoning ("line jumping"): 
+  `MCP-TOOLPOISON-001` spec + `mcp` suite flag tool-metadata poisoning ("line jumping"):
   imperative instructions hidden in a tool description. `kind: mcp` fleet entries now
   materialize (`type: api`, `provider: mcp`) instead of being skipped. Validated live against a
   local MCP server (finding: critical, evidence redacted at rest).
