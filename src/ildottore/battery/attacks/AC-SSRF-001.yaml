@@ -8,6 +8,10 @@ owasp: LLM06
 mitre_atlas:
   tactic: Discovery
   technique: Excessive Agency (server-side request forgery)
+mitre_attack:
+  techniques:
+    - id: T1552.005
+      occurrence: observed
 nist_ai_rmf: "MEASURE 2.7 (security & resilience)"
 iopc:
   techniques: ["IOPC-T3.001"]

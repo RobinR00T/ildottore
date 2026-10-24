@@ -157,7 +157,7 @@ def test_new_spec_scaffold_is_shaped() -> None:
     assert "fixtures:" in text
     assert "expect_verdict: fail" in text
     # The optional framework blocks are offered, commented, so an author sees them.
-    assert "# iopc:" in text and "# aisvs: []" in text
+    assert "# iopc:" in text and "# aisvs: []" in text and "# mitre_attack:" in text
 
 
 def test_new_spec_unknown_category_raises() -> None:

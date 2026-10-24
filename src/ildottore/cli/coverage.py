@@ -28,11 +28,14 @@ Two design choices worth stating:
 from __future__ import annotations
 
 import json
+from collections.abc import Iterable
 from dataclasses import replace
 from pathlib import Path
 
 from ildottore.cli import wiring
 from ildottore.redactor import log_safe_json, visible_controls
+from ildottore.registry.errors import LintError
+from ildottore.reporting.navigator import battery_layer
 from ildottore.reporting.summary import (
     AxisCoverage,
     BatteryCoverage,
@@ -41,10 +44,36 @@ from ildottore.reporting.summary import (
 )
 from ildottore.shared.models import AttackSpec
 
-__all__ = ["battery_coverage", "render_coverage", "render_coverage_json"]
+__all__ = [
+    "battery_coverage",
+    "render_coverage",
+    "render_coverage_json",
+    "write_navigator_layer",
+]
 
 #: Axis keys accepted by ``--framework`` (``all`` keeps every axis).
-FRAMEWORK_KEYS: tuple[str, ...] = ("all", "owasp", "atlas", "iopc", "aisvs")
+FRAMEWORK_KEYS: tuple[str, ...] = ("all", "owasp", "atlas", "iopc", "aisvs", "attack")
+
+
+def _attack_technique_lines(coverage: BatteryCoverage, framework: str) -> list[str]:
+    """The techniques behind the ATT&CK tactic figure, observed first, capability-only after.
+
+    Printed with ``all`` and ``attack`` only. The tactic row says "8/15"; this says which
+    techniques put which specs in which column, and lists the capability-only ones so a
+    reader sees what the battery can elicit without any of it being counted.
+    """
+
+    if framework not in ("all", "attack") or not coverage.attack_techniques:
+        return []
+    lines = [
+        "",
+        "  ATT&CK techniques declared (observed count toward tactics; capability-only do not):",
+    ]
+    for wanted in ("observed", "capability-only"):
+        for tid, name, occurrence, spec_ids in coverage.attack_techniques:
+            if occurrence == wanted:
+                lines.append(f"    {tid:<10} {name}  [{occurrence}]  {', '.join(spec_ids)}")
+    return lines
 
 
 def _selected(coverage: BatteryCoverage, framework: str) -> tuple[AxisCoverage, ...]:
@@ -56,9 +85,48 @@ def _selected(coverage: BatteryCoverage, framework: str) -> tuple[AxisCoverage, 
 
 
 def battery_coverage(
-    spec_paths: list[Path], *, suite: str | None = None, default_spec_path: bool = False
+    spec_paths: list[Path],
+    *,
+    suite: str | None = None,
+    default_spec_path: bool = False,
+    navigator_layer: Path | None = None,
 ) -> BatteryCoverage:
     """Load the registry (optionally narrowed to a suite) and compute static coverage.
+
+    With ``navigator_layer`` the same specs are also written as an ATT&CK Navigator layer
+    (one load, so the registry's notes print once and the figure and the layer agree).
+    """
+
+    specs, load_errors = _load_specs(spec_paths, suite=suite, default_spec_path=default_spec_path)
+    if navigator_layer is not None:
+        write_navigator_layer(navigator_layer, specs, unloaded=len(load_errors))
+    return replace(
+        build_battery_coverage(specs),
+        unloaded=tuple((e.path or e.spec_id or "<unknown>", e.message) for e in load_errors),
+    )
+
+
+def write_navigator_layer(path: Path, specs: Iterable[AttackSpec], *, unloaded: int = 0) -> None:
+    """Write the battery as an ATT&CK Navigator layer (``--navigator-layer``).
+
+    The same specs the coverage figures are computed from, drawn as a matrix: observed
+    techniques in one colour, capability-only in another, each cell naming the specs that
+    declare it. ``unloaded`` (files that failed to load) is recorded in the layer, as the text
+    output lists them. Pure data, no scan, no secret (``reporting.navigator``).
+    """
+
+    layer = battery_layer(specs, unloaded=unloaded)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        log_safe_json(json.dumps(layer, indent=2, ensure_ascii=True, sort_keys=True)) + "\n",
+        encoding="utf-8",
+    )
+
+
+def _load_specs(
+    spec_paths: list[Path], *, suite: str | None, default_spec_path: bool
+) -> tuple[list[AttackSpec], list[LintError]]:
+    """The registry's specs, optionally narrowed to a suite, and the files that failed to load.
 
     An unregistered ``--suite`` **raises**. It used to resolve to the empty spec set and
     report a confident 0% across every axis, which reads as "this battery covers nothing"
@@ -80,10 +148,7 @@ def battery_coverage(
         specs = list(registry.resolve(suite_id))
     else:
         specs = list(registry.list())
-    return replace(
-        build_battery_coverage(specs),
-        unloaded=tuple((e.path or e.spec_id or "<unknown>", e.message) for e in load_errors),
-    )
+    return specs, list(load_errors)
 
 
 def render_coverage(
@@ -102,6 +167,8 @@ def render_coverage(
         )
     lines.extend(_off_universe_lines(coverage))
     lines.extend(_unloaded_lines(coverage))
+    # The techniques are the detail behind a figure, not a gap list: ``--no-gaps`` keeps them.
+    lines.extend(_attack_technique_lines(coverage, framework))
     if not show_gaps:
         return "\n".join(lines)
 
@@ -202,6 +269,12 @@ def render_coverage_json(
             for spec_id, field, value in coverage.off_universe
         ],
         "unloaded": [{"path": path, "message": message} for path, message in coverage.unloaded],
+        # The techniques behind the ``attack`` axis, with their occurrence: a consumer can
+        # rebuild the tactic figure from these and see what was listed but not counted.
+        "attack_techniques": [
+            {"id": tid, "name": name, "occurrence": occurrence, "specs": list(spec_ids)}
+            for tid, name, occurrence, spec_ids in coverage.attack_techniques
+        ],
         "axes": [
             {
                 "key": a.key,

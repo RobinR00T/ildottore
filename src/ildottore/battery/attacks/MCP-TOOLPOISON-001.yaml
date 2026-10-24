@@ -18,6 +18,10 @@ owasp: LLM06
 mitre_atlas:
   tactic: Initial Access
   technique: Excessive Agency (poisoned MCP tool metadata)
+mitre_attack:
+  techniques:
+    - id: T1698
+      occurrence: capability-only
 nist_ai_rmf: "MEASURE 2.7 (security & resilience)"
 iopc:
   techniques: ["IOPC-T3.002", "IOPC-T2.004"]

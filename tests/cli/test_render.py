@@ -84,7 +84,7 @@ def test_progress_printer_prints_when_not_quiet() -> None:
 def test_coverage_lines_report_surface_and_disposition() -> None:
     specs = {"PI-1": make_spec("PI-1", owasp="LLM01")}
     lines = coverage_lines([make_finding("PI-1", band=ScanBand.HIGH)], specs)
-    assert len(lines) == 4  # a spec that ran adds no warning lines
+    assert len(lines) == 5  # a spec that ran adds no warning lines
     # The edition/release travels with the figure: "LLM03 not covered" means the opposite
     # thing under the 2026 renumbering, and ATLAS renames tactics between releases.
     assert "OWASP LLM Top 10 (2025): 1/10 (10%)" in lines[0]
@@ -94,11 +94,14 @@ def test_coverage_lines_report_surface_and_disposition() -> None:
     assert "IoPC techniques (" in lines[1]  # the axis names its taxonomy version
     assert "IoPC impacts:" in lines[1]
     # And the harm classes are spelled out, because a bare "IOPC-R012" tells nobody anything.
-    assert lines[2].startswith("Harm classes tested:")
+    # ATT&CK Enterprise gets its own line too: tactics from observed techniques, with the
+    # release, and the count of techniques the figure rests on.
+    assert "MITRE ATT&CK Enterprise tactics (v20.0): 0/15 (0%)" in lines[2]
+    assert lines[3].startswith("Harm classes tested:")
     # "run X of Y planned": the denominator is what the plan selected, not the length of
     # the finding list, which is how a truncated run used to report 100% of itself.
-    assert "Specs run: 1 of 1 planned" in lines[3]
-    assert "fail 1" in lines[3]
+    assert "Specs run: 1 of 1 planned" in lines[4]
+    assert "fail 1" in lines[4]
 
 
 def test_coverage_lines_name_the_planned_denominator() -> None:
@@ -106,7 +109,7 @@ def test_coverage_lines_name_the_planned_denominator() -> None:
 
     specs = {"PI-1": make_spec("PI-1", owasp="LLM01")}
     lines = coverage_lines([make_finding("PI-1", band=ScanBand.HIGH)], specs, planned_specs=3)
-    assert "Specs run: 1 of 3 planned" in lines[3]
+    assert "Specs run: 1 of 3 planned" in lines[4]
 
 
 def test_progress_printer_summary_always_prints() -> None:

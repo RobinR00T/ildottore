@@ -7,6 +7,10 @@ owasp: LLM10
 mitre_atlas:
   tactic: Impact
   technique: Cost Harvesting
+mitre_attack:
+  techniques:
+    - id: T1496.004
+      occurrence: observed
 nist_ai_rmf: "MANAGE 2.2 (resource / availability)"
 iopc:
   techniques: ["IOPC-T6.001"]

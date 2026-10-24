@@ -36,6 +36,8 @@ dottore lint src/ildottore/battery       # schema + policy + fixtures-prove-dete
 dottore schema export                    # the JSON Schemas that validate every spec
 dottore coverage                         # what the battery tests, per framework, gaps named
 dottore coverage --framework aisvs       # OWASP AISVS by level (falsification, never verification)
+dottore coverage --framework attack      # MITRE ATT&CK Enterprise v20.0 tactics, observed techniques only
+dottore coverage --navigator-layer battery-layer.json   # the battery as an ATT&CK Navigator layer
 ```
 
 ## Scenario B, validate wiring without sending anything

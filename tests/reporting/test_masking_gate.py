@@ -57,7 +57,7 @@ def _planted_finding() -> Finding:
     )
 
 
-@pytest.mark.parametrize("fmt", ["json", "html", "sarif", "junit"])
+@pytest.mark.parametrize("fmt", ["json", "html", "sarif", "junit", "navigator"])
 def test_no_raw_secret_in_any_format(fmt: str) -> None:
     specs = {"DL-LEAK-001": make_spec("DL-LEAK-001", owasp="LLM02")}
     finding = _planted_finding()
@@ -70,7 +70,7 @@ def test_no_raw_secret_in_any_format(fmt: str) -> None:
 
 def test_gate_covers_every_registered_format() -> None:
     # A newly-added format must also pass through the choke point; assert the set we cover.
-    assert set(list_formats()) == {"json", "html", "sarif", "junit"}
+    assert set(list_formats()) == {"json", "html", "sarif", "junit", "navigator"}
 
 
 def test_redacted_marker_present() -> None:

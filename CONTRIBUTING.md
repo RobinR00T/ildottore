@@ -57,6 +57,21 @@ topic. A passing spec never verifies a control, and nothing you write should say
 `src/ildottore/shared/aisvs.py` classifies as out of reach or untested; if you believe the
 classification is wrong, change it there, with the argument, and the pinned test with it.
 
+## Mapping a spec to MITRE ATT&CK Enterprise
+
+ATT&CK names what an adversary does on an estate, so the optional `mitre_attack:` block lists
+techniques with an `occurrence`. Write `observed` only when the technique's behaviour is the
+**target's own action or reply** in your oracle: a mock tool call the trace records, or the reply
+being the technique's effect (an injected instruction obeyed, a lure written). Write
+`capability-only` when the target merely produced something that would enable the technique
+elsewhere (malware source, a lure's eventual delivery); it is listed and never counted. Restrict
+with `tactics:` when a technique sits under several and your spec exercises one (`T1053.003`
+Cron to `persistence` for a beacon). `dottore lint` refuses an ID the pinned release (v20.0) has
+retired or does not know, naming the replacement, and a tactic the technique is not under.
+Before mapping, read the technique's page: v20 renamed Defense Evasion to Stealth, split out
+Defense Impairment, and added the AI techniques (`T1698`, `T1699`, `T1700`). The rationale for
+every shipped mapping, and the specs left unmapped on purpose, are in `docs/17`.
+
 ## Commits & PRs
 - Conventional Commits; signed (GPG) where possible.
 - Each PR updates docs touched + `CHANGELOG.md` + `docs/PROGRESS.md`.

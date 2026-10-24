@@ -511,3 +511,90 @@ def test_an_unknown_mutation_is_a_lint_error(tmp_path: Path) -> None:
     )
     errors = [e for e in cli_lint([pack]).errors if e.code is LintCode.UNKNOWN_MUTATOR_TYPE]
     assert [e.message.split("'")[1] for e in errors] == ["base64"], "translate:fr is known by base"
+
+
+# --- mitre_attack: the pinned ATT&CK Enterprise universe (``shared.attack``) ---------------
+
+
+def _lint_with_attack(tmp_path: Path, block: str, name: str) -> list[object]:
+    return _lint_with_iopc(tmp_path, block, name)
+
+
+def test_a_retired_attack_id_is_a_lint_error_naming_the_replacement(tmp_path: Path) -> None:
+    """T1562 was revoked into T1685 in v20.0: a v19 spec is well-formed and counts for nothing.
+
+    The schema lets the shape through; only the pinned retired set can refuse it, and the
+    refusal has to say where the ID went or the author is left to search the release notes.
+    """
+
+    block = "mitre_attack:\n  techniques:\n    - id: T1562\n      occurrence: observed\n"
+    errors = _lint_with_attack(tmp_path, block, "attackretired")
+    offending = [e for e in errors if e.code is LintCode.UNKNOWN_FRAMEWORK_CODE]
+    assert len(offending) == 1
+    assert "T1562" in offending[0].message
+    assert "T1685" in offending[0].message
+    assert "revoked" in offending[0].message
+    assert offending[0].spec_id == "IOPC-PROBE-001"
+
+
+def test_an_unknown_attack_id_is_a_lint_error_once(tmp_path: Path) -> None:
+    block = (
+        "mitre_attack:\n  techniques:\n"
+        "    - id: T9999\n      occurrence: observed\n"
+        "    - id: T9999\n      occurrence: capability-only\n"
+    )
+    errors = _lint_with_attack(tmp_path, block, "attackunknown")
+    offending = [e for e in errors if e.code is LintCode.UNKNOWN_FRAMEWORK_CODE]
+    # Once for the unknown ID, once for the duplicate: two different mistakes, each named.
+    assert len(offending) == 2
+    assert any("not in ATT&CK Enterprise 20.0" in e.message for e in offending)
+    assert any("declared twice" in e.message for e in offending)
+
+
+def test_a_tactic_restriction_outside_the_technique_is_a_contradiction(tmp_path: Path) -> None:
+    """``T1699`` is Execution only; restricting it to ``exfiltration`` would move the claim."""
+
+    block = (
+        "mitre_attack:\n  techniques:\n"
+        "    - id: T1699\n      occurrence: observed\n      tactics: [exfiltration]\n"
+    )
+    errors = _lint_with_attack(tmp_path, block, "attacktactic")
+    offending = [e for e in errors if e.code is LintCode.FRAMEWORK_CLAIM_CONTRADICTED]
+    assert len(offending) == 1
+    assert "T1699" in offending[0].message
+    assert "exfiltration" in offending[0].message
+    assert "execution" in offending[0].message
+
+
+def test_current_attack_ids_with_a_valid_restriction_lint_clean(tmp_path: Path) -> None:
+    block = (
+        "mitre_attack:\n  techniques:\n"
+        "    - id: T1053.003\n      occurrence: observed\n      tactics: [persistence]\n"
+        "    - id: T1587.001\n      occurrence: capability-only\n"
+    )
+    errors = _lint_with_attack(tmp_path, block, "attackclean")
+    assert not [
+        e
+        for e in errors
+        if e.code in (LintCode.UNKNOWN_FRAMEWORK_CODE, LintCode.FRAMEWORK_CLAIM_CONTRADICTED)
+    ], errors
+
+
+@pytest.mark.parametrize(
+    "block",
+    [
+        "mitre_attack:\n  techniques: []\n",
+        "mitre_attack:\n  techniques:\n    - id: T169\n      occurrence: observed\n",
+        "mitre_attack:\n  techniques:\n    - id: T1699\n      occurrence: reported\n",
+        "mitre_attack:\n  domain: mobile\n  techniques:\n"
+        "    - id: T1699\n      occurrence: observed\n",
+        "mitre_attack:\n  techniques:\n"
+        "    - id: T1699\n      occurrence: observed\n      tactics: [Execution]\n",
+    ],
+)
+def test_malformed_attack_blocks_are_refused_by_the_schema(tmp_path: Path, block: str) -> None:
+    """An empty list, a short ID, the skill's third-party occurrences, another domain, and a
+    tactic written as a display name instead of a shortname: none reaches the linter."""
+
+    errors = _lint_with_attack(tmp_path, block, "attackshape")
+    assert any(e.code in (LintCode.SCHEMA, LintCode.PARSE_ERROR) for e in errors), errors

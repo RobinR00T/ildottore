@@ -1171,6 +1171,10 @@ def run(
     o_html: Annotated[Path | None, typer.Option("-oH", help="Write HTML report.")] = None,
     o_sarif: Annotated[Path | None, typer.Option("-oS", help="Write SARIF report.")] = None,
     o_junit: Annotated[Path | None, typer.Option("-oX", help="Write JUnit XML report.")] = None,
+    o_navigator: Annotated[
+        Path | None,
+        typer.Option("-oN", help="Write an ATT&CK Navigator layer (not part of -oA)."),
+    ] = None,
     o_all: Annotated[
         Path | None, typer.Option("-oA", help="Write all four formats to <prefix>.*")
     ] = None,
@@ -1214,6 +1218,8 @@ def run(
         outputs["sarif"] = o_sarif
     if o_junit is not None:
         outputs["junit"] = o_junit
+    if o_navigator is not None:
+        outputs["navigator"] = o_navigator
 
     # Intensity flags change the battery / timing but never touch the scope gate.
     # ``-A`` is documented as "-sV + deep + adaptive", so it implies both of those here
@@ -1347,6 +1353,10 @@ def fleet(
     o_html: Annotated[Path | None, typer.Option("-oH", help="Write HTML report.")] = None,
     o_sarif: Annotated[Path | None, typer.Option("-oS", help="Write SARIF report.")] = None,
     o_junit: Annotated[Path | None, typer.Option("-oX", help="Write JUnit XML report.")] = None,
+    o_navigator: Annotated[
+        Path | None,
+        typer.Option("-oN", help="Write an ATT&CK Navigator layer (not part of -oA)."),
+    ] = None,
     o_all: Annotated[
         Path | None, typer.Option("-oA", help="Write all four formats to <prefix>.*")
     ] = None,
@@ -1392,7 +1402,13 @@ def fleet(
         typer.echo(f"skipped: {target_id} ({reason})")
     judge_file = judge if judge is not None else materialized.judge_path
 
-    asked = (("json", o_json), ("html", o_html), ("sarif", o_sarif), ("junit", o_junit))
+    asked = (
+        ("json", o_json),
+        ("html", o_html),
+        ("sarif", o_sarif),
+        ("junit", o_junit),
+        ("navigator", o_navigator),
+    )
     outputs = {fmt: path for fmt, path in asked if path is not None}
     if not run_now:
         joined = " ".join(f'"{p}"' for p in materialized.target_paths)
@@ -1400,7 +1416,7 @@ def fleet(
         # hint that omits it drops the judge from the run. The run options too, for the same
         # reason (a hint without them writes the reports and the stores somewhere else).
         judge_arg = f' --judge "{judge_file}"' if judge_file is not None else ""
-        flags = {"json": "-oJ", "html": "-oH", "sarif": "-oS", "junit": "-oX"}
+        flags = {"json": "-oJ", "html": "-oH", "sarif": "-oS", "junit": "-oX", "navigator": "-oN"}
         carried = [f'--spec-path "{p}"' for p in spec_path or []]
         carried += [f'--evidence-root "{evidence_root}"'] if evidence_root is not None else []
         carried += [f'--run-db "{run_db}"'] if run_db is not None else []
@@ -1528,7 +1544,7 @@ def fingerprint(
 def coverage(
     paths: Annotated[list[Path] | None, typer.Argument(help="Spec paths to measure.")] = None,
     framework: Annotated[
-        str, typer.Option("--framework", help="all | owasp | atlas | iopc | aisvs.")
+        str, typer.Option("--framework", help="all | owasp | atlas | iopc | aisvs | attack.")
     ] = "all",
     suite: Annotated[
         str | None, typer.Option("--suite", help="Narrow to one suite (id or alias).")
@@ -1537,6 +1553,13 @@ def coverage(
         bool, typer.Option("--gaps/--no-gaps", help="List the codes NOT covered.")
     ] = True,
     as_json: Annotated[bool, typer.Option("--json", help="Machine-readable output.")] = False,
+    navigator_layer: Annotated[
+        Path | None,
+        typer.Option(
+            "--navigator-layer",
+            help="Also write the battery as an ATT&CK Navigator layer (JSON) to this path.",
+        ),
+    ] = None,
 ) -> None:
     """What the battery TESTS, per framework, without running a scan.
 
@@ -1552,7 +1575,10 @@ def coverage(
         raise typer.Exit(ExitCode.ERROR)
     try:
         result = coverage_mod.battery_coverage(
-            _spec_paths(paths), suite=suite, default_spec_path=not paths
+            _spec_paths(paths),
+            suite=suite,
+            default_spec_path=not paths,
+            navigator_layer=navigator_layer,
         )
     except (OSError, ValueError) as exc:
         typer.echo(f"error: {_masked(exc)}", err=True)

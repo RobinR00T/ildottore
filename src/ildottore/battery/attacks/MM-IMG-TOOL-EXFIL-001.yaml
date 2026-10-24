@@ -10,6 +10,12 @@ owasp: LLM06
 mitre_atlas:
   tactic: Exfiltration
   technique: Excessive Agency (image-borne instruction to egress)
+mitre_attack:
+  techniques:
+    - id: T1698
+      occurrence: observed
+    - id: T1700
+      occurrence: observed
 nist_ai_rmf: "MEASURE 2.7 (security & resilience)"
 iopc:
   techniques: ["IOPC-T3.001", "IOPC-T1.002"]

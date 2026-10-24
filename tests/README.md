@@ -23,7 +23,7 @@ Per-unit `conftest.py` files under each sub-directory own their domain fixtures;
 
 | # | Layer | Type | Lives in |
 |---|-------|------|----------|
-| 1 | Models / specs | Schema validation | `shared/test_schema_parity.py`, `shared/test_shared_models.py`, `registry/test_schema.py` |
+| 1 | Models / specs | Schema validation | `shared/test_schema_parity.py`, `shared/test_shared_models.py`, `registry/test_schema.py`; pinned framework universes `shared/test_aisvs.py`, `shared/test_attack.py` |
 | 2 | Spec linter | Static checks | `registry/test_linter.py`, `registry/test_cli_lint.py` |
 | 3 | Units | Unit tests (coverage ≥ 85% aggregate, OD-13) | every `test_*.py` across all sub-dirs |
 | 4 | Mutator | Property-based (Hypothesis) | `mutators/test_determinism.py`, `mutators/test_reversibility.py`, `mutators/test_golden.py` |
@@ -33,7 +33,7 @@ Per-unit `conftest.py` files under each sub-directory own their domain fixtures;
 | 8 | Judge | Robustness / injection | `evaluators/test_adversarial_judge.py`, `evaluators/test_semantic_judge.py` + `fixtures/adversarial-judge/` |
 | 9 | Determinism | Replay | `evaluators/test_deterministic.py`, `core/test_determinism.py`, `core/test_reproduce.py` |
 | 10 | Scoring | Property tests | `scoring/test_properties.py`, `scoring/test_banding.py`, `scoring/test_confidence.py` |
-| 11 | Reporting | Snapshot + schema (SARIF/JUnit/HTML/JSON, masking) | `reporting/test_{sarif,junit,html,json}_reporter.py`, `reporting/test_masking*.py`, `reporting/test_golden_snapshot.py` |
+| 11 | Reporting | Snapshot + schema (SARIF/JUnit/HTML/JSON, masking) | `reporting/test_{sarif,junit,html,json}_reporter.py`, `reporting/test_navigator.py` (ATT&CK Navigator layers), `reporting/test_masking*.py`, `reporting/test_golden_snapshot.py` |
 | 12 | CLI / API | E2E | `cli/test_e2e.py`, `cli/test_commands.py`, `cli/test_exit_codes.py` |
 | 13 | Availability specs | Budget / guardrail (fake clock) | `core/test_budgets.py`, `core/test_runner_budget.py` (uses `frozen_clock`) |
 | 14 | Boundaries | Import-linter contract | `test_import_contract.py` + `.importlinter` |

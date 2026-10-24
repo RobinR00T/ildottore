@@ -37,6 +37,12 @@ from ildottore.shared.aisvs import (
     AISVS_VERSION,
     unknown_aisvs_codes,
 )
+from ildottore.shared.attack import (
+    ATTACK_VERSION,
+    attack_techniques,
+    tactic_name,
+    unknown_attack_ids,
+)
 from ildottore.shared.enums import (
     DEPRECATED_EVALUATOR_LOGIC,
     EvaluatorLogic,
@@ -430,6 +436,69 @@ def _check_aisvs(spec: AttackSpec) -> list[LintError]:
                 spec_id=spec.id,
             )
         )
+    return errors
+
+
+def _check_attack(spec: AttackSpec) -> list[LintError]:
+    """Every declared ATT&CK technique must be current in the pinned release, and a tactic
+    restriction must name tactics the technique sits under.
+
+    The IoPC rule again, with one addition the pin makes possible: a **retired** ID is refused
+    with its replacement named. ATT&CK v20.0 revoked ``T1562`` Impair Defenses into ``T1685``
+    and moved the log-clearing sub-techniques of ``T1070`` under the new Defense Impairment
+    tactic, so a spec written against v19 can be well-formed, plausible, and count for nothing.
+    A ``tactics`` restriction outside the technique's own tactics is a contradiction
+    (``FRAMEWORK_CLAIM_CONTRADICTED``): it would be read as a widening and counted under a
+    column the technique is not in. Duplicated IDs are refused too: coverage de-duplicates, so
+    the second entry would be the one whose occurrence or restriction silently did not apply.
+    """
+    if spec.mitre_attack is None:
+        return []
+    errors = [
+        LintError(
+            code=LintCode.UNKNOWN_FRAMEWORK_CODE,
+            message=(
+                f"mitre_attack technique {tid!r} {why}; an ID the release does not count "
+                f"matches nothing and silently shrinks coverage (scripts/attack_universe.py "
+                f"refresh re-pins and names what moved)"
+            ),
+            spec_id=spec.id,
+        )
+        for tid, why in unknown_attack_ids(m.id for m in spec.mitre_attack.techniques)
+    ]
+    current = attack_techniques()
+    seen: set[str] = set()
+    for mapping in spec.mitre_attack.techniques:
+        if mapping.id in seen:
+            errors.append(
+                LintError(
+                    code=LintCode.UNKNOWN_FRAMEWORK_CODE,
+                    message=(
+                        f"mitre_attack technique {mapping.id!r} is declared twice; one entry "
+                        f"per technique, with the occurrence and tactics it exercises"
+                    ),
+                    spec_id=spec.id,
+                )
+            )
+        seen.add(mapping.id)
+        technique = current.get(mapping.id)
+        if technique is None or not mapping.tactics:
+            continue
+        for tactic in mapping.tactics:
+            if tactic not in technique.tactics:
+                errors.append(
+                    LintError(
+                        code=LintCode.FRAMEWORK_CLAIM_CONTRADICTED,
+                        message=(
+                            f"mitre_attack technique {mapping.id} ({technique.name}) does not "
+                            f"sit under tactic {tactic!r} in ATT&CK Enterprise {ATTACK_VERSION}; "
+                            f"its tactics are {', '.join(technique.tactics)} ("
+                            + ", ".join(tactic_name(t) for t in technique.tactics)
+                            + "). A restriction narrows a claim, it cannot move it"
+                        ),
+                        spec_id=spec.id,
+                    )
+                )
     return errors
 
 
@@ -1014,6 +1083,7 @@ def lint_packs(
         findings.extend(_check_oracle_markers(spec))
         findings.extend(_check_iopc(spec))
         findings.extend(_check_aisvs(spec))
+        findings.extend(_check_attack(spec))
         findings.extend(_check_frameworks(spec))
         # The stubs compile the same patterns: a spec whose pattern does not compile is not
         # proved (its finding says so) instead of crashing the whole lint.

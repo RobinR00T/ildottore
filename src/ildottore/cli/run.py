@@ -1571,7 +1571,13 @@ def _validate_options(opts: RunOptions) -> None:
 
 
 #: How each report format is named in a refusal.
-_REPORT_NAMES = {"json": "JSON", "html": "HTML", "sarif": "SARIF", "junit": "JUnit"}
+_REPORT_NAMES = {
+    "json": "JSON",
+    "html": "HTML",
+    "sarif": "SARIF",
+    "junit": "JUnit",
+    "navigator": "ATT&CK Navigator layer",
+}
 #: The files SQLite keeps beside a database: a report written over one corrupts the store.
 _STORE_SIBLINGS = ("", "-wal", "-shm", "-journal")
 
@@ -3728,6 +3734,9 @@ def _envelope_summary(findings: list[Finding]) -> TestRunSummary:
 
 def _report_outputs(opts: RunOptions) -> dict[str, Path]:
     """Every report path the options ask for, ``-oA PREFIX`` expanded to four files.
+
+    ``-oN`` (the ATT&CK Navigator layer) is only ever explicit: it is a companion to a report,
+    not a report, and the four files of ``-oA`` are what pipelines and the e2e test pin.
 
     The prefix is extended, not suffix-swapped: ``with_suffix`` turned ``-oA report.v2`` into
     ``report.json``, dropping the last dotted part (audit low).

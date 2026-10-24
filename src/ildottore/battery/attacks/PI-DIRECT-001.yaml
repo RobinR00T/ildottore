@@ -6,6 +6,10 @@ owasp: LLM01
 mitre_atlas:
   tactic: Initial Access
   technique: LLM Prompt Injection (Direct)
+mitre_attack:
+  techniques:
+    - id: T1699
+      occurrence: observed
 nist_ai_rmf: "MEASURE 2.7 (security & resilience)"
 iopc:
   techniques: ["IOPC-T1.001"]

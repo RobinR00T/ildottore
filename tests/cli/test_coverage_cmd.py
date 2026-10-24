@@ -38,6 +38,7 @@ def test_reports_every_axis_over_the_whole_battery() -> None:
         "aisvs_l1",
         "aisvs_l2",
         "aisvs_l3",
+        "attack",
     ]
     for axis in cov.axes:
         assert 0.0 <= axis.pct <= 1.0, axis.label
@@ -525,3 +526,137 @@ def test_codes_that_share_a_reason_print_it_once() -> None:
     assert rendered.count(infra) == 3
     owasp = render_coverage(battery_coverage([SPECS]), framework="owasp")
     assert owasp.count("training and fine-tuning stages need pipeline access") == 1
+
+
+# --- the ATT&CK Enterprise axis (``shared.attack``) ----------------------------------------
+
+
+def _attack_spec(spec_id: str, *entries: tuple[str, str] | tuple[str, str, list[str]]):
+    from ildottore.shared.enums import AttackOccurrence
+    from ildottore.shared.models import AttackTechniqueMapping, MitreAttack
+    from tests.reporting.conftest import make_spec
+
+    techniques = [
+        AttackTechniqueMapping(
+            id=e[0], occurrence=AttackOccurrence(e[1]), tactics=list(e[2]) if len(e) == 3 else None
+        )
+        for e in entries
+    ]
+    return make_spec(spec_id).model_copy(
+        update={"mitre_attack": MitreAttack(techniques=techniques)}
+    )
+
+
+def test_the_attack_axis_counts_tactics_of_observed_techniques_only() -> None:
+    """Capability-only is listed and counts for nothing; a restriction narrows the tactics.
+
+    ``T1053.003`` Cron sits under Execution, Persistence and Privilege Escalation; a beacon
+    spec that restricts it to Persistence must not light the other two columns. And a
+    technique one spec observed and another only elicited counts once, as observed.
+    """
+
+    cov = build_battery_coverage(
+        [
+            _attack_spec("A-1", ("T1053.003", "observed", ["persistence"])),
+            _attack_spec("B-1", ("T1587.001", "capability-only")),
+            _attack_spec("C-1", ("T1699", "capability-only")),
+            _attack_spec("D-1", ("T1699", "observed")),
+        ]
+    )
+    axis = next(a for a in cov.axes if a.key == "attack")
+    assert axis.label == "MITRE ATT&CK Enterprise tactics (v20.0)"
+    assert {c for c, _ in axis.covered} == {"Persistence", "Execution"}
+    assert axis.total == 15
+    # The demo spec's ATLAS tactic is off-matrix on purpose; nothing ATT&CK is uncounted.
+    assert not [v for v in cov.off_universe if v[1].startswith("mitre_attack")]
+    listed = {tid: (occ, specs) for tid, _, occ, specs in cov.attack_techniques}
+    assert listed["T1587.001"] == ("capability-only", ("B-1",))
+    assert listed["T1699"] == ("observed", ("C-1", "D-1"))
+    assert listed["T1053.003"][0] == "observed"
+
+
+def test_a_retired_or_contradicted_attack_claim_is_reported_not_counted() -> None:
+    cov = build_battery_coverage(
+        [
+            _attack_spec("OLD-1", ("T1562", "observed")),
+            _attack_spec("MOVED-1", ("T1699", "observed", ["exfiltration"])),
+        ]
+    )
+    axis = next(a for a in cov.axes if a.key == "attack")
+    assert axis.exercised == 0, "neither claim reaches a column"
+    assert ("OLD-1", "mitre_attack.techniques", "T1562") in cov.off_universe
+    assert ("MOVED-1", "mitre_attack.techniques[T1699].tactics", "exfiltration") in cov.off_universe
+    assert [tid for tid, *_ in cov.attack_techniques] == ["T1699"], "a retired ID is not listed"
+
+
+def test_the_shipped_battery_attack_axis_is_pinned() -> None:
+    """8 of 15 tactics from 41 mapped specs (2026-10-24, ATT&CK v20.0). Argued in docs/17.
+
+    The seven uncovered tactics are all roadmap: a black-box runtime scanner driving an agent
+    can in principle observe each of them in the target's own tool calls, so none is out of
+    reach or deliberately untested. Moving one here is a reclassification to argue in a diff.
+    """
+
+    by_key = {a.key: a for a in _coverage().axes}
+    attack = by_key["attack"]
+    assert {c for c, _ in attack.covered} == {
+        "Reconnaissance",
+        "Resource Development",
+        "Execution",
+        "Persistence",
+        "Stealth",
+        "Credential Access",
+        "Exfiltration",
+        "Impact",
+    }
+    assert {c for c, _ in attack.missing} == {
+        "Initial Access",
+        "Privilege Escalation",
+        "Defense Impairment",
+        "Discovery",
+        "Lateral Movement",
+        "Collection",
+        "Command and Control",
+    }
+    assert attack.out_of_reach == () and attack.by_design == ()
+    cov = _coverage()
+    assert len({s for *_, specs in cov.attack_techniques for s in specs}) == 41
+    assert len(cov.attack_techniques) == 18
+    assert sum(1 for *_, occ, _s in cov.attack_techniques if occ == "capability-only") == 4
+
+
+def test_framework_attack_renders_the_techniques_and_the_json_lists_them() -> None:
+    cov = _coverage()
+    text = render_coverage(cov, framework="attack")
+    assert "MITRE ATT&CK Enterprise tactics (v20.0)" in text
+    assert "ATT&CK techniques declared" in text
+    assert "T1699      Direct Prompt Injection  [observed]" in text
+    assert "T1587.001  Malware  [capability-only]  JB-OFFENSIVE-RANSOM-CODEGEN-001" in text
+    assert "OWASP LLM Top 10" not in text
+    assert "ATT&CK techniques declared" not in render_coverage(cov, framework="owasp")
+    # The technique list is the detail behind the figure, not a gap list: ``--no-gaps`` keeps it.
+    assert "ATT&CK techniques declared" in render_coverage(cov, framework="attack", show_gaps=False)
+    payload = json.loads(render_coverage_json(cov, framework="attack"))
+    assert [a["key"] for a in payload["axes"]] == ["attack"]
+    by_id = {t["id"]: t for t in payload["attack_techniques"]}
+    assert by_id["T1053.003"] == {
+        "id": "T1053.003",
+        "name": "Cron",
+        "occurrence": "observed",
+        "specs": ["AG-PERSIST-BEACON-001"],
+    }
+    assert "attack" in FRAMEWORK_KEYS
+
+
+def test_navigator_layer_is_written_from_the_same_specs(tmp_path: Path) -> None:
+    out = tmp_path / "layers" / "battery.json"
+    cov = battery_coverage([SPECS], navigator_layer=out)
+    layer = json.loads(out.read_text(encoding="utf-8"))
+    assert layer["versions"] == {"attack": "20", "layer": "4.5", "navigator": "5.3.2"}
+    assert layer["domain"] == "enterprise-attack"
+    drawn = {c["techniqueID"] for c in layer["techniques"]}
+    assert drawn == {tid for tid, *_ in cov.attack_techniques}
+    # The beacon spec's restriction holds in the layer too: one Cron cell, under Persistence.
+    cron = [c for c in layer["techniques"] if c["techniqueID"] == "T1053.003"]
+    assert [c["tactic"] for c in cron] == ["persistence"]
+    assert "No scan performed" in layer["description"]

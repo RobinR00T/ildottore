@@ -67,6 +67,54 @@
         }
       }
     },
+    "mitre_attack": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "techniques"
+      ],
+      "description": "MITRE ATT&CK Enterprise mapping (docs/17): the techniques this spec exercises, each with how (observed in the target's own actions, or a capability artefact only) and optionally which of the technique's tactics the claim is restricted to. Optional so third-party spec packs keep validating. IDs are validated against the pinned release by lint, never here.",
+      "properties": {
+        "domain": {
+          "type": "string",
+          "enum": [
+            "enterprise"
+          ]
+        },
+        "techniques": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "occurrence"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^T[0-9]{4}(\\.[0-9]{3})?\\Z"
+              },
+              "occurrence": {
+                "type": "string",
+                "enum": [
+                  "observed",
+                  "capability-only"
+                ]
+              },
+              "tactics": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^[a-z]+(-[a-z]+)*\\Z"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "nist_ai_rmf": {
       "type": "string"
     },

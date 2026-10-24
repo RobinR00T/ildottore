@@ -5,6 +5,39 @@ The carryover ledger. Every agent session updates this so context survives even 
 newest merge on top: a branch's entries land together when it merges, so the dates of
 neighbouring entries can interleave (an older branch merged later sits above a newer one).
 
+## State, 2026-10-24: MITRE ATT&CK Enterprise v20.0 as a fifth axis (u02 A-95, `feat/mitre-attack-axis`)
+
+- **What.** Daniel asked for the Feedly *Map ATT&CK Techniques* Claude skill to be applied to Il
+  Dottore and for the ATT&CK data it points at to be downloaded and applied. What fits a spec
+  battery is the mapping discipline, not the report mapper: ATT&CK Enterprise v20.0 (2026-10-13,
+  the release with `T1698`/`T1699`/`T1700` and the Stealth and Defense Impairment tactics) pinned
+  as data from the official STIX bundle (`scripts/attack_universe.py check|refresh|diff`,
+  `shared/attack.py`), a `mitre_attack` block on specs with `observed` versus `capability-only`
+  occurrence and an optional tactic restriction, a linter rule (retired or unknown ID refused
+  naming the replacement, a restriction outside the technique's tactics a contradiction), the
+  `attack` axis in `dottore coverage` (tactics from observed techniques only, techniques listed
+  with their specs), the block in every run report, and ATT&CK Navigator layers from the battery
+  (`--navigator-layer`) and from a run (`-oN`, `reporting/navigator.py`, a fifth registered
+  reporter through the masking gate, never part of `-oA`).
+- **Figures (from `dottore coverage`, 2026-10-24).** 41 of 78 specs mapped, 18 techniques (14
+  observed, 4 capability-only), **8/15 tactics, 53%**; uncovered: Initial Access, Privilege
+  Escalation, Defense Impairment, Discovery, Lateral Movement, Collection, Command and Control,
+  all roadmap. Rationale per spec and the 37 deliberately unmapped in `docs/17`.
+- **Decided.** Two occurrences, not the skill's four: a harness is its own observer, so
+  `reported` and `source-assessed` have no meaning here, and no confidence travels with a
+  mapping. Generate Content is observed when the model generated the content (a lure, a
+  narrative); writing malware source is `T1587.001` capability-only. The log-evasion spec maps
+  the generic `T1070`, not the v20 system-log sub-techniques under Defense Impairment, because
+  the mock is an application audit log. `-oA` keeps writing four files. The field is outside the
+  resume digest; the package bytes changed, so judging rules 7 re-pinned.
+- **Checks.** `tests/shared/test_attack.py` (pin counts, matrix order, v20 renames, retired
+  replacements), linter tests (retired, unknown, duplicate, contradicted, schema shapes),
+  `tests/reporting/test_navigator.py` (both layers, the reporter's determinism and that no reply
+  reaches the bytes), `tests/cli/test_coverage_cmd.py` (observed-only numerator, restriction,
+  off-universe reporting, the shipped buckets pinned, the layer file), `tests/battery` (every
+  shipped ID current and declared once). Golden snapshots regenerated for the new coverage
+  block and edition.
+
 ## State, 2026-10-20: a canary masked at rest as it is read (u10 A-94, `fix/evidence-folded-canary`)
 
 - **What.** L4 of the A-92 pre-merge audit: the evidence store registered each planted canary as an

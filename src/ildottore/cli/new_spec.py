@@ -62,6 +62,10 @@ nist_ai_rmf: "TODO"
 #   techniques: []
 #   impacts: []
 # aisvs: []            # optional: OWASP AISVS IDs a FAIL is evidence against (CONTRIBUTING)
+# mitre_attack:        # optional: ATT&CK techniques the target is OBSERVED performing (docs/17)
+#   techniques:
+#     - id: T1699
+#       occurrence: observed   # or capability-only (listed, never counted)
 severity: medium
 target_type: chatbot
 requires: []

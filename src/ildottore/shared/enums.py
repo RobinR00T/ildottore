@@ -162,6 +162,20 @@ class RequiresCapability(StrEnum):
     MCP = "mcp"
 
 
+class AttackOccurrence(StrEnum):
+    """How a spec exercises a MITRE ATT&CK technique (``mitre_attack.techniques[].occurrence``).
+
+    Borrowed from the Feedly *Map ATT&CK Techniques* skill's occurrence statuses and reduced to
+    the two a test harness can tell apart (``shared.attack``): ``observed`` is the behaviour in
+    the target's own tool calls or reply during the test, and counts toward coverage;
+    ``capability-only`` is an artefact that would enable the technique elsewhere, listed and
+    never counted. **1:1 with the JSON Schema** enum.
+    """
+
+    OBSERVED = "observed"
+    CAPABILITY_ONLY = "capability-only"
+
+
 class ScanBand(StrEnum):
     """Severity band mapped from a ``RiskScore`` (``docs/05 §3``)."""
 
@@ -183,6 +197,8 @@ class ReportFormat(StrEnum):
     HTML = "html"
     SARIF = "sarif"
     JUNIT = "junit"
+    #: An ATT&CK Navigator layer (``-oN``), a companion to a report and not part of ``-oA``.
+    NAVIGATOR = "navigator"
 
 
 class InconclusiveReason(StrEnum):

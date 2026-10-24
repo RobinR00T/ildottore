@@ -145,7 +145,10 @@
         ({{ summary.coverage.iopc.techniques | pct }}) ·
         IoPC impacts
         <strong>{{ summary.coverage.iopc.impacts.exercised }}/{{ summary.coverage.iopc.impacts.total }}</strong>
-        ({{ summary.coverage.iopc.impacts | pct }})
+        ({{ summary.coverage.iopc.impacts | pct }}) ·
+        MITRE ATT&amp;CK Enterprise tactics (v{{ attack_version }})
+        <strong>{{ summary.coverage.attack.exercised }}/{{ summary.coverage.attack.total }}</strong>
+        ({{ summary.coverage.attack | pct }})
       </p>
       <p class="coverage-specs">
         Specs run:
@@ -179,6 +182,9 @@
       {% endif %}
       {% if summary.coverage.atlas.tactics %}
       <p class="coverage-atlas">ATLAS exercised: {{ summary.coverage.atlas.tactics | join(', ') }}</p>
+      {% endif %}
+      {% if summary.coverage.attack.tactics %}
+      <p class="coverage-attack">ATT&amp;CK tactics exercised (observed techniques only): {{ summary.coverage.attack.tactics | join(', ') }}</p>
       {% endif %}
       {% if summary.coverage.iopc and summary.coverage.iopc.impacts.codes %}
       <p class="coverage-iopc">IoPC impacts exercised:

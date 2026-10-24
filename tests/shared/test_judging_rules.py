@@ -296,6 +296,14 @@ PIN_HISTORY: tuple[tuple[int, str, str], ...] = (
         "character) and gets every identity canary of the scope; what is stored changes, no "
         "verdict does",
     ),
+    (
+        7,
+        "4f8fbe8f723615a7779ff005fcb16d636c33c624b29acb24527584afa3804d30",
+        "re-pin 2026-10-24: u02 A-95 (feat/mitre-attack-axis): MITRE ATT&CK Enterprise v20.0 "
+        "pinned as data, the mitre_attack spec field, the linter rule, the coverage axis, the "
+        "report block and the Navigator layers; mapping and reporting only, no verdict path "
+        "touched",
+    ),
 )
 
 #: The digest each version is pinned to now: the last line of :data:`PIN_HISTORY` for it.
@@ -306,7 +314,7 @@ PINNED: dict[int, str] = {
     4: "86d4391094d167c454d0e05ec076a36ca10c585c57b1d00574a7e86e87c0fe40",
     5: "c352e9bd55c8e3b0629e4164411b64667327a5c3cd533e003a7cb84475ecf9c4",
     6: "47293b7afb2a5409bff93319a9fa384621c3ecbe8b9a261be8bb428e05d0f4f7",
-    7: "c5650a08150487badb91d9d35bf571dbdcb93530dfe47cf58c104c9f809cee77",
+    7: "4f8fbe8f723615a7779ff005fcb16d636c33c624b29acb24527584afa3804d30",
 }
 
 #: One ``<version> <digest>`` line per pin, appended to and never edited: the history must start

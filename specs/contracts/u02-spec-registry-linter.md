@@ -471,6 +471,36 @@ fixture proof judges the value through `shared/tool_abuse.py`, so a vulnerable f
 exploit is a value is proved, and without the pattern it is `FIXTURE_NO_DETECT`. Checked by
 `tests/registry/test_forbidden_arg_values_lint.py` (8 tests, one with two `tool_call` configs).
 
+**A-95 An adversary framework is mapped by observation, a retired ID is refused with its
+replacement, and a tactic restriction cannot move a claim (added 2026-10-24).** MITRE ATT&CK
+Enterprise names what an adversary does on an estate, and since v20.0 (2026-10-13) that includes
+what an AI agent does there (`T1698`, `T1699`, `T1700`, `T1685.007`). So a spec's optional
+`mitre_attack.techniques` entry carries an `occurrence`, and only two: `observed`, the
+technique's behaviour is the target's own action or reply during the test and its tactics count
+toward coverage; `capability-only`, the target produced an artefact that would enable it
+elsewhere, listed and never counted. The third-party statuses of the method this borrows from
+(`reported`, `source-assessed`) do not exist here, because a harness is its own observer. Three
+refusals make it checkable:
+
+* an ID the pinned release (`shared/attack.py`, derived from the official STIX bundle by
+  `scripts/attack_universe.py`, with the bundle's SHA-256 in the data file) has **retired** is
+  `UNKNOWN_FRAMEWORK_CODE` naming the replacement (`T1562` is revoked in v20.0, replaced by
+  `T1685`), since a well-formed v19 ID matches nothing and shrinks the numerator in silence; an
+  ID the release does not know is the same code, the A-17 rule applied to a fifth universe;
+* a `tactics` restriction naming a tactic the technique does not sit under is
+  `FRAMEWORK_CLAIM_CONTRADICTED`: a restriction narrows a claim, it cannot move it, and counted
+  it would light a column the technique is not in;
+* the same ID declared twice in one spec is `UNKNOWN_FRAMEWORK_CODE`, since coverage
+  de-duplicates and the second entry's occurrence or restriction would silently not apply.
+
+`dottore coverage` does not lint, so it applies the same rules itself and reports what it did
+not count under `off_universe`. Like `aisvs`, the field is **outside** the resume digest: it
+feeds coverage and the Navigator layers, never a verdict. Only identifiers, names and tactic
+memberships are reproduced, under MITRE's terms of use. Checked by
+`tests/registry/test_linter.py`, `tests/shared/test_attack.py`, `tests/battery/test_battery.py`
+(every shipped ID current, declared once, restricted inside its tactics) and
+`tests/cli/test_coverage_cmd.py` (the axis's buckets pinned, A-26; `docs/17`).
+
 ## §8 Out of scope / forbidden
 - MUST NOT execute spec/plugin code or open any socket at load (parse + validate + register only).
 - MUST NOT author, mutate, or "fix" spec/suite/pack YAML (u13 owns content).

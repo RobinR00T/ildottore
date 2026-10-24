@@ -95,7 +95,7 @@ dottore fleet fleet.yaml --run
 
 # Inspect / author specs
 dottore registry ls [--category .. --owasp .. --suite .. --tag ..]
-dottore coverage [--framework owasp|atlas|iopc|aisvs] [--suite ..] [--json]   # what the battery tests, nothing sent
+dottore coverage [--framework owasp|atlas|iopc|aisvs|attack] [--suite ..] [--json] [--navigator-layer battery.json]   # what the battery tests, nothing sent
 dottore describe PI-DIRECT-001
 dottore lint mine/           # exit 0 clean, 1 a spec fails lint, 3 a path that holds nothing
 dottore new-spec --id PI-XYZ-001 --family prompt_injection
@@ -133,6 +133,7 @@ dottore calibrate report.json labels.yaml
 | `--estimate` | print a pre-run cost estimate (requests + tokens) and the ceilings each target runs under (`ceilings: <n> requests, <n> attempts (one per accepted request), <n> tokens, <n>s wall`); no sends. Output tokens are each send's `max_tokens` (the spec's own, else `sampling_defaults`) or 512. Under `-q` it prints one line, as `--dry-run -q` does |
 | `--compare` | model-comparison matrix across targets (needs two or more `-t`) |
 | `--hardened` | replay hardened fixtures (clean-run smoke) on a mock target; refused on a live one |
+| `-oN` | an ATT&CK Navigator layer (format 4.5) coloured by the run's verdicts; a companion to a report, never part of `-oA` (docs/17) |
 | `-oJ/-oH/-oS/-oX/-oA` | JSON / HTML / SARIF / JUnit / all four to `<prefix>.json`, `.html`, `.sarif`, `.xml` (`-oA report.v2` keeps its name: `report.v2.json`; `-oA report.json` is not doubled: `report.json`, `report.html`, ...). Two formats pointed at the same file are refused before anything is sent, and so is a report path that is an input of the run (the scope, a target, the judge, the fleet file, the run store, a spec file; through a symlink or a hard link too) |
 | `--fail-on <band>` | CI gate on confirmed findings (`info\|low\|medium\|high\|critical`, default `high`; `info` gates on any confirmed finding) |
 | `--include-needs-review` | also gate unconfirmed exploits (an unconfirmed `fail`, a fail only the judge reported among them); an `inconclusive` result never gates. Without the flag such a fail is at most a `warning` in the SARIF, whatever its band; with it, it gates, and keeps its band's level (`error` for critical or high) |
@@ -225,7 +226,7 @@ dottore fleet fleet.yaml --run                     # or scan every target immedi
 dottore fleet fleet.yaml --run -oJ fleet.json --run-db fleet.sqlite   # run's store and report options
 ```
 
-`fleet` takes `--spec-path`, `--evidence-root`, `--run-db` and `-oJ/-oH/-oS/-oX/-oA` with `run`'s
+`fleet` takes `--spec-path`, `--evidence-root`, `--run-db` and `-oJ/-oH/-oS/-oX/-oN/-oA` with `run`'s
 meaning (without `--run` they are carried into the `dottore run` line it prints), and reads the
 same default spec path as `run`: `specs/` in the working directory when there is one, else the
 built-in battery inside the installed package. It therefore runs from any directory that has no

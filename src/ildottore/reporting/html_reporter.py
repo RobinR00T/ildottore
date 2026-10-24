@@ -30,6 +30,7 @@ from ildottore.reporting.summary import (
     finding_state,
     pct_display,
 )
+from ildottore.shared.attack import ATTACK_VERSION
 from ildottore.shared.enums import ReportFormat, VerdictStatus
 from ildottore.shared.iopc import IOPC_IMPACTS, IOPC_TAXONOMY_VERSION
 from ildottore.shared.models import AttackSpec, Finding
@@ -169,6 +170,7 @@ class HtmlReporter(BaseReporter):
             owasp_edition=OWASP_LLM_EDITION,
             atlas_release=ATLAS_MATRIX_RELEASE,
             iopc_version=IOPC_TAXONOMY_VERSION,
+            attack_version=ATTACK_VERSION,
             has_comparison=summary.model_comparison is not None,
             comparison=summary.model_comparison,
             confirmed=confirmed,
