@@ -80,7 +80,7 @@ def _answer(text: str) -> list[dict[str, Any]]:
 
 def agent_server(
     *,
-    auth_reply: dict[str, Any] | None | str = "ok",
+    auth_reply: dict[str, Any] | str | None = "ok",
     on_query: Callable[[dict[str, Any]], list[dict[str, Any]]] | None = None,
 ) -> HandlerServer:
     """A :class:`HandlerServer` at ``/ws`` scripted as a deployed agent.
