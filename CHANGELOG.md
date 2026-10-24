@@ -23,6 +23,13 @@ the file, schema copy, build or pipeline it names.
   `cli/banner.py`, both in the entry point's import closure), so judging rules 7 is re-pinned by
   an appended line; the two art files are bytes no verdict sees and are left out of the digest by
   name (`DATA_EXEMPT`).
+- **The banner tests assert on the help stripped of rich's escape sequences.** Typer forces
+  rich's terminal mode wherever `GITHUB_ACTIONS`, `FORCE_COLOR` or `PY_COLORS` is set, so on CI
+  the help under the logo carries bold and dim codes it never carries under a plain `CliRunner`;
+  four tests that looked for `Usage: dottore` in the raw output, or for no escape at all, failed
+  there (`validate`, `floors`) while green locally. The logo's own copy is still asserted on byte
+  for byte, and the colour test now also holds that no `38;2` code appears when the terminal
+  declares no colour.
 
 ### Added (judging rules 7 re-pinned, u02 A-95)
 
