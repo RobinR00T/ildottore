@@ -4,11 +4,12 @@ The ``floors`` job of ``.github/workflows/ci.yml`` installs Il Dottore with it
 (``pip install -c floors.txt -e ".[dev]"``) and runs the test suite, so a lower bound in
 ``pyproject.toml`` that no longer works fails CI instead of an operator's install (u12 A-84). The
 direct dependencies (``[project] dependencies`` and the ``dev`` extra) are pinned to the version
-after their ``>=``; what they pull in resolves as usual, to the newest release each allows (pip
+after their ``>=``, or kept at the one after their ``==`` (an exact pin is its own floor); what
+they pull in resolves as usual, to the newest release each allows (pip
 has no lowest-resolution mode, and the floors of those are theirs to declare, not ours).
 
 A runtime dependency must declare a floor: one without, or a specifier this script does not
-read (an upper bound, ``~=``, ``==``, an environment marker), stops it, exit 1, so a new kind of
+read (an upper bound, ``~=``, an environment marker), stops it, exit 1, so a new kind of
 requirement is looked at instead of silently left unconstrained. A ``dev`` dependency without a
 floor (the type stubs) is left to resolve, and said so in a comment line.
 
@@ -22,10 +23,11 @@ import sys
 import tomllib
 from pathlib import Path
 
-#: ``name`` or ``name>=floor``, nothing else: a name, an optional extra, an optional lower bound.
+#: ``name``, ``name>=floor`` or ``name==pin``, nothing else: a name, an optional extra, an optional
+#: lower bound or exact pin.
 _REQUIREMENT = re.compile(
     r"^(?P<name>[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?)(?:\[[A-Za-z0-9._,-]+\])?"
-    r"(?:>=(?P<floor>[0-9][0-9A-Za-z.]*))?$"
+    r"(?:(?:>=|==)(?P<floor>[0-9][0-9A-Za-z.]*))?$"
 )
 
 
@@ -45,7 +47,9 @@ def floors(pyproject: str) -> list[str]:
             text = requirement.replace(" ", "")
             match = _REQUIREMENT.fullmatch(text)
             if match is None:
-                raise FloorError(f"{group} dependency {requirement!r}: not `name` or `name>=X`")
+                raise FloorError(
+                    f"{group} dependency {requirement!r}: not `name`, `name>=X` or `name==X`"
+                )
             floor = match.group("floor")
             if floor is None:
                 if group == "runtime":

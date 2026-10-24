@@ -4,8 +4,9 @@ A-84).
 ``scripts/dependency_floors.py`` turns ``pyproject.toml`` into ``name==floor`` lines; the job then
 runs the suite on them, which is the only place the declared lower bounds are exercised (every
 other job installs the newest releases). What is checked here, offline: every direct dependency
-is pinned to exactly the version after its ``>=``, a runtime dependency with no floor or with a
-specifier the script does not read is refused rather than left free, and the job uses the script.
+is pinned to exactly the version after its ``>=`` (or its ``==``), a runtime dependency with no
+floor or with a specifier the script does not read is refused rather than left free, and the job
+uses the script.
 """
 
 from __future__ import annotations
@@ -44,7 +45,7 @@ def test_every_direct_dependency_is_pinned_to_its_floor() -> None:
     ).stdout
     pins = dict(line.split("==") for line in out.splitlines() if not line.startswith("#"))
     for requirement in _declared():
-        name, _, floor = requirement.partition(">=")
+        name, floor = re.split(">=|==", requirement) if "=" in requirement else (requirement, "")
         if floor:
             assert pins.pop(name) == floor, requirement
         else:
@@ -56,9 +57,10 @@ def test_every_direct_dependency_is_pinned_to_its_floor() -> None:
     ("requirement", "why"),
     [
         ("pydantic", "declares no floor"),
-        ("pydantic>=2.6,<3", "not `name` or `name>=X`"),
-        ("pydantic~=2.6", "not `name` or `name>=X`"),
-        ('pydantic>=2.6; python_version >= "3.12"', "not `name` or `name>=X`"),
+        ("pydantic>=2.6,<3", "not `name`, `name>=X` or `name==X`"),
+        ("pydantic~=2.6", "not `name`, `name>=X` or `name==X`"),
+        ("pydantic==2.6,!=2.6.1", "not `name`, `name>=X` or `name==X`"),
+        ('pydantic>=2.6; python_version >= "3.12"', "not `name`, `name>=X` or `name==X`"),
     ],
 )
 def test_a_runtime_requirement_it_cannot_pin_is_refused(requirement: str, why: str) -> None:
@@ -66,6 +68,15 @@ def test_a_runtime_requirement_it_cannot_pin_is_refused(requirement: str, why: s
     script = _script()
     with pytest.raises(script.FloorError, match=re.escape(why)):
         script.floors(pyproject)
+
+
+def test_an_exact_pin_is_its_own_floor() -> None:
+    """``ruff`` is pinned exactly so local gates and CI lint alike: the floors job keeps the pin."""
+
+    script = _script()
+    pyproject = '[project]\ndependencies = ["pydantic>=2.6"]\n'
+    pyproject += '[project.optional-dependencies]\ndev = ["ruff==0.17.2"]\n'
+    assert script.floors(pyproject) == ["pydantic==2.6", "ruff==0.17.2"]
 
 
 def test_the_floors_job_installs_with_the_script_and_runs_the_suite() -> None:

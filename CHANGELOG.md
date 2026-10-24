@@ -7,6 +7,24 @@ the file, schema copy, build or pipeline it names.
 
 ## [Unreleased]
 
+### Changed (breaking for an install on rich older than 14.2.0: the static checks pinned exactly)
+
+- **`ruff==0.17.2`, `mypy==2.4.0`, `import-linter==2.15`, `types-PyYAML==6.0.12.20260906` and
+  `types-jsonschema==4.26.0.20261006` in the `dev` extra, in place of open ranges.** Every CI job
+  installs the newest release a range allows, a local venv keeps whatever it was built with: CI
+  linted with ruff 0.17.2 and typed with mypy 2.4.0 while a local `make gates` ran 0.15.20 and
+  2.1.0, and a rule the newer ruff added (RUF036, `None` last in a union) failed only on CI. One
+  version of each on both sides now, the ones CI ran on 2026-10-24; Dependabot's weekly
+  `python-dev` group proposes the bumps, and its PR carries whatever a new release asks of the
+  code. The tree is clean under them as it stands. `scripts/dependency_floors.py` reads an exact
+  pin as its own floor (it refused `==` before), so the `floors` job installs the same versions;
+  a test holds it. An existing venv picks the pins up with `pip install -e ".[dev]"`.
+- **The runtime floor of rich rises from 13.8.0 to 14.2.0.** Every import-linter release from
+  2.13 requires `rich>=14.2.0`, and the `floors` job installs the runtime floors and the dev extra
+  together, so the pinned import-linter could not resolve against `rich==13.8.0` (the first push
+  of this change failed that job on it). The suite now runs at the floors on rich 14.2.0. An
+  environment that holds an older rich upgrades it on install.
+
 ### Added (judging rules 7 re-pinned: the logo above the root help)
 
 - **`dottore --help` and a bare `dottore` print the Il Dottore logo above the root help on an
