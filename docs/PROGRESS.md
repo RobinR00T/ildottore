@@ -19,9 +19,16 @@ neighbouring entries can interleave (an older branch merged later sits above a n
   rich as that method runs and echoes click's formatter text after it, and a bare `dottore`
   drops that text (the first cut put the logo under the help, and nowhere on a bare `dottore`).
 - **Verified.** `tests/cli/test_banner.py` (parity of the two copies, ASCII and width, the
-  `show` table, `env_for` on a closed stream, the four CLI paths through `CliRunner` with the
-  terminal faked), and the six cases on a real pseudo-terminal (`pty.fork`, outside the sandbox,
+  `show` table, `env_for` on a closed stream, six CLI paths through `CliRunner` with the
+  terminal faked: root `--help`, a bare `dottore`, colour, sub-command helps, a parent group
+  holding `dottore`, a usage error), and the six cases on a real pseudo-terminal (`pty.fork`, outside the sandbox,
   which has no pty devices): colour, bare, no `COLORTERM`, `NO_COLOR`, `TERM=dumb`, `run --help`.
+- **CI red on the merge, green after `docs/banner-nits`.** Typer forces rich's terminal mode
+  wherever `GITHUB_ACTIONS`, `FORCE_COLOR` or `PY_COLORS` is set, so on CI the help under the
+  logo carries bold and dim codes; four of the CLI tests asserted on the raw help and failed in
+  `validate` and `floors` while green locally. They now assert on the help stripped of escape
+  sequences (as `test_help_text.py` does) and on the logo's copy byte for byte; run locally under
+  `GITHUB_ACTIONS=true`, `FORCE_COLOR=1` and `COLUMNS=60` as well as plain.
 - **Judging rules 7 re-pinned** (`7cbd07d44c56…`): `cli/app.py` and `cli/banner.py` are in the
   entry point's import closure, so they are covered; the two art files are left out by name
   (`DATA_EXEMPT`, bytes no verdict sees), since `.txt` as a data suffix would have made a stray

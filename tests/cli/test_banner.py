@@ -7,6 +7,11 @@ declares it (``COLORTERM`` ``truecolor`` or ``24bit``) and neither ``NO_COLOR`` 
 what it got before, and a sub-command's help never carries it. The colour copy stripped of its
 escape sequences is byte-identical to the plain one, so what a colour-blind diff of the two
 would show is nothing.
+
+The help itself is asserted on stripped of rich's escape sequences: Typer forces rich's terminal
+mode wherever ``GITHUB_ACTIONS``, ``FORCE_COLOR`` or ``PY_COLORS`` is set, so on CI the help
+carries bold and dim codes that it never carries under a plain ``CliRunner``. The logo's own
+copy (plain or colour) is asserted on byte for byte.
 """
 
 from __future__ import annotations
@@ -32,6 +37,10 @@ _LOGO_LINE = "I l   D o t t o r e"
 
 def _fake_env(env: banner.Env) -> Any:
     return lambda _stream: env
+
+
+def _stripped(text: str) -> str:
+    return _ANSI.sub("", text)
 
 
 # --- the two copies ------------------------------------------------------------------------
@@ -124,7 +133,7 @@ def test_off_a_terminal_the_help_carries_no_logo() -> None:
     result = runner.invoke(app, ["--help"])
     assert result.exit_code == 0
     assert _LOGO_LINE not in result.output
-    assert result.output.lstrip().startswith("Usage: dottore")
+    assert _stripped(result.output).lstrip().startswith("Usage: dottore")
 
 
 def test_on_a_terminal_the_logo_comes_above_the_root_help(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -132,8 +141,9 @@ def test_on_a_terminal_the_logo_comes_above_the_root_help(monkeypatch: pytest.Mo
     result = runner.invoke(app, ["--help"])
     assert result.exit_code == 0
     assert result.output.startswith(banner.plain() + "\n")
-    assert "\x1b" not in result.output
-    assert "Usage: dottore" in result.output[len(banner.plain()) :]
+    assert not result.output.startswith(banner.ansi())
+    assert "38;2;" not in result.output  # no 24-bit colour anywhere: the logo was the plain copy
+    assert "Usage: dottore" in _stripped(result.output[len(banner.plain()) :])
 
 
 def test_on_a_24_bit_terminal_the_logo_is_in_colour(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -149,7 +159,7 @@ def test_a_bare_dottore_prints_the_logo_above_its_help(monkeypatch: pytest.Monke
     monkeypatch.setattr(app_mod, "_banner_env_for", _fake_env(banner.Env(tty=True)))
     result = runner.invoke(app, [])
     assert result.output.startswith(banner.plain() + "\n")
-    assert "Usage: dottore" in result.output
+    assert "Usage: dottore" in _stripped(result.output)
     assert result.output.count(_LOGO_LINE) == 1
 
 
@@ -180,7 +190,7 @@ def test_held_by_a_parent_group_the_root_help_carries_no_logo(
     out, _ = capsys.readouterr()
     assert exit_info.value.code == 0
     assert _LOGO_LINE not in out
-    assert "Usage: outer dottore" in out
+    assert "Usage: outer dottore" in _stripped(out)
 
 
 def test_a_usage_error_carries_no_logo(monkeypatch: pytest.MonkeyPatch) -> None:
