@@ -311,6 +311,15 @@ PIN_HISTORY: tuple[tuple[int, str, str], ...] = (
         "(cli/banner.py, the format_help hook in cli/app.py, DATA_EXEMPT for the two art files); "
         "help output only, no verdict path touched",
     ),
+    (
+        7,
+        "54cf9d2751a6a7f8ca9dfd4d4fb157e4977bc24e8d548d2d18f686a8bf18d076",
+        "re-pin 2026-10-24: u04 A-96 (the WebSocket guard): websocket.guard in the model, the "
+        "loader and the adapter (adapters/agent_guard.py), the dry-run's guard line and the "
+        "guard left out of the target digest; it decides whether and when a query goes out, "
+        "never how a reply read is judged, and a target without the block reads every frame as "
+        "before, so no stored verdict changes",
+    ),
 )
 
 #: The digest each version is pinned to now: the last line of :data:`PIN_HISTORY` for it.
@@ -321,7 +330,7 @@ PINNED: dict[int, str] = {
     4: "86d4391094d167c454d0e05ec076a36ca10c585c57b1d00574a7e86e87c0fe40",
     5: "c352e9bd55c8e3b0629e4164411b64667327a5c3cd533e003a7cb84475ecf9c4",
     6: "47293b7afb2a5409bff93319a9fa384621c3ecbe8b9a261be8bb428e05d0f4f7",
-    7: "7cbd07d44c567f778f0fd66763d60df51c336321467ca274d0f6c3092b18c86e",
+    7: "54cf9d2751a6a7f8ca9dfd4d4fb157e4977bc24e8d548d2d18f686a8bf18d076",
 }
 
 #: One ``<version> <digest>`` line per pin, appended to and never edited: the history must start

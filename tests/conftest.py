@@ -8,6 +8,8 @@ domain fixtures). Nothing here duplicates a fixture a sub-package already define
 * a deterministic :class:`FrozenClock` (``frozen_clock``) for wall-budget tests
 * a :class:`MockTarget` factory (``mock_target_factory``) reusing the u03 public surface
 * ``no_known_secrets``: an empty registry of the redactor's process-wide credentials
+* ``guard_state_in_tmp``: an autouse redirect of the WebSocket guard's state directory, so no
+  test writes the operator's own pacing and cooldown state
 * an **autouse, session-scoped no-live-socket guard** (validation-plan layer 5 / CI §4):
   any attempt to open a TCP connection to a non-loopback host during the test run raises,
   so an accidental real provider call fails closed instead of leaking a live key.
@@ -161,6 +163,17 @@ def _is_loopback(address: object) -> bool:
         host = str(address[0])
         return host == "" or any(host.startswith(p) for p in _ALLOWED_HOST_PREFIXES)
     return False
+
+
+@pytest.fixture(autouse=True)
+def guard_state_in_tmp(
+    tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
+) -> Path:
+    """A fresh state directory for the WebSocket guard (``ILDOTTORE_STATE_DIR``) per test."""
+
+    state = tmp_path_factory.mktemp("guard-state")
+    monkeypatch.setenv("ILDOTTORE_STATE_DIR", str(state))
+    return state
 
 
 @pytest.fixture(scope="session", autouse=True)

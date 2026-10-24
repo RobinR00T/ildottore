@@ -5,6 +5,36 @@ The carryover ledger. Every agent session updates this so context survives even 
 newest merge on top: a branch's entries land together when it merges, so the dates of
 neighbouring entries can interleave (an older branch merged later sits above a newer one).
 
+## State, 2026-10-24: a deployed agent's guard (`claude/agent-connector-6b9b4c`, u04 A-96)
+
+- **What.** Any AI agent reachable over a JSON WebSocket is a target with a profile and no code:
+  the wire shape was already declarative (`provider: websocket`, PR #87); `websocket.guard` adds
+  what a deployed assistant needs (`shared/models.py` `WebSocketGuard*`,
+  `adapters/agent_guard.py`, wired in `adapters/websocket.py`): the JWT checked for its tenant and
+  expiry before any dial; the first authentication failure stops the run (`GuardStop`, an
+  `AdapterProductError`, exit 3) and starts a cooldown kept across processes, a refused credential
+  remembered by sha256 and never sent again; pacing (interval, hourly cap) across processes under a
+  lock; `stop_on_tools` closes the connection on a reported tool and stops the run; a lower byte
+  cap; an exact scheme and path. The loader refuses what the block cannot keep (`cli/wiring.py`
+  `_check_guard`); `--dry-run` prints a `guard:` line; the guard is left out of the target digest
+  (`shared/digest.py`). Generic profile with placeholders only: `examples/target.agent.yaml` and
+  `examples/scope.agent.yaml` (Scenario I).
+- **Open decision OD-54** (u04 §9, index ledger): a reported tool from `stop_on_tools` stops the
+  run (built, the smallest reversible version) or is stored as evidence and the run goes on; and a
+  close or silence before the handshake reply counts as an authentication failure (built).
+- **Not built.** A working-hours window (a real engagement's rules may set one: run inside it by
+  hand); HTTP and SSE transports for the guard (the `rest` adapter has no guard yet); profile lookup
+  by name (pass the profile's path with `-t`).
+- **Real profiles stay out of the repository.** One for a private deployment was written outside
+  every checkout; `git grep` over the tree and the diff found none of its values.
+- **Verified.** `tests/adapters/test_agent_guard.py` (40) and `tests/cli/test_agent_target.py` (11)
+  against the loopback agent of `tests/agent_ws_server.py`; the dry-run of Scenario I copied from a
+  real run. Judging rules 7 re-pinned (no verdict path touched).
+- **Docs.** `README.md`, `USAGE.md`, `docs/MANUAL.md` §4.2 ("A deployed agent"),
+  `examples/README.md` (Scenario I), `man/man5/dottore-scope.5`, `CHANGELOG.md`,
+  `specs/contracts/u04-target-adapters.md` (A-96, OD-54), `specs/contracts/00-INDEX.md`.
+- **Gates.** `make gates` green in the worktree (10 min 54 s): ruff, ruff format, mypy strict (174 files), import-linter (4 contracts kept), spec lint (0 errors, 78 specs), 8111 tests passed and 3 skipped, coverage 97.67%, self-scan 0 high or critical, bandit clean, pip-audit no known vulnerabilities.
+
 ## State, 2026-10-24: the logo above the root help (`feat/banner`)
 
 - **What.** As elSereno prints its night watchman above its help, `dottore --help` and a bare

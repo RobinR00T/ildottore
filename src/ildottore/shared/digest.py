@@ -117,6 +117,13 @@ def _target_payload(target: Target, mock_scenario: str | None) -> dict[str, Any]
     for optional in ("seeded_setup", "websocket"):
         if payload.get(optional) is None:
             payload.pop(optional, None)
+    # A WebSocket target's `guard` decides whether and when a query goes out (the cooldown, the
+    # pacing, a tool that closes the connection), never what answers it, as `--rate` and the
+    # budgets do not: left out, so a run the hourly cap stopped resumes after the operator eases
+    # the pace, and a run stored before the block existed still resumes.
+    websocket = payload.get("websocket")
+    if isinstance(websocket, dict):
+        websocket.pop("guard", None)
     # The tools the target file declares not destructive (OD-43, u06 A-72): none declared, the
     # key is left out, so a run stored before a file could declare one still resumes; declared,
     # it is part of what judges, and a resume after a change is refused as another target.
