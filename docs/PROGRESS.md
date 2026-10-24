@@ -5,6 +5,24 @@ The carryover ledger. Every agent session updates this so context survives even 
 newest merge on top: a branch's entries land together when it merges, so the dates of
 neighbouring entries can interleave (an older branch merged later sits above a newer one).
 
+## State, 2026-10-24: the same static checks locally and on CI (`chore/pin-ruff`)
+
+- **What.** The static checks of the `dev` extra pinned exactly (`ruff==0.17.2`, `mypy==2.4.0`,
+  `import-linter==2.15`, both type-stub packages) instead of open ranges. CI resolved the ranges
+  to the newest releases, the shared local venv had older ones (ruff 0.15.20, mypy 2.1.0,
+  import-linter 2.13), and a rule only the newer ruff knows (RUF036) failed a branch on CI after
+  `make gates` had passed locally. `scripts/dependency_floors.py` now accepts `name==X` as its
+  own floor, so the `floors` job keeps the pins (`tests/test_dependency_floors.py`: a new case,
+  and `==` with a second clause still refused).
+- **Operator.** An existing venv needs `pip install -e ".[dev]"` once to pick the pins up (in a
+  worktree, never: install the pinned versions by name, `pip install "ruff==0.17.2" ...`, so the
+  shared venv's editable install keeps pointing at the main checkout). The shared venv already
+  has them. bandit and pip-audit stay outside the extra, as before.
+- **Gates.** `make gates` green with the pinned versions (10 min 26 s): ruff, ruff format, mypy
+  strict (173 files), import-linter (4 contracts kept), spec lint (0 errors, 78 specs), 8062 tests
+  passed and 3 skipped, coverage 97.69%, self-scan 0 high or critical, bandit clean, pip-audit no
+  known vulnerabilities.
+
 ## State, 2026-10-24: the logo above the root help (`feat/banner`)
 
 - **What.** As elSereno prints its night watchman above its help, `dottore --help` and a bare
