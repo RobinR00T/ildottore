@@ -270,6 +270,21 @@ connection is gone is inconclusive, OD-36); every frame is kept in the evidence 
 credential as its placeholder.
 Worked file:
 examples/target.websocket.yaml; reference in docs/MANUAL.md section 4.2.
+.PP
+A deployed agent adds websocket.guard, every part optional: endpoint (scheme, exact path: the
+loader refuses any other); auth (code_path and failure_codes, the error codes that mean the
+credential failed; cooldown_seconds, default 120); token (tenant, a value or a vars name;
+tenant_claims; reply_tenant_path; min_lifetime_seconds, default 30), read from the JWT payload
+unverified before anything is sent; pacing (min_interval_seconds, max_per_hour), kept across
+processes; stop_on_tools (path, names): a frame naming one closes the connection and stops the
+run; and max_response_bytes, which may lower the per-turn cap, never raise it. With the block
+present, the first authentication failure (an upgrade answered 401 or 403, a handshake reply that
+does not satisfy expect, a listed error code, a close or silence before the handshake reply) stops
+the run, exit 3, and starts the cooldown; a refused credential is remembered by its sha256 and not
+sent again. The state lives in one file per endpoint under ILDOTTORE_STATE_DIR, else
+$XDG_STATE_HOME/ildottore, else ~/.local/state/ildottore. The guard is not part of the target
+digest. Worked file: examples/target.agent.yaml; reference in docs/MANUAL.md section 4.2, "A
+deployed agent".
 .SH "FLEET FILE"
 .nf
 version: "1"

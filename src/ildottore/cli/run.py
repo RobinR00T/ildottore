@@ -1274,6 +1274,9 @@ def _print_dry_run_plan(
         filters = _filter_stops_line(plan.target)
         if filters is not None:
             print(f"  filters: {filters}")
+        guard = _guard_line(plan.target, plan.estimate.requests)
+        if guard is not None:
+            print(f"  guard:   {guard}")
         # Per field, how many specs the block fills it on (a spec's own value wins, so a block's
         # temperature reaches none of the shipped battery), and what never goes out (OD-39).
         for note in plan.sampling_notes:
@@ -1369,6 +1372,40 @@ def _near_scene_lines(target: Target, specs: Sequence[AttackSpec]) -> list[str]:
                 "two are not one tool"
             )
     return lines
+
+
+def _guard_line(target: Target, requests: int) -> str | None:
+    """What a WebSocket target's ``guard`` block will hold the run to (``None``: no block).
+
+    Names only what the operator configured, never the tenant or the credential, and says when
+    the plan's ``requests`` are more than the hourly cap lets through: the run stops at the cap.
+    """
+
+    guard = target.websocket.guard if target.websocket is not None else None
+    if guard is None:
+        return None
+    parts = [f"auth failure stops the run, {guard.auth.cooldown_seconds:g}s cooldown"]
+    if guard.token is not None:
+        parts.append(
+            f"token tenant checked, at least {guard.token.min_lifetime_seconds:g}s of life"
+        )
+    if guard.pacing is not None:
+        cap = guard.pacing.max_per_hour
+        parts.append(
+            f"{guard.pacing.min_interval_seconds:g}s between queries"
+            + (f", at most {cap}/hour" if cap is not None else "")
+            + " (across processes)"
+        )
+        if cap is not None and requests > cap:
+            parts.append(
+                f"this plan's {requests} requests pass the hourly cap: the run stops there, "
+                "resume it later"
+            )
+    if guard.stop_on_tools is not None:
+        parts.append(f"closes on {len(guard.stop_on_tools.names)} tool name(s)")
+    if guard.max_response_bytes is not None:
+        parts.append(f"{guard.max_response_bytes} bytes per turn")
+    return "; ".join(parts)
 
 
 def _filter_stops_line(target: Target) -> str | None:

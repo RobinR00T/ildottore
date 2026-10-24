@@ -16,6 +16,7 @@ Run everything from the repo root with the venv active (see [`INSTALL.md`](../IN
 | [`fleet.yaml`](fleet.yaml) | Declare several targets in one file and scan them all. |
 | [`target.mcp.yaml`](target.mcp.yaml) / [`scope.mcp.yaml`](scope.mcp.yaml) | A Model Context Protocol server target (read-only discovery). |
 | [`target.websocket.yaml`](target.websocket.yaml) / [`scope.websocket.yaml`](scope.websocket.yaml) | A chat endpoint over a WebSocket, its wire shape declared in the file (`provider: websocket`). |
+| [`target.agent.yaml`](target.agent.yaml) / [`scope.agent.yaml`](scope.agent.yaml) | A deployed AI agent over a WebSocket, with its `guard`: tenant-checked JWT, stop at the first auth failure, pacing across processes, tools that close the connection. |
 | [`ci-github-actions.yml`](ci-github-actions.yml) | Gate a pipeline on new high/critical findings. |
 
 Authorization is not optional: a run refuses any target that is not covered by a
@@ -364,6 +365,51 @@ re-derives the verdicts from them. The host is `example.test`, so a run without 
 has nowhere to go: point both files at your deployment first, and read
 [`../docs/MANUAL.md`](../docs/MANUAL.md) §4.2 for what each key means and what the loader
 refuses.
+
+## Scenario I, scan a deployed AI agent with its guard
+
+An agent (a copilot, an assistant with tools, a chat over a tenant's data) is a WebSocket target
+plus a `guard:` block that keeps the scan polite and contained: the JWT is checked for the
+configured tenant and its expiry before it is sent; the first authentication failure stops the
+run and leaves the agent alone for a cooldown, in this run and the next; queries are paced across
+processes (15 s apart and 20 an hour here); a progress frame naming a tool that writes to the
+tenant closes the connection; and a turn has a lower byte cap. `target.agent.yaml` declares the
+family of protocols "authenticate, then query, then progress frames and answer chunks until a
+final flag, or an error frame", with placeholders only:
+
+```bash
+dottore run --dry-run --quick \
+  -t examples/target.agent.yaml \
+  --scope examples/scope.agent.yaml
+```
+
+Real output of that exact command (the `auth_ref` and `--judge` warnings on stderr left out):
+
+```
+dry-run: plan resolved, sent nothing.
+  scope:   examples/scope.agent.yaml
+  target:  agent-staging (agent) authorized at wss://assistant.example.test/ws
+  battery: quick, 10 specs selected
+    jailbreak: 3
+    output_security: 3
+    data_leakage: 2
+    availability_cost: 1
+    prompt_injection: 1
+  skipped: 3 spec(s) on agent-staging, capability not declared by the target
+  blocked: 1 spec(s) on agent-staging, refused by the policy pack
+  not seeded: 4 spec(s) on agent-staging, their scene is not in the deployment as seeded_setup declares it, or their tool trace cannot be read through this adapter (-vv says which)
+  guard:   auth failure stops the run, 120s cooldown; token tenant checked, at least 30s of life; 15s between queries, at most 20/hour (across processes); this plan's 125 requests pass the hourly cap: the run stops there, resume it later; closes on 3 tool name(s); 200000 bytes per turn
+  would send: 125 requests over 10 specs at runs=5
+  pacing:  0.5 req/s ceiling (S8)
+  budgets: 500000 tokens, 2000 requests, 2000 attempts, 1800s wall (derived from this plan, or --budget-requests, --budget-tokens, --budget-wall)
+```
+
+The `guard:` line is what the run will hold itself to, and it says that this plan does not fit in
+the hourly cap: the run stops after twenty queries and names when the next slot frees; resume it
+then with `dottore run --resume <run-id>`. A profile for a real agent names a real host and a real
+tenant, so keep it and its scope outside any repository (for example
+`~/.config/ildottore/agents/`) and pass both paths; read
+[`../docs/MANUAL.md`](../docs/MANUAL.md) §4.2, "A deployed agent", for each key.
 
 ## Add your own attack (no core code)
 

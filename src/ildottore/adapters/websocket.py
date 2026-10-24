@@ -41,6 +41,14 @@ the campaign (frames now go through ``bounded_loads`` and ``well_formed_json`` a
 does, A-47); a tool call's JSON-text arguments were not measured (``check_argument_nesting``);
 a text frame that is not UTF-8 (close code 1007) was retried; and a socket that failed to open
 was dialled again inside one send even when the runner owns the retries.
+
+A deployed agent declares its ``guard`` (``WebSocketSpec.guard``, :mod:`.agent_guard`): its
+credential is checked before it is sent (a JWT naming the configured tenant, not about to
+expire); the first authentication failure (an upgrade refused with 401 or 403, a handshake reply
+that does not satisfy ``expect``, a close or a silence before that reply, an error frame with a
+code the block lists) stops the run and starts a cooldown kept across processes; queries are
+paced across processes; a tool the block lists, reported in any frame of a turn, closes the
+connection; and a turn has the byte cap the block sets, when it is lower than the adapter's.
 """
 
 from __future__ import annotations
@@ -48,13 +56,25 @@ from __future__ import annotations
 import asyncio
 import json
 import re
-from collections.abc import Mapping
+import time
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, ClassVar, Final, Literal, cast
+from urllib.parse import urlsplit
 
 from websockets.asyncio.client import ClientConnection, connect
 from websockets.exceptions import ConnectionClosed, InvalidHandshake, InvalidStatus, InvalidURI
 
+from ildottore.adapters.agent_guard import (
+    AgentAuthRefused,
+    AgentGuardState,
+    AgentTenantMismatch,
+    AgentToolStop,
+    GuardStop,
+    check_token,
+    reported_tools,
+)
 from ildottore.adapters.base import (
     MAX_RESPONSE_BYTES,
     # Shortest credential accepted. The redactor masks a registered credential by value only from
@@ -80,7 +100,7 @@ from ildottore.redactor import (
     Redactor,
     mask_split,
 )
-from ildottore.shared.config_errors import quoted
+from ildottore.shared.config_errors import listed, quoted
 from ildottore.shared.error_text import error_text
 from ildottore.shared.filter_stops import FILTER_STOPS, normalized_stop
 from ildottore.shared.models import (
@@ -389,8 +409,20 @@ class WebSocketAdapter:
     retry: RetryConfig = field(default_factory=RetryConfig)
     #: Largest single frame accepted (the library closes the connection past it).
     max_frame_bytes: int = MAX_RESPONSE_BYTES
+    #: Where the guard keeps its state (``None``: ``agent_guard.guard_state_dir()``), the wall
+    #: clock it reads and the sleep it paces with: injected by the tests.
+    guard_state_dir: Path | None = None
+    clock: Callable[[], float] = time.time
+    pause: Callable[[float], Awaitable[None]] = asyncio.sleep
 
     _conversations: dict[str, _Conversation] = field(default_factory=dict, init=False)
+    _guard: AgentGuardState | None = field(default=None, init=False)
+
+    def __post_init__(self) -> None:
+        if self.spec.guard is not None:
+            self._guard = AgentGuardState(
+                self.id, self.url, self.spec.guard, self.guard_state_dir, self.clock
+            )
 
     # --- traits the runner and the plan read -------------------------------------------
 
@@ -464,6 +496,7 @@ class WebSocketAdapter:
 
         self._check_allowlist()  # BEFORE any socket is opened: unbypassable.
         self._check_credential()
+        self._check_guard()
         key, turn_index, last_turn = _conversation_of(request)
         if key is None:
             conversation = await self._open()
@@ -508,6 +541,104 @@ class WebSocketAdapter:
 
         refuse_short_credential(self.id, self.api_key)
 
+    # --- the guard (agent_guard) ---------------------------------------------------------
+
+    @property
+    def _max_bytes(self) -> int:
+        """The byte cap of a turn: the guard's, when it sets a lower one."""
+
+        guard = self.spec.guard
+        if guard is None or guard.max_response_bytes is None:
+            return MAX_RESPONSE_BYTES
+        return min(guard.max_response_bytes, MAX_RESPONSE_BYTES)
+
+    def _tenant(self) -> str | None:
+        guard = self.spec.guard
+        if guard is None or guard.token is None:
+            return None
+        return str(render(guard.token.tenant, dict(self.spec.vars)))
+
+    def _check_guard(self) -> None:
+        """Before any dial: the endpoint's scheme and path, the credential, the cooldown."""
+
+        guard, state = self.spec.guard, self._guard
+        if guard is None or state is None:
+            return
+        if guard.endpoint is not None:
+            parts = urlsplit(self.url)
+            if (guard.endpoint.scheme is not None and parts.scheme != guard.endpoint.scheme) or (
+                guard.endpoint.path is not None and parts.path != guard.endpoint.path
+            ):
+                raise GuardStop(
+                    f"{self.id}: the endpoint is not the scheme and path guard.endpoint requires; "
+                    "nothing was sent"
+                )
+        if guard.token is not None:
+            if self.api_key is None:
+                raise GuardStop(
+                    f"{self.id}: guard.token is declared and no credential is resolved; set the "
+                    "variable auth_ref names; nothing was sent"
+                )
+            check_token(
+                self.id,
+                self.api_key,
+                tenant=self._tenant() or "",
+                tenant_claims=guard.token.tenant_claims,
+                min_lifetime_s=guard.token.min_lifetime_seconds,
+                now=self.clock(),
+            )
+        state.admit(self.api_key)
+
+    def _auth_failed(self, why: str, *, refused: bool) -> AgentAuthRefused:
+        """Record an authentication failure (``refused``: the credential too) and say so."""
+
+        if self._guard is not None:
+            self._guard.record_auth_failure(self.api_key, refused=refused)
+        cooldown = self.spec.guard.auth.cooldown_seconds if self.spec.guard is not None else 0.0
+        return AgentAuthRefused(
+            f"{self.id}: authentication failed ({why}); the run stops and the guard leaves the "
+            f"agent alone for {cooldown:g}s" + ("; set a fresh credential" if refused else "")
+        )
+
+    def _check_auth_frame(self, frame: Mapping[str, Any]) -> None:
+        """An error frame whose code the guard lists as an authentication failure."""
+
+        guard = self.spec.guard
+        if guard is None or guard.auth.code_path is None:
+            return
+        code = get_path(frame, guard.auth.code_path)
+        if isinstance(code, str) and code in guard.auth.failure_codes:
+            raise self._auth_failed(f"error code {quoted(code)}", refused=True)
+
+    def _check_reply_tenant(self, frame: Mapping[str, Any]) -> None:
+        """The tenant the handshake reply names, when it names one, is the configured one."""
+
+        guard = self.spec.guard
+        if guard is None or guard.token is None or guard.token.reply_tenant_path is None:
+            return
+        named = get_path(frame, guard.token.reply_tenant_path)
+        if named is not None and str(named) != self._tenant():
+            raise AgentTenantMismatch(
+                f"{self.id}: the handshake reply names a tenant other than the configured one; "
+                "the connection was closed before any query"
+            )
+
+    def _check_tools(self, frame: Mapping[str, Any]) -> None:
+        """A tool from ``stop_on_tools`` reported in the frame: the turn ends here."""
+
+        guard = self.spec.guard
+        if guard is None or guard.stop_on_tools is None:
+            return
+        hit = sorted(
+            set(reported_tools(frame, guard.stop_on_tools.path)) & set(guard.stop_on_tools.names)
+        )
+        if hit:
+            raise AgentToolStop(
+                f"{self.id}: the target reported {listed(hit, show=quoted)}, which "
+                "guard.stop_on_tools lists; the connection was closed (closing cannot undo a "
+                "step already started)"
+            )
+
     async def _drop(self, key: str) -> None:
         conversation = self._conversations.pop(key, None)
         if conversation is not None:
@@ -544,15 +675,27 @@ class WebSocketAdapter:
             connection: ClientConnection | None = None
             try:
                 connection = await self._connect()
+                answered = False
                 try:
                     async with asyncio.timeout(timeout):
                         await self._handshake(connection, frames)
+                        answered = True
                         await self._start_session(connection, frames)
                 except TimeoutError as exc:
+                    if not answered and self._guards_handshake():
+                        raise self._auth_failed(
+                            f"no handshake reply within {timeout}s", refused=False
+                        ) from exc
                     raise WebSocketTurnTimeout(
                         f"{self.id}: the handshake and session phase did not complete within "
                         f"{timeout}s"
                     ) from exc
+                except WebSocketClosed as exc:
+                    if not answered and self._guards_handshake():
+                        raise self._auth_failed(
+                            "the connection closed before the handshake reply", refused=False
+                        ) from exc
+                    raise
                 return _Conversation(connection, frames)
             except AdapterEnvError as exc:
                 if connection is not None:
@@ -590,6 +733,8 @@ class WebSocketAdapter:
             )
         except InvalidStatus as exc:
             status = exc.response.status_code
+            if status in (401, 403) and self._guard is not None:
+                raise self._auth_failed(f"HTTP {status} at the upgrade", refused=True) from exc
             if status in _RETRYABLE_STATUS:
                 raise WebSocketClosed(
                     f"{self.id}: the server answered the upgrade with HTTP {status}"
@@ -616,13 +761,30 @@ class WebSocketAdapter:
                 f"{self.id}: could not connect: {type(exc).__name__}: {self._safe(str(exc))}"
             ) from exc
 
+    def _guards_handshake(self) -> bool:
+        """True when a close or a silence before the handshake reply is an auth failure."""
+
+        handshake = self.spec.handshake
+        return self._guard is not None and handshake is not None and handshake.expect is not None
+
     async def _handshake(self, connection: ClientConnection, frames: list[JsonDict]) -> None:
         handshake = self.spec.handshake
         if handshake is None:
             return
         await self._send_template(connection, handshake.send, None, frames)
-        if handshake.expect is not None:
-            await self._expect(connection, handshake.expect, frames, "handshake")
+        if handshake.expect is None:
+            return
+        frame = await self._first_reply(connection, frames, "handshake")
+        if self._guard is not None:
+            self._check_auth_frame(frame)
+            if not _satisfies(frame, handshake.expect):
+                raise self._auth_failed(
+                    f"the handshake reply did not satisfy expect ({quoted(handshake.expect.path)}"
+                    f" == {quoted(handshake.expect.equals)})",
+                    refused=True,
+                )
+            self._check_reply_tenant(frame)
+        self._check_expect(frame, handshake.expect, "handshake")
 
     async def _start_session(self, connection: ClientConnection, frames: list[JsonDict]) -> None:
         session = self.spec.session
@@ -630,38 +792,36 @@ class WebSocketAdapter:
             return
         await self._send_template(connection, session.start, None, frames)
         if session.expect is not None:
-            await self._expect(connection, session.expect, frames, "session")
+            frame = await self._first_reply(connection, frames, "session")
+            self._check_expect(frame, session.expect, "session")
 
-    async def _expect(
-        self,
-        connection: ClientConnection,
-        expect: WebSocketExpect,
-        frames: list[JsonDict],
-        what: str,
-    ) -> None:
-        """Read the first frame that is not ignored and check ``expect`` against it.
+    def _check_expect(self, frame: Mapping[str, Any], expect: WebSocketExpect, what: str) -> None:
+        if not _satisfies(frame, expect):
+            raise AdapterProductError(
+                f"{self.id}: the {what} reply did not satisfy expect "
+                f"({quoted(expect.path)} == {quoted(expect.equals)})"
+            )
+
+    async def _first_reply(
+        self, connection: ClientConnection, frames: list[JsonDict], what: str
+    ) -> JsonDict:
+        """The first frame that is not ignored.
 
         Bounded in frames and bytes like a turn (it had no byte cap: pre-commit audit, F2);
         the caller bounds it in time.
         """
 
-        total = 0
+        total, cap = 0, self._max_bytes
         for _ in range(MAX_FRAMES_PER_TURN):
             frame, size = await self._recv_frame(connection, frames)
             total += size
-            if total > MAX_RESPONSE_BYTES:
+            if total > cap:
                 raise WebSocketOverflow(
-                    f"{self.id}: more than {MAX_RESPONSE_BYTES} bytes before the {what} reply; "
-                    "not read further"
+                    f"{self.id}: more than {cap} bytes before the {what} reply; not read further"
                 )
             if self._ignored(frame):
                 continue
-            if not _satisfies(frame, expect):
-                raise AdapterProductError(
-                    f"{self.id}: the {what} reply did not satisfy expect "
-                    f"({quoted(expect.path)} == {quoted(expect.equals)})"
-                )
-            return
+            return frame
         raise WebSocketOverflow(
             f"{self.id}: more than {MAX_FRAMES_PER_TURN} frames before the {what} reply"
         )
@@ -680,6 +840,12 @@ class WebSocketAdapter:
         connection, frames = conversation.connection, conversation.frames
         reading = self.spec.response
         start = conversation.reported
+        cap = self._max_bytes
+        if self._guard is not None:
+            # Outside the turn timeout: a paced wait is the guard's, not the agent's silence.
+            wait = self._guard.reserve()
+            if wait > 0.0:
+                await self.pause(wait)
 
         parts: list[str] = []
         calls: list[JsonDict] = []
@@ -693,11 +859,14 @@ class WebSocketAdapter:
                 for _ in range(MAX_FRAMES_PER_TURN):
                     frame, size = await self._recv_frame(connection, frames)
                     total += size
-                    if total > MAX_RESPONSE_BYTES:
+                    if total > cap:
                         raise WebSocketOverflow(
-                            f"{self.id}: the turn exceeded {MAX_RESPONSE_BYTES} bytes; "
-                            "not read further"
+                            f"{self.id}: the turn exceeded {cap} bytes; not read further"
                         )
+                    # Before the ignore list: a tool reported in a frame the reply discards still
+                    # stops the turn.
+                    self._check_auth_frame(frame)
+                    self._check_tools(frame)
                     if self._ignored(frame):
                         continue
                     if reading.error_path is not None:
@@ -939,6 +1108,7 @@ class WebSocketAdapter:
         """
 
         reading = self.spec.response
+        guard = self.spec.guard
         declared = [
             reading.type_path,
             reading.final_path,
@@ -954,6 +1124,15 @@ class WebSocketAdapter:
                     self.spec.session.expect,
                 )
                 if expect is not None
+            ),
+            *(
+                (
+                    guard.auth.code_path,
+                    guard.stop_on_tools.path if guard.stop_on_tools is not None else None,
+                    guard.token.reply_tenant_path if guard.token is not None else None,
+                )
+                if guard is not None
+                else ()
             ),
         ]
         text = reading.text_path.split(".")

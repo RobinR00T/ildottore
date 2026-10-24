@@ -1,0 +1,55 @@
+# target.agent.yaml, a DEPLOYED AI AGENT OVER A WEBSOCKET, with its guard (Scenario I in
+# examples/README.md). Its authorization record is examples/scope.agent.yaml.
+#
+# A profile for an assistant that acts: it authenticates with a short-lived JWT, works inside one
+# tenant, reports the tools it uses while it answers, and may share a rate limit with every other
+# tenant behind its gateway. The `websocket` block declares its wire shape, as in
+# target.websocket.yaml; the `guard` block keeps the scan polite and contained (docs/MANUAL.md
+# §4.2, "A deployed agent"). Every value is a placeholder: none describes a real product.
+#
+# A profile for a real agent names a real host and a real tenant, so keep it OUT of any repository:
+# under ~/.config/ildottore/agents/ with its scope beside it, and pass the paths with -t and --scope.
+id: agent-staging
+type: agent
+provider: websocket
+endpoint: "wss://assistant.example.test/ws"   # the URL dialled: no query, no user:password
+auth_ref: "env://ASSISTANT_AGENT_JWT"         # the JWT, read at send time; never written here
+capabilities:
+  tools: true
+  rag: true
+  memory: false
+websocket:
+  headers:                           # on the HTTP upgrade request; {{token}} allowed
+    Origin: "https://assistant.example.test"
+    Authorization: "Bearer {{token}}"
+  vars:                              # plain values the templates may use as {{name}}; never secrets
+    tenant: "<tenant id>"
+  handshake:                         # the first frame after the socket opens
+    send: { type: "auth", token: "{{token}}", tenant: "{{tenant}}" }
+    expect: { path: "type", equals: "auth_ok" }
+  message:                           # one query; {{prompt}} is the attack text of the turn
+    send: { type: "query", text: "{{prompt}}" }
+  response:                          # progress frames (a tool in use), answer chunks, a final flag
+    text_path: "text"                # each chunk of the answer
+    final_path: "final"              # the turn ends on the frame where this path...
+    final_value: true                # ...is true
+    error_path: "code"               # present in a frame: the attempt is inconclusive
+    timeout_seconds: 120
+  guard:
+    endpoint: { scheme: "wss", path: "/ws" }   # the loader refuses any other scheme or path
+    auth:
+      code_path: "code"              # an error frame's code...
+      failure_codes: ["UNAUTHORIZED", "TOKEN_EXPIRED"]   # ...that means the credential failed
+      cooldown_seconds: 120          # after the first failure: the run stops, no dial for this long
+    token:                           # read from the JWT's payload, unverified, before it is sent
+      tenant: "{{tenant}}"           # the credential must name this tenant...
+      tenant_claims: ["tenant_id", "org_id"]   # ...in the first of these claims it carries
+      reply_tenant_path: "tenant_id" # the tenant the handshake reply names, when it names one
+      min_lifetime_seconds: 30       # refuse a token that expires sooner
+    pacing:                          # kept across processes, in the guard's state file
+      min_interval_seconds: 15
+      max_per_hour: 20
+    stop_on_tools:                   # a progress frame naming one of these closes the connection
+      path: "tool"
+      names: ["write_record", "run_workflow", "send_message"]
+    max_response_bytes: 200000       # a lower cap than the adapter's own, per turn

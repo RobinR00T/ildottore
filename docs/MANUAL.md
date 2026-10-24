@@ -1124,6 +1124,86 @@ until 2026-10-11 it wrote a `provider: rest` target file `run` refused, OD-37; a
 is given to `dottore fleet` as a hand-written `--judge` file, §4.3); a session that must survive
 a reconnect (by design, OD-36, above).
 
+#### A deployed agent: the `guard` block
+
+A model API is built for traffic; a deployed assistant often is not. A copilot or an agent with
+tools may lock an address out after a few failed logins, share one rate limit with every tenant
+behind its gateway, or act on the tenant while it answers. `websocket.guard` says what this one
+needs, and the adapter keeps it; it is how Il Dottore tests any AI agent over the network, with a
+profile per agent and no code. Worked profile, commented line by line:
+[`../examples/target.agent.yaml`](../examples/target.agent.yaml) with its scope
+[`../examples/scope.agent.yaml`](../examples/scope.agent.yaml) (Scenario I in
+[`../examples/README.md`](../examples/README.md)). Every part is optional:
+
+```yaml
+websocket:
+  # ... the wire shape, as above: headers, vars, handshake, message, response ...
+  guard:
+    endpoint: {scheme: "wss", path: "/ws"}     # the loader refuses any other scheme or exact path
+    auth:
+      code_path: "code"                        # an error frame's code...
+      failure_codes: ["UNAUTHORIZED", "TOKEN_EXPIRED"]   # ...that means the credential failed
+      cooldown_seconds: 120                    # 0 to 86400; default 120
+    token:                                     # the JWT's payload, read unverified, before sending
+      tenant: "{{tenant}}"                     # a value, or a name declared under vars
+      tenant_claims: ["tenant_id", "org_id"]   # the first one the token carries is compared
+      reply_tenant_path: "tenant_id"           # the handshake reply's tenant, when it names one
+      min_lifetime_seconds: 30                 # default 30
+    pacing:                                    # across processes, in the guard's state file
+      min_interval_seconds: 15                 # 0 to 3600
+      max_per_hour: 20
+    stop_on_tools: {path: "tool", names: ["write_record", "run_workflow"]}
+    max_response_bytes: 200000                 # per turn; may lower the 4 MiB cap, not raise it
+```
+
+**Authentication.** With the block present, the first authentication failure stops the run
+(`aborted`, exit 3, the reason on the error line; nothing retries it) and the agent is left alone
+for `auth.cooldown_seconds`: by this run, and by the next one, which refuses to dial until the
+cooldown is over. A failure is an upgrade refused with HTTP 401 or 403, a handshake reply that
+does not satisfy `handshake.expect`, an error frame whose `code_path` value is in `failure_codes`
+(in the handshake or in a turn), and a connection closed, or silent past `timeout_seconds`, before
+the handshake reply. The first three are the agent refusing this credential: the guard remembers
+its sha256 (never the value) and refuses to send it again, so a new run needs a fresh one. The
+last is not proof of a refusal: it starts the cooldown and the same credential may try once the
+cooldown is over.
+
+**The credential.** `token` reads the JWT's payload without verifying it (the agent verifies it;
+this is a check that the operator pasted the right one) before anything is sent: the token must
+carry the configured tenant in the first of `tenant_claims` it has, and an `exp` at least
+`min_lifetime_seconds` away. A token that is no JWT, names another tenant, has no `exp` or is about
+to expire is refused, and nothing is dialled. When the handshake reply names a tenant at
+`reply_tenant_path`, it must be the same one, or the connection is closed before any query. The
+errors name the claim and never a value: a tenant id is the operator's data.
+
+**Pacing.** `min_interval_seconds` spaces two queries, and `max_per_hour` caps them in any hour,
+across every process that scans the same endpoint (a lock on the state file). A query that waits
+for its slot waits outside the turn's timeout. A query past the hourly cap stops the run, which
+says when the next slot frees: resume it then with `dottore run --resume <run-id>` (the guard is
+not part of the target digest, so a resume after easing the pace is the same target). This sits
+below `--rate`, the campaign's own ceiling, which still applies. `--dry-run` prints a `guard:` line
+and says when the plan's requests pass the hourly cap.
+
+**Tools.** `stop_on_tools.path` is where a frame names the tool or agent the target is using
+(one name, or a list); a name in `names`, in any frame of a turn (one the reply discards
+included), closes the connection at once and stops the run, naming the tool. Closing cannot undo
+a step the agent already started: it stops the next one. List the tools that write to the tenant.
+
+**The state file.** One per endpoint, named by the endpoint's sha256 so the directory does not
+list the hosts it was pointed at, mode 0600 in a 0700 directory: under `ILDOTTORE_STATE_DIR`,
+else `$XDG_STATE_HOME/ildottore/guard/`, else `~/.local/state/ildottore/guard/`. It holds the
+reserved query times, the time of the last authentication failure and the sha256 of up to 32
+refused credentials; a file that cannot be read starts over. Delete it to clear a cooldown by
+hand.
+
+**Keep a real profile out of every repository.** A profile for a real agent names a real host and
+a real tenant. Keep it with its scope outside any checkout (for example
+`~/.config/ildottore/agents/<name>.yaml` and `<name>.scope.yaml`) and pass the paths with `-t` and
+`--scope`; the credential stays in the variable `auth_ref` names. The loader refuses, besides what
+it refuses in any `websocket:` block: an endpoint whose scheme or path is not the one
+`guard.endpoint` requires, a `guard.token` with no `auth_ref`, a `guard.token.tenant` that uses a
+placeholder not declared under `vars`, `failure_codes` without `code_path` (or the reverse), and a
+`max_response_bytes` above the adapter's own cap.
+
 ### 4.3 `fleet.yaml`, many targets in one file
 
 ```yaml

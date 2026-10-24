@@ -7,6 +7,34 @@ the file, schema copy, build or pipeline it names.
 
 ## [Unreleased]
 
+### Added (u04 A-96, judging rules 7 re-pinned: a deployed agent's guard)
+
+- **`websocket.guard`: test any AI agent over a JSON WebSocket with a profile and no code, held
+  to what that deployment needs.** Every part optional. With the block present, the first
+  authentication failure (an upgrade answered 401 or 403, a handshake reply that does not satisfy
+  `expect`, an error frame whose `auth.code_path` value is in `auth.failure_codes`, a close or a
+  silence before the handshake reply) stops the run, exit 3, and starts `auth.cooldown_seconds`
+  (default 120) in a state file every process shares, so the next run dials nothing until it is
+  over; a credential the agent refused is remembered by its sha256 (never its value) and never sent
+  again. `guard.token` reads the JWT payload unverified before any dial: the configured tenant in
+  the first of `tenant_claims`, an `exp` at least `min_lifetime_seconds` away, and the tenant the
+  handshake reply names at `reply_tenant_path`, when it names one; no message quotes a tenant or the
+  credential. `guard.pacing` spaces queries (`min_interval_seconds`) and caps them per hour
+  (`max_per_hour`) across processes, under a lock; past the cap the run stops naming when a slot
+  frees, and resumes. `guard.stop_on_tools` closes the connection on a reported tool name and stops
+  the run (OD-54, open). `guard.max_response_bytes` lowers the byte cap; `guard.endpoint` requires a
+  scheme and an exact path. State: one file per endpoint, named by its digest, 0600, under
+  `ILDOTTORE_STATE_DIR`, `$XDG_STATE_HOME/ildottore` or `~/.local/state/ildottore`.
+- **`--dry-run` prints a `guard:` line**, and says when the plan's requests pass the hourly cap.
+- **The guard is not part of the target digest**: it decides whether and when a query goes out,
+  never what answers it, so a run the hourly cap stopped resumes after the operator eases the pace.
+  A target without the block behaves exactly as before; no verdict changes (judging rules 7
+  re-pinned).
+- **`examples/target.agent.yaml` and `examples/scope.agent.yaml`** (Scenario I in
+  `examples/README.md`): a generic agent profile with placeholders only. Docs: `README.md`,
+  `USAGE.md`, `docs/MANUAL.md` §4.2 ("A deployed agent"), `man/man5/dottore-scope.5`,
+  `specs/contracts/u04-target-adapters.md` (A-96, OD-54).
+
 ### Changed (breaking for an install on rich older than 14.2.0: the static checks pinned exactly)
 
 - **`ruff==0.17.2`, `mypy==2.4.0`, `import-linter==2.15`, `types-PyYAML==6.0.12.20260906` and

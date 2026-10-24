@@ -282,6 +282,28 @@ is kept in the evidence with the credential as its placeholder. Worked, commente
 [`examples/scope.websocket.yaml`](examples/scope.websocket.yaml); reference in
 [`docs/MANUAL.md`](docs/MANUAL.md) §4.2.
 
+## A deployed AI agent (the guard)
+
+Any AI agent reachable over a JSON WebSocket (a copilot, an assistant with tools, a chat over a
+tenant's data) is a WebSocket target plus a `guard:` block, one profile per agent and no code. The
+guard keeps the scan polite and contained: the JWT is checked for the configured tenant and its
+expiry before it is sent; the first authentication failure stops the run and starts a cooldown
+the next run respects too (a refused credential is remembered by its sha256 and never sent
+again); queries are paced across processes (`min_interval_seconds`, `max_per_hour`); a frame
+naming a tool from `stop_on_tools` closes the connection and stops the run; and a turn may have a
+lower byte cap. `--dry-run` prints a `guard:` line. Keep a real agent's profile and its scope
+outside any repository (for example `~/.config/ildottore/agents/`) and pass both paths:
+
+```bash
+dottore run -t ~/.config/ildottore/agents/<name>.yaml \
+  --scope ~/.config/ildottore/agents/<name>.scope.yaml
+```
+
+Worked, commented files with placeholders only:
+[`examples/target.agent.yaml`](examples/target.agent.yaml) and
+[`examples/scope.agent.yaml`](examples/scope.agent.yaml); reference in
+[`docs/MANUAL.md`](docs/MANUAL.md) §4.2, "A deployed agent".
+
 ## Reading results
 
 A finding separates **risk** from **confidence**: `RiskScore = Impact x Exploitability x

@@ -42,7 +42,11 @@ from ildottore.adapters import (
 )
 from ildottore.adapters.anthropic import sent_sampling as anthropic_sent_sampling
 from ildottore.adapters.anthropic import takes_no_sampling
-from ildottore.adapters.base import CredentialTooShort, refuse_short_credential
+from ildottore.adapters.base import (
+    MAX_RESPONSE_BYTES,
+    CredentialTooShort,
+    refuse_short_credential,
+)
 from ildottore.adapters.comprehending import ComprehendingMock
 from ildottore.adapters.mock import MockScenario, MockTarget, bare_scenario
 from ildottore.adapters.openai import sent_sampling as openai_sent_sampling
@@ -2452,7 +2456,50 @@ def _websocket_spec(
             f"target file {path}: websocket.message.send carries neither {{{{prompt}}}} nor "
             "{{messages}}, so no attack text would reach the target"
         )
+    _check_guard(path, spec, parts, auth_ref)
     return spec
+
+
+def _check_guard(path: Path, spec: WebSocketSpec, parts: SplitResult, auth_ref: str | None) -> None:
+    """The ``websocket.guard`` block, checked against the file before any send.
+
+    Refused: an endpoint whose scheme or path is not the one ``guard.endpoint`` requires, a
+    ``guard.token`` with no ``auth_ref`` (it checks the credential), a ``guard.token.tenant`` that
+    uses a placeholder other than a ``websocket.vars`` name (it is compared, never sent), and a
+    ``max_response_bytes`` above the adapter's own cap (it may lower the cap, not raise it).
+    """
+
+    guard = spec.guard
+    if guard is None:
+        return
+    if guard.endpoint is not None:
+        if guard.endpoint.scheme is not None and parts.scheme.lower() != guard.endpoint.scheme:
+            raise ValueError(
+                f"target file {path}: the endpoint's scheme is not the one "
+                f"websocket.guard.endpoint.scheme requires ({guard.endpoint.scheme})"
+            )
+        if guard.endpoint.path is not None and parts.path != guard.endpoint.path:
+            raise ValueError(
+                f"target file {path}: the endpoint's path is not the one "
+                "websocket.guard.endpoint.path requires"
+            )
+    if guard.token is not None:
+        if auth_ref is None:
+            raise ValueError(
+                f"target file {path}: websocket.guard.token checks the credential and the "
+                "target declares no auth_ref"
+            )
+        unknown = sorted(placeholders(guard.token.tenant) - set(spec.vars))
+        if unknown:
+            raise ValueError(
+                f"target file {path}: websocket.guard.token.tenant uses "
+                f"{_placeholder_names(unknown)}, which is not declared under websocket.vars"
+            )
+    if guard.max_response_bytes is not None and guard.max_response_bytes > MAX_RESPONSE_BYTES:
+        raise ValueError(
+            f"target file {path}: websocket.guard.max_response_bytes may lower the adapter's "
+            f"cap ({MAX_RESPONSE_BYTES} bytes), not raise it"
+        )
 
 
 def _placeholder_names(names: list[str]) -> str:

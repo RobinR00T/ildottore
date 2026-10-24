@@ -580,6 +580,48 @@ reads as U+FFFD, since httpx decodes the stream as text.
   `tests/adapters/test_malformed_replies.py` (42 tests; the blank turn on `""`, `"  "` and a
   zero-width space, 3 failing on `e1a8aacf`, and its control).
 
+- **A-96 (added 2026-10-24): a deployed agent's guard.** A `provider: websocket` target file may
+  declare `websocket.guard` (`shared.models.WebSocketGuard`, `adapters/agent_guard.py`), so any AI
+  agent reachable over a JSON WebSocket is a target with a profile and no code, held to what that
+  deployment needs. Every part is optional; with the block present:
+  - the first authentication failure raises `AgentAuthRefused`, a `GuardStop`
+    (`AdapterProductError`, not an environment error), so nothing retries it and the runner
+    aborts the campaign (exit 3) naming it; a failure is an upgrade answered 401 or 403, a
+    handshake reply that does not satisfy `expect`, an error frame whose `auth.code_path` value is
+    in `auth.failure_codes` (handshake or turn), and a close, or a silence past
+    `response.timeout_seconds`, before the handshake reply;
+  - every failure starts `auth.cooldown_seconds` (default 120) in a state file shared by every
+    process that scans the endpoint, and a dial inside it is refused (`AgentPacingStop`) with no
+    connection; the first three kinds also record the credential's sha256 (never its value, at most
+    32 kept) and a later send of it is refused before any dial, so a fresh one is needed;
+  - `guard.token` reads the JWT payload unverified before any dial: no JWT, no claim of
+    `tenant_claims`, another tenant than `tenant` (a value or a `vars` name), no `exp`, or less than
+    `min_lifetime_seconds` of life is refused with no connection; a handshake reply naming another
+    tenant at `reply_tenant_path` closes the connection before any query; no message quotes a
+    tenant or the credential;
+  - `guard.pacing` reserves each query's slot under an exclusive lock on the state file:
+    `min_interval_seconds` after the last slot of any process, waited outside the turn timeout;
+    a slot that would make more than `max_per_hour` in its hour is refused (`AgentPacingStop`,
+    naming when one frees) and reserves nothing;
+  - `guard.stop_on_tools`: a name in `names` at `path` (one name or a list), in any frame of a
+    turn, an ignored one included, raises `AgentToolStop` and the connection is closed (OD-54);
+  - `guard.max_response_bytes` lowers the turn's and the handshake's byte cap, never raises it;
+  - `guard.endpoint` requires the endpoint's scheme and exact path.
+  The state file is one per endpoint, named by the endpoint's sha256 (the directory lists no host),
+  0600 in a 0700 directory under `ILDOTTORE_STATE_DIR`, `$XDG_STATE_HOME/ildottore` or
+  `~/.local/state/ildottore`; one that cannot be read starts over. The loader refuses, before any
+  send, a scheme or path other than `guard.endpoint`'s, a `guard.token` with no `auth_ref`, a
+  `tenant` placeholder not under `vars`, `failure_codes` without `code_path` (or the reverse) and a
+  `max_response_bytes` above `MAX_RESPONSE_BYTES`. The guard's paths are kept as protocol fields
+  in the transcript (A-77). The block is left out of the target digest (it decides whether and
+  when a query goes out, never what answers it), so a run the hourly cap stopped resumes; a target
+  without it behaves exactly as before. `--dry-run` prints a `guard:` line and says when the plan
+  passes the hourly cap. Judging rules 7 re-pinned (no verdict path touched). Checked by
+  `tests/adapters/test_agent_guard.py` (40 tests, against the loopback agent of
+  `tests/agent_ws_server.py`) and `tests/cli/test_agent_target.py` (11: the example profile, the
+  loader's refusals, the dry-run line, the digest, a guarded campaign, and a run stopped on the first
+  auth failure whose next run dials nothing).
+
 ## §8 Out of scope / forbidden
 - MUST NOT import or call vendor SDKs (`openai`, `anthropic` packages): httpx only (ADR-0002).
 - MUST NOT use LiteLLM as the core abstraction (optional wrapped adapter is MVP-2+, not here).
@@ -761,3 +803,13 @@ reads as U+FFFD, since httpx decodes the stream as text.
   `_websocket_problem`, `_WEBSOCKET_BY_HAND`, `_WEBSOCKET_JUDGE_BY_HAND` and the `judge_doc`
   argument of `_documents` in `cli/fleet.py`, their use in `materialize_fleet`, and
   `tests/cli/test_fleet_websocket.py`.
+- **OD-54** (2026-10-24, A-96; **open, owner to decide; built as the smallest reversible version**):
+  what a tool from `guard.stop_on_tools` does to the run. Built: the connection is closed and the
+  run stops (`AgentToolStop` aborts the campaign, exit 3, naming the tool), and the attempt is not
+  scored or stored. Why: the list names tools that write to the tenant, and every later spec could
+  provoke one again; a stop the operator reads is safer than a scan that keeps writing. Not taken:
+  record the attempt (its partial reply, the tool as a tool call) as evidence and go on to the next
+  spec, which would make "the agent ran a writing tool" a finding of its own. Reversing it is the
+  `_check_tools` raise in `adapters/websocket.py`. Also built and part of the same decision: a close
+  or a silence before the handshake reply counts as an authentication failure (cooldown, the
+  credential not refused), where it could be an outage.

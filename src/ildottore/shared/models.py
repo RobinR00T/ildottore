@@ -540,6 +540,80 @@ class WebSocketReconnect(_Frozen):
     max_attempts: Annotated[int, Field(ge=0, le=5)] = 1
 
 
+class WebSocketGuardEndpoint(_Frozen):
+    """The scheme and exact path the endpoint must have: the loader refuses any other."""
+
+    scheme: Literal["ws", "wss"] | None = None
+    path: Annotated[str, Field(min_length=1, pattern=r"\A/")] | None = None
+
+
+class WebSocketGuardAuth(_Frozen):
+    """What an authentication failure looks like, and how long the agent is left alone after.
+
+    An upgrade refused with HTTP 401 or 403, and a handshake reply that does not satisfy
+    ``handshake.expect``, are failures whatever this block says; ``failure_codes`` adds the values
+    an error frame carries at ``code_path`` (in the handshake or in a turn) that mean the same.
+    """
+
+    code_path: Annotated[str, Field(min_length=1)] | None = None
+    failure_codes: list[Annotated[str, Field(min_length=1)]] = Field(default_factory=list)
+    cooldown_seconds: Annotated[float, Field(ge=0.0, le=86400.0, allow_inf_nan=False)] = 120.0
+
+    @model_validator(mode="after")
+    def _codes_need_a_path(self) -> WebSocketGuardAuth:
+        """A code is read at ``code_path``: one without the other reads nothing."""
+
+        if bool(self.failure_codes) != (self.code_path is not None):
+            raise ValueError("guard.auth.failure_codes and guard.auth.code_path go together")
+        return self
+
+
+class WebSocketGuardToken(_Frozen):
+    """What the credential must say before it is sent, read from its JWT payload unverified.
+
+    ``tenant`` (a value, or ``{{name}}`` from ``websocket.vars``) must be the value of the first
+    of ``tenant_claims`` the token carries, and the token must have an ``exp`` at least
+    ``min_lifetime_seconds`` away. ``reply_tenant_path`` is where the handshake reply names the
+    tenant it authenticated: when present there, it must be the same one.
+    """
+
+    tenant: Annotated[str, Field(min_length=1)]
+    tenant_claims: Annotated[list[Annotated[str, Field(min_length=1)]], Field(min_length=1)]
+    reply_tenant_path: Annotated[str, Field(min_length=1)] | None = None
+    min_lifetime_seconds: Annotated[float, Field(ge=0.0, le=86400.0, allow_inf_nan=False)] = 30.0
+
+
+class WebSocketGuardPacing(_Frozen):
+    """The pace of queries to the agent, kept across processes in the guard's state file."""
+
+    min_interval_seconds: Annotated[float, Field(ge=0.0, le=3600.0, allow_inf_nan=False)] = 0.0
+    max_per_hour: Annotated[int, Field(ge=1, le=100000)] | None = None
+
+
+class WebSocketGuardStopOnTools(_Frozen):
+    """The tool or agent names that, reported by the target at ``path`` in any frame of a turn,
+    close the connection at once."""
+
+    path: Annotated[str, Field(min_length=1)]
+    names: Annotated[list[Annotated[str, Field(min_length=1)]], Field(min_length=1)]
+
+
+class WebSocketGuard(_Frozen):
+    """The ``websocket.guard`` block: what keeps a scan of a deployed agent polite and contained.
+
+    Every part is optional. With the block present, an authentication failure stops the run and
+    the agent is left alone for ``auth.cooldown_seconds``, in this process and in the next one
+    (the guard's state file, which keeps the sha256 of a refused credential, never the value).
+    """
+
+    endpoint: WebSocketGuardEndpoint | None = None
+    auth: WebSocketGuardAuth = Field(default_factory=WebSocketGuardAuth)
+    token: WebSocketGuardToken | None = None
+    pacing: WebSocketGuardPacing | None = None
+    stop_on_tools: WebSocketGuardStopOnTools | None = None
+    max_response_bytes: Annotated[int, Field(ge=1)] | None = None
+
+
 class WebSocketSpec(_Frozen):
     """The ``websocket:`` block of a ``provider: websocket`` target (``docs/MANUAL.md`` §4.2).
 
@@ -556,6 +630,7 @@ class WebSocketSpec(_Frozen):
     reconnect: WebSocketReconnect = Field(default_factory=WebSocketReconnect)
     headers: dict[str, str] = Field(default_factory=dict)
     vars: dict[str, str] = Field(default_factory=dict)
+    guard: WebSocketGuard | None = None
 
 
 class Target(_Frozen):
