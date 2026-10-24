@@ -9,7 +9,7 @@ the file, schema copy, build or pipeline it names.
 
 ### Changed (the dev extra: the static checks pinned exactly)
 
-- **`ruff==0.17.2`, `mypy==2.4.0`, `import-linter==2.15`, `types-PyYAML==6.0.12.20260906` and
+- **`ruff==0.17.2`, `mypy==2.4.0`, `types-PyYAML==6.0.12.20260906` and
   `types-jsonschema==4.26.0.20261006` in the `dev` extra, in place of open ranges.** Every CI job
   installs the newest release a range allows, a local venv keeps whatever it was built with: CI
   linted with ruff 0.17.2 and typed with mypy 2.4.0 while a local `make gates` ran 0.15.20 and
@@ -19,6 +19,9 @@ the file, schema copy, build or pipeline it names.
   code. The tree is clean under them as it stands. `scripts/dependency_floors.py` reads an exact
   pin as its own floor (it refused `==` before), so the `floors` job installs the same versions;
   a test holds it. An existing venv picks the pins up with `pip install -e ".[dev]"`.
+  import-linter stays `>=2.0`: every release from 2.13 needs `rich>=14.2.0`, above the runtime
+  floor `rich>=13.8.0` the `floors` job installs, so an exact pin cannot resolve there (raising
+  the runtime floor of rich is a separate decision).
 
 ### Added (judging rules 7 re-pinned: the logo above the root help)
 

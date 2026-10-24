@@ -54,9 +54,11 @@ dev = [
   # rules: ranges let CI pick up newer releases (ruff 0.17.2 against 0.15.20 locally, mypy 2.4.0
   # against 2.1.0) and a rule only the newer ruff knew failed only there. Dependabot's
   # `python-dev` group proposes the bumps; its PR carries whatever a new release asks of the code.
+  # import-linter stays a range: every release from 2.13 needs rich>=14.2.0, above the runtime
+  # floor (rich>=13.8.0) the `floors` job installs, so an exact pin there cannot resolve.
   "ruff==0.17.2",
   "mypy==2.4.0",
-  "import-linter==2.15",
+  "import-linter>=2.0",
   "types-PyYAML==6.0.12.20260906",
   "types-jsonschema==4.26.0.20261006",
 ]
