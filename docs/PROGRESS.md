@@ -5,6 +5,32 @@ The carryover ledger. Every agent session updates this so context survives even 
 newest merge on top: a branch's entries land together when it merges, so the dates of
 neighbouring entries can interleave (an older branch merged later sits above a newer one).
 
+## State, 2026-10-26: a scope's validity window (`feat/scope-validity-window`, u01 A-97)
+
+- **What.** `scope.yaml` may bound the days it authorizes: optional `valid_from` and `valid_until`,
+  calendar dates `YYYY-MM-DD`, both days included, read in UTC (`policy/scope.py`
+  `Scope.window_refusal`, `utc_today`). `authorize_target` asks it first, so the pre-flight of
+  `run` and `fingerprint` refuses outside the window (exit 3, nothing sent, `--dry-run` too) and
+  `PolicyEngine.check` blocks each later attempt of a run that outlives it. `run` says it once
+  (`the scope <path> authorizes nothing today: the scope expired on <day> and today (UTC) is
+  <day>. Renew the authorization record ...`); the dry-run plan states the window. Refused at
+  load: a window that is no day, a number (pydantic read it as a Unix timestamp), a date with a
+  time, any other text. The checksum covers both lines. A scope without them reads as before.
+- **Open decision OD-55** (u01 §9, index ledger): which day counts (UTC, built) and whether a run
+  that outlives its window stops its remaining attempts (built) or finishes them.
+- **Checked by hand.** On 2026-10-26 around 00:25 CET (23:25 UTC on the 25th), a scope with
+  `valid_until: 2026-10-25` planned (exit 0) and one with `valid_until: 2026-10-24` was refused
+  (exit 3) with the message above: the UTC day, not the local one.
+- **Verified.** `tests/policy/test_scope_window.py` (14) and `tests/cli/test_scope_window_gate.py`
+  (5). Judging rules 7 re-pinned by an appended line (no stored verdict changes).
+- **Docs.** `docs/MANUAL.md` §4.1, `man/man5/dottore-scope.5`, `examples/scope.example.yaml`,
+  `docs/02-threat-model.md` S4, `specs/contracts/u01-config-scope-policy.md` (§2, A-97, OD-55),
+  `specs/contracts/00-INDEX.md`, `CHANGELOG.md`.
+- **Gates.** `make gates` green on 2026-10-26 at 00:50 CET (11 min 28 s): ruff, format, mypy
+  strict (174 files), import-linter (4 contracts kept), spec lint (0 errors, 78 specs), 8135 tests
+  collected and none failed, coverage 97.66%, self-scan 0 high or critical, bandit clean, pip-audit
+  no known vulnerabilities.
+
 ## State, 2026-10-24: a deployed agent's guard (`claude/agent-connector-6b9b4c`, u04 A-96)
 
 - **What.** Any AI agent reachable over a JSON WebSocket is a target with a profile and no code:

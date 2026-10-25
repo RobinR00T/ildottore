@@ -24,6 +24,8 @@ targets:
       # - name: tenant-b
       #   auth_ref: "env://TENANT_B_KEY"
       #   canary: "CANARY-B-3f9c1e7a5b2d8064"
+# valid_from: 2026-10-01    # optional: first day authorized (YYYY-MM-DD, UTC, included)
+# valid_until: 2026-10-31   # optional: last day authorized; outside the window nothing is sent
 # checksum: "<sha256 of the body above>"   # optional integrity check, not a signature (OD-2)
 #
 # Policy-gated specs (those declaring `requires_policy`, e.g. PII elicitation or the

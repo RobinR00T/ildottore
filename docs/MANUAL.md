@@ -453,8 +453,19 @@ targets:                         # >=1; a target whose id is absent here is refu
     identities:                  # >=1; auth by reference, never a secret value
       - name: default
         auth_ref: "env://MY_API_KEY"
+# valid_from: 2026-10-01           # optional: the first day it authorizes (UTC, included)
+# valid_until: 2026-10-31          # optional: the last day it authorizes (UTC, included)
 # checksum: "<sha256 of the body>"   # optional integrity check (not a signature)
 ```
+
+`valid_from` and `valid_until` bound the engagement the record authorizes (u01 A-97): calendar
+dates written `YYYY-MM-DD`, both days included, read as the UTC date. Outside them every target is
+refused, exit 3 and nothing sent, `--dry-run` included (`the scope scope.yaml authorizes nothing
+today: the scope expired on 2026-10-31 and today (UTC) is 2026-11-01`), and a run that outlives
+the window has each later attempt blocked by the policy gate. Either may be left out; a scope with
+neither is valid every day. A window that is no day, a number, or a date with a time is refused at
+load. The checksum covers both lines, and the dry-run plan states the window. Which day counts
+(UTC) and what a run that outlives its window does are open decisions (OD-55).
 
 Each target declares its own `endpoints` allowlist and `identities`. Two identities of one target
 with the same `name`, or with the same `canary`, are refused: the identity sweep keys each response

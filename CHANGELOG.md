@@ -7,6 +7,18 @@ the file, schema copy, build or pipeline it names.
 
 ## [Unreleased]
 
+### Added (u01 A-97, judging rules 7 re-pinned: a scope's validity window)
+
+- **`valid_from` and `valid_until` in `scope.yaml`: the days an authorization record covers.**
+  Optional calendar dates (`YYYY-MM-DD`), both days included, read in UTC. Outside them every
+  target is refused by the same predicate that refuses a target not in scope: `run` and
+  `fingerprint` exit 3 before anything is sent (`--dry-run` included), and the engine blocks each
+  later attempt of a run that outlives the window. A window that is no day, a number (pydantic
+  read it as a Unix timestamp) or a date with a time is refused at load. The checksum covers both
+  lines; the dry-run plan states the window. A scope without them is read as before. Open
+  decision OD-55: which day counts (UTC, as built) and whether a run that outlives the window
+  stops (as built) or finishes.
+
 ### Added (u04 A-96, judging rules 7 re-pinned: a deployed agent's guard)
 
 - **`websocket.guard`: test any AI agent over a JSON WebSocket with a profile and no code, held

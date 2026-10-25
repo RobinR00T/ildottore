@@ -25,7 +25,8 @@ authenticity a non-goal until key management exists (OD-2). Since 2026-10-05,
 `dottore run` records it in the run store and every report, audit D-17. Since 2026-10-06 a key
 written twice in one YAML mapping is refused with both positions, through `safe_yaml`, and two
 identities of one target with the same name or the same canary are refused, and since 2026-10-20
-two with the same credential (A-91). Since 2026-10-07 a
+two with the same credential (A-91). Since 2026-10-26 a scope may bound the days it authorizes,
+`valid_from` and `valid_until` (A-97). Since 2026-10-07 a
 scope or policy pack that is too large or too deep with its aliases expanded is refused before
 it is built, by the spec loader's own measure, A-37.) Provide
 `PolicyEngine.check(target, endpoint, spec)`
@@ -1326,6 +1327,45 @@ redacts as before.
   values from the pack), or evidence encryption (u10, OD-4).
 - Not its call: signing scheme (OD-2) · evidence at-rest encryption (OD-4).
 
+**A-97 A scope may bound the days it authorizes (added 2026-10-26; the owner asked for the
+technique on 2026-10-26; its forks are OD-55, built as the smallest reversible version).** An
+authorization record covered every day: a scope written for an engagement that ended last month ran
+today exactly as on its first day, and the report's `scope_sha256` named a record whose
+engagement was over. Rules of engagement carry dates; the record now can.
+
+*Behaviour.* Two optional top-level fields, `valid_from` and `valid_until`: calendar dates written
+`YYYY-MM-DD` (YAML's own date, or the same text quoted), both days included, read against the UTC
+date (`policy.scope.utc_today`). `Scope.window_refusal(today)` says why the record authorizes
+nothing on a day (`the scope is valid from 2026-11-01 and today (UTC) is 2026-10-26`, `the scope
+expired on 2026-10-25 and today (UTC) is 2026-10-26`) or `None`, and `authorize_target` asks it
+first, so the three gates that share that predicate refuse alike: the pre-flight of `run` and of
+`fingerprint` (exit 3, nothing sent, under `--dry-run` too) and `PolicyEngine.check` before every
+attempt, which blocks each attempt of a run that outlives its window (`blocked_by_policy`, the
+reason recorded). `run` says it once before reading the targets (`the scope <path> authorizes
+nothing today: ... Renew the authorization record (its valid_from and valid_until) or point
+--scope elsewhere.`), and its plan states the window (`scope: <path> (valid from 2026-10-01 until
+2026-10-31, UTC days, both included)`). A scope with neither field is valid on every day, as
+before; either alone leaves the other side open.
+
+*Refused at load* (exit 3): a window that is no day (`valid_from` after `valid_until`); a bound
+that is not a calendar date, which pydantic's lax mode read: a number as a Unix timestamp
+(`valid_until: 20261026` was a day in 1970), a date and time with its time dropped, any other text.
+
+*Rules.* The checksum covers both lines like any other, so extending an engagement by hand is an
+edit it catches when present; the report's `scope_sha256` still names the record, window included.
+No stored verdict changes: a scope outside its window never reaches a send. The judging digest
+covers the package, so version 7 is re-pinned by an appended line (u12 A-81).
+
+*Not covered.* A time of day or a working-hours window (`docs/PROGRESS.md` lists it as not built
+for the WebSocket guard; run inside it by hand). The tool's clock: a wrong system clock reads the
+wrong day, and nothing checks it against another source. Authenticity of the dates: like the rest
+of the record, who set them is proved out of band (OD-2).
+
+*Checks.* `tests/policy/test_scope_window.py` (14: both bounds included, one bound alone, the
+window before membership, an empty window, six malformed bounds, the checksum, the engine refusing
+once the day passes) and `tests/cli/test_scope_window_gate.py` (5: `run --dry-run` refused before
+and after the window, the plan's window line and its absence, `fingerprint` refused).
+
 ## §9 Open decisions (human sign-off → rolls to 00-INDEX ledger)
 - **OD-2** scope.yaml signing. **Decided 2026-10-11 under the owner's delegation (best practice),
   revisable: the checksum is signed off as integrity only, and authenticity is an explicit
@@ -1357,6 +1397,13 @@ redacts as before.
   `allowed_signers` file, or sigstore) in `policy/scope.py`, a `run` option naming the signature
   and the trusted-keys file, the bullet in `NON-GOALS.md` and the "verifies no signature" of
   `docs/MANUAL.md` §4.1 removed.
+- **OD-55** a scope's validity window (A-97). **Open, owner to decide; built as the smallest
+  reversible version.** Which day it is: UTC (built: one answer wherever the tool runs and
+  whatever zone the operator's machine is set to), the operator's local day, or a zone the scope
+  names. And a run that outlives its window: each later attempt is `blocked_by_policy` (built:
+  the record no longer authorizes the send, and the engine asks before every attempt), or the run
+  finishes what it started on a valid day. Reversal: `policy.scope.utc_today`, or
+  `PolicyEngine.check` passing the run's first day to `authorize_target`.
 - **OD-15** redactor entropy threshold for unknown-shape secrets: global vs per-key-type.
   **Resolved (`00-INDEX.md`): an interim global threshold, documented, then the reuse of u06's
   `secret_shape` policy once it lands.** Status: `secret_shape` has landed with per-key-type
