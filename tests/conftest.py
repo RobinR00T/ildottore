@@ -176,6 +176,20 @@ def guard_state_in_tmp(
     return state
 
 
+@pytest.fixture(autouse=True)
+def profile_dirs_in_tmp(
+    tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
+) -> tuple[Path, Path]:
+    """Empty target and scope profile directories (u04 A-98) per test: a bare `-t name` never
+    reads the operator's own ``~/.config/ildottore``."""
+
+    root = tmp_path_factory.mktemp("profiles")
+    targets, scopes = root / "targets", root / "scopes"
+    monkeypatch.setenv("ILDOTTORE_TARGETS_DIR", str(targets))
+    monkeypatch.setenv("ILDOTTORE_SCOPES_DIR", str(scopes))
+    return targets, scopes
+
+
 @pytest.fixture(scope="session", autouse=True)
 def no_live_socket() -> Iterator[None]:
     """Fail closed if any test opens a real outbound connection to a non-loopback host.

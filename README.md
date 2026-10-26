@@ -35,11 +35,14 @@ mapping the code checks).
   (`--judge`) is a hardened secondary that can never turn a deterministic fail into a pass,
   and a fail only the judge reported is reported for review, never confirmed (OD-19).
 - **Fleet mode**: declare every LLM / URL / MCP endpoint in one `fleet.yaml` and scan the lot.
-- **Any AI agent over a WebSocket**, one profile per agent and no code: the wire shape is
-  declared in the target file, and its `guard` keeps the scan polite and contained (the JWT
-  checked for its tenant and expiry before it is sent, a stop at the first authentication failure
-  with a cooldown, pacing across processes, a close on tools that write). Keep a real agent's
-  profile outside the repository; `examples/target.agent.yaml` has placeholders only.
+- **Any AI agent over a WebSocket or plain HTTP**, one profile per agent and no code: the wire
+  shape is declared in the target file, and its `guard` keeps the scan polite and contained (the
+  JWT checked for its tenant and expiry before it is sent, a stop at the first authentication
+  failure with a cooldown, pacing across processes, a stop on tools that write, and a window of
+  days and hours in an IANA zone outside which nothing is sent). Keep a real agent's profile
+  outside the repository, under `~/.config/ildottore/targets/`, and run it by name
+  (`dottore run -t <name> --scope <name>`); `examples/target.agent.yaml` and
+  `examples/target.agent-rest.yaml` have placeholders only.
 - **Reports** in JSON, HTML, SARIF and JUnit; **`replay`** re-derives any run from evidence;
   **`diff`** gates a pipeline on regressions vs a baseline.
 

@@ -371,6 +371,29 @@ PIN_HISTORY: tuple[tuple[int, str, str], ...] = (
         "two changes' code together, neither changed; what is sent and how a reply is judged "
         "are each as their own pin says",
     ),
+    (
+        7,
+        "9095f2f009b16a8d3cddb98255a8d22c1917a96e7634ff4a3a7d63bbdaa0fcac",
+        "re-pin 2026-10-26: u04 A-98 (feat/guard-window-http): guard.window, rest.guard through "
+        "the shared GuardKeeper (a pacing hook before each HTTP attempt, a guard-lowered reply "
+        "cap), get_path moved to adapters/paths.py, and profiles by name in the CLI; they decide "
+        "whether and when a request goes out, never how a reply read is judged, and a target "
+        "without the blocks behaves as before, so no stored verdict changes",
+    ),
+    (
+        7,
+        "dd9cf562d9df8dc94a0c6c20c6ea2be93ad0202f73eebaa86a9853cba40706c0",
+        "re-pin 2026-10-26: u04 A-98 merged with main after u01 A-97 and u08 A-100 (the scope's "
+        "validity window, the derived canary): the changes' code together, none changed; what "
+        "is sent and how a reply is judged are each as their own pin says",
+    ),
+    (
+        7,
+        "d9f2d827e5b636ef9d008350ee362662eb5046a0cb30a4478e68e785d10af1aa",
+        "re-pin 2026-10-26: u04 A-98 merged with main after u05 A-99 (obfuscation and "
+        "fuzzing): the two changes' code together, neither changed; what is sent and how a "
+        "reply is judged are each as their own pin says",
+    ),
 )
 
 #: The digest each version is pinned to now: the last line of :data:`PIN_HISTORY` for it.
@@ -381,7 +404,7 @@ PINNED: dict[int, str] = {
     4: "86d4391094d167c454d0e05ec076a36ca10c585c57b1d00574a7e86e87c0fe40",
     5: "c352e9bd55c8e3b0629e4164411b64667327a5c3cd533e003a7cb84475ecf9c4",
     6: "47293b7afb2a5409bff93319a9fa384621c3ecbe8b9a261be8bb428e05d0f4f7",
-    7: "7197208eba4188d2372bb39f05b5144e1d4f6c17b5167645a80a55877b4b96c8",
+    7: "d9f2d827e5b636ef9d008350ee362662eb5046a0cb30a4478e68e785d10af1aa",
 }
 
 #: One ``<version> <digest>`` line per pin, appended to and never edited: the history must start

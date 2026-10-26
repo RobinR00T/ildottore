@@ -952,8 +952,9 @@ ACCEPT_ENCODING = "gzip, deflate"
 _MODEL_ID = "model"
 
 
-async def read_capped(response: httpx.Response, label: str) -> bytes:
-    """Read a streamed body, refusing one larger than :data:`MAX_RESPONSE_BYTES`.
+async def read_capped(response: httpx.Response, label: str, cap: int = MAX_RESPONSE_BYTES) -> bytes:
+    """Read a streamed body, refusing one larger than ``cap`` (:data:`MAX_RESPONSE_BYTES`; a
+    REST target's ``guard.max_response_bytes`` lowers it, u04 A-98).
 
     The single cap for every adapter that reads a target over the wire. The check runs per
     chunk, so an oversized body is abandoned mid-stream instead of being buffered whole and
@@ -973,23 +974,23 @@ async def read_capped(response: httpx.Response, label: str) -> bytes:
     """
 
     try:
-        return await _read_decoded(response, label)
+        return await _read_decoded(response, label, cap)
     except (ResponseUndecodable, ResponseTooLarge):
         if response.is_success:
             raise
         return b""
 
 
-async def _read_decoded(response: httpx.Response, label: str) -> bytes:
+async def _read_decoded(response: httpx.Response, label: str, cap: int) -> bytes:
     """:func:`read_capped` without the error-status leniency."""
 
     def too_large() -> ResponseTooLarge:
-        return ResponseTooLarge(f"{label} exceeded {MAX_RESPONSE_BYTES} bytes; not read further")
+        return ResponseTooLarge(f"{label} exceeded {cap} bytes; not read further")
 
     if response.is_stream_consumed:
         # A transport that handed over a body httpx had already read and decoded (a test
         # double built with `content=`): there is no raw stream left, only the result.
-        if len(response.content) > MAX_RESPONSE_BYTES:
+        if len(response.content) > cap:
             raise too_large()
         return response.content
 
@@ -1007,18 +1008,18 @@ async def _read_decoded(response: httpx.Response, label: str) -> bytes:
     first = True
     async for raw in response.aiter_raw():
         raw_size += len(raw)
-        if raw_size > MAX_RESPONSE_BYTES:
+        if raw_size > cap:
             raise too_large()
         if decoder is None:
             pieces = [raw]
         else:
             if first and encoding == "deflate" and raw and raw[0] & 0x0F != 8:
                 decoder = zlib.decompressobj(-zlib.MAX_WBITS)  # raw deflate, no zlib header
-            pieces = _inflate(decoder, raw, MAX_RESPONSE_BYTES + 1 - size, label)
+            pieces = _inflate(decoder, raw, cap + 1 - size, label)
         first = False
         for piece in pieces:
             size += len(piece)
-            if size > MAX_RESPONSE_BYTES:
+            if size > cap:
                 raise too_large()
             chunks.append(piece)
     if decoder is not None:
@@ -1390,6 +1391,8 @@ class BaseAdapter(ABC):
         last_env_detail = ""
         attempts = self.retry.max_retries + 1
         for attempt in range(attempts):
+            # Every attempt is a request the target sees: a guarded adapter paces each one.
+            await self._before_attempt()
             try:
                 # follow_redirects=False per call, defense-in-depth: even if an injected
                 # client enabled redirects, a 3xx to an off-allowlist host is NOT followed
@@ -1424,6 +1427,12 @@ class BaseAdapter(ABC):
             f"{last_env_detail or 'transient failure'}"
         )
 
+    async def _before_attempt(self) -> None:  # noqa: B027 (a hook, deliberately optional)
+        """Run before each request goes out (a retry included); nothing by default.
+
+        A REST target's ``guard`` paces here (u04 A-98), so a retried 429 takes a slot too.
+        """
+
     async def _maybe_backoff(self, attempt: int, attempts: int) -> None:
         """Sleep before the next retry, unless this was the last attempt."""
 
@@ -1440,7 +1449,15 @@ class BaseAdapter(ABC):
         is not retried. The cap also bounds the input every spec regex runs over.
         """
 
-        return await read_capped(response, f"{self.id}: response from {self._request_path}")
+        return await read_capped(
+            response, f"{self.id}: response from {self._request_path}", self._response_cap
+        )
+
+    @property
+    def _response_cap(self) -> int:
+        """The largest body read: :data:`MAX_RESPONSE_BYTES`, or a guard's lower cap."""
+
+        return MAX_RESPONSE_BYTES
 
     #: True for an adapter that puts sampling on the wire (OpenAI, Anthropic), whose 400 naming
     #: a sampling parameter it sent is a :class:`SamplingRefused` (u12 A-68).

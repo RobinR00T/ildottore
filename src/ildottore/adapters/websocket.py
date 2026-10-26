@@ -61,7 +61,6 @@ from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, ClassVar, Final, Literal, cast
-from urllib.parse import urlsplit
 
 from websockets.asyncio.client import ClientConnection, connect
 from websockets.exceptions import ConnectionClosed, InvalidHandshake, InvalidStatus, InvalidURI
@@ -69,11 +68,7 @@ from websockets.exceptions import ConnectionClosed, InvalidHandshake, InvalidSta
 from ildottore.adapters.agent_guard import (
     AgentAuthRefused,
     AgentGuardState,
-    AgentTenantMismatch,
-    AgentToolStop,
-    GuardStop,
-    check_token,
-    reported_tools,
+    GuardKeeper,
 )
 from ildottore.adapters.base import (
     MAX_RESPONSE_BYTES,
@@ -100,7 +95,7 @@ from ildottore.redactor import (
     Redactor,
     mask_split,
 )
-from ildottore.shared.config_errors import listed, quoted
+from ildottore.shared.config_errors import quoted
 from ildottore.shared.error_text import error_text
 from ildottore.shared.filter_stops import FILTER_STOPS, normalized_stop
 from ildottore.shared.models import (
@@ -417,12 +412,20 @@ class WebSocketAdapter:
 
     _conversations: dict[str, _Conversation] = field(default_factory=dict, init=False)
     _guard: AgentGuardState | None = field(default=None, init=False)
+    _keeper: GuardKeeper | None = field(default=None, init=False)
 
     def __post_init__(self) -> None:
-        if self.spec.guard is not None:
+        guard = self.spec.guard
+        if guard is not None:
             self._guard = AgentGuardState(
-                self.id, self.url, self.spec.guard, self.guard_state_dir, self.clock
+                self.id, self.url, guard, self.guard_state_dir, self.clock
             )
+            tenant = (
+                None
+                if guard.token is None
+                else str(render(guard.token.tenant, dict(self.spec.vars)))
+            )
+            self._keeper = GuardKeeper(self.id, self.url, guard, self._guard, tenant, self.clock)
 
     # --- traits the runner and the plan read -------------------------------------------
 
@@ -541,103 +544,53 @@ class WebSocketAdapter:
 
         refuse_short_credential(self.id, self.api_key)
 
-    # --- the guard (agent_guard) ---------------------------------------------------------
+    # --- the guard (agent_guard.GuardKeeper, shared with the REST adapter) ------------------
 
     @property
     def _max_bytes(self) -> int:
         """The byte cap of a turn: the guard's, when it sets a lower one."""
 
-        guard = self.spec.guard
-        if guard is None or guard.max_response_bytes is None:
-            return MAX_RESPONSE_BYTES
-        return min(guard.max_response_bytes, MAX_RESPONSE_BYTES)
-
-    def _tenant(self) -> str | None:
-        guard = self.spec.guard
-        if guard is None or guard.token is None:
-            return None
-        return str(render(guard.token.tenant, dict(self.spec.vars)))
+        return (
+            MAX_RESPONSE_BYTES
+            if self._keeper is None
+            else self._keeper.max_bytes(MAX_RESPONSE_BYTES)
+        )
 
     def _check_guard(self) -> None:
-        """Before any dial: the endpoint's scheme and path, the credential, the cooldown."""
+        """Before any dial: the endpoint's scheme and path, the credential, the window and the
+        cooldown."""
 
-        guard, state = self.spec.guard, self._guard
-        if guard is None or state is None:
-            return
-        if guard.endpoint is not None:
-            parts = urlsplit(self.url)
-            if (guard.endpoint.scheme is not None and parts.scheme != guard.endpoint.scheme) or (
-                guard.endpoint.path is not None and parts.path != guard.endpoint.path
-            ):
-                raise GuardStop(
-                    f"{self.id}: the endpoint is not the scheme and path guard.endpoint requires; "
-                    "nothing was sent"
-                )
-        if guard.token is not None:
-            if self.api_key is None:
-                raise GuardStop(
-                    f"{self.id}: guard.token is declared and no credential is resolved; set the "
-                    "variable auth_ref names; nothing was sent"
-                )
-            check_token(
-                self.id,
-                self.api_key,
-                tenant=self._tenant() or "",
-                tenant_claims=guard.token.tenant_claims,
-                min_lifetime_s=guard.token.min_lifetime_seconds,
-                now=self.clock(),
-            )
-        state.admit(self.api_key)
+        if self._keeper is not None:
+            self._keeper.check_before_dial(self.api_key)
 
     def _auth_failed(self, why: str, *, refused: bool) -> AgentAuthRefused:
         """Record an authentication failure (``refused``: the credential too) and say so."""
 
-        if self._guard is not None:
-            self._guard.record_auth_failure(self.api_key, refused=refused)
-        cooldown = self.spec.guard.auth.cooldown_seconds if self.spec.guard is not None else 0.0
-        return AgentAuthRefused(
-            f"{self.id}: authentication failed ({why}); the run stops and the guard leaves the "
-            f"agent alone for {cooldown:g}s" + ("; set a fresh credential" if refused else "")
-        )
+        if self._keeper is None:  # pragma: no cover - every caller checks for a guard first
+            return AgentAuthRefused(f"{self.id}: authentication failed ({why})")
+        return self._keeper.auth_failed(self.api_key, why, refused=refused)
 
     def _check_auth_frame(self, frame: Mapping[str, Any]) -> None:
         """An error frame whose code the guard lists as an authentication failure."""
 
-        guard = self.spec.guard
-        if guard is None or guard.auth.code_path is None:
-            return
-        code = get_path(frame, guard.auth.code_path)
-        if isinstance(code, str) and code in guard.auth.failure_codes:
-            raise self._auth_failed(f"error code {quoted(code)}", refused=True)
+        if self._keeper is not None:
+            self._keeper.check_auth_code(self.api_key, frame)
 
     def _check_reply_tenant(self, frame: Mapping[str, Any]) -> None:
         """The tenant the handshake reply names, when it names one, is the configured one."""
 
-        guard = self.spec.guard
-        if guard is None or guard.token is None or guard.token.reply_tenant_path is None:
-            return
-        named = get_path(frame, guard.token.reply_tenant_path)
-        if named is not None and str(named) != self._tenant():
-            raise AgentTenantMismatch(
-                f"{self.id}: the handshake reply names a tenant other than the configured one; "
-                "the connection was closed before any query"
+        if self._keeper is not None:
+            self._keeper.check_reply_tenant(
+                frame,
+                where="the handshake reply",
+                then="the connection was closed before any query",
             )
 
     def _check_tools(self, frame: Mapping[str, Any]) -> None:
         """A tool from ``stop_on_tools`` reported in the frame: the turn ends here."""
 
-        guard = self.spec.guard
-        if guard is None or guard.stop_on_tools is None:
-            return
-        hit = sorted(
-            set(reported_tools(frame, guard.stop_on_tools.path)) & set(guard.stop_on_tools.names)
-        )
-        if hit:
-            raise AgentToolStop(
-                f"{self.id}: the target reported {listed(hit, show=quoted)}, which "
-                "guard.stop_on_tools lists; the connection was closed (closing cannot undo a "
-                "step already started)"
-            )
+        if self._keeper is not None:
+            self._keeper.check_tools(frame)
 
     async def _drop(self, key: str) -> None:
         conversation = self._conversations.pop(key, None)

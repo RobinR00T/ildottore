@@ -163,10 +163,13 @@ prints it.
 .SS Targets and authorization
 .TP
 .B --scope \fIPATH\fR
-REQUIRED authorization record. Never bypassable.
+REQUIRED authorization record. Never bypassable. A bare name reads
+<name>.yaml from ILDOTTORE_SCOPES_DIR, else ~/.config/ildottore/scopes.
 .TP
 .B -t, --target \fIPATH\fR
-Target file(s); repeatable. Targets may also be positional.
+Target file(s); repeatable. Targets may also be positional. A bare
+name (no separator, no .yaml or .yml suffix) reads <name>.yaml from ILDOTTORE_TARGETS_DIR,
+else ~/.config/ildottore/targets; a name that is also a file here, or found nowhere, exits 3.
 .TP
 .B --judge \fIPATH\fR
 Judge model target.yaml (LLM-as-judge for the semantic_judge evaluator on live scans).
@@ -626,7 +629,12 @@ Authorization record: version and targets (each with base_url, endpoints, identi
 .TP
 .I target.yaml
 The target: id, type, provider (openai, anthropic, mcp, websocket, or rest for anything else),
-endpoint, model, auth_ref, capabilities; a websocket block for provider websocket.
+endpoint, model, auth_ref, capabilities; a websocket block for provider websocket, a rest block
+(its guard) for provider rest.
+.TP
+.I ~/.config/ildottore/targets/, ~/.config/ildottore/scopes/
+Target and scope profiles read by a bare name (ILDOTTORE_TARGETS_DIR and ILDOTTORE_SCOPES_DIR
+override them).
 .TP
 .I fleet.yaml
 Many targets in one file; expanded by

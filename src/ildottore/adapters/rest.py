@@ -9,15 +9,30 @@ Defaults are deliberately conservative: ``logprobs=None`` and ``seed=False``
 (contract §5 step 4) - the long tail rarely exposes either, and we never
 fabricate them. Auth is **header-only** in MVP-1 to shrink the secret-leak
 surface (contract §9); query/body-templated tokens are deferred pending sign-off.
+
+A deployed agent behind plain HTTP declares ``rest.guard`` in its target file, the block a
+WebSocket target declares under ``websocket.guard`` (u04 A-98): the same
+:class:`~ildottore.adapters.agent_guard.GuardKeeper` checks the endpoint, the credential, the
+window and the cooldown before any request, paces every request (a retry included), reads an
+HTTP 401 or 403 and a listed error code as an authentication failure, and stops the run on a
+listed tool the reply reports.
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+import asyncio
+import json
+import time
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Literal
 
-from ildottore.adapters.base import BaseAdapter, ResponseMalformed
+import httpx
+
+from ildottore.adapters.agent_guard import AgentGuardState, GuardKeeper
+from ildottore.adapters.base import MAX_RESPONSE_BYTES, BaseAdapter, ResponseMalformed
+from ildottore.adapters.paths import get_path
 from ildottore.shared.filter_stops import (
     BEDROCK_FILTER_STOPS,
     GEMINI_FILTER_STOPS,
@@ -25,7 +40,7 @@ from ildottore.shared.filter_stops import (
     documented_stops,
     normalized_stop,
 )
-from ildottore.shared.models import Capabilities, ModelRequest, ModelResponse
+from ildottore.shared.models import Capabilities, ModelRequest, ModelResponse, WebSocketGuard
 from ildottore.shared.provider_filter import INPUT_SIDE, OUTPUT_SIDE, UNKNOWN_SIDE
 
 __all__ = ["RestAdapter", "RestTemplate", "get_path"]
@@ -75,33 +90,6 @@ _GUARDRAIL_POLICIES: tuple[tuple[str, str], ...] = (
 #: the model answered it, so with nothing else in the trace the side stays unreported.
 _INPUT_ACTIONS: frozenset[str] = frozenset({"BLOCKED"})
 _OUTPUT_ACTIONS: frozenset[str] = frozenset({"BLOCKED", "ANONYMIZED"})
-
-
-def get_path(payload: Any, path: str) -> Any:
-    """Resolve a dotted path (``a.b.0.c``) into a nested JSON payload.
-
-    Integer-looking segments index into sequences. Returns ``None`` if any
-    segment is missing rather than raising, so a missing optional field (e.g.
-    ``finish_reason``) is simply absent.
-    """
-
-    current: Any = payload
-    for segment in path.split("."):
-        if current is None:
-            return None
-        if segment.lstrip("-").isdigit():
-            if not isinstance(current, Sequence) or isinstance(current, (str, bytes)):
-                return None
-            idx = int(segment)
-            if -len(current) <= idx < len(current):
-                current = current[idx]
-            else:
-                return None
-        elif isinstance(current, Mapping):
-            current = current.get(segment)
-        else:
-            return None
-    return current
 
 
 @dataclass(frozen=True)
@@ -183,6 +171,81 @@ class RestAdapter(BaseAdapter):
     #: What to check when no reply reads as the template's, set by whoever built the adapter: a
     #: target file declares no template, so it is not told to check one (OD-21 audit, LOW 2).
     advice: str | None = None
+    #: The target file's ``rest.guard`` (u04 A-98), and where it keeps its state, the wall clock
+    #: it reads and the sleep it paces with (the last three injected by the tests).
+    guard: WebSocketGuard | None = None
+    guard_state_dir: Path | None = None
+    clock: Callable[[], float] = time.time
+    pause: Callable[[float], Awaitable[None]] = asyncio.sleep
+
+    _keeper: GuardKeeper | None = field(default=None, init=False)
+
+    def __post_init__(self) -> None:
+        if self.guard is not None:
+            url = self._full_url()
+            state = AgentGuardState(self.id, url, self.guard, self.guard_state_dir, self.clock)
+            tenant = None if self.guard.token is None else self.guard.token.tenant
+            self._keeper = GuardKeeper(
+                self.id,
+                url,
+                self.guard,
+                state,
+                tenant,
+                self.clock,
+                closed="the run stops after this reply (stopping cannot undo a step already "
+                "started)",
+            )
+
+    # --- the guard (agent_guard.GuardKeeper, shared with the WebSocket adapter) ------------
+
+    async def send(self, request: ModelRequest) -> ModelResponse:
+        """The base send loop, after the guard's checks when the target file declares one.
+
+        The allowlist still runs first: a refused URL reaches neither the guard's state file nor
+        the network.
+        """
+
+        if self._keeper is not None:
+            self._check_allowlist(self._full_url())
+            self._keeper.check_before_dial(self.api_key)
+        return await super().send(request)
+
+    async def _before_attempt(self) -> None:
+        """Pace each request the guard declares a pace for (a retry takes a slot too)."""
+
+        if self._keeper is not None:
+            wait = self._keeper.state.reserve()
+            if wait > 0.0:
+                await self.pause(wait)
+
+    @property
+    def _response_cap(self) -> int:
+        """The guard's ``max_response_bytes``, when it sets one below the adapter's cap."""
+
+        if self._keeper is None:
+            return MAX_RESPONSE_BYTES
+        return self._keeper.max_bytes(MAX_RESPONSE_BYTES)
+
+    def _handle_final_response(
+        self, response: httpx.Response, raw: bytes, *, body: Mapping[str, Any] | None = None
+    ) -> ModelResponse:
+        """The guard reads the reply first: an HTTP 401 or 403, or a body carrying a listed
+        error code, is an authentication failure; a success body naming another tenant, or a
+        tool ``stop_on_tools`` lists, stops the run. Then the base reads it as before."""
+
+        keeper = self._keeper
+        if keeper is not None:
+            if response.status_code in (401, 403):
+                raise keeper.auth_failed(self.api_key, f"HTTP {response.status_code}", refused=True)
+            payload = _json_object(raw)
+            if payload is not None:
+                keeper.check_auth_code(self.api_key, payload)
+                if response.is_success:
+                    keeper.check_reply_tenant(
+                        payload, where="the reply", then="the run stops and the reply is not read"
+                    )
+                    keeper.check_tools(payload)
+        return super()._handle_final_response(response, raw, body=body)
 
     @property
     def _endpoint_path(self) -> str:
@@ -407,6 +470,20 @@ class RestAdapter(BaseAdapter):
         ):
             return INPUT_SIDE
         return UNKNOWN_SIDE
+
+
+def _json_object(raw: bytes) -> Mapping[str, Any] | None:
+    """The body as a JSON object for the guard to read; ``None`` for anything else.
+
+    A body that is no JSON, no object or nested past the parser's depth is left to the base
+    reader, which classifies it as it always has.
+    """
+
+    try:
+        value = json.loads(raw)
+    except (ValueError, RecursionError):
+        return None
+    return value if isinstance(value, Mapping) else None
 
 
 def _acted(assessment: object, actions: frozenset[str]) -> bool:

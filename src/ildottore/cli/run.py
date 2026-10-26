@@ -32,6 +32,7 @@ import shutil
 import signal
 import stat
 import sys
+import time
 import unicodedata
 import uuid
 from collections.abc import Callable, Iterator, Sequence
@@ -41,6 +42,7 @@ from pathlib import Path
 from types import FrameType
 from typing import Any
 
+from ildottore.adapters.agent_guard import in_window, next_opening, window_text
 from ildottore.cli import interrupts, wiring
 from ildottore.cli import resume as resume_mod
 from ildottore.cli.exit_codes import ExitCode, exit_code_for, fail_on_band
@@ -95,6 +97,7 @@ from ildottore.shared.judging_rules import (
     python_build,
 )
 from ildottore.shared.models import (
+    GUARD_DAYS,
     AttackSpec,
     Attempt,
     Finding,
@@ -1460,14 +1463,21 @@ def _near_scene_lines(target: Target, specs: Sequence[AttackSpec]) -> list[str]:
     return lines
 
 
-def _guard_line(target: Target, requests: int) -> str | None:
-    """What a WebSocket target's ``guard`` block will hold the run to (``None``: no block).
+def _guard_line(target: Target, requests: int, now: float | None = None) -> str | None:
+    """What a target's ``websocket.guard`` or ``rest.guard`` will hold the run to (``None``: no
+    block).
 
     Names only what the operator configured, never the tenant or the credential, and says when
     the plan's ``requests`` are more than the hourly cap lets through: the run stops at the cap.
+    With a ``window``, it names the window and, when ``now`` (the wall clock) is outside it, that
+    a run started now sends nothing and when the window opens (u04 A-98).
     """
 
-    guard = target.websocket.guard if target.websocket is not None else None
+    if target.websocket is not None:
+        guard, on_tools, unit = target.websocket.guard, "closes on", "turn"
+    else:
+        guard = target.rest.guard if target.rest is not None else None
+        on_tools, unit = "stops on", "reply"
     if guard is None:
         return None
     parts = [f"auth failure stops the run, {guard.auth.cooldown_seconds:g}s cooldown"]
@@ -1487,10 +1497,20 @@ def _guard_line(target: Target, requests: int) -> str | None:
                 f"this plan's {requests} requests pass the hourly cap: the run stops there, "
                 "resume it later"
             )
+    if guard.window is not None:
+        window = guard.window
+        parts.append(f"window {window_text(window)}")
+        at = time.time() if now is None else now
+        if not in_window(window, at):
+            opening = next_opening(window, at)
+            parts.append(
+                "outside the window now: a run started now sends nothing; it opens "
+                f"{GUARD_DAYS[opening.weekday()]} {opening:%Y-%m-%d %H:%M}"
+            )
     if guard.stop_on_tools is not None:
-        parts.append(f"closes on {len(guard.stop_on_tools.names)} tool name(s)")
+        parts.append(f"{on_tools} {len(guard.stop_on_tools.names)} tool name(s)")
     if guard.max_response_bytes is not None:
-        parts.append(f"{guard.max_response_bytes} bytes per turn")
+        parts.append(f"{guard.max_response_bytes} bytes per {unit}")
     return "; ".join(parts)
 
 

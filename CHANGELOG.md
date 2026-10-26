@@ -7,6 +7,36 @@ the file, schema copy, build or pipeline it names.
 
 ## [Unreleased]
 
+### Added (u04 A-98, judging rules 7 re-pinned: the guard's window, the guard over HTTP, profiles by name)
+
+- **`guard.window`: the engagement's days and hours.** `timezone` (an IANA zone, required: a
+  window read in the wrong zone sends traffic hours outside it), `days` (`mon` to `sun`, or ranges
+  that do not wrap past `sun`), `start` (inclusive) and `end` (exclusive, `24:00` allowed; before
+  the start, the window crosses midnight). The guard reads the clock before every dial and again
+  at the slot a query is paced to; outside the window nothing is sent and the run stops
+  (`AgentWindowStop`, exit 3), naming the window, the time it is there and when it opens. An
+  unquoted `19:00` (which YAML reads as 1140) is refused with the fix. `--dry-run` names the window
+  and says when a run started now would send nothing. A run does not wait for the window (OD-56).
+- **`rest.guard`: the same guard for an agent over plain HTTP.** A `provider: rest` target takes
+  the block under `rest:`, read with the same rules and kept by the same code
+  (`adapters/agent_guard.py` `GuardKeeper`, now shared with the WebSocket adapter): an HTTP 401 or
+  403, or a listed error code in the body, is an authentication failure (cooldown, credential
+  refused by sha256); the JWT is checked before anything is sent; a reply naming another tenant, or
+  a listed tool, stops the run after that reply, which is not read; every request, a retry
+  included, takes a pacing slot; `max_response_bytes` caps each reply; the scheme is `http` or
+  `https` (the loader refuses a scheme of the other transport). Outside the target digest. There
+  is no SSE transport to guard: a REST target reads one JSON reply per request.
+- **Profiles by name.** `dottore run -t <name> --scope <name>` reads `<name>.yaml` from
+  `ILDOTTORE_TARGETS_DIR` (else `~/.config/ildottore/targets/`) and `ILDOTTORE_SCOPES_DIR` (else
+  `~/.config/ildottore/scopes/`); `--judge`, `fleet --judge` and `dottore fingerprint` too. Only a
+  bare name is looked up (no separator, no `.yaml` or `.yml` suffix): a path is read as before. A
+  name that is also a file here, a profile written as both `.yaml` and `.yml`, or a name found
+  nowhere is refused, exit 3, saying where it looked.
+- **`examples/target.agent-rest.yaml` and `examples/scope.agent-rest.yaml`** (Scenario L in
+  `examples/README.md`), placeholders only. Docs: `README.md`, `USAGE.md`, `docs/MANUAL.md` §4.2,
+  `man/man1/dottore.1`, `man/man5/dottore-scope.5`, `specs/contracts/u04-target-adapters.md`
+  (A-98, OD-56). No verdict changes (judging rules 7 re-pinned).
+
 ### Added (u05 A-99, judging rules 7 re-pinned: obfuscation and fuzzing on request)
 
 - **Ten mutator families, 29 built-ins in all:** `encode:<scheme>` (hex, base32, base85, uu, qp,
