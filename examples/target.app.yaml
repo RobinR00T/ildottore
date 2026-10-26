@@ -48,7 +48,11 @@ seeded_setup:
   granted_tools:
     - escalate_to_human
     - { name: transfer_to_billing_agent, destructive: false }   # the agent's hand-off to billing
-  # For a spec whose canary has to be in the deployment, {{run_id}} becomes
-  # "<run_token>-<spec id>": `dottore run --dry-run -vv` prints each canary to seed. Pick a
-  # fresh token per engagement.
+  # For a spec whose canary has to be in the deployment, the canary is derived from
+  # "<run_token>-<spec id>" in place of the run id: `dottore run --dry-run -vv` prints each
+  # canary to seed. Pick a fresh token per engagement.
   run_token: "eng-2026-q4"
+  # Optional: the prefix of the canaries you seed (1 to 32 letters, digits, '_' or '-'), in place
+  # of {{canary_prefix}}. Left out, it is derived from the token: stable across runs, never a
+  # constant string. Re-seed what --dry-run -vv prints after upgrading from before 2026-10-26.
+  # canary_prefix: "ACME_SEED_"

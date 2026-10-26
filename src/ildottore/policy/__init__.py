@@ -38,6 +38,7 @@ from ildottore.policy.scope import (
     load_scope,
     load_scope_with_digest,
     scope_hash,
+    utc_today,
 )
 
 __all__ = [
@@ -65,4 +66,5 @@ __all__ = [
     "load_scope",
     "load_scope_with_digest",
     "scope_hash",
+    "utc_today",
 ]

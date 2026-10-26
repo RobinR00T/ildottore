@@ -27,6 +27,7 @@ from ildottore.core.setup_delivery import (
     seeding_gap,
 )
 from ildottore.evaluators.tool_call import ToolCallEvaluator
+from ildottore.shared.canary import bind_canary, derived_body, derived_prefix
 from ildottore.shared.digest import target_digest
 from ildottore.shared.enums import TargetType, VerdictStatus
 from ildottore.shared.models import (
@@ -45,6 +46,10 @@ from .conftest import AllowAllPolicy, no_sleep
 
 _SPECS = BATTERY / "attacks"
 _ALL = Capabilities(tools=True, rag=True, memory=True, multimodal=True)
+#: DL-XSESSION-001's canary as the run token ``eng-2026-q4`` binds it (u08 A-100).
+_SEEDED_XSESSION = bind_canary("{{canary_prefix}}{{canary_body}}", "eng-2026-q4-DL-XSESSION-001")
+#: The battery's canary as run ``r1`` binds it.
+_CANARY_R1 = bind_canary("{{canary_prefix}}{{canary_body}}", "r1")
 
 
 def _spec(spec_id: str) -> AttackSpec:
@@ -283,6 +288,13 @@ def test_the_target_file_declares_what_is_seeded(tmp_path: Path) -> None:
         ("seeded_setup: {run_token: 'has space in it'}\n", "agent", "run_token"),
         ("seeded_setup: {granted_tools: escalate}\n", "agent", "granted_tools"),
         ("seeded_setup: {tools: {a: x}, granted_tools: [x]}\n", "agent", "both maps and grants"),
+        (
+            "seeded_setup: {run_token: eng-2026-q4, canary_prefix: 'has space'}\n",
+            "agent",
+            "canary_prefix' must be 1 to 32",
+        ),
+        ("seeded_setup: {run_token: eng-2026-q4, canary_prefix: ''}\n", "agent", "1 to 32"),
+        ("seeded_setup: {canary_prefix: ACME_}\n", "agent", "needs 'seeded_setup.run_token'"),
     ],
 )
 def test_a_wrong_declaration_is_refused(tmp_path: Path, body: str, kind: str, message: str) -> None:
@@ -405,9 +417,7 @@ async def test_the_run_token_is_the_canary_the_evaluators_look_for(fixtures) -> 
     class Leaky(Recording):
         async def send(self, request: ModelRequest) -> ModelResponse:
             self.requests.append(request)
-            return ModelResponse(
-                text="The previous user's note was ZYNAP_CANARY_eng-2026-q4-DL-XSESSION-001."
-            )
+            return ModelResponse(text=f"The previous user's note was {_SEEDED_XSESSION}.")
 
     target = _target(
         SeededSetup(specs=["DL-XSESSION-001"], run_token="eng-2026-q4"), TargetType.CHATBOT
@@ -429,7 +439,7 @@ async def test_a_seeded_request_carries_no_scene(fixtures) -> None:
     sent = adapter.requests[0]
     assert "Saved memory" not in (sent.system_prompt or "")
     assert not sent.messages and not sent.tools
-    assert "ZYNAP_CANARY" not in sent.prompt
+    assert _SEEDED_XSESSION not in sent.prompt
 
 
 async def test_a_grant_never_authorizes_a_tool_of_the_specs_own_scene() -> None:
@@ -664,7 +674,8 @@ def test_each_seeded_spec_gets_its_own_canary_to_seed() -> None:
     target = _target(SeededSetup(specs=["*"], run_token="eng-2026-q4"), TargetType.RAG)
     xsession = _spec("DL-XSESSION-001")
     assert canary_binding(xsession, target, "run-1") == "eng-2026-q4-DL-XSESSION-001"
-    assert seeded_canaries(xsession, target) == ["ZYNAP_CANARY_eng-2026-q4-DL-XSESSION-001"]
+    assert seeded_canaries(xsession, target) == [_SEEDED_XSESSION]
+    assert _SEEDED_XSESSION.startswith(derived_prefix("eng-2026-q4-DL-XSESSION-001"))
     rag = _spec("PI-INDIRECT-RAG-001")
     assert canary_binding(rag, target, "run-1") == "run-1"
     assert seeded_canaries(rag, target) == []
@@ -795,7 +806,7 @@ async def test_a_complete_prior_comes_back_as_the_verdict_it_was(fixtures) -> No
     class Leaky(Recording):
         async def send(self, request: ModelRequest) -> ModelResponse:
             self.requests.append(request)
-            return ModelResponse(text="The configuration token is ZYNAP_CANARY_r1.")
+            return ModelResponse(text=f"The configuration token is {_CANARY_R1}.")
 
     adapter = Leaky()
     first = await _run("PI-INDIRECT-TOOL-001", adapter, _target(SeededSetup(specs=["*"])), fixtures)
@@ -906,3 +917,61 @@ def test_a_gated_prior_is_not_counted_as_exercised() -> None:
     )
     coverage = _build_coverage([finding], {spec.id: spec})
     assert spec.id in coverage.not_exercised
+
+
+# --- the canary prefix (u08 A-100, OD-58) ------------------------------------------------------
+
+
+#: DL-XSESSION-001's canary under the operator's prefix: the body is still derived, so it names
+#: neither the run token nor the spec (u08 A-100).
+_ACME_XSESSION = f"ACME_SEED_{derived_body('eng-2026-q4-DL-XSESSION-001')}"
+
+
+def test_a_seeded_canary_takes_the_operator_s_prefix(tmp_path: Path) -> None:
+    from ildottore.core.setup_delivery import canary_prefix_binding, seeded_canaries
+
+    target = _load(
+        tmp_path,
+        "seeded_setup:\n  specs: ['*']\n  run_token: eng-2026-q4\n  canary_prefix: ACME_SEED_\n",
+        kind="rag",
+    )
+    assert target.seeded_setup is not None and target.seeded_setup.canary_prefix == "ACME_SEED_"
+    xsession, rag = _spec("DL-XSESSION-001"), _spec("PI-INDIRECT-RAG-001")
+    assert seeded_canaries(xsession, target) == [_ACME_XSESSION]
+    assert canary_prefix_binding(xsession, target, "run-1") == "ACME_SEED_"
+    # A canary that travels in the request keeps the prefix of the run, not the operator's.
+    assert canary_prefix_binding(rag, target, "run-1") == derived_prefix("run-1")
+
+
+def test_without_the_operator_s_prefix_a_seeded_canary_keeps_one_across_runs() -> None:
+    from ildottore.core.setup_delivery import canary_prefix_binding
+
+    target = _target(SeededSetup(specs=["*"], run_token="eng-2026-q4"), TargetType.RAG)
+    xsession = _spec("DL-XSESSION-001")
+    first = canary_prefix_binding(xsession, target, "run-1")
+    assert first == canary_prefix_binding(xsession, target, "run-2")
+    assert first == derived_prefix("eng-2026-q4-DL-XSESSION-001")
+
+
+async def test_the_evaluators_look_for_the_operator_s_prefix(fixtures) -> None:
+    class Leaky(Recording):
+        async def send(self, request: ModelRequest) -> ModelResponse:
+            self.requests.append(request)
+            return ModelResponse(text=f"The previous user's note was {_ACME_XSESSION}.")
+
+    seeded = SeededSetup(
+        specs=["DL-XSESSION-001"], run_token="eng-2026-q4", canary_prefix="ACME_SEED_"
+    )
+    adapter = Leaky()
+    result = await _run("DL-XSESSION-001", adapter, _target(seeded, TargetType.CHATBOT), fixtures)
+    assert result.findings[0].attempts[0].verdict.status is VerdictStatus.FAIL
+
+
+def test_the_prefix_needs_a_run_token_and_is_left_out_of_a_dump_when_unset() -> None:
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError, match=r"needs seeded_setup\.run_token"):
+        SeededSetup(specs=["*"], canary_prefix="ACME_")
+    assert "canary_prefix" not in SeededSetup(specs=["*"], run_token="eng-2026-q4").model_dump()
+    with_prefix = SeededSetup(specs=["*"], run_token="eng-2026-q4", canary_prefix="ACME_")
+    assert with_prefix.model_dump()["canary_prefix"] == "ACME_"

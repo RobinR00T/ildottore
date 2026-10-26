@@ -136,7 +136,7 @@ def test_a_random_canary_that_holds_a_name_or_the_target_id_is_accepted(
         "CANARY-B-7f3a91c2",
         "TENANT-B-CANARY-42",  # the names here are tenant-a and tenant-two
         "ZZ-CANARY-7f3a91",
-        "ZYNAP_CANARY_ALPHA",  # one class, long and varied enough
+        "PLANTED_CANARY_ALPHA",  # one class, long and varied enough
         "2914177763170669",  # a random 16-digit number (audit LOW 4 of round 1)
         "RAMVGNXAQHYOPRHL",  # a random all-letter token (audit LOW 4 of round 1)
         "CANARY_B_{{run_id}}",
@@ -349,3 +349,15 @@ def test_a_label_short_only_once_folded_is_still_taken_out() -> None:
     canary = "ab\u200b" * 6 + "cdefghij"
     why = weak_canary(canary, ["tgt", "ab\u200b"])
     assert why is not None and why.startswith(_HOLDS)
+
+
+def test_an_identity_canary_holding_a_spec_placeholder_is_refused(tmp_path: Path) -> None:
+    """Only a spec's canary binds ``{{canary_prefix}}`` and ``{{canary_body}}`` (u08 A-100): the
+    runner reads an identity's with ``{{run_id}}`` alone bound, so either would stay as text."""
+
+    with pytest.raises(
+        ScopeError, match=r"holds \{\{canary_prefix\}\}, \{\{canary_body\}\}, which only a spec's"
+    ):
+        load_scope(_scope(tmp_path, "{{canary_prefix}}{{canary_body}}"))
+    with pytest.raises(ScopeError, match=r"holds \{\{canary_body\}\}, which only a spec's"):
+        load_scope(_scope(tmp_path, "ORCHID-{{canary_body}}"))

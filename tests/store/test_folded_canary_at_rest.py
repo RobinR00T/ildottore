@@ -23,6 +23,7 @@ from hypothesis import strategies as st
 from ildottore.cli import wiring
 from ildottore.policy.scope import Endpoint, Identity, Scope, ScopeTarget
 from ildottore.redactor import Redactor
+from ildottore.shared.canary import bind_canary, derived_body, derived_prefix
 from ildottore.shared.enums import TargetType
 from ildottore.shared.folding import INVISIBLE_RANGES, folded
 from ildottore.shared.models import Attempt, ModelRequest, ModelResponse, SeededSetup, Target
@@ -30,8 +31,12 @@ from ildottore.store.evidence_fs import FsEvidenceStore
 from tests.core.test_seeded_setup import _spec
 
 RUN = "run-3f9c1e7a5b2d"
-DECLARED = "ZYNAP_CANARY_{{run_id}}"
-CANARY = f"ZYNAP_CANARY_{RUN}"
+DECLARED = "{{canary_prefix}}{{canary_body}}"
+CANARY = bind_canary(DECLARED, RUN)
+#: The prefix the run id derives (u08 A-100): capital letters and a closing ``_``.
+PREFIX = derived_prefix(RUN)
+#: The body it derives: 16 lowercase base-32 characters.
+BODY = derived_body(RUN)
 #: Of the scope's floors, and no rule of the redactor takes it.
 IDENTITY = "orchid-falcon-river-31"
 
@@ -100,12 +105,14 @@ FORMS = {
     "as-planted": CANARY,
     "upper": CANARY.upper(),
     "lower": CANARY.lower(),
-    "zero-width-space": "ZYNAP_CANARY_run-3f9c\u200b1e7a5b2d",
-    "bom-re-cased": "\ufeffzynap_canary_RUN-3F9C1E7A5B2D",
-    "variation-selector": "ZYNAP_CANARY_run-3f9c\ufe0f1e7a5b2d",
-    "grapheme-joiner": "ZYNAP_CANARY\u034f_run-3f9c1e7a5b2d",
-    "hangul-filler": "ZYNAP_CANARY_run-\u31643f9c1e7a5b2d",
-    "two-splitters-re-cased": "zynap\u200b_CANARY_RUN\u3164-3F9C1E7A5B2D",
+    "zero-width-space": f"{PREFIX}{BODY[:4]}\u200b{BODY[4:]}",
+    "bom-re-cased": f"\ufeff{PREFIX.lower()}{BODY.upper()}",
+    "variation-selector": f"{PREFIX}{BODY[:4]}\ufe0f{BODY[4:]}",
+    "grapheme-joiner": f"{PREFIX[:-1]}\u034f_{BODY}",
+    "hangul-filler": f"{PREFIX}\u3164{BODY}",
+    "two-splitters-re-cased": (
+        f"{PREFIX[:3].lower()}\u200b{PREFIX[3:]}{BODY[:4].upper()}\u3164{BODY[4:].upper()}"
+    ),
 }
 
 
@@ -154,7 +161,7 @@ def test_a_seeded_canary_is_masked_as_its_run_token_binds_it(tmp_path: Path) -> 
         endpoint="https://api.example.test/v1/chat/completions",
         seeded_setup=SeededSetup(specs=["*"], run_token="eng-2026-q4"),
     )
-    seeded = "ZYNAP_CANARY_eng-2026-q4-DL-XSESSION-001"
+    seeded = bind_canary(DECLARED, "eng-2026-q4-DL-XSESSION-001")
     spec = _spec("DL-XSESSION-001")
     declared = wiring.declared_canaries([spec], target=target)
     assert seeded in declared
@@ -163,7 +170,7 @@ def test_a_seeded_canary_is_masked_as_its_run_token_binds_it(tmp_path: Path) -> 
         planted_canaries=wiring.planted_secrets([spec], target=target),
         folded_canaries=declared,
     )
-    for shown in (seeded.lower(), "ZYNAP_CANARY_eng-2026-q4\u200b-DL-XSESSION-001"):
+    for shown in (seeded.lower(), seeded.replace("-DL-", "\u200b-DL-")):
         disk = _stored(tmp_path, store, f"the note says {shown}")
         assert folded(seeded) not in folded(disk), shown
 
@@ -186,7 +193,7 @@ def test_the_runner_s_store_masks_the_seeded_canary_on_a_mock_route(tmp_path: Pa
         canary_target=target,
     )
     _OPEN.append(built)
-    seeded = "zynap_canary_eng-2026-q4-dl-xsession-001"
+    seeded = bind_canary(DECLARED, "eng-2026-q4-DL-XSESSION-001").lower()
     disk = _stored(tmp_path, built.runner._evidence, f"the note says {seeded}")
     assert seeded not in folded(disk)
 
@@ -201,11 +208,13 @@ def test_a_canary_the_evaluators_read_exactly_is_masked_exactly(tmp_path: Path) 
 
 def test_a_templated_canary_is_looked_for_with_the_run_id_of_the_attempt(tmp_path: Path) -> None:
     store = _store(tmp_path, DECLARED)
-    other = "zynap_canary_run-0a1b2c3d4e5f"
+    other = bind_canary(DECLARED, "run-0a1b2c3d4e5f").lower()
     disk = _stored(tmp_path, store, f"{CANARY.lower()} and {other}", run="run-0a1b2c3d4e5f")
     assert folded(other) not in folded(disk)
-    # The canary of another run is not this run's, so it is not looked for folded.
-    assert "zynap_canary_run-3f9c1e7a5b2d" in disk
+    # The canary of another run is not this run's, so it is not looked for folded: the default
+    # rules mask it all the same, a derived canary being high-entropy (u08 A-100).
+    assert CANARY.lower() not in disk
+    assert "«REDACTED:high_entropy:" in disk
 
 
 def test_the_canary_split_over_a_stream_is_masked_in_its_pieces(tmp_path: Path) -> None:

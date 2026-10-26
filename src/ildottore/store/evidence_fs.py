@@ -30,6 +30,7 @@ from ildottore.redactor import (
     redact_split,
     split_texts,
 )
+from ildottore.shared.canary import bind_canary, holds_placeholder
 from ildottore.shared.folding import folded, folded_spans
 from ildottore.shared.models import Attempt, EvidenceRef
 from ildottore.store import paths
@@ -117,9 +118,6 @@ def _strip_media_carrier_bytes(obj: object) -> None:
             _strip_media_carrier_bytes(item)
 
 
-#: What a declared canary holds for the run's id (``core.runner`` fills it in the same way).
-_RUN_ID: Final = "{{run_id}}"
-
 #: One SHA-256 digest as the runner writes it (``shared.media.media_digest``).
 _SHA256_HEX: Final = re.compile(r"[0-9a-f]{64}")
 
@@ -197,10 +195,11 @@ class FsEvidenceStore:
     character: u10 A-94) - they are redacted as an extra fail-closed guard even
     though DL1 canaries are synthetic. ``folded_canaries`` are the canaries the evaluators read
     case-folded through the invisible characters (``shared.folding``), as declared, with
-    ``{{run_id}}`` standing for the id of the run being stored: each is masked as they read it,
-    so one a reply holds re-cased or split is not kept on disk (u10 A-94). ``canary_folds`` says
-    which, of each run's canary (the composition root passes ``evaluators.base.foldable``, which
-    this unit does not import; none folds every one).
+    ``{{run_id}}`` standing for the id of the run being stored and ``{{canary_prefix}}`` and
+    ``{{canary_body}}`` for the parts derived from it (``shared.canary``, u08 A-100): each is
+    masked as they read it, so one a reply holds re-cased or split is not kept on disk (u10
+    A-94). ``canary_folds`` says which, of each run's canary (the composition root passes
+    ``evaluators.base.foldable``, which this unit does not import; none folds every one).
     """
 
     def __init__(
@@ -225,7 +224,9 @@ class FsEvidenceStore:
                 self._redactor.register(
                     Pattern("canary", re.compile(re.escape(canary)), hashed=True)
                 )
-        # The run whose attempt is being stored: a folded canary's `{{run_id}}` is its id.
+        # The run whose attempt is being stored: a folded canary's `{{run_id}}` is its id, and
+        # its `{{canary_prefix}}` and `{{canary_body}}` the parts derived from that id, as the
+        # runner binds them.
         self._run_id: str | None = None
         self._canary_folds = canary_folds
         for canary in folded_canaries or ():
@@ -233,12 +234,12 @@ class FsEvidenceStore:
                 self._redactor.register_spans("canary", canary, self._folded_finder(canary))
 
     def _folded_finder(self, canary: str) -> SpanFinder:
-        """Where ``canary``, its ``{{run_id}}`` filled in, shows in a text as evaluators read it.
+        """Where ``canary``, its placeholders bound, shows in a text as evaluators read it.
 
         Re-cased, or split by a format or a default ignorable character, a canary showed on disk
         as plainly as written: only the exact pattern was registered (audit of A-92, L4). One mask
         over the whole stretch, the invisible characters inside included, under the digest of the
-        canary as declared. Outside a ``put`` a canary that holds the run id is not looked for:
+        canary as declared. Outside a ``put`` a canary that holds a placeholder is not looked for:
         ``_store`` sets the run id for the redaction it runs and clears it after.
         """
 
@@ -246,11 +247,11 @@ class FsEvidenceStore:
 
         def find(text: str) -> Iterable[tuple[int, int]]:
             run_id = self._run_id
-            if run_id is None and _RUN_ID in canary:
+            if run_id is None and holds_placeholder(canary):
                 return ()
             needle = needles.get(run_id)
             if needle is None:
-                concrete = canary if run_id is None else canary.replace(_RUN_ID, run_id)
+                concrete = canary if run_id is None else bind_canary(canary, run_id)
                 folds = self._canary_folds is None or self._canary_folds(concrete)
                 needle = needles[run_id] = folded(concrete) if folds else ""
             return folded_spans(text, needle) if needle else ()

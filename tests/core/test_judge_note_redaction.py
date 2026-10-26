@@ -91,8 +91,8 @@ def test_a_cut_moves_before_a_token_rather_than_through_it() -> None:
     # Ordinary words, which no key, hex or entropy rule takes (a run of one letter is a hex run to
     # the key-format rules), so the cut lands in the canary and nowhere else.
     words = ("the judge read the reply and wrote this note " * 10)[: _JUDGE_NOTE_CHARS - 10]
-    reasoning = words + " ZYNAP_CANARY_run-4c397602a2e0 end"
+    reasoning = words + " QKZVTRBMXWPL_33vxg8dbtgvs7s7s end"
     note = _judge_record(
         Verdict(status=VerdictStatus.PASS, confidence=0.5, reasoning=reasoning, evaluator_type="j")
     )
-    assert note.endswith(" ...") and "ZYNAP" not in note
+    assert note.endswith(" ...") and "QKZVTRB" not in note

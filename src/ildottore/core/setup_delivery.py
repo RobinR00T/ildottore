@@ -20,10 +20,18 @@ import json
 from dataclasses import dataclass, field
 from typing import Final
 
+from ildottore.shared.canary import (
+    CANARY_PREFIX_PLACEHOLDER,
+    RUN_ID_PLACEHOLDER,
+    bind_canary,
+    derived_prefix,
+    holds_placeholder,
+)
 from ildottore.shared.enums import EvaluatorType, TargetType
 from ildottore.shared.models import AttackSpec, JsonDict, ModelResponse, Target
 
 __all__ = [
+    "CANARY_PREFIX_PLACEHOLDER",
     "IN_BAND",
     "MAX_CALLS_PER_ROUND",
     "MAX_ROUND_ARGUMENT_BYTES",
@@ -33,6 +41,7 @@ __all__ = [
     "TRACE_EVALUATORS",
     "InBandSetup",
     "canary_binding",
+    "canary_prefix_binding",
     "canonical_tool_calls",
     "delivers_in_band",
     "in_band_setup",
@@ -185,8 +194,6 @@ def _as_text(value: object) -> str:
 
 # --- option B: a deployed application, seeded by its operator --------------------------------
 
-#: The per-run canary placeholder a spec binds (``core.runner``).
-RUN_ID_PLACEHOLDER: Final = "{{run_id}}"
 #: Evaluators that judge the tool-call trace: on them, no call is the secure answer.
 TRACE_EVALUATORS: Final = frozenset(
     {EvaluatorType.TOOL_CALL, EvaluatorType.TOOL_SEQUENCE, EvaluatorType.KILL_CHAIN_PROGRESSION}
@@ -252,7 +259,8 @@ def seeding_gap(spec: AttackSpec, target: Target) -> str | None:
         )
     if not seeded.run_token and needs_run_token(spec):
         return (
-            "setup_not_seeded: this spec's canary is bound per run ({{run_id}}) and has to be "
+            "setup_not_seeded: this spec's canary is bound per run ({{run_id}}, "
+            "{{canary_prefix}}, {{canary_body}}) and has to be "
             "in the deployment, which nobody can seed before the run; declare "
             "seeded_setup.run_token, then seed the canary that --dry-run -vv prints"
         )
@@ -283,27 +291,41 @@ def seeding_gap(spec: AttackSpec, target: Target) -> str | None:
 def needs_run_token(spec: AttackSpec) -> bool:
     """True when ``spec``'s per-run canary has to be in the deployment before the run.
 
-    It does when the scene (documents, tool results, memory) carries the placeholder, or when a
-    canary carrying it (``setup.canaries``, an evaluator's ``canary_ref``) is not in what the
-    request itself sends (the system prompt and the attack): ``AC-BOLA-001`` plants its canary
-    in another customer's record, outside the scene, and was sent with a canary nobody could
-    have planted (delta audit of B).
+    It does when the scene (documents, tool results, memory) carries a per-run placeholder
+    (``{{run_id}}``, ``{{canary_prefix}}`` or ``{{canary_body}}``, u08 A-100), or when a canary
+    carrying one (``setup.canaries``, an evaluator's ``canary_ref``) is not in what the request
+    itself sends (the system prompt and the attack): ``AC-BOLA-001`` plants its canary in another
+    customer's record, outside the scene, and was sent with a canary nobody could have planted
+    (delta audit of B).
     """
 
     setup = spec.setup
     if setup is None:
         return False
-    if RUN_ID_PLACEHOLDER in _scene_text(spec):
+    if holds_placeholder(_scene_text(spec)):
         return True
     carried = json.dumps(
         [setup.system_prompt, spec.attack.model_dump(mode="json")], sort_keys=True, default=str
     )
     canaries = [*(setup.canaries or []), *(e.canary_ref for e in spec.evaluators if e.canary_ref)]
-    return any(RUN_ID_PLACEHOLDER in c and json.dumps(c)[1:-1] not in carried for c in canaries)
+    return any(holds_placeholder(c) and json.dumps(c)[1:-1] not in carried for c in canaries)
+
+
+def _binds_run_token(spec: AttackSpec, target: Target) -> bool:
+    """True when the operator's ``run_token`` binds ``spec``'s canary instead of the run id."""
+
+    seeded = target.seeded_setup
+    return (
+        seeded is not None
+        and bool(seeded.run_token)
+        and needs_seeding(spec, target)
+        and is_seeded(spec, target)
+        and needs_run_token(spec)
+    )
 
 
 def canary_binding(spec: AttackSpec, target: Target, run_id: str) -> str:
-    """What ``{{run_id}}`` binds to in ``spec``.
+    """What ``{{run_id}}`` binds to in ``spec``, and what its derived canary parts are read from.
 
     The run id, unless the spec is seeded, its canary has to be in the deployment and a
     ``run_token`` is declared: then ``<run_token>-<spec id>``, so each seeded spec's canary is
@@ -312,30 +334,38 @@ def canary_binding(spec: AttackSpec, target: Target, run_id: str) -> str:
     """
 
     seeded = target.seeded_setup
-    if (
-        seeded is not None
-        and seeded.run_token
-        and needs_seeding(spec, target)
-        and is_seeded(spec, target)
-        and needs_run_token(spec)
-    ):
+    if seeded is not None and seeded.run_token and _binds_run_token(spec, target):
         return f"{seeded.run_token}-{spec.id}"
     return run_id
+
+
+def canary_prefix_binding(spec: AttackSpec, target: Target, run_id: str) -> str:
+    """What ``{{canary_prefix}}`` binds to in ``spec`` (u08 A-100, OD-58).
+
+    The operator's ``seeded_setup.canary_prefix`` where the ``run_token`` binds the canary and
+    the file sets one, so a canary seeded before the run reads as the operator chose; otherwise
+    the prefix derived from what ``{{run_id}}`` binds to (``shared.canary.derived_prefix``):
+    a new one each run, and for a seeded canary a stable one, since its binding is.
+    """
+
+    seeded = target.seeded_setup
+    if seeded is not None and seeded.canary_prefix and _binds_run_token(spec, target):
+        return seeded.canary_prefix
+    return derived_prefix(canary_binding(spec, target, run_id))
 
 
 def seeded_canaries(spec: AttackSpec, target: Target) -> list[str]:
     """The canaries the operator has to seed for ``spec`` (empty when it binds per run)."""
 
-    binding = canary_binding(spec, target, RUN_ID_PLACEHOLDER)
-    if binding == RUN_ID_PLACEHOLDER or spec.setup is None:
+    if spec.setup is None or not _binds_run_token(spec, target):
         return []
+    binding = canary_binding(spec, target, RUN_ID_PLACEHOLDER)
+    prefix = canary_prefix_binding(spec, target, RUN_ID_PLACEHOLDER)
     canaries = [
         *(spec.setup.canaries or []),
         *(e.canary_ref for e in spec.evaluators if e.canary_ref),
     ]
-    return sorted(
-        {c.replace(RUN_ID_PLACEHOLDER, binding) for c in canaries if RUN_ID_PLACEHOLDER in c}
-    )
+    return sorted({bind_canary(c, binding, prefix) for c in canaries if holds_placeholder(c)})
 
 
 def trace_gap(spec: AttackSpec, target: Target, *, returns_tool_calls: bool) -> str | None:

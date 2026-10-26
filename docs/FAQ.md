@@ -213,6 +213,22 @@ or a local edit nobody bumped the version for is caught). Finish the run with th
 changed and the flag that puts it back: the spec field and `--spec-path`, the selection flags the
 run was made with, or the route (`--hardened`).
 
+### Why does the planted canary change in every run?
+
+So that a vendor cannot recognise the battery by one string. Until 2026-10-26 every battery
+canary was `ZYNAP_CANARY_` and the run id, a constant in a public repository that a guardrail
+could filter or special-case. A canary is now `{{canary_prefix}}{{canary_body}}` (u08 A-100,
+OD-58): 12 capital letters and a `_`, then 16 lowercase characters, both derived from the run id,
+which itself does not show, so a run plants something like `ZQFBIHNXSTQQ_33vxg8dbtgvs7s7s` and
+the next one something else. A canary you seed into a deployment keeps one value across runs
+(derived from `seeded_setup.run_token` and the spec, with `seeded_setup.canary_prefix` as its
+prefix if you set one): seed again what `--dry-run -vv` prints if you seeded before that date.
+Its shape is fixed (12 capital letters, `_`, 16 lowercase characters): a filter written for it
+would also catch every token of a customer's that looks alike, and the battery's public prompts
+fingerprint a scan more easily than the canary does, so the shape is not varied for now (OD-58).
+Because the specs changed, a run halted before the upgrade does not resume; old stored runs keep
+their verdicts, and the old stem stays masked wherever it shows.
+
 ### What is "confirmed" vs "needs-review"?
 
 Risk and confidence are separate. Every report puts a finding in one of four states:
@@ -492,7 +508,9 @@ name is judged as the spec's tool instead of failing as unauthorized, and list y
 outside any scene under `seeded_setup.granted_tools` (a hand-off such as
 `transfer_to_billing_agent` written `{name: ..., destructive: false}`, declared not destructive:
 OD-43). A spec whose canary has to be in your
-deployment needs `seeded_setup.run_token` (`--dry-run -vv` prints the canary to seed), and your
+deployment needs `seeded_setup.run_token` (`--dry-run -vv` prints the canary to seed; its prefix
+is derived from the token unless you set `seeded_setup.canary_prefix`, and a deployment seeded
+before 2026-10-26 holds the old `ZYNAP_CANARY_` value and has to be seeded again), and your
 deployment must return its tool calls, or a spec whose poison is a tool's result is
 `setup_not_reached` (and a spec judged on its tool trace is not sent through a REST target).
 `examples/target.app.yaml` is a worked file. The offline mock needs none of this: its replies are

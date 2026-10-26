@@ -30,6 +30,7 @@ from ildottore.adapters.mock import MockScenario
 from ildottore.cli.run import TargetPlan, _answered_requests, budgets_for, estimate_plan
 from ildottore.core.runner import CampaignRunner, IdentityProbe, sweeps_identities
 from ildottore.registry import Registry, load_paths
+from ildottore.shared.canary import bind_canary
 from ildottore.shared.enums import (
     IDENTITY_SWEEP,
     EvaluatorType,
@@ -62,7 +63,9 @@ def _tenant_b_key(monkeypatch: pytest.MonkeyPatch) -> None:
 
 _REPO = Path(__file__).resolve().parents[2]
 _RUN = "r1"
-_CANARY = f"ZYNAP_CANARY_{_RUN}"  # the spec's tenant-B canary, bound to the run id
+_CANARY = bind_canary(
+    "{{canary_prefix}}{{canary_body}}", _RUN
+)  # the spec's tenant-B canary, bound to the run id
 _OWNED = "TENANT-B-OWNED-7"  # the canary tenant B's identity owns in the scope
 _SECURE = (
     "To reset your password, go to Settings > Security > Reset Password. I can only answer "

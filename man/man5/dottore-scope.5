@@ -49,11 +49,19 @@ targets:
     identities:
       - name: default
         auth_ref: "env://MY_API_KEY"
+# valid_from: 2026-10-01             # optional
+# valid_until: 2026-10-31            # optional
 # checksum: "<sha256 of the body>"   # optional
 .fi
 .TP
 .B version
 "1.0" ("1" and "1.<minor>" are read too); any other value is refused (exit 3).
+.TP
+.B valid_from, valid_until
+Optional. The first and the last day the scope authorizes, written YYYY-MM-DD, both included,
+read as the UTC date. Outside them every target is refused (exit 3, nothing sent, --dry-run
+included) and a run that outlives the window has its later attempts blocked. A window that is
+no day, a number or a date with a time is refused. The checksum covers both lines.
 .TP
 .B targets
 The authorized targets (>=1). A target whose id is absent is refused. Each has a base_url,
@@ -217,7 +225,8 @@ seeded_setup:
   granted_tools:                              # own tools outside any scene
     - escalate_to_human
     - { name: transfer_to_billing_agent, destructive: false }
-  run_token: "eng-2026-q4"                    # replaces {{run_id}} in what you seed
+  run_token: "eng-2026-q4"                    # what the canaries you seed derive from
+  canary_prefix: "ACME_SEED_"                 # optional: replaces {{canary_prefix}} there
 .fi
 .PP
 A spec with setup is inconclusive (setup_not_seeded) with nothing sent when
@@ -227,7 +236,12 @@ does not match it, when its canary has to be in the deployment and no
 is declared, when two of its scene tools map to one deployment name, or when one maps to the
 name of another of its scene tools; a spec judged on its
 tool trace is not sent through an adapter that reads no tool calls (REST, MCP). With a token,
-each such spec's canary is <run_token>-<spec id>, and --dry-run -vv prints what to seed. A sent
+each such spec's canary is derived from <run_token>-<spec id> (neither shows in it), and
+--dry-run -vv prints what to seed; its prefix is
+.B canary_prefix
+(1 to 32 letters, digits, _ or -, needs run_token), or, left out, capital letters derived from
+the token (u08 A-100). Re-seed after upgrading from before 2026-10-26, when the seeded canary
+was ZYNAP_CANARY_<run_token>-<spec id>. A sent
 one records setup_delivery: seeded. Tool calls are judged under the spec's names through
 .BR tools ,
 applied per spec; a
@@ -249,8 +263,8 @@ bare name only grants), any other key, a missing name or one with a space at eit
 declared name also mapped under tools and one granted twice are refused. The deployment must return
 its tool calls: a reply that shows no call to the tool carrying the scene is inconclusive
 (setup_not_reached). The block is refused on a type: model target, which gets the scene in-band, and
-on an unknown key, a name both mapped and granted, or a run_token that is not 8 to 64 letters,
-digits, _ or -. Worked file: examples/target.app.yaml.
+on an unknown key, a name both mapped and granted, a run_token that is not 8 to 64 letters,
+digits, _ or -, or a canary_prefix that is not 1 to 32 of them or comes without a run_token. Worked file: examples/target.app.yaml.
 .PP
 A chat endpoint over a WebSocket is provider websocket, with a ws:// or wss:// endpoint (no
 query, no user:password) and a websocket block declaring its wire shape: handshake.send (a JSON

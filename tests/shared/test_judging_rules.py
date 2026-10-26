@@ -322,12 +322,54 @@ PIN_HISTORY: tuple[tuple[int, str, str], ...] = (
     ),
     (
         7,
+        "6764e7c12a1c64266369fffbf2779c99d8a0ecab782efefbc47a4f02f984a32d",
+        "re-pin 2026-10-26: u01 A-97 (a scope's validity window): valid_from and valid_until in "
+        "the scope model and its loader, checked first by authorize_target, and the dry-run's "
+        "window note; it decides whether an attempt is sent at all, never how a reply read is "
+        "judged, and a scope without the fields authorizes as before, so no stored verdict "
+        "changes",
+    ),
+    (
+        7,
+        "a2f4408dd9b856d77ce853e09558e695fc695ab9b34d17f56f2e16866af2760a",
+        "re-pin 2026-10-26: u08 A-100 (OD-58, no constant canary stem): the battery's canaries "
+        "written {{canary_prefix}}{{run_id}}, shared/canary.py, the runner, setup_delivery, "
+        "the evidence store and the fixture stub binding both, seeded_setup.canary_prefix, the "
+        "scope refusing the placeholder in an identity canary and the redactor masking the old "
+        "stem; it changes which string a reply is searched for, never how a reply holding it is "
+        "judged, and a stored verdict is not judged again",
+    ),
+    (
+        7,
+        "58a65f6a3e096b3c6ab6229a14a6e32126f98cbe60ba836e3c73eed7889a2d9e",
+        "re-pin 2026-10-26: u08 A-100 again, the derived prefix a fixed 12 capital letters and "
+        "'_' (the old stem's length) instead of 6 to 11, so a request, and the tokens reserved "
+        "for it, are as long in every run; it changes which string a reply is searched for, "
+        "never how a reply holding it is judged",
+    ),
+    (
+        7,
+        "1cfc6a3eaf8457b8451dbb66c374ea62133a15d4e62fcaa873ad3eecaf8b3931",
+        "re-pin 2026-10-26: u08 A-100's body, {{canary_body}} derived from the binding in "
+        "place of {{run_id}} in the battery's canaries, so neither the run id nor the spec id "
+        "is in a canary, and the attack-spec schema's $id on ildottore.dev; it changes which "
+        "string a reply is searched for, never how a reply holding it is judged",
+    ),
+    (
+        7,
         "9095f2f009b16a8d3cddb98255a8d22c1917a96e7634ff4a3a7d63bbdaa0fcac",
         "re-pin 2026-10-26: u04 A-98 (feat/guard-window-http): guard.window, rest.guard through "
         "the shared GuardKeeper (a pacing hook before each HTTP attempt, a guard-lowered reply "
         "cap), get_path moved to adapters/paths.py, and profiles by name in the CLI; they decide "
         "whether and when a request goes out, never how a reply read is judged, and a target "
         "without the blocks behaves as before, so no stored verdict changes",
+    ),
+    (
+        7,
+        "dd9cf562d9df8dc94a0c6c20c6ea2be93ad0202f73eebaa86a9853cba40706c0",
+        "re-pin 2026-10-26: u04 A-98 merged with main after u01 A-97 and u08 A-100 (the scope's "
+        "validity window, the derived canary): the changes' code together, none changed; what "
+        "is sent and how a reply is judged are each as their own pin says",
     ),
 )
 
@@ -339,7 +381,7 @@ PINNED: dict[int, str] = {
     4: "86d4391094d167c454d0e05ec076a36ca10c585c57b1d00574a7e86e87c0fe40",
     5: "c352e9bd55c8e3b0629e4164411b64667327a5c3cd533e003a7cb84475ecf9c4",
     6: "47293b7afb2a5409bff93319a9fa384621c3ecbe8b9a261be8bb428e05d0f4f7",
-    7: "9095f2f009b16a8d3cddb98255a8d22c1917a96e7634ff4a3a7d63bbdaa0fcac",
+    7: "dd9cf562d9df8dc94a0c6c20c6ea2be93ad0202f73eebaa86a9853cba40706c0",
 }
 
 #: One ``<version> <digest>`` line per pin, appended to and never edited: the history must start

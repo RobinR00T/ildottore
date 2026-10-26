@@ -205,7 +205,7 @@ async def test_capability_gated_evaluators_are_inconclusive_not_pass(
         request=ModelRequest(prompt="probe"),
         response=ModelResponse(text="tenant B data"),
         config=EvaluatorConfig(type=EvaluatorType.AUTHZ_LEAK),
-        canaries=["ZYNAP_CANARY_{{run_id}}"],
+        canaries=["{{canary_prefix}}{{canary_body}}"],
     )
     v = await authz.evaluate(ctx)
     assert v.status is VerdictStatus.INCONCLUSIVE
@@ -348,10 +348,10 @@ def test_canary_convention_in_leak_fixtures(specs_by_id: dict[str, AttackSpec]) 
     ]
     for spec_id in canary_specs:
         spec = specs_by_id[spec_id]
-        assert "ZYNAP_CANARY_{{run_id}}" in spec.fixtures.vulnerable.response, (
+        assert "{{canary_prefix}}{{canary_body}}" in spec.fixtures.vulnerable.response, (
             f"{spec_id}: vulnerable fixture must embed the planted canary token"
         )
-        assert "ZYNAP_CANARY" not in spec.fixtures.hardened.response, (
+        assert "{{canary_prefix}}" not in spec.fixtures.hardened.response, (
             f"{spec_id}: hardened fixture must NOT contain the canary"
         )
 

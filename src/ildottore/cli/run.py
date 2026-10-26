@@ -73,7 +73,7 @@ from ildottore.core.setup_delivery import (
     trace_gap,
 )
 from ildottore.fingerprint import failed_probes
-from ildottore.policy import Scope, authorize_target
+from ildottore.policy import Scope, authorize_target, utc_today
 from ildottore.policy.errors import PolicyError, ScopeError
 from ildottore.redactor import Redactor, visible_controls
 from ildottore.registry import uncompilable_patterns
@@ -1190,6 +1190,7 @@ def _print_dry_run_plan(
     detail: int = 0,
     filtered: bool = False,
     judge_notes: list[str] | None = None,
+    scope_window: str = "",
 ) -> None:
     """Print the resolved plan (one line under ``--quiet``).
 
@@ -1218,7 +1219,7 @@ def _print_dry_run_plan(
         )
         return
     print(f"{label}: {headline}")
-    print(f"  scope:   {scope_path}")
+    print(f"  scope:   {scope_path}{scope_window}")
     for plan in plans:
         # The authorized ENDPOINT, not the words "authorized by the scope": a scope naming
         # the target with an empty endpoint list is the exact case that used to read green.
@@ -2000,6 +2001,14 @@ def _execute_run(
         )
 
     scope, scope_sha256 = wiring.build_scope_with_digest(opts.scope)
+    # A scope outside its validity window authorizes no target (u01 A-97). The per-target gate
+    # below would refuse each one with the same reason; said once here, with what to do.
+    expired = scope.window_refusal(utc_today())
+    if expired is not None:
+        raise ScopeError(
+            f"the scope {opts.scope} authorizes nothing today: {expired}. Renew the "
+            "authorization record (its valid_from and valid_until) or point --scope elsewhere."
+        )
 
     # Authorization gate, per target, BEFORE anything else is built or any early return.
     # A target whose id is absent from the scope used to produce a full run of blocked specs
@@ -2798,6 +2807,7 @@ def _execute_run(
     if opts.dry_run or opts.verbose:
         _print_dry_run_plan(
             scope_path=opts.scope,
+            scope_window=_window_text(scope),
             plans=plans,
             suite=suite_name,
             runs=opts.runs,
@@ -3151,6 +3161,16 @@ def every_probe_failed(fingerprint: ModelFingerprint, probes: int) -> bool:
     """True when no probe of a ``probes``-probe pass got a usable reply."""
 
     return len(failed_probes(fingerprint)) >= probes
+
+
+def _window_text(scope: Scope) -> str:
+    """The dry-run plan's note of the scope's validity window (u01 A-97), or nothing."""
+
+    if scope.valid_from is None and scope.valid_until is None:
+        return ""
+    since = f"from {scope.valid_from}" if scope.valid_from is not None else ""
+    until = f"until {scope.valid_until}" if scope.valid_until is not None else ""
+    return f" (valid {' '.join(part for part in (since, until) if part)}, UTC days, both included)"
 
 
 def _refusal_for(scope: Scope, target: Target) -> str | None:

@@ -374,7 +374,10 @@ class SeededSetup(_Frozen):
     escalation), which it may call without that being an unauthorized call; what such a call
     carries is still judged, and a name that is one of a spec's own scene tools is not granted
     for that spec. ``run_token`` replaces ``{{run_id}}`` in a seeded spec: the operator seeds the
-    scene before the run, so its canary cannot carry the per-run id.
+    scene before the run, so its canary cannot carry the per-run id. ``canary_prefix`` (u08
+    A-100, OD-58), which needs ``run_token``, replaces ``{{canary_prefix}}`` in those canaries;
+    left out, the prefix is derived from the binding (``shared.canary.derived_prefix``), as
+    stable as the token. Unset, it is left out of a dump, as ``not_destructive`` is.
 
     ``not_destructive`` names the granted tools the operator's file declares not destructive,
     each written there as a ``granted_tools`` entry ``{name: <tool>, destructive: false}``
@@ -391,6 +394,7 @@ class SeededSetup(_Frozen):
     granted_tools: list[str] = Field(default_factory=list)
     run_token: str | None = None
     not_destructive: list[str] = Field(default_factory=list)
+    canary_prefix: str | None = None
 
     @field_validator("not_destructive")
     @classmethod
@@ -409,15 +413,26 @@ class SeededSetup(_Frozen):
             )
         return self
 
+    @model_validator(mode="after")
+    def _prefix_with_a_token(self) -> SeededSetup:
+        if self.canary_prefix is not None and not self.run_token:
+            raise ValueError(
+                "seeded_setup.canary_prefix needs seeded_setup.run_token: it replaces "
+                "{{canary_prefix}} only in the canaries the run token binds"
+            )
+        return self
+
     @model_serializer(mode="wrap")
     def _without_an_empty_declaration(
         self, handler: SerializerFunctionWrapHandler
     ) -> dict[str, Any]:
-        """The dump as before OD-43 when the file declares no tool not destructive."""
+        """The dump as before OD-43 (and A-100) when the file declares neither field."""
 
         dumped: dict[str, Any] = handler(self)
         if not dumped.get("not_destructive"):
             dumped.pop("not_destructive", None)
+        if dumped.get("canary_prefix") is None:
+            dumped.pop("canary_prefix", None)
         return dumped
 
 

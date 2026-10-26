@@ -74,6 +74,7 @@ from ildottore.core.setup_delivery import (
     TRACE_EVALUATORS,
     InBandSetup,
     canary_binding,
+    canary_prefix_binding,
     canonical_tool_calls,
     delivers_in_band,
     in_band_setup,
@@ -84,6 +85,13 @@ from ildottore.core.setup_delivery import (
     trace_gap,
 )
 from ildottore.redactor import Redactor, withhold_split
+from ildottore.shared.canary import (
+    CANARY_BODY_PLACEHOLDER,
+    CANARY_PREFIX_PLACEHOLDER,
+    RUN_ID_PLACEHOLDER,
+    derived_body,
+    holds_placeholder,
+)
 from ildottore.shared.combination import (
     combine_verdicts,
     decided_by_judge_alone,
@@ -650,12 +658,21 @@ class CampaignRunner:
         # the SAME substituted canary the evaluator looks for; a spec without the placeholder is
         # returned unchanged. A spec seeded into a deployment binds the operator's run_token
         # instead (its scene was written before the run), or stays unbound and is refused
-        # before sending (OD-18 B, ``setup_delivery.canary_binding``).
+        # before sending (OD-18 B, ``setup_delivery.canary_binding``). ``{{canary_prefix}}`` and
+        # ``{{canary_body}}`` are bound beside it, so no part of the canary is a constant string,
+        # the run id or the spec id (u08 A-100, OD-58).
         # Asked of the specs as written, before binding: a bound spec no longer shows where
         # its canary had to be (a mutation that bound the run id sent an untokened spec while
         # the plan said "not seeded"; delta audit of B).
         seeding = {spec.id: seeding_gap(spec, target) for spec in specs}
-        specs = [_substitute_run_id(spec, canary_binding(spec, target, run_id)) for spec in specs]
+        specs = [
+            _bind_canaries(
+                spec,
+                canary_binding(spec, target, run_id),
+                canary_prefix_binding(spec, target, run_id),
+            )
+            for spec in specs
+        ]
         if started_at is None:
             # A resume keeps the start of the run it finishes.
             started_at = resume_from.started_at if resume_from is not None else None
@@ -2262,17 +2279,24 @@ def _deep_replace(obj: object, needle: str, replacement: str) -> object:
     return obj
 
 
-def _substitute_run_id(spec: AttackSpec, run_id: str) -> AttackSpec:
-    """Return ``spec`` with every ``{{run_id}}`` bound to ``run_id`` (unchanged if absent)."""
+def _bind_canaries(spec: AttackSpec, binding: str, prefix: str) -> AttackSpec:
+    """Return ``spec`` with its per-run placeholders bound (unchanged if it holds none).
+
+    ``{{run_id}}`` to ``binding``, ``{{canary_body}}`` to the body derived from it and
+    ``{{canary_prefix}}`` to ``prefix``, everywhere in the spec (plant, fixtures, evaluator
+    ``canary_ref``).
+    """
 
     dumped = spec.model_dump(mode="json")
-    if "{{run_id}}" not in _json_compact(dumped):
+    if not holds_placeholder(_json_compact(dumped)):
         return spec
-    return AttackSpec.model_validate(_deep_replace(dumped, "{{run_id}}", run_id))
+    bound = _deep_replace(dumped, CANARY_PREFIX_PLACEHOLDER, prefix)
+    bound = _deep_replace(bound, CANARY_BODY_PLACEHOLDER, derived_body(binding))
+    return AttackSpec.model_validate(_deep_replace(bound, RUN_ID_PLACEHOLDER, binding))
 
 
 def _json_compact(obj: object) -> str:
-    """A cheap serialization used only to test for the ``{{run_id}}`` placeholder's presence."""
+    """A cheap serialization used only to test for a per-run placeholder's presence."""
 
     import json
 

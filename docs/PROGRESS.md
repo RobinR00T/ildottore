@@ -38,6 +38,72 @@ neighbouring entries can interleave (an older branch merged later sits above a n
   skipped, coverage 97.65%, self-scan 0 high or critical, bandit clean, pip-audit no known
   vulnerabilities; `tests/cli` again under `GITHUB_ACTIONS=true FORCE_COLOR=1`: 2598 passed, 1
   skipped.
+- **Merged with main after u01 A-97 and u08 A-100** (2026-10-26): conflicts only in the
+  append-only pin history, the index, the CHANGELOG and this ledger, each kept whole (main's pins
+  first, this branch's after; index rows in number order); judging rules 7 re-pinned to
+  `dd9cf562`. `make gates` green (17:32 to 17:45, 757 s): ruff, format (518 files), mypy strict
+  (176 files), import-linter (4 contracts kept), spec lint (0 errors, 78 specs), 8196 tests passed
+  and 3 skipped, coverage 97.68%, self-scan 0 high or critical, bandit clean, pip-audit no known
+  vulnerabilities.
+
+## State, 2026-10-26: no constant canary stem (`feat/neutral-canary-prefix`, u08 A-100)
+
+- **What.** Every battery canary was `ZYNAP_CANARY_<run id>` since the first commit: a public
+  string a vendor could filter, a brand in the payload, and for a seeded canary the spec id in
+  clear. The 22 canary-planting specs now write `{{canary_prefix}}{{canary_body}}`: 12 capital
+  letters and `_`, then 16 lowercase base-32 characters, each derived by SHA-256 from what
+  `{{run_id}}` binds to (`shared/canary.py`), so a resume, the evidence store and a seeded canary
+  reach it with no new state, and neither the run id nor the spec id shows. 29 characters, as
+  before. `seeded_setup.canary_prefix` lets an operator choose the prefix of what they seed. The
+  redactor masks the old stem as a `canary`. The attack-spec schema's `$id` moved to
+  `ildottore.dev`, the other schemas' domain.
+- **Decision OD-58, decided 2026-10-26 by the owner** (u08 §9, index ledger): as built (derived,
+  not a neutral constant or a stored random value; the operator's prefix only for seeded
+  canaries; the run id out of the canary), and the shape not varied for now: the public prompts
+  fingerprint a scan more easily than the canary's shape. Revisit when the canary's shape is the
+  last fingerprint left.
+- **Operator to-do.** Re-seed every planted canary (`dottore run --dry-run -vv` prints the values);
+  a run halted before this change does not resume (spec digests changed). Both in the CHANGELOG
+  and `docs/MANUAL.md`.
+- **Verified.** `tests/shared/test_canary.py` (6), the canary-prefix tests added to
+  `tests/core/test_seeded_setup.py` (4, plus 3 loader refusals), the scope and redactor tests;
+  `--dry-run -vv` prints `seed:    AC-BOLA-001: PSQRJSPZMSWF_z9efwnj3ffbw0mr8`, and
+  `ACME_SEED_z9efwnj3ffbw0mr8` with `canary_prefix: ACME_SEED_`. The default redactor masks the
+  bound canary in 2,000 of 2,000 labelled sentences, 3,000 of 3,000 in prose and 3,000 of 3,000
+  standing alone.
+- **Docs.** `docs/MANUAL.md` (seeded setup, evidence masking, the media example), `docs/FAQ.md`,
+  `docs/03`, `man/man5/dottore-scope.5`, `examples/target.app.yaml`, CHANGELOG, u08 contract and
+  00-INDEX.
+- **Gates.** `PYTHONPATH=<worktree>/src make --no-print-directory gates` green (2026-10-26, 15:35
+  to 15:46, 659 s): ruff, format (515 files), mypy strict (175 files), import-linter (4 contracts
+  kept), spec lint (0 errors, 78 specs), 8149 tests passed and 3 skipped, coverage 97.69%,
+  self-scan 0 high or critical, bandit clean, pip-audit no known vulnerabilities.
+
+## State, 2026-10-26: a scope's validity window (`feat/scope-validity-window`, u01 A-97)
+
+- **What.** `scope.yaml` may bound the days it authorizes: optional `valid_from` and `valid_until`,
+  calendar dates `YYYY-MM-DD`, both days included, read in UTC (`policy/scope.py`
+  `Scope.window_refusal`, `utc_today`). `authorize_target` asks it first, so the pre-flight of
+  `run` and `fingerprint` refuses outside the window (exit 3, nothing sent, `--dry-run` too) and
+  `PolicyEngine.check` blocks each later attempt of a run that outlives it. `run` says it once
+  (`the scope <path> authorizes nothing today: the scope expired on <day> and today (UTC) is
+  <day>. Renew the authorization record ...`); the dry-run plan states the window. Refused at
+  load: a window that is no day, a number (pydantic read it as a Unix timestamp), a date with a
+  time, any other text. The checksum covers both lines. A scope without them reads as before.
+- **Open decision OD-55** (u01 §9, index ledger): which day counts (UTC, built) and whether a run
+  that outlives its window stops its remaining attempts (built) or finishes them.
+- **Checked by hand.** On 2026-10-26 around 00:25 CET (23:25 UTC on the 25th), a scope with
+  `valid_until: 2026-10-25` planned (exit 0) and one with `valid_until: 2026-10-24` was refused
+  (exit 3) with the message above: the UTC day, not the local one.
+- **Verified.** `tests/policy/test_scope_window.py` (14) and `tests/cli/test_scope_window_gate.py`
+  (5). Judging rules 7 re-pinned by an appended line (no stored verdict changes).
+- **Docs.** `docs/MANUAL.md` §4.1, `man/man5/dottore-scope.5`, `examples/scope.example.yaml`,
+  `docs/02-threat-model.md` S4, `specs/contracts/u01-config-scope-policy.md` (§2, A-97, OD-55),
+  `specs/contracts/00-INDEX.md`, `CHANGELOG.md`.
+- **Gates.** `make gates` green on 2026-10-26 at 00:50 CET (11 min 28 s): ruff, format, mypy
+  strict (174 files), import-linter (4 contracts kept), spec lint (0 errors, 78 specs), 8135 tests
+  collected and none failed, coverage 97.66%, self-scan 0 high or critical, bandit clean, pip-audit
+  no known vulnerabilities.
 
 ## State, 2026-10-24: a deployed agent's guard (`claude/agent-connector-6b9b4c`, u04 A-96)
 
