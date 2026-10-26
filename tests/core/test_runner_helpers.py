@@ -432,7 +432,7 @@ def test_combine_deterministic_fail_wins_over_unconsulted_judge() -> None:
 
     v = R._combine_verdicts(
         [
-            _v(VerdictStatus.FAIL, matched=["ZYNAP_CANARY"]),
+            _v(VerdictStatus.FAIL, matched=["PLANTED_CANARY"]),
             _judge(VerdictStatus.INCONCLUSIVE, reason=InconclusiveReason.CAPABILITY_UNAVAILABLE),
         ],
         make_spec(),
@@ -453,25 +453,26 @@ def test_combine_judge_fail_does_not_override_deterministic_inconclusive() -> No
     assert v.status is VerdictStatus.INCONCLUSIVE
 
 
-def test_substitute_run_id_binds_canary_and_is_noop_without_placeholder() -> None:
-    """M8: {{run_id}} is bound per run; a spec without the placeholder is returned unchanged."""
+def test_bind_canaries_binds_both_placeholders_and_is_noop_without_them() -> None:
+    """M8, A-100: both placeholders are bound per run; a spec without them is returned as is."""
 
+    from ildottore.shared.canary import derived_body
     from ildottore.shared.models import EvaluatorConfig, Setup
 
-    ref = "ZYNAP_CANARY_{{run_id}}"
+    ref = "{{canary_prefix}}{{canary_body}}"
     spec = make_spec().model_copy(
         update={
             "setup": Setup(canaries=[ref]),
             "evaluators": [EvaluatorConfig(type="secret_leakage", canary_ref=ref)],
         }
     )
-    bound = R._substitute_run_id(spec, "run-abc123")
+    bound = R._bind_canaries(spec, "run-abc123", "QKZVTRB_")
     assert bound.setup is not None
-    assert bound.setup.canaries == ["ZYNAP_CANARY_run-abc123"]
-    assert bound.evaluators[0].canary_ref == "ZYNAP_CANARY_run-abc123"
+    assert bound.setup.canaries == [f"QKZVTRB_{derived_body('run-abc123')}"]
+    assert bound.evaluators[0].canary_ref == f"QKZVTRB_{derived_body('run-abc123')}"
     # Different run_id ⇒ different canary (per-run uniqueness).
-    other = R._substitute_run_id(spec, "run-xyz789")
+    other = R._bind_canaries(spec, "run-xyz789", "QKZVTRB_")
     assert other.setup.canaries != bound.setup.canaries
     # A spec with no placeholder is returned unchanged (same object).
     plain = make_spec()
-    assert R._substitute_run_id(plain, "run-abc123") is plain
+    assert R._bind_canaries(plain, "run-abc123", "QKZVTRB_") is plain

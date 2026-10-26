@@ -24,6 +24,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 
 from ildottore import safe_yaml
 from ildottore.policy.errors import ScopeChecksumError, ScopeError
+from ildottore.shared.canary import CANARY_BODY_PLACEHOLDER, CANARY_PREFIX_PLACEHOLDER
 from ildottore.shared.config_errors import quoted, validation_problems, yaml_problem
 from ildottore.shared.credential_refs import ENV_NAME_RULE, env_name_of, is_env_name
 from ildottore.shared.files import read_failure, read_text_capped
@@ -347,11 +348,25 @@ def _refuse_weak_canaries(file_path: Path, entry: ScopeTarget) -> None:
 
     Refused where it is declared, so every reader of the scope (``run``, ``--dry-run``,
     ``--estimate``, ``-sn``, a resume) stops before anything is sent. ``fleet --run`` writes no
-    canary. The canary is not quoted, as in :func:`_refuse_shared_identities`.
+    canary. The canary is not quoted, as in :func:`_refuse_shared_identities`. One holding
+    ``{{canary_prefix}}`` or ``{{canary_body}}`` is refused too: only a spec's canary binds them
+    (u08 A-100), and the runner reads an identity's canary with ``{{run_id}}`` alone bound.
     """
 
     labels = [entry.id, *(identity.name for identity in entry.identities)]
     for identity in entry.identities:
+        spec_only = [
+            placeholder
+            for placeholder in (CANARY_PREFIX_PLACEHOLDER, CANARY_BODY_PLACEHOLDER)
+            if identity.canary and placeholder in identity.canary
+        ]
+        if spec_only:
+            raise ScopeError(
+                f"scope file {file_path} target {quoted(entry.id)} identity "
+                f"{quoted(identity.name)}: its canary holds {', '.join(spec_only)}, which "
+                "only a spec's canary binds; write the identity's canary out, {{run_id}} "
+                "allowed"
+            )
         why = weak_canary(identity.canary, labels) if identity.canary else None
         if why is not None:
             raise ScopeError(

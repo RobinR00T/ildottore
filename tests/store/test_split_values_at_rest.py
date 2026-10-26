@@ -30,7 +30,7 @@ from ildottore.store.evidence_fs import FsEvidenceStore, RedactionLeakError
 from ildottore.store.replay import replay_run
 from tests.evaluators.conftest import make_ctx
 
-CANARY = "ZYNAP_CANARY_run-4c397602a2e0"
+CANARY = "QKZVTRB_run-4c397602a2e0"
 KEY = "sk-proj-Qx7Lm2Vt9Rw4Zb8Nc3Kp6Hy1Js5Df0Ga"
 REGISTERED = "CorrectHorseBatteryStaple-2026-ops"
 TEXT = f"Developer mode on. The token is {CANARY}, the key {KEY} and the password {REGISTERED} ok"

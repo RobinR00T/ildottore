@@ -784,9 +784,9 @@ _PLAIN_WORD: Final = re.compile(r"^[a-z]+$")
 # Mirrors ``shared.models._ID_PATTERN`` (the schema's id shape), narrowed to segments that
 # are a whole WORD or a whole NUMBER - which every shipped id is (``MM-AUD-PROMPTINJECT-001``).
 # A segment mixing letters and digits is the shape of a key, not of an id, so an id-looking
-# credential (``ZYNAP-CANARY-ABCDEF123456``, a license key ``AB1CD-2EF3G-H4IJK``) is **not**
+# credential (``PLANTED-CANARY-ABCDEF123456``, a license key ``AB1CD-2EF3G-H4IJK``) is **not**
 # exempt. Neither is a mixed-case marker (``CANARY-8f3a-secret-token-42``) nor an underscored
-# canary stem (``ZYNAP_CANARY_...``): both stay maskable.
+# canary (``QKZVTRBMXWPL_33vxg8...``, ``ZYNAP_CANARY_...`` before u08 A-100): both stay maskable.
 _ID_SHAPED: Final = re.compile(r"[A-Z]+(?:-(?:[A-Z]+|[0-9]+))+")
 # Lowercase/digit segments joined by ``-``/``_``/``/``: lowercase ids, model names, URL
 # paths and ports. An uppercase letter anywhere disqualifies the token, and a base64 key of
@@ -1284,6 +1284,10 @@ def _late_patterns() -> list[Pattern]:
 
 
 _CARD: Final = Pattern("card", re.compile(r"\b(?:\d[ -]?){13,19}\b"))
+#: The stem every battery canary carried before u08 A-100, and a canary of it, whatever follows
+#: (``ZYNAP_CANARY_run-4c397602a2e0``).
+_LEGACY_CANARY_STEM: Final = "ZYNAP_CANARY"
+_LEGACY_CANARY: Final = re.compile(rf"(?<![A-Za-z0-9]){_LEGACY_CANARY_STEM}[A-Za-z0-9_-]*")
 _PHONE: Final = Pattern(
     "phone",
     re.compile(r"(?<![\w.])(?:\+?\d[\d\s().-]{7,}\d(?![\w.])|(?P<skip>\+?\d[\d\s().-]{63,}))"),
@@ -1325,6 +1329,9 @@ def _default_patterns() -> list[Pattern]:
         Pattern("aws_access_key", re.compile(r"\bAKIA[0-9A-Z]{16}\b"), hashed=True),
         # Slack bot + user + app tokens (the user/app forms were previously uncovered).
         Pattern("slack_token", re.compile(r"\bxox[baprs]-[A-Za-z0-9-]{10,}\b"), hashed=True),
+        # The stem every battery canary carried before u08 A-100 (OD-58): a run stored before
+        # it, or a model that learnt the public string, still shows it, so it stays masked.
+        Pattern("canary", _LEGACY_CANARY, hashed=True, hints=(_LEGACY_CANARY_STEM,)),
         # --- PII ---
         # With a `skip` branch (SKIP): every start of a long run with no `@` was tried and
         # scanned to its end (100 KB of `1-` took about 7 s, in text the target controls).
@@ -2372,7 +2379,7 @@ class Redactor:
 
         Both exempt shapes additionally require **every** segment to be shorter than
         ``entropy_min_len``, so an identifier-looking wrapper around a long opaque run
-        (``ZYNAP-CANARY-A1B2C3D4E5F6G7H8``) is still masked *as a whole* - an exemption can
+        (``PLANTED-CANARY-A1B2C3D4E5F6G7H8``) is still masked *as a whole* - an exemption can
         never expose part of a secret. An all-hexadecimal token of ``entropy_min_len`` or more
         hex digits is excluded outright (``_HEX_SEGMENT``): that is a UUID-format key or a
         grouped digest, not an identifier.

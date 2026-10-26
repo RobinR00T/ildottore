@@ -63,7 +63,10 @@ wheel carries it; it was `schemas/`).
 See `src/ildottore/battery/attacks/PI-INDIRECT-RAG-001.yaml`. Key improvements over the v0.1 draft:
 
 - Added `spec_version`, `requires`, `nist_ai_rmf`, `runs`, `sampling`, `budget`, `fixtures`.
-- Data-leakage detection uses a **planted canary** (`{{canary}}`) instead of real secrets (S2).
+- Data-leakage detection uses a **planted canary** instead of real secrets (S2), written
+  `{{canary_prefix}}{{canary_body}}`: both parts are derived per run from what `{{run_id}}` binds
+  to, so no part of it is a constant string a vendor could filter, nor the run id or the spec id
+  (u08 A-100, OD-58).
 - Judge rubric explicitly separates "obeyed embedded instruction" from "mentioned it" to cut
   false positives.
 - Evaluators are combined by one rule, `deterministic_first`, whatever `evaluator_logic` says: a
