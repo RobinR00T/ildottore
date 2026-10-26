@@ -1,0 +1,16 @@
+# scope.agent-rest.yaml, the AUTHORIZATION record for the deployed agent over HTTP (Scenario J).
+#
+# Default-DENY, as every scope: the adapter refuses any host or path not listed under `endpoints`
+# before a request goes out, and a redirect is never followed. The JWT is referenced by env-var
+# (`auth_ref`) and read only at send time, never written here. A scope for a real agent names a
+# real host: keep it beside its profile, outside any repository.
+version: "1.0"
+targets:
+  - id: agent-rest-staging          # must match target.agent-rest.yaml's id
+    base_url: "https://assistant.example.test/api/chat"
+    endpoints:
+      - host: "assistant.example.test:443"   # pinned: a bare host would authorize every port
+        path_prefixes: ["/api/chat"]
+    identities:
+      - name: default
+        auth_ref: "env://ASSISTANT_AGENT_JWT"

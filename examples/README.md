@@ -17,6 +17,7 @@ Run everything from the repo root with the venv active (see [`INSTALL.md`](../IN
 | [`target.mcp.yaml`](target.mcp.yaml) / [`scope.mcp.yaml`](scope.mcp.yaml) | A Model Context Protocol server target (read-only discovery). |
 | [`target.websocket.yaml`](target.websocket.yaml) / [`scope.websocket.yaml`](scope.websocket.yaml) | A chat endpoint over a WebSocket, its wire shape declared in the file (`provider: websocket`). |
 | [`target.agent.yaml`](target.agent.yaml) / [`scope.agent.yaml`](scope.agent.yaml) | A deployed AI agent over a WebSocket, with its `guard`: tenant-checked JWT, stop at the first auth failure, pacing across processes, tools that close the connection. |
+| [`target.agent-rest.yaml`](target.agent-rest.yaml) / [`scope.agent-rest.yaml`](scope.agent-rest.yaml) | The same guard for an agent over plain HTTP (`rest.guard`), with a `window`: the days and hours the engagement allows, in an IANA zone. |
 | [`ci-github-actions.yml`](ci-github-actions.yml) | Gate a pipeline on new high/critical findings. |
 
 Authorization is not optional: a run refuses any target that is not covered by a
@@ -407,9 +408,54 @@ dry-run: plan resolved, sent nothing.
 The `guard:` line is what the run will hold itself to, and it says that this plan does not fit in
 the hourly cap: the run stops after twenty queries and names when the next slot frees; resume it
 then with `dottore run --resume <run-id>`. A profile for a real agent names a real host and a real
-tenant, so keep it and its scope outside any repository (for example
-`~/.config/ildottore/agents/`) and pass both paths; read
-[`../docs/MANUAL.md`](../docs/MANUAL.md) §4.2, "A deployed agent", for each key.
+tenant, so keep it and its scope outside any repository, as a profile:
+`~/.config/ildottore/targets/<name>.yaml` and `~/.config/ildottore/scopes/<name>.yaml`, then
+`dottore run -t <name> --scope <name>`; read [`../docs/MANUAL.md`](../docs/MANUAL.md) §4.2,
+"A deployed agent", for each key.
+
+## Scenario J, the same guard over HTTP, inside a window
+
+An agent behind a plain HTTP endpoint is a `provider: rest` target with the same block under
+`rest:`. HTTP changes what a failure looks like (a 401 or 403, or a listed error code in the
+body) and what a stop does (the run stops after that reply, which is not read: there is no
+connection to close); every request takes a pacing slot, a retry included. `window` holds the
+scan to the engagement's days and hours, read in its zone; outside it nothing is sent and the
+run stops, saying when the window opens:
+
+```bash
+dottore run --dry-run --quick \
+  -t examples/target.agent-rest.yaml \
+  --scope examples/scope.agent-rest.yaml
+```
+
+Real output of that exact command, run on a Monday at 10:40 in Madrid, inside the window (the
+`auth_ref` and `--judge` warnings on stderr left out):
+
+```
+dry-run: plan resolved, sent nothing.
+  scope:   examples/scope.agent-rest.yaml
+  target:  agent-rest-staging (agent) authorized at https://assistant.example.test/api/chat
+  battery: quick, 10 specs selected
+    jailbreak: 3
+    output_security: 3
+    data_leakage: 2
+    availability_cost: 1
+    prompt_injection: 1
+  skipped: 3 spec(s) on agent-rest-staging, capability not declared by the target
+  blocked: 1 spec(s) on agent-rest-staging, refused by the policy pack
+  not seeded: 4 spec(s) on agent-rest-staging, their scene is not in the deployment as seeded_setup declares it, or their tool trace cannot be read through this adapter (-vv says which)
+  guard:   auth failure stops the run, 300s cooldown; token tenant checked, at least 30s of life; 20s between queries, at most 30/hour (across processes); this plan's 125 requests pass the hourly cap: the run stops there, resume it later; window mon-fri 09:00-19:00 Europe/Madrid; stops on 3 tool name(s); 200000 bytes per reply
+  would send: 125 requests over 10 specs at runs=5
+  pacing:  0.5 req/s ceiling (S8)
+  budgets: 500000 tokens, 2000 requests, 2000 attempts, 1800s wall (derived from this plan, or --budget-requests, --budget-tokens, --budget-wall)
+```
+
+Run outside the window, the `guard:` line adds `outside the window now: a run started now sends
+nothing; it opens mon 2027-01-18 09:00` (the next opening, in the window's zone), and a live run
+stops before its first request. Saved as profiles, the same scan is
+`dottore run -t <name> --scope <name>`: a bare name reads `<name>.yaml` from
+`ILDOTTORE_TARGETS_DIR` (else `~/.config/ildottore/targets/`) and from `ILDOTTORE_SCOPES_DIR`
+(else `~/.config/ildottore/scopes/`); a path is read as before.
 
 ## Add your own attack (no core code)
 

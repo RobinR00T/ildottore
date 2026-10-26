@@ -1,0 +1,47 @@
+# target.agent-rest.yaml, a DEPLOYED AI AGENT OVER PLAIN HTTP, with its guard and a window
+# (Scenario J in examples/README.md). Its authorization record is examples/scope.agent-rest.yaml.
+#
+# The same `guard` block a WebSocket agent declares (target.agent.yaml), under `rest:`: the loader
+# reads it with the same rules and the REST adapter runs the same checks (docs/MANUAL.md §4.2).
+# An HTTP 401 or 403, or a body whose `code` is a listed failure code, stops the run and starts the
+# cooldown; a reply naming another tenant, or a tool from `stop_on_tools`, stops it after that
+# reply, which is not read. Every request, a retry included, takes a pacing slot. Outside the
+# `window` nothing is sent: the run stops and says when the window opens. Every value is a
+# placeholder: none describes a real product.
+#
+# A profile for a real agent names a real host and a real tenant, so keep it OUT of any repository:
+# save it as ~/.config/ildottore/targets/<name>.yaml (or under ILDOTTORE_TARGETS_DIR), its scope as
+# ~/.config/ildottore/scopes/<name>.yaml, and run `dottore run -t <name> --scope <name>`.
+id: agent-rest-staging
+type: agent
+provider: rest                       # the generic REST body: {"prompt": ...}, the answer at `text`
+endpoint: "https://assistant.example.test/api/chat"
+auth_ref: "env://ASSISTANT_AGENT_JWT"  # the JWT, read at send time; never written here
+capabilities:
+  tools: true
+  rag: true
+  memory: false
+rest:
+  guard:
+    endpoint: { scheme: "https", path: "/api/chat" }   # the loader refuses any other scheme or path
+    auth:
+      code_path: "code"              # a reply body's error code...
+      failure_codes: ["UNAUTHORIZED", "TOKEN_EXPIRED"]   # ...that means the credential failed
+      cooldown_seconds: 300          # after the first failure: the run stops, nothing sent for this long
+    token:                           # read from the JWT's payload, unverified, before it is sent
+      tenant: "<tenant id>"          # written as is: a REST target has no vars to fill in
+      tenant_claims: ["tenant_id", "org_id"]
+      reply_tenant_path: "tenant_id" # the tenant a reply names, when it names one
+      min_lifetime_seconds: 30
+    pacing:                          # kept across processes, in the guard's state file
+      min_interval_seconds: 20
+      max_per_hour: 30
+    window:                          # the rules of engagement: outside it nothing is sent
+      timezone: "Europe/Madrid"      # an IANA zone, always written (no zone: the loader refuses)
+      days: ["mon-fri"]              # day names or ranges: mon, tue, wed, thu, fri, sat, sun
+      start: "09:00"                 # inclusive; quote the times (YAML reads 19:00 as a number)
+      end: "19:00"                   # exclusive; an end before the start crosses midnight
+    stop_on_tools:                   # a reply naming one of these stops the run
+      path: "tool"
+      names: ["write_record", "run_workflow", "send_message"]
+    max_response_bytes: 200000       # a lower cap than the adapter's own, per reply

@@ -10,7 +10,9 @@ schema ``additionalProperties: false`` (contract §4 KEEP).
 from __future__ import annotations
 
 import math
+import re
 from typing import Annotated, Any, Literal
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import (
     BaseModel,
@@ -541,9 +543,13 @@ class WebSocketReconnect(_Frozen):
 
 
 class WebSocketGuardEndpoint(_Frozen):
-    """The scheme and exact path the endpoint must have: the loader refuses any other."""
+    """The scheme and exact path the endpoint must have: the loader refuses any other.
 
-    scheme: Literal["ws", "wss"] | None = None
+    ``ws``/``wss`` for a ``websocket.guard``, ``http``/``https`` for a ``rest.guard`` (u04 A-98);
+    a scheme of the other transport never matches the endpoint, so the loader refuses it.
+    """
+
+    scheme: Literal["ws", "wss", "http", "https"] | None = None
     path: Annotated[str, Field(min_length=1, pattern=r"\A/")] | None = None
 
 
@@ -598,20 +604,137 @@ class WebSocketGuardStopOnTools(_Frozen):
     names: Annotated[list[Annotated[str, Field(min_length=1)]], Field(min_length=1)]
 
 
-class WebSocketGuard(_Frozen):
-    """The ``websocket.guard`` block: what keeps a scan of a deployed agent polite and contained.
+#: The days a ``guard.window`` names, Monday first (``datetime.weekday()`` order).
+GUARD_DAYS: tuple[str, ...] = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+_CLOCK = re.compile(r"\A([01]\d|2[0-3]):([0-5]\d)\Z")
 
-    Every part is optional. With the block present, an authentication failure stops the run and
-    the agent is left alone for ``auth.cooldown_seconds``, in this process and in the next one
-    (the guard's state file, which keeps the sha256 of a refused credential, never the value).
+
+def _clock_minutes(value: str, *, end: bool) -> int:
+    """``HH:MM`` as minutes after midnight; ``24:00`` only as an end (the end of the day)."""
+
+    if end and value == "24:00":
+        return 24 * 60
+    match = _CLOCK.match(value)
+    if match is None:
+        raise ValueError(f"{value!r} is not a time of day written HH:MM (00:00 to 23:59)")
+    return int(match.group(1)) * 60 + int(match.group(2))
+
+
+class WebSocketGuardWindow(_Frozen):
+    """When the agent may be queried: the days and the hours of a rules-of-engagement window.
+
+    ``timezone`` is an IANA zone (``Europe/Madrid``, ``UTC``), always written: the operator's
+    clock and the agent's may not agree, and a window read in the wrong zone sends traffic hours
+    outside it. ``days`` lists day names (``mon`` .. ``sun``) or ranges of them (``mon-fri``,
+    never wrapping past ``sun``). ``start`` is inclusive and ``end`` exclusive, ``HH:MM``;
+    ``end`` may be ``24:00``. An ``end`` earlier than ``start`` is a window across midnight that
+    opens on each listed day and closes the next morning. Outside it nothing is sent (u04 A-98).
+    """
+
+    timezone: Annotated[str, Field(min_length=1)]
+    days: Annotated[list[Annotated[str, Field(min_length=1)]], Field(min_length=1)]
+    start: Annotated[str, Field(min_length=1)]
+    end: Annotated[str, Field(min_length=1)]
+
+    @field_validator("timezone")
+    @classmethod
+    def _an_iana_zone(cls, value: str) -> str:
+        """A zone the tz database names; ``local`` and offsets are not zones."""
+
+        try:
+            ZoneInfo(value)
+        except (ZoneInfoNotFoundError, ValueError) as exc:
+            raise ValueError(f"{value!r} is not an IANA time zone (Europe/Madrid, UTC)") from exc
+        return value
+
+    @field_validator("start", "end", mode="before")
+    @classmethod
+    def _a_quoted_time(cls, value: object) -> object:
+        """YAML 1.1 reads an unquoted ``19:00`` as the number 1140: say so rather than guess."""
+
+        if isinstance(value, int) and not isinstance(value, bool):
+            raise ValueError(
+                f"read as the number {value}: write the time quoted, as '19:00' (unquoted, "
+                "YAML reads a time after 09:59 as a count of minutes)"
+            )
+        return value
+
+    @field_validator("days")
+    @classmethod
+    def _known_days(cls, value: list[str]) -> list[str]:
+        """Each entry a day name or a range of them, read in lower case."""
+
+        for entry in value:
+            parts = entry.strip().lower().split("-")
+            if len(parts) > 2 or any(part not in GUARD_DAYS for part in parts):
+                raise ValueError(
+                    f"{entry!r} is not a day ({', '.join(GUARD_DAYS)}) or a range of them (mon-fri)"
+                )
+            if len(parts) == 2 and GUARD_DAYS.index(parts[0]) > GUARD_DAYS.index(parts[1]):
+                raise ValueError(f"the range {entry!r} wraps past sun; list it as two entries")
+        return value
+
+    @model_validator(mode="after")
+    def _a_real_window(self) -> WebSocketGuardWindow:
+        """Both times read, and a window that is not empty."""
+
+        if _clock_minutes(self.start, end=False) == _clock_minutes(self.end, end=True):
+            raise ValueError("guard.window.start and guard.window.end are the same time")
+        return self
+
+    @property
+    def weekdays(self) -> frozenset[int]:
+        """The listed days as ``datetime.weekday()`` numbers."""
+
+        found: set[int] = set()
+        for entry in self.days:
+            parts = entry.strip().lower().split("-")
+            first, last = GUARD_DAYS.index(parts[0]), GUARD_DAYS.index(parts[-1])
+            found.update(range(first, last + 1))
+        return frozenset(found)
+
+    @property
+    def start_minutes(self) -> int:
+        """``start`` as minutes after midnight."""
+
+        return _clock_minutes(self.start, end=False)
+
+    @property
+    def end_minutes(self) -> int:
+        """``end`` as minutes after midnight (1440 for ``24:00``)."""
+
+        return _clock_minutes(self.end, end=True)
+
+
+class WebSocketGuard(_Frozen):
+    """The ``guard`` block of a deployed agent: what keeps a scan polite and contained.
+
+    Read under ``websocket.guard`` and, for a ``provider: rest`` target, under ``rest.guard``
+    (u04 A-98). Every part is optional. With the block present, an authentication failure stops
+    the run and the agent is left alone for ``auth.cooldown_seconds``, in this process and in the
+    next one (the guard's state file, which keeps the sha256 of a refused credential, never the
+    value); with a ``window``, nothing is sent outside it.
     """
 
     endpoint: WebSocketGuardEndpoint | None = None
     auth: WebSocketGuardAuth = Field(default_factory=WebSocketGuardAuth)
     token: WebSocketGuardToken | None = None
     pacing: WebSocketGuardPacing | None = None
+    window: WebSocketGuardWindow | None = None
     stop_on_tools: WebSocketGuardStopOnTools | None = None
     max_response_bytes: Annotated[int, Field(ge=1)] | None = None
+
+
+class RestSpec(_Frozen):
+    """The ``rest:`` block of a ``provider: rest`` target: today its ``guard`` alone (u04 A-98).
+
+    The reply shape of a target file's REST target is the generic one (the text at ``text``);
+    this block adds what a deployed agent behind plain HTTP needs, the same ``guard`` a
+    WebSocket target declares. An HTTP 401 or 403 is an authentication failure; ``auth.code_path``
+    and ``stop_on_tools.path`` are read in the JSON reply body.
+    """
+
+    guard: WebSocketGuard | None = None
 
 
 class WebSocketSpec(_Frozen):
@@ -668,6 +791,8 @@ class Target(_Frozen):
     seeded_setup: SeededSetup | None = None
     # The wire shape of a ``provider: websocket`` target (``None`` for every other provider).
     websocket: WebSocketSpec | None = None
+    # A ``provider: rest`` target's guard (u04 A-98; ``None`` for every other provider).
+    rest: RestSpec | None = None
     # The provider filter stops an ``openai`` or ``anthropic`` target's adapter reads, when its
     # file says (u04 A-79): ``[]`` for an endpoint that speaks the provider's API and has no such
     # filter behind it, so its stops on a reply with text or a tool call, and Azure's HTTP 400,

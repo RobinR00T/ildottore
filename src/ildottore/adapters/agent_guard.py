@@ -1,4 +1,5 @@
-"""The guard of a deployed agent (``websocket.guard``): what keeps a scan polite and contained.
+"""The guard of a deployed agent (``websocket.guard``, ``rest.guard``): what keeps a scan polite
+and contained.
 
 A model API is built for traffic; a deployed assistant (a copilot, an agent with tools, a chat
 over a tenant's data) often is not. It may lock an address out after a few failed logins, share
@@ -12,8 +13,14 @@ answers. The target file says what this agent needs, and this module keeps it:
   remembered (by its sha256, never its value) and not sent again;
 * queries are paced (``min_interval_seconds`` between two, ``max_per_hour`` in any hour) across
   processes, in a state file under a lock;
-* a tool or agent name the target reports from ``stop_on_tools`` closes the connection at once.
-  Closing cannot undo what the agent already started; it stops the next step.
+* nothing is sent outside the ``window`` (days and hours in a named IANA zone), checked before a
+  dial and before every query at the time its paced slot falls (u04 A-98);
+* a tool or agent name the target reports from ``stop_on_tools`` closes the connection at once
+  (over HTTP, the run stops after that reply). Stopping cannot undo what the agent already
+  started; it stops the next step.
+
+:class:`GuardKeeper` holds the checks both transports share (the WebSocket adapter and, for a
+``provider: rest`` target, the REST adapter), so neither keeps its own copy.
 
 Every stop is a :class:`GuardStop`, which halts the campaign (it is not an environment error, so
 nothing retries it) and names why, never the credential. The state file lives under
@@ -34,12 +41,16 @@ import os
 import time
 from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Final
+from urllib.parse import urlsplit
+from zoneinfo import ZoneInfo
 
 from ildottore.adapters.base import AdapterProductError
-from ildottore.adapters.rest import get_path
-from ildottore.shared.models import WebSocketGuard
+from ildottore.adapters.paths import get_path
+from ildottore.shared.config_errors import listed, quoted
+from ildottore.shared.models import GUARD_DAYS, WebSocketGuard, WebSocketGuardWindow
 
 __all__ = [
     "STATE_DIR_ENV",
@@ -48,9 +59,13 @@ __all__ = [
     "AgentPacingStop",
     "AgentTenantMismatch",
     "AgentToolStop",
+    "AgentWindowStop",
+    "GuardKeeper",
     "GuardStop",
     "check_token",
     "guard_state_dir",
+    "in_window",
+    "next_opening",
     "reported_tools",
     "token_claims",
 ]
@@ -87,6 +102,66 @@ class AgentPacingStop(GuardStop):
 
 class AgentToolStop(GuardStop):
     """The target reported a tool from ``stop_on_tools``; the connection was closed."""
+
+
+class AgentWindowStop(GuardStop):
+    """It is outside ``guard.window``: nothing is sent until it opens (u04 A-98)."""
+
+
+def _local(window: WebSocketGuardWindow, now: float) -> datetime:
+    return datetime.fromtimestamp(now, ZoneInfo(window.timezone))
+
+
+def in_window(window: WebSocketGuardWindow, now: float) -> bool:
+    """Whether wall-clock ``now`` falls inside the window, read in its zone.
+
+    A window whose ``end`` comes before its ``start`` crosses midnight: it is open from ``start``
+    on a listed day until ``end`` the next morning.
+    """
+
+    local = _local(window, now)
+    minute = local.hour * 60 + local.minute
+    start, end, days = window.start_minutes, window.end_minutes, window.weekdays
+    if start < end:
+        return local.weekday() in days and start <= minute < end
+    return (local.weekday() in days and minute >= start) or (
+        (local.weekday() - 1) % 7 in days and minute < end
+    )
+
+
+def next_opening(window: WebSocketGuardWindow, now: float) -> datetime:
+    """When the window next opens after ``now``, in its zone (within the coming eight days)."""
+
+    zone = ZoneInfo(window.timezone)
+    local = _local(window, now)
+    hour, minute = divmod(window.start_minutes, 60)
+    for ahead in range(9):
+        day = local.date() + timedelta(days=ahead)
+        if day.weekday() not in window.weekdays:
+            continue
+        opening = datetime(day.year, day.month, day.day, hour, minute, tzinfo=zone)
+        if opening > local:
+            return opening
+    raise AssertionError("a window lists at least one day")  # pragma: no cover - validated
+
+
+def window_text(window: WebSocketGuardWindow) -> str:
+    """``mon-fri 09:00-19:00 Europe/Madrid``: the window as an error or the dry-run names it."""
+
+    days = ",".join(entry.strip().lower() for entry in window.days)
+    return f"{days} {window.start}-{window.end} {window.timezone}"
+
+
+def _check_window(target_id: str, window: WebSocketGuardWindow | None, at: float) -> None:
+    if window is None or in_window(window, at):
+        return
+    local, opening = _local(window, at), next_opening(window, at)
+    raise AgentWindowStop(
+        f"{target_id}: outside guard.window ({window_text(window)}): it is "
+        f"{GUARD_DAYS[local.weekday()]} {local:%H:%M} there and it opens "
+        f"{GUARD_DAYS[opening.weekday()]} {opening:%Y-%m-%d %H:%M}; nothing was sent; resume "
+        "the run then"
+    )
 
 
 def guard_state_dir() -> Path:
@@ -213,8 +288,10 @@ class AgentGuardState:
     # --- before a dial ---------------------------------------------------------------
 
     def admit(self, token: str | None) -> None:
-        """Refuse to dial while the agent is in its cooldown, or with a credential it refused."""
+        """Refuse to dial outside the window, while the agent is in its cooldown, or with a
+        credential it refused."""
 
+        _check_window(self.target_id, self.guard.window, self.now())
         cooldown = self.guard.auth.cooldown_seconds
         with self._locked() as state:
             refused = _strings(state.get("refused_credentials"))
@@ -253,10 +330,11 @@ class AgentGuardState:
         hour inside a campaign is not pacing, it is a stalled run.
         """
 
-        pacing = self.guard.pacing
+        pacing, window = self.guard.pacing, self.guard.window
+        now = self.now()
+        _check_window(self.target_id, window, now)
         if pacing is None:
             return 0.0
-        now = self.now()
         with self._locked() as state:
             sent = sorted(t for t in _numbers(state.get("sent")) if now - t < _HOUR)
             due = max(now, sent[-1] + pacing.min_interval_seconds) if sent else now
@@ -269,6 +347,9 @@ class AgentGuardState:
                         f"(guard.pacing.max_per_hour); the next slot frees in {free_in}s; resume "
                         "the run then"
                     )
+            # The slot itself must fall inside the window: a query paced past its end is not
+            # sent late, and the slot is not taken (u04 A-98).
+            _check_window(self.target_id, window, due)
             state["sent"] = [*sent, due]
         return max(0.0, due - now)
 
@@ -298,3 +379,103 @@ def reported_tools(frame: Mapping[str, Any], path: str) -> list[str]:
     if isinstance(value, list):
         return [v for v in value if isinstance(v, str)]
     return []
+
+
+@dataclass
+class GuardKeeper:
+    """The checks a guarded adapter runs, shared by the WebSocket and the REST adapters.
+
+    ``tenant`` is ``guard.token.tenant`` already rendered (a WebSocket target's ``vars`` filled
+    in); ``closed`` says what the adapter did when it stopped on a reply (a WebSocket closes its
+    connection; HTTP has none to close).
+    """
+
+    target_id: str
+    url: str
+    guard: WebSocketGuard
+    state: AgentGuardState
+    tenant: str | None
+    now: Callable[[], float]
+    closed: str = "the connection was closed (closing cannot undo a step already started)"
+
+    def max_bytes(self, cap: int) -> int:
+        """The byte cap of a reply: the guard's, when it sets one lower than ``cap``."""
+
+        limit = self.guard.max_response_bytes
+        return cap if limit is None else min(limit, cap)
+
+    def check_before_dial(self, api_key: str | None) -> None:
+        """Before anything goes out: the endpoint's scheme and path, the credential, the window
+        and the cooldown."""
+
+        guard = self.guard
+        if guard.endpoint is not None:
+            parts = urlsplit(self.url)
+            if (guard.endpoint.scheme is not None and parts.scheme != guard.endpoint.scheme) or (
+                guard.endpoint.path is not None and parts.path != guard.endpoint.path
+            ):
+                raise GuardStop(
+                    f"{self.target_id}: the endpoint is not the scheme and path guard.endpoint "
+                    "requires; nothing was sent"
+                )
+        if guard.token is not None:
+            if api_key is None:
+                raise GuardStop(
+                    f"{self.target_id}: guard.token is declared and no credential is resolved; "
+                    "set the variable auth_ref names; nothing was sent"
+                )
+            check_token(
+                self.target_id,
+                api_key,
+                tenant=self.tenant or "",
+                tenant_claims=guard.token.tenant_claims,
+                min_lifetime_s=guard.token.min_lifetime_seconds,
+                now=self.now(),
+            )
+        self.state.admit(api_key)
+
+    def auth_failed(self, api_key: str | None, why: str, *, refused: bool) -> AgentAuthRefused:
+        """Record an authentication failure (``refused``: the credential too) and say so."""
+
+        self.state.record_auth_failure(api_key, refused=refused)
+        return AgentAuthRefused(
+            f"{self.target_id}: authentication failed ({why}); the run stops and the guard "
+            f"leaves the agent alone for {self.guard.auth.cooldown_seconds:g}s"
+            + ("; set a fresh credential" if refused else "")
+        )
+
+    def check_auth_code(self, api_key: str | None, payload: Mapping[str, Any]) -> None:
+        """A frame or body whose code ``auth.failure_codes`` lists: an authentication failure."""
+
+        auth = self.guard.auth
+        if auth.code_path is None:
+            return
+        code = get_path(payload, auth.code_path)
+        if isinstance(code, str) and code in auth.failure_codes:
+            raise self.auth_failed(api_key, f"error code {quoted(code)}", refused=True)
+
+    def check_reply_tenant(self, payload: Mapping[str, Any], *, where: str, then: str) -> None:
+        """The tenant a reply names at ``token.reply_tenant_path``, when it names one, is the
+        configured one; ``where`` names the reply, ``then`` what was done about it."""
+
+        token = self.guard.token
+        if token is None or token.reply_tenant_path is None:
+            return
+        named = get_path(payload, token.reply_tenant_path)
+        if named is not None and str(named) != self.tenant:
+            raise AgentTenantMismatch(
+                f"{self.target_id}: {where} names a tenant other than the configured one; {then}"
+            )
+
+    def check_tools(self, payload: Mapping[str, Any]) -> None:
+        """A tool from ``stop_on_tools`` reported in the payload: the run stops here."""
+
+        stop = self.guard.stop_on_tools
+        if stop is None:
+            return
+        hit = sorted(set(reported_tools(payload, stop.path)) & set(stop.names))
+        if hit:
+            raise AgentToolStop(
+                f"{self.target_id}: the target reported {listed(hit, show=quoted)}, which "
+                f"guard.stop_on_tools lists; {self.closed}"
+            )

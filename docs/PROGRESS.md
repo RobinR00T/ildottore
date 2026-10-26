@@ -5,6 +5,40 @@ The carryover ledger. Every agent session updates this so context survives even 
 newest merge on top: a branch's entries land together when it merges, so the dates of
 neighbouring entries can interleave (an older branch merged later sits above a newer one).
 
+## State, 2026-10-26: the guard's window, the guard over HTTP, profiles by name (`feat/guard-window-http`, u04 A-98)
+
+- **What.** The three pieces A-96 left as "Not built". `guard.window` (`shared/models.py`
+  `WebSocketGuardWindow`; `adapters/agent_guard.py` `in_window`, `next_opening`, `AgentWindowStop`):
+  days and hours in a required IANA zone, checked before every dial and at every paced slot;
+  outside it nothing is sent and the run stops (exit 3) saying when it opens; `--dry-run` says it.
+  `rest.guard` (`shared/models.py` `RestSpec`, `adapters/rest.py`): the same block and the same
+  checks for a `provider: rest` target, through `GuardKeeper`, which the WebSocket adapter now uses
+  too (no duplicated logic); every HTTP attempt, a retry included, takes a pacing slot
+  (`BaseAdapter._before_attempt`); a guard may lower the reply cap (`_response_cap`). Profiles by
+  name (`cli/wiring.py` `resolve_profile`, `profile_dir`; `cli/app.py`): `-t`, `--scope`, `--judge`,
+  `fleet --judge` and `fingerprint` read a bare name from the profile directories. `get_path` moved
+  to `adapters/paths.py` (re-exported by `adapters/rest.py`) so the guard can read paths without an
+  import cycle.
+- **Open decision OD-56** (u04 §9, index ledger): a closed window stops the run (built) rather
+  than waiting; an overnight window belongs to the day it opens; a REST retry takes a pacing slot;
+  a listed tool in a REST reply stops the run and the reply is discarded; a bare name that is both a
+  file here and a profile is refused.
+- **Not built.** An SSE transport (none exists: `streaming_enabled` is a flag and a REST target
+  reads one JSON reply); a run that waits for its window to open.
+- **Verified.** `tests/adapters/test_agent_guard_window_rest.py` (26) and
+  `tests/cli/test_rest_guard_profiles.py` (20); the dry-run of Scenario J copied from a real run.
+  The root `conftest` points both profile directories at an empty temporary directory per test.
+  Judging rules 7 re-pinned (no verdict path touched).
+- **Docs.** `README.md`, `USAGE.md`, `docs/MANUAL.md` §4.2, `examples/README.md` (Scenario J, and
+  the profile paths of Scenario I), `examples/target.agent.yaml`, `man/man1/dottore.1`,
+  `man/man5/dottore-scope.5`, `CHANGELOG.md`, `specs/contracts/u04-target-adapters.md` (A-98,
+  OD-56), `specs/contracts/00-INDEX.md`.
+- **Gates.** `make gates` green in the worktree (15 min 13 s): ruff, ruff format, mypy strict (175
+  files), import-linter (4 contracts kept), spec lint (0 errors, 78 specs), 8160 tests passed and 3
+  skipped, coverage 97.65%, self-scan 0 high or critical, bandit clean, pip-audit no known
+  vulnerabilities; `tests/cli` again under `GITHUB_ACTIONS=true FORCE_COLOR=1`: 2598 passed, 1
+  skipped.
+
 ## State, 2026-10-24: a deployed agent's guard (`claude/agent-connector-6b9b4c`, u04 A-96)
 
 - **What.** Any AI agent reachable over a JSON WebSocket is a target with a profile and no code:
@@ -22,9 +56,8 @@ neighbouring entries can interleave (an older branch merged later sits above a n
 - **Open decision OD-54** (u04 §9, index ledger): a reported tool from `stop_on_tools` stops the
   run (built, the smallest reversible version) or is stored as evidence and the run goes on; and a
   close or silence before the handshake reply counts as an authentication failure (built).
-- **Not built.** A working-hours window (a real engagement's rules may set one: run inside it by
-  hand); HTTP and SSE transports for the guard (the `rest` adapter has no guard yet); profile lookup
-  by name (pass the profile's path with `-t`).
+- **Not built then, built since (A-98, above).** A working-hours window; the guard over HTTP (SSE
+  is not a transport); profile lookup by name.
 - **Real profiles stay out of the repository.** One for a private deployment was written outside
   every checkout; `git grep` over the tree and the diff found none of its values.
 - **Verified.** `tests/adapters/test_agent_guard.py` (40) and `tests/cli/test_agent_target.py` (11)

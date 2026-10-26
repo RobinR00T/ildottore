@@ -318,7 +318,8 @@ def test_a_stored_run_without_the_block_keeps_its_digest() -> None:
     before = {
         k: v
         for k, v in plain.model_dump(mode="json").items()
-        if k not in digest._TARGET_COSMETIC and k not in ("seeded_setup", "websocket")
+        # `rest` (u04 A-98) came later and is left out the same way when absent.
+        if k not in digest._TARGET_COSMETIC and k not in ("seeded_setup", "websocket", "rest")
     }
     # `capabilities.sampling` came later (u12 A-68) and is left out the same way when not declared.
     before["capabilities"].pop("sampling")

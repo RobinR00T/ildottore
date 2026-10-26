@@ -285,6 +285,24 @@ sent again. The state lives in one file per endpoint under ILDOTTORE_STATE_DIR, 
 $XDG_STATE_HOME/ildottore, else ~/.local/state/ildottore. The guard is not part of the target
 digest. Worked file: examples/target.agent.yaml; reference in docs/MANUAL.md section 4.2, "A
 deployed agent".
+.PP
+guard.window (timezone, days, start, end) holds the scan to the engagement's hours: timezone is
+an IANA zone and is required; days lists mon to sun or ranges that do not wrap past sun; start
+is inclusive and end exclusive, HH:MM, quoted (YAML reads an unquoted 19:00 as a number); an
+end before the start crosses midnight. The clock is read before every dial and at the slot a
+query is paced to; outside the window nothing is sent and the run stops, exit 3, saying when the
+window opens.
+.PP
+A provider rest target takes the same block as rest.guard, with the scheme http or https: an
+HTTP 401 or 403, or a listed error code in the body, is an authentication failure; a reply
+naming another tenant or a listed tool stops the run after that reply, which is not read; every
+request, a retry included, takes a pacing slot; token.tenant is written as is. Worked file:
+examples/target.agent-rest.yaml.
+.PP
+A target or scope given as a bare name (no separator, no .yaml or .yml suffix) is read from
+<name>.yaml under ILDOTTORE_TARGETS_DIR (else ~/.config/ildottore/targets) or
+ILDOTTORE_SCOPES_DIR (else ~/.config/ildottore/scopes); a path is read as written. A name that
+is also a file in the working directory, or a profile written as both .yaml and .yml, is refused.
 .SH "FLEET FILE"
 .nf
 version: "1"

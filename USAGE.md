@@ -290,14 +290,28 @@ guard keeps the scan polite and contained: the JWT is checked for the configured
 expiry before it is sent; the first authentication failure stops the run and starts a cooldown
 the next run respects too (a refused credential is remembered by its sha256 and never sent
 again); queries are paced across processes (`min_interval_seconds`, `max_per_hour`); a frame
-naming a tool from `stop_on_tools` closes the connection and stops the run; and a turn may have a
-lower byte cap. `--dry-run` prints a `guard:` line. Keep a real agent's profile and its scope
-outside any repository (for example `~/.config/ildottore/agents/`) and pass both paths:
+naming a tool from `stop_on_tools` closes the connection and stops the run; a turn may have a
+lower byte cap; and a `window` (days and hours in an IANA zone) keeps the scan inside the
+engagement's hours: outside it nothing is sent and the run stops, saying when it opens.
+`--dry-run` prints a `guard:` line. An agent over plain HTTP takes the same block under `rest:`
+(`provider: rest`; `examples/target.agent-rest.yaml`). Keep a real agent's profile and its scope
+outside any repository, as profiles, and run them by name:
 
 ```bash
-dottore run -t ~/.config/ildottore/agents/<name>.yaml \
-  --scope ~/.config/ildottore/agents/<name>.scope.yaml
+cp my-agent.yaml ~/.config/ildottore/targets/staging.yaml
 ```
+
+```bash
+cp my-agent.scope.yaml ~/.config/ildottore/scopes/staging.yaml
+```
+
+```bash
+dottore run -t staging --scope staging
+```
+
+A bare name (no separator, no `.yaml` suffix) reads `<name>.yaml` from `ILDOTTORE_TARGETS_DIR`
+or `ILDOTTORE_SCOPES_DIR` when set; a path is read as before; a name that is also a file here,
+or one found nowhere, is refused (exit 3). `--judge` and `dottore fingerprint` take a name too.
 
 Worked, commented files with placeholders only:
 [`examples/target.agent.yaml`](examples/target.agent.yaml) and

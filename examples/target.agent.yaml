@@ -7,8 +7,11 @@
 # target.websocket.yaml; the `guard` block keeps the scan polite and contained (docs/MANUAL.md
 # §4.2, "A deployed agent"). Every value is a placeholder: none describes a real product.
 #
-# A profile for a real agent names a real host and a real tenant, so keep it OUT of any repository:
-# under ~/.config/ildottore/agents/ with its scope beside it, and pass the paths with -t and --scope.
+# A profile for a real agent names a real host and a real tenant, so keep it OUT of any repository,
+# as a profile: ~/.config/ildottore/targets/<name>.yaml, its scope as
+# ~/.config/ildottore/scopes/<name>.yaml, then `dottore run -t <name> --scope <name>`.
+# A `window` (the engagement's days and hours, in an IANA zone) may be added to the guard: see
+# target.agent-rest.yaml. The same guard over plain HTTP is `rest.guard` (Scenario J).
 id: agent-staging
 type: agent
 provider: websocket

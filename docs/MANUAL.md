@@ -1152,6 +1152,11 @@ websocket:
     pacing:                                    # across processes, in the guard's state file
       min_interval_seconds: 15                 # 0 to 3600
       max_per_hour: 20
+    window:                                    # the rules of engagement: outside, nothing is sent
+      timezone: "Europe/Madrid"                # an IANA zone, always written
+      days: ["mon-fri"]                        # mon .. sun, or ranges that do not wrap past sun
+      start: "09:00"                           # inclusive, HH:MM, quoted
+      end: "19:00"                             # exclusive; 24:00 allowed; before start: overnight
     stop_on_tools: {path: "tool", names: ["write_record", "run_workflow"]}
     max_response_bytes: 200000                 # per turn; may lower the 4 MiB cap, not raise it
 ```
@@ -1183,6 +1188,18 @@ not part of the target digest, so a resume after easing the pace is the same tar
 below `--rate`, the campaign's own ceiling, which still applies. `--dry-run` prints a `guard:` line
 and says when the plan's requests pass the hourly cap.
 
+**The window.** `window` is the engagement's hours: the listed `days`, from `start` (inclusive)
+to `end` (exclusive), read in `timezone`, an IANA zone the loader requires (`Europe/Madrid`, `UTC`:
+the operator's clock and the agent's may not agree, and a window read in the wrong zone sends
+traffic hours outside it). An `end` before the `start` crosses midnight: the window opens on a
+listed day and closes the next morning. The guard reads the clock before every dial and again at
+the slot a query is paced to, so a query paced past the end is not sent late. Outside the window
+nothing is sent and the run stops (`AgentWindowStop`, exit 3) naming the window, the time it is
+there and when it opens; resume it then. `--dry-run` names the window and, when it is closed now,
+says that a run started now sends nothing and when it opens. Quote the times: YAML reads an
+unquoted `19:00` as the number 1140, and the loader says so. A run does not wait for the window to
+open (OD-56).
+
 **Tools.** `stop_on_tools.path` is where a frame names the tool or agent the target is using
 (one name, or a list); a name in `names`, in any frame of a turn (one the reply discards
 included), closes the connection at once and stops the run, naming the tool. Closing cannot undo
@@ -1195,12 +1212,33 @@ reserved query times, the time of the last authentication failure and the sha256
 refused credentials; a file that cannot be read starts over. Delete it to clear a cooldown by
 hand.
 
+**An agent over HTTP: `rest.guard`.** A `provider: rest` target (or one with no provider) takes
+the same block under `rest:`, read with the same rules and kept by the same code
+(`adapters/agent_guard.py`): worked profile
+[`../examples/target.agent-rest.yaml`](../examples/target.agent-rest.yaml) with its scope
+[`../examples/scope.agent-rest.yaml`](../examples/scope.agent-rest.yaml) (Scenario J). What
+differs is HTTP's: an authentication failure is a reply with HTTP 401 or 403, or a body whose
+`auth.code_path` value is in `failure_codes`; a success body naming another tenant at
+`reply_tenant_path`, or a tool from `stop_on_tools` at its path, stops the run after that reply,
+which is not read (there is no connection to close); every request takes a pacing slot, a retry
+of a 429 or a 5xx included, since the agent sees each one; `max_response_bytes` caps each reply;
+`endpoint.scheme` is `http` or `https` (`ws` and `wss` are a WebSocket guard's, and the loader
+refuses the other transport's). A REST target has no `vars`, so `token.tenant` is written as is.
+The block is outside the target digest, as the WebSocket one. Server-sent events are not a
+transport of their own: a REST target reads one JSON reply per request.
+
 **Keep a real profile out of every repository.** A profile for a real agent names a real host and
-a real tenant. Keep it with its scope outside any checkout (for example
-`~/.config/ildottore/agents/<name>.yaml` and `<name>.scope.yaml`) and pass the paths with `-t` and
-`--scope`; the credential stays in the variable `auth_ref` names. The loader refuses, besides what
+a real tenant. Keep it with its scope outside any checkout, as a profile:
+`~/.config/ildottore/targets/<name>.yaml` and `~/.config/ildottore/scopes/<name>.yaml` (or under
+`ILDOTTORE_TARGETS_DIR` and `ILDOTTORE_SCOPES_DIR`), and run `dottore run -t <name> --scope <name>`.
+A bare name (no separator, no `.yaml` or `.yml` suffix) is looked up there; anything else is a
+path, read as before. A name that is both a file in the working directory and a profile, or a
+profile written both as `.yaml` and `.yml`, is refused rather than guessed (give the full path of
+the one you mean), and a name found nowhere says where it looked (exit 3). `--judge` and
+`fingerprint` take a name too. The credential stays in the variable `auth_ref` names. The loader refuses, besides what
 it refuses in any `websocket:` block: an endpoint whose scheme or path is not the one
-`guard.endpoint` requires, a `guard.token` with no `auth_ref`, a `guard.token.tenant` that uses a
+`guard.endpoint` requires (or a scheme of the other transport), a `window` with no `timezone`, an
+unknown zone, an unknown day, a range that wraps past `sun`, or a `start` equal to its `end`, a `guard.token` with no `auth_ref`, a `guard.token.tenant` that uses a
 placeholder not declared under `vars`, `failure_codes` without `code_path` (or the reverse), and a
 `max_response_bytes` above the adapter's own cap.
 

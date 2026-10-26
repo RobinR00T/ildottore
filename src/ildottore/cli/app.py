@@ -1226,6 +1226,15 @@ def run(
 
     ctx.meta[_VERBOSE_KEY] = max(verbose, int(ctx.meta.get(_VERBOSE_KEY, 0) or 0))
     targets = list(target or []) + list(target_pos or [])
+    # A bare name reads a profile (u04 A-98): `-t prod` is `prod.yaml` in ILDOTTORE_TARGETS_DIR
+    # or ~/.config/ildottore/targets, and `--scope prod` likewise for scopes. A path is a path.
+    try:
+        targets = [wiring.resolve_profile(t, "target") for t in targets]
+        judge = wiring.resolve_profile(judge, "target") if judge is not None else None
+        scope = wiring.resolve_profile(scope, "scope") if scope is not None else None
+    except ValueError as exc:
+        typer.echo(f"error: {_masked(exc)}", err=True)
+        raise typer.Exit(ExitCode.ERROR) from exc
     outputs: dict[str, Path] = {}
     if o_json is not None:
         outputs["json"] = o_json
@@ -1404,6 +1413,8 @@ def fleet(
     try:
         cfg = fleet_mod.load_fleet(config)
         # The scope is built from the fleet file alone; a --judge file must match its `judge:`.
+        # A bare name reads a profile, as for `run` (u04 A-98); the hint below carries the path.
+        judge = wiring.resolve_profile(judge, "target") if judge is not None else None
         judge_target = wiring.load_target(judge) if judge is not None else None
         materialized = fleet_mod.materialize_fleet(cfg, out, judge=judge_target)
     except (ValueError, OSError) as exc:
@@ -1525,6 +1536,9 @@ def fingerprint(
     """
 
     try:
+        # A bare name reads a profile, as for `run` (u04 A-98).
+        target = wiring.resolve_profile(target, "target")
+        scope = wiring.resolve_profile(scope, "scope") if scope is not None else None
         fp = fingerprint_mod.fingerprint_target(target, scope, offline=offline)
     except ScopeRequiredError as exc:
         typer.echo(f"error: {_masked(exc)}", err=True)

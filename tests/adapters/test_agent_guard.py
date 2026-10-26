@@ -107,11 +107,13 @@ def test_failure_codes_and_code_path_go_together() -> None:
         WebSocketGuard.model_validate({"auth": {"code_path": "code"}})
 
 
-def test_the_endpoint_path_is_absolute_and_the_scheme_a_websocket_one() -> None:
+def test_the_endpoint_path_is_absolute_and_the_scheme_one_of_the_two_transports() -> None:
     with pytest.raises(ValidationError):
         WebSocketGuard.model_validate({"endpoint": {"path": "ws"}})
     with pytest.raises(ValidationError):
-        WebSocketGuard.model_validate({"endpoint": {"scheme": "https"}})
+        WebSocketGuard.model_validate({"endpoint": {"scheme": "ftp"}})
+    # https is a rest.guard's scheme (u04 A-98); under websocket.guard the loader refuses it.
+    assert WebSocketGuard.model_validate({"endpoint": {"scheme": "https"}}).endpoint is not None
 
 
 def test_the_state_directory_follows_the_variable_then_xdg_then_home(

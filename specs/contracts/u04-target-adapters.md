@@ -622,6 +622,42 @@ reads as U+FFFD, since httpx decodes the stream as text.
   loader's refusals, the dry-run line, the digest, a guarded campaign, and a run stopped on the first
   auth failure whose next run dials nothing).
 
+- **A-98 (added 2026-10-26): the guard's window, the guard over HTTP, profiles by name.**
+  - `guard.window` (`shared.models.WebSocketGuardWindow`): `timezone` (an IANA zone, required),
+    `days` (day names or ranges that do not wrap past `sun`), `start` (inclusive), `end`
+    (exclusive, `24:00` allowed; an end before the start crosses midnight and belongs to the day it
+    opens). The loader refuses a missing or unknown zone, an unknown day, a wrapping range, a start
+    equal to its end, and a time YAML read as a number. `AgentGuardState.admit` refuses outside the
+    window, and `reserve` refuses at `now` and again at the slot a query is paced to, which is then
+    not recorded: `AgentWindowStop`, a `GuardStop`, names the window, the local time and the next
+    opening (`next_opening`, within eight days) and says nothing was sent. `--dry-run` names the
+    window and, when it is closed now, says a run started now sends nothing and when it opens.
+  - `rest.guard` (`shared.models.RestSpec`): a `provider: rest` target (or one with no provider)
+    takes the WebSocket guard's block under `rest:`. `GuardKeeper` (`adapters/agent_guard.py`)
+    holds the checks both adapters run (endpoint, token, admit, auth failure, error code, reply
+    tenant, tools, byte cap); `WebSocketAdapter` delegates to it with no change of behaviour.
+    `RestAdapter.send` checks the allowlist, then the keeper, before the base loop; each attempt,
+    a retry of a 429 or 5xx included, reserves a slot (`BaseAdapter._before_attempt`, a no-op
+    hook by default); `_response_cap` lowers `read_capped`'s cap; `_handle_final_response` reads
+    401 and 403 (auth failure, credential refused), a listed `auth.code_path` code in any JSON
+    object body, and, on a success, the tenant at `reply_tenant_path` and the tools at
+    `stop_on_tools.path` (`AgentTenantMismatch` and `AgentToolStop`: the run stops after that reply,
+    which is not read, OD-56). The loader refuses a `rest` block on another provider, a guard
+    without an endpoint, a `ws`/`wss` scheme under `rest.guard` (and `http`/`https` under
+    `websocket.guard`), and a placeholder in `token.tenant` (a REST target has no `vars`). The block
+    is outside the target digest; an absent one hashes as before. No SSE transport exists to guard.
+  - Profiles by name (`cli.wiring.resolve_profile`, `profile_dir`): a bare name (charset
+    `[A-Za-z0-9._-]`, at most 250 characters, not starting with a dot, no `.yaml`/`.yml` suffix) given to `-t`, a positional
+    target, `--judge`, `--scope`, `fleet --judge` or `fingerprint` reads `<name>.yaml` (or `.yml`)
+    from `ILDOTTORE_TARGETS_DIR` / `ILDOTTORE_SCOPES_DIR`, else `~/.config/ildottore/targets/` /
+    `scopes/`. Anything else is a path, as before. Both suffixes present, a file of that name in the
+    working directory as well as a profile, or neither found: refused, exit 3, naming where it
+    looked. A directory of that name here does not count as the file.
+  `get_path` moved to `adapters/paths.py` (re-exported by `adapters.rest`) so the guard reads
+  paths without an import cycle. Judging rules 7 re-pinned (no verdict path touched). Checked by
+  `tests/adapters/test_agent_guard_window_rest.py` (26) and `tests/cli/test_rest_guard_profiles.py`
+  (20).
+
 ## §8 Out of scope / forbidden
 - MUST NOT import or call vendor SDKs (`openai`, `anthropic` packages): httpx only (ADR-0002).
 - MUST NOT use LiteLLM as the core abstraction (optional wrapped adapter is MVP-2+, not here).
@@ -813,3 +849,14 @@ reads as U+FFFD, since httpx decodes the stream as text.
   `_check_tools` raise in `adapters/websocket.py`. Also built and part of the same decision: a close
   or a silence before the handshake reply counts as an authentication failure (cooldown, the
   credential not refused), where it could be an outage.
+- **OD-56** (2026-10-26, A-98; **open, owner to decide; built as the smallest reversible version**):
+  five choices of the window, the HTTP guard and profiles. (a) Outside the window the run stops
+  (exit 3) and is resumed by hand; not taken: sleep until it opens, which keeps a process waiting
+  for days and sends traffic nobody is watching. (b) An overnight window (`22:00`-`06:00`) belongs
+  to the day it opens: `fri` covers Friday night into Saturday morning. (c) Every HTTP attempt, a
+  retry included, takes a pacing slot, since the agent sees each one; not taken: one slot per
+  query. (d) A listed tool in a REST reply stops the run and the reply is discarded, as OD-54 does
+  for a WebSocket turn. (e) A bare name that is both a file in the working directory and a profile
+  is refused rather than resolved either way. Reversal: `_check_window` in `adapters/agent_guard.py`,
+  `RestAdapter._before_attempt` and `_handle_final_response`, and `resolve_profile` in
+  `cli/wiring.py`.

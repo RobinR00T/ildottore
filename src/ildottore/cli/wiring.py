@@ -20,7 +20,7 @@ from __future__ import annotations
 import os
 import re
 import time
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -138,9 +138,11 @@ from ildottore.shared.models import (
     ModelFingerprint,
     ModelRequest,
     ModelResponse,
+    RestSpec,
     Sampling,
     SeededSetup,
     Target,
+    WebSocketGuard,
     WebSocketSpec,
 )
 from ildottore.shared.package_data import BATTERY
@@ -180,11 +182,13 @@ __all__ = [
     "load_target",
     "mock_adapter_factory",
     "planted_secrets",
+    "profile_dir",
     "read_target_file",
     "real_adapter_factory",
     "refuse_spec_paths_that_hold_nothing",
     "request_url_for",
     "resolve_auth_ref",
+    "resolve_profile",
     "sampling_fallback",
     "sampling_written",
     "scenario_adapter_factory",
@@ -1097,6 +1101,7 @@ def build_real_adapter(
         # A target file declares no template: the generic one reads the text at `text`, and it
         # is not told to check a template it cannot write (OD-21 audit, LOW 2).
         advice=REST_TARGET_FILE_ADVICE,
+        guard=target.rest.guard if target.rest is not None else None,
         **extra,
     )
 
@@ -1916,6 +1921,64 @@ def load_target(path: Path) -> Target:
     return _target_from(path, _read_target_yaml(path))
 
 
+#: Where a target or a scope named without a path is looked up (u04 A-98): the variable, else
+#: the directory under ``~/.config/ildottore``.
+_PROFILE_DIRS: dict[str, tuple[str, str]] = {
+    "target": ("ILDOTTORE_TARGETS_DIR", "targets"),
+    "scope": ("ILDOTTORE_SCOPES_DIR", "scopes"),
+}
+#: A profile name: no separator, no leading dot, nothing a shell or a path would read, and short
+#: enough that ``<name>.yaml`` is a file name (255 bytes); a longer one is read as a path, whose
+#: error says its length (u12 A-82).
+_PROFILE_NAME = re.compile(r"[A-Za-z0-9_][A-Za-z0-9._-]{0,249}")
+
+
+def profile_dir(kind: str) -> Path:
+    """The directory a ``kind`` (``target`` or ``scope``) profile is looked up in."""
+
+    variable, sub = _PROFILE_DIRS[kind]
+    configured = os.environ.get(variable, "").strip()
+    if configured:
+        return Path(configured).expanduser()
+    return Path.home() / ".config" / "ildottore" / sub
+
+
+def resolve_profile(arg: Path, kind: str) -> Path:
+    """``-t prod`` reads ``prod.yaml`` from the profile directory; a path reads as it did.
+
+    Only a bare name is looked up: anything with a separator or a ``.yaml``/``.yml`` suffix is
+    a path, as before. A bare name that is also a file here, or a profile written both as
+    ``.yaml`` and ``.yml``, is refused rather than guessed: a run against the wrong target is
+    the cost of a guess. A name found nowhere says where it looked.
+    """
+
+    text = str(arg)
+    if not _PROFILE_NAME.fullmatch(text) or text.lower().endswith((".yaml", ".yml")):
+        return arg
+    variable, _ = _PROFILE_DIRS[kind]
+    directory = profile_dir(kind)
+    found = [directory / f"{text}{ext}" for ext in (".yaml", ".yml")]
+    found = [candidate for candidate in found if candidate.is_file()]
+    if len(found) > 1:
+        raise ValueError(
+            f"{kind} profile {text!r} is both {found[0]} and {found[1]}: remove one, or give "
+            "the path of the one you mean"
+        )
+    if found and arg.is_file():
+        raise ValueError(
+            f"{kind} {text!r} is both a file here and the profile {found[0]}: give the full "
+            "path of the one you mean (a bare name, ./ included, reads as both)"
+        )
+    if found:
+        return found[0]
+    if arg.exists():
+        return arg
+    raise ValueError(
+        f"no {kind} file or profile named {text!r}: looked for ./{text} and "
+        f"{directory / (text + '.yaml')} (set {variable} to look elsewhere)"
+    )
+
+
 def _mcp_capability(
     path: Path, raw: dict[str, Any], caps_raw: dict[str, Any], caps: Capabilities
 ) -> Capabilities:
@@ -2062,6 +2125,7 @@ def _target_from(path: Path, raw: dict[str, Any]) -> Target:
 
     seeded = _seeded_setup(path, raw.get("seeded_setup"), target_type)
     websocket = _websocket_spec(path, raw.get("websocket"), provider, endpoint, auth_ref)
+    rest = _rest_spec(path, raw.get("rest"), provider, endpoint, auth_ref)
 
     return Target(
         id=target_id,
@@ -2077,6 +2141,7 @@ def _target_from(path: Path, raw: dict[str, Any]) -> Target:
         command=command,
         seeded_setup=seeded,
         websocket=websocket,
+        rest=rest,
         filter_stops=_filter_stops(path, raw.get("filter_stops"), provider),
     )
 
@@ -2456,50 +2521,106 @@ def _websocket_spec(
             f"target file {path}: websocket.message.send carries neither {{{{prompt}}}} nor "
             "{{messages}}, so no attack text would reach the target"
         )
-    _check_guard(path, spec, parts, auth_ref)
+    _check_guard(path, spec.guard, "websocket", parts, auth_ref, spec.vars)
     return spec
 
 
-def _check_guard(path: Path, spec: WebSocketSpec, parts: SplitResult, auth_ref: str | None) -> None:
-    """The ``websocket.guard`` block, checked against the file before any send.
+#: The endpoint schemes each guarded transport dials (u04 A-98).
+_GUARD_SCHEMES: dict[str, tuple[str, ...]] = {"websocket": ("ws", "wss"), "rest": ("http", "https")}
 
-    Refused: an endpoint whose scheme or path is not the one ``guard.endpoint`` requires, a
-    ``guard.token`` with no ``auth_ref`` (it checks the credential), a ``guard.token.tenant`` that
-    uses a placeholder other than a ``websocket.vars`` name (it is compared, never sent), and a
+
+def _check_guard(
+    path: Path,
+    guard: WebSocketGuard | None,
+    block: str,
+    parts: SplitResult,
+    auth_ref: str | None,
+    vars_: Mapping[str, str],
+) -> None:
+    """A ``websocket.guard`` or ``rest.guard`` block, checked against the file before any send.
+
+    Refused: a ``guard.endpoint.scheme`` the transport does not dial, an endpoint whose scheme or
+    path is not the one ``guard.endpoint`` requires, a ``guard.token`` with no ``auth_ref`` (it
+    checks the credential), a ``guard.token.tenant`` that uses a placeholder other than a
+    ``websocket.vars`` name (it is compared, never sent; a REST target has no vars), and a
     ``max_response_bytes`` above the adapter's own cap (it may lower the cap, not raise it).
+    ``guard.window`` is checked by its model (an IANA zone, known days, two times); nothing here
+    reads the clock, so a file written outside its window still loads (u04 A-98).
     """
 
-    guard = spec.guard
     if guard is None:
         return
+    name = f"{block}.guard"
     if guard.endpoint is not None:
-        if guard.endpoint.scheme is not None and parts.scheme.lower() != guard.endpoint.scheme:
+        scheme = guard.endpoint.scheme
+        if scheme is not None and scheme not in _GUARD_SCHEMES[block]:
+            raise ValueError(
+                f"target file {path}: {name}.endpoint.scheme is {scheme}, which a {block} target "
+                f"does not dial (one of {', '.join(_GUARD_SCHEMES[block])})"
+            )
+        if scheme is not None and parts.scheme.lower() != scheme:
             raise ValueError(
                 f"target file {path}: the endpoint's scheme is not the one "
-                f"websocket.guard.endpoint.scheme requires ({guard.endpoint.scheme})"
+                f"{name}.endpoint.scheme requires ({scheme})"
             )
         if guard.endpoint.path is not None and parts.path != guard.endpoint.path:
             raise ValueError(
                 f"target file {path}: the endpoint's path is not the one "
-                "websocket.guard.endpoint.path requires"
+                f"{name}.endpoint.path requires"
             )
     if guard.token is not None:
         if auth_ref is None:
             raise ValueError(
-                f"target file {path}: websocket.guard.token checks the credential and the "
+                f"target file {path}: {name}.token checks the credential and the "
                 "target declares no auth_ref"
             )
-        unknown = sorted(placeholders(guard.token.tenant) - set(spec.vars))
+        unknown = sorted(placeholders(guard.token.tenant) - set(vars_))
         if unknown:
+            where = (
+                "which is not declared under websocket.vars"
+                if block == "websocket"
+                else "and a rest target has no vars: write the tenant itself"
+            )
             raise ValueError(
-                f"target file {path}: websocket.guard.token.tenant uses "
-                f"{_placeholder_names(unknown)}, which is not declared under websocket.vars"
+                f"target file {path}: {name}.token.tenant uses "
+                f"{_placeholder_names(unknown)}, {where}"
             )
     if guard.max_response_bytes is not None and guard.max_response_bytes > MAX_RESPONSE_BYTES:
         raise ValueError(
-            f"target file {path}: websocket.guard.max_response_bytes may lower the adapter's "
+            f"target file {path}: {name}.max_response_bytes may lower the adapter's "
             f"cap ({MAX_RESPONSE_BYTES} bytes), not raise it"
         )
+
+
+def _rest_spec(
+    path: Path, raw: object, provider: object, endpoint: str | None, auth_ref: str | None
+) -> RestSpec | None:
+    """The ``rest`` block of a ``provider: rest`` target (or one with no provider, which routes
+    to the REST adapter), checked before any send (u04 A-98).
+
+    It holds the ``guard`` a WebSocket target declares under ``websocket.guard``; any other
+    provider is refused the block, as a REST target is refused ``websocket``.
+    """
+
+    if raw is None:
+        return None
+    routed = provider.strip().lower() if isinstance(provider, str) else provider
+    if routed not in (None, "", "rest"):
+        raise ValueError(f"target file {path} declares 'rest', which is read only by provider rest")
+    if not isinstance(raw, dict):
+        raise ValueError(f"target file {path} 'rest' must be a mapping")
+    try:
+        spec = RestSpec.model_validate(raw)
+    except ValidationError as exc:
+        raise ValueError(
+            f"target file {path} 'rest' failed validation: {validation_problems(exc)}"
+        ) from exc
+    if spec.guard is not None and not endpoint:
+        raise ValueError(
+            f"target file {path}: rest.guard keeps a live endpoint and the target declares none"
+        )
+    _check_guard(path, spec.guard, "rest", urlsplit(endpoint or ""), auth_ref, {})
+    return spec
 
 
 def _placeholder_names(names: list[str]) -> str:

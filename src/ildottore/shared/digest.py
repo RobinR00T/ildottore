@@ -114,7 +114,7 @@ def _target_payload(target: Target, mock_scenario: str | None) -> dict[str, Any]
     payload = {k: v for k, v in dumped.items() if k not in _TARGET_COSMETIC}
     # Absent, it is left out, so a run stored before the field existed still resumes; present,
     # it is part of what answers (which specs the deployment holds the scene for).
-    for optional in ("seeded_setup", "websocket"):
+    for optional in ("seeded_setup", "websocket", "rest"):
         if payload.get(optional) is None:
             payload.pop(optional, None)
     # A WebSocket target's `guard` decides whether and when a query goes out (the cooldown, the
@@ -124,6 +124,13 @@ def _target_payload(target: Target, mock_scenario: str | None) -> dict[str, Any]
     websocket = payload.get("websocket")
     if isinstance(websocket, dict):
         websocket.pop("guard", None)
+    # A REST target's `rest` block holds its guard alone (u04 A-98): left out whole, so adding,
+    # easing or removing the guard (a window included) is the same target to a resume.
+    rest = payload.get("rest")
+    if isinstance(rest, dict):
+        rest.pop("guard", None)
+        if not rest:
+            payload.pop("rest", None)
     # The tools the target file declares not destructive (OD-43, u06 A-72): none declared, the
     # key is left out, so a run stored before a file could declare one still resumes; declared,
     # it is part of what judges, and a resume after a change is refused as another target.
