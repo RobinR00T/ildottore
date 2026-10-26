@@ -320,6 +320,15 @@ PIN_HISTORY: tuple[tuple[int, str, str], ...] = (
         "never how a reply read is judged, and a target without the block reads every frame as "
         "before, so no stored verdict changes",
     ),
+    (
+        7,
+        "6764e7c12a1c64266369fffbf2779c99d8a0ecab782efefbc47a4f02f984a32d",
+        "re-pin 2026-10-26: u01 A-97 (a scope's validity window): valid_from and valid_until in "
+        "the scope model and its loader, checked first by authorize_target, and the dry-run's "
+        "window note; it decides whether an attempt is sent at all, never how a reply read is "
+        "judged, and a scope without the fields authorizes as before, so no stored verdict "
+        "changes",
+    ),
 )
 
 #: The digest each version is pinned to now: the last line of :data:`PIN_HISTORY` for it.
@@ -330,7 +339,7 @@ PINNED: dict[int, str] = {
     4: "86d4391094d167c454d0e05ec076a36ca10c585c57b1d00574a7e86e87c0fe40",
     5: "c352e9bd55c8e3b0629e4164411b64667327a5c3cd533e003a7cb84475ecf9c4",
     6: "47293b7afb2a5409bff93319a9fa384621c3ecbe8b9a261be8bb428e05d0f4f7",
-    7: "54cf9d2751a6a7f8ca9dfd4d4fb157e4977bc24e8d548d2d18f686a8bf18d076",
+    7: "6764e7c12a1c64266369fffbf2779c99d8a0ecab782efefbc47a4f02f984a32d",
 }
 
 #: One ``<version> <digest>`` line per pin, appended to and never edited: the history must start

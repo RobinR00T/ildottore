@@ -21,6 +21,7 @@ Loading a pack performs **no network I/O** (SSRF-safe, ``docs/02 §4``).
 
 from __future__ import annotations
 
+import datetime as dt
 from collections.abc import Iterable
 from pathlib import Path
 
@@ -31,7 +32,7 @@ from ildottore import safe_yaml
 from ildottore.config import SafetyFlags
 from ildottore.policy.allowlist import EndpointAllowlist
 from ildottore.policy.errors import PolicyPackError
-from ildottore.policy.scope import Scope
+from ildottore.policy.scope import Scope, utc_today
 from ildottore.shared.config_errors import (
     quoted,
     shown_endpoint,
@@ -163,7 +164,9 @@ def _is_pii_elicitation(spec: AttackSpec) -> bool:
     return _PII_ELICIT_TAG in _tag_keys(spec) or _PII_CAPABILITY in spec.requires_policy
 
 
-def authorize_target(scope: Scope, target_id: str, endpoint: str) -> CheckResult:
+def authorize_target(
+    scope: Scope, target_id: str, endpoint: str, *, today: dt.date | None = None
+) -> CheckResult:
     """Steps 1 and 2 of :meth:`PolicyEngine.check`: in scope, and reachable at ``endpoint``?
 
     Extracted so the pre-flight gate in the CLI and the per-attempt gate in the engine cannot
@@ -183,8 +186,16 @@ def authorize_target(scope: Scope, target_id: str, endpoint: str) -> CheckResult
     its userinfo (``shown_endpoint``): cut first, a password whose ``@`` fell past the cut was
     not read as a URL's by the CLI's redactor, and 287 characters of a 308-character one were
     printed (#96).
+
+    A scope with a validity window (u01 A-97) refuses every target outside it, here, so the
+    pre-flight of ``run`` and ``fingerprint`` refuses before anything is sent and the engine
+    refuses each later attempt of a run that outlives the window. ``today`` is the UTC date
+    (:func:`~ildottore.policy.scope.utc_today`); tests pass their own.
     """
 
+    expired = scope.window_refusal(today if today is not None else utc_today())
+    if expired is not None:
+        return _blocked(expired)
     target = scope.target(target_id)
     if target is None:
         return _blocked(f"target {quoted(target_id)} not in scope")

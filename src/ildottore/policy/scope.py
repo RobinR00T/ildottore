@@ -12,6 +12,7 @@ seam stays, so a signature check can drop in without a shape change when that ex
 
 from __future__ import annotations
 
+import datetime as dt
 import hashlib
 import math
 import re
@@ -19,7 +20,7 @@ from pathlib import Path
 from typing import Final, Protocol, runtime_checkable
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from ildottore import safe_yaml
 from ildottore.policy.errors import ScopeChecksumError, ScopeError
@@ -109,14 +110,53 @@ class ScopeTarget(BaseModel):
         return len(self.identities) >= 2
 
 
+#: A scope's validity bound as written: a calendar date, ``YYYY-MM-DD`` (clause A-97).
+_ISO_DATE: Final = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
+
+
+def utc_today() -> dt.date:
+    """Today's date in UTC, the day a scope's validity window is read against (A-97)."""
+
+    return dt.datetime.now(dt.UTC).date()
+
+
 class Scope(BaseModel):
-    """The parsed, validated ``scope.yaml`` authorization record (contract §6)."""
+    """The parsed, validated ``scope.yaml`` authorization record (contract §6).
+
+    ``valid_from`` and ``valid_until`` (u01 A-97) bound the engagement the record authorizes:
+    calendar dates, both days included, read in UTC. Outside them every target is refused, by
+    the same predicate that refuses a target not in scope (:func:`window_refusal`, called from
+    ``policy.authorize_target``). Either may be left out, and a scope with neither is valid on
+    every day, as before. The checksum covers them like any other line.
+    """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     version: str
     targets: list[ScopeTarget] = Field(min_length=1)
     checksum: str | None = None
+    valid_from: dt.date | None = None
+    valid_until: dt.date | None = None
+
+    @field_validator("valid_from", "valid_until", mode="before")
+    @classmethod
+    def _calendar_date(cls, value: object) -> object:
+        """A bound is a date as YAML reads ``2026-10-26``, or that text quoted: nothing else.
+
+        pydantic's lax mode also reads a number as a Unix timestamp and a midnight datetime as
+        its day, so ``valid_until: 20261026`` was a day in 1970 and a time was silently
+        dropped. Both are refused, naming the form to write.
+        """
+
+        if value is None:
+            return None
+        if isinstance(value, dt.datetime):
+            raise ValueError("a validity bound is a date (YYYY-MM-DD), not a date and time")
+        if isinstance(value, dt.date):
+            return value
+        if isinstance(value, str) and _ISO_DATE.fullmatch(value):
+            return value
+        raise ValueError("a validity bound is a date written YYYY-MM-DD")
 
     def target(self, target_id: str) -> ScopeTarget | None:
         """Return the authorized target by id, or ``None`` if out of scope."""
@@ -124,6 +164,15 @@ class Scope(BaseModel):
         for t in self.targets:
             if t.id == target_id:
                 return t
+        return None
+
+    def window_refusal(self, today: dt.date) -> str | None:
+        """Why the record does not authorize anything on ``today``, or ``None`` when it does."""
+
+        if self.valid_from is not None and today < self.valid_from:
+            return f"the scope is valid from {self.valid_from} and today (UTC) is {today}"
+        if self.valid_until is not None and today > self.valid_until:
+            return f"the scope expired on {self.valid_until} and today (UTC) is {today}"
         return None
 
 
@@ -411,6 +460,18 @@ def load_scope_with_digest(
         ) from exc
     except Exception as exc:  # a validator that raised something pydantic did not wrap
         raise ScopeError(f"scope file {file_path} failed validation: {exc}") from exc
+
+    # An empty window authorizes no day, which a typo makes (A-97): refused at load, not
+    # reported later as an expired scope.
+    if (
+        scope.valid_from is not None
+        and scope.valid_until is not None
+        and scope.valid_from > scope.valid_until
+    ):
+        raise ScopeError(
+            f"scope file {file_path} is valid from {scope.valid_from} until {scope.valid_until}, "
+            "which is no day: valid_from must be on or before valid_until"
+        )
 
     # Any text was a version, so a scope written for another major version of this format was
     # read as this one (u12 A-82, CLI audit L7).

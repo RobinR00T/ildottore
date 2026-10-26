@@ -49,11 +49,19 @@ targets:
     identities:
       - name: default
         auth_ref: "env://MY_API_KEY"
+# valid_from: 2026-10-01             # optional
+# valid_until: 2026-10-31            # optional
 # checksum: "<sha256 of the body>"   # optional
 .fi
 .TP
 .B version
 "1.0" ("1" and "1.<minor>" are read too); any other value is refused (exit 3).
+.TP
+.B valid_from, valid_until
+Optional. The first and the last day the scope authorizes, written YYYY-MM-DD, both included,
+read as the UTC date. Outside them every target is refused (exit 3, nothing sent, --dry-run
+included) and a run that outlives the window has its later attempts blocked. A window that is
+no day, a number or a date with a time is refused. The checksum covers both lines.
 .TP
 .B targets
 The authorized targets (>=1). A target whose id is absent is refused. Each has a base_url,
