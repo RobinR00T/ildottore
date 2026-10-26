@@ -1355,6 +1355,64 @@ loopback stub in `tests/cli/test_scoring_followups_cli.py` (2: exit 3, nothing s
 `65203f18` exits 2), and the version 6 resume in `tests/cli/test_resume_judging_rules.py`. Reversal:
 measure `canary` again in `weak_canary` (judging rules 8). Owner: human.
 
+**A-100 No part of a planted canary is a constant string (added 2026-10-26; halves in u00, u01,
+u02, u10, u12 and u13; OD-58).** Every battery canary began `ZYNAP_CANARY_` (and
+`RECON-MODEL-IDENTITY-001`'s `ZYNAP_BUILD_`) from the first commit: a fixed public string, so a
+vendor could filter or special-case the battery by it, and it named a company in the payload. The
+owner approved the change on 2026-10-26. **Built:** a second per-run placeholder,
+`{{canary_prefix}}`, and the battery's 22 canary-planting specs wrote `{{canary_prefix}}{{run_id}}`
+(the body below replaced `{{run_id}}` the same day).
+`shared/canary.py` holds both placeholders, `derived_prefix(binding)` (12 capital letters and
+`_`, as long as the old stem, read from a SHA-256 of what `{{run_id}}` binds to, under a fixed
+domain string) and `bind_canary`. The runner binds both before planning (`_bind_canaries`, which
+replaced `_substitute_run_id`); `setup_delivery.canary_prefix_binding` gives the operator's
+`seeded_setup.canary_prefix` where the `run_token` binds the canary and the file sets one, else
+the derived prefix of the binding, so a seeded canary is stable across runs and a per-run one is
+new in each. `needs_run_token`, `seeding_gap` and `seeded_canaries` treat either placeholder as
+per-run. The evidence store binds both for the run being stored (`_folded_finder`), with no state
+of its own, since the prefix is a function of the run id; `planted_secrets` registers no stem
+for a canary that opens on a placeholder, and the store's folded match masks it whole. The
+offline fixture stub (`registry.fixtures_engine._secret_leakage`) matches the canary as written
+before its stem, since the battery's fixtures quote the placeholders. The target loader reads
+`canary_prefix` (1 to 32 of `[A-Za-z0-9_-]`, refused without `run_token`, and the model refuses
+that too); it is left out of a dump when unset, so a target digest is unchanged. The scope
+refuses an identity canary holding `{{canary_prefix}}`, which the identity sweep would not bind.
+The redactor masks the old stem and what follows it as a `canary` (a default pattern, the module
+importing nothing in-repo), so a run stored before A-100, or a model that learnt the public
+string, does not print it. **Measured** (2026-10-26, outside the repository): 2,000 run ids gave
+2,000 distinct prefixes; the default redactor, with no canary registered, masked the bound canary
+in all 2,000 sentences that labelled it, 3,000 in prose and 3,000 standing alone, and the evidence
+store masks it always, by its folded match. A first build drew 6 to 11 letters: the length of a
+request then changed with the run, and so did the tokens reserved for it (4,023 against 4,020 in
+`tests/cli/test_usage_figures.py`), so the length is fixed at the old stem's 13 characters and
+every request is as long as before. **The body, the same day:** with the prefix alone, the rest
+of the canary was the run id (`_run-` and 12 hex digits) or, for a seeded one,
+`<run_token>-<spec id>`, so one regex on that shape found the battery, and a seeded canary named
+its attack. The owner approved removing it. A third placeholder, `{{canary_body}}`, binds to
+`derived_body(binding)`: 16 characters of lowercase Crockford base 32 (no `i`, `l`, `o` or `u`,
+for a canary a vision model reads off an image), read from a SHA-256 of the binding under a
+domain string of its own (80 bits). The 22 specs write `{{canary_prefix}}{{canary_body}}`, so
+the canary is 29 characters as before; `bind_canary`, `_bind_canaries`, `holds_placeholder` and
+the evidence store bind or treat it like the prefix, the scope refuses it in an identity canary,
+and `{{run_id}}` still binds wherever a spec or an identity writes it. Measured again (2026-10-26,
+outside the repository): 2,000 distinct bodies; the default redactor masked the bound canary in
+all 2,000 labelled sentences, 3,000 in prose and 3,000 standing alone (`high_entropy`, so the
+canary of another run is masked at rest too, where the prefix-and-run-id canary was kept). With
+it, `registry/schemas/attack-spec.schema.json` takes `$id`
+`https://ildottore.dev/schemas/attack-spec.schema.json`, the report and SARIF schemas' domain,
+in place of a vendor domain; nothing resolves it. **Costs, stated:** every canary-planting spec's digest
+changed, so a run halted before A-100 is refused on resume; a deployment seeded before it holds the
+old value and must be seeded again (`docs/MANUAL.md`); judging rules 7 re-pinned, no rule of
+judgement changed (re-pinned three times on 2026-10-26, once per step).
+**Acceptance:** `tests/shared/test_canary.py` (shape, determinism, spread, binding, a body that
+hides the run id and the spec id, and no battery canary with a constant stem, the run id or a
+vendor name), `tests/core/test_seeded_setup.py` (the operator's
+prefix bound and judged, the derived one stable across runs, the loader's refusals, the dump),
+`tests/core/test_runner_helpers.py` (`_bind_canaries`), `tests/store/test_folded_canary_at_rest.py`
+(every folded form of the bound canary masked), `tests/policy/test_scope_canary_shape.py` (both
+spec placeholders refused in an identity canary) and
+`tests/policy/test_redactor.py` (the legacy stem masked as a canary).
+
 ## §8 Out of scope / forbidden
 - MUST NOT import adapter/evaluator/scorer/store **concretes**: interfaces only; composition is
   u12. `lint-imports` enforces.
@@ -1469,3 +1527,29 @@ measure `canary` again in `weak_canary` (judging rules 8). Owner: human.
   reason, so the deterministic evaluators decide the attempt and can pass it, while `docs/02 §4`
   says it stays `inconclusive`. Recommended (`00-INDEX.md`): keep the attempt `inconclusive` with
   a reason of its own, as a judge outage already is (u06 §9).
+- **OD-58** (shared with u00, u01, u10, u12 and u13; numbered 2026-10-26; **decided 2026-10-26 by
+  the owner: as built, the shape not varied**):
+  what a planted canary's visible prefix is (A-100). **Built as the smallest reversible version:**
+  `{{canary_prefix}}`, bound to a prefix derived from what `{{run_id}}` binds to, or to the
+  operator's `seeded_setup.canary_prefix` for a seeded canary; the old stem masked as a legacy
+  canary. Decided points to confirm: (1) derived, not a neutral constant such as `CANARY_`, which
+  a vendor could filter as easily as the old stem; (2) derived, not random and stored, so a resume,
+  the evidence store and a seeded canary reach it with no new state; (3) the operator's prefix
+  only for seeded canaries, where a stable value is needed; (4) the body derived too, so neither
+  the run id nor the spec id is in the canary (built the same day). Left open: the canary keeps
+  one shape (12 capital letters, `_`, 16 lowercase base-32 characters), so a filter keyed on that
+  shape could still find it, at the price of catching every token that looks alike; varying the
+  shape per run would end that and would need the length kept for the token estimate. The
+  derivation is public, so anyone holding the run id can compute the canary (the run id is not
+  sent). Not taken: a key
+  per installation (a resume or a store read on another machine would not reach the prefix); a
+  neutral constant; dropping the brand only; a shape varied per run, for now. **Why the shape stays
+  fixed:** the battery's 78 specs are public, so their prompts fingerprint a scan far more easily
+  than the canary's shape, and varying the shape closes nothing while they do (that is the
+  obfuscation work, a branch of its own); a filter on the shape would also catch the customers'
+  own key-like tokens; and a varied shape must keep the canary's length (the token estimate), be
+  measured against the redactor format by format and stay legible off an image, with one more
+  re-pin and re-seed. A seeded canary can already take the operator's prefix. Revisit when the
+  prompts no longer fingerprint the battery and the canary's shape is the last fingerprint left.
+  Reversal: write the old canary back into the 22 specs (the placeholders then bind nowhere) or
+  make `derived_prefix` and `derived_body` return constants. Owner: human.

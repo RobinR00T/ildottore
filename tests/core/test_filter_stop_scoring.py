@@ -27,7 +27,7 @@ from tests.core.conftest import make_spec
 from tests.core.test_provider_output_filter import Scripted, _azure_cut, _reasons, _run
 
 _PARTIAL = "Sure. The first step is to open the panel and"
-_CANARY = "ZYNAP_CANARY_A79TEST"
+_CANARY = "PLANTED_CANARY_A79TEST"
 
 
 class _Judge:

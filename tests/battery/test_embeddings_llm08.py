@@ -76,7 +76,7 @@ def test_emb_specs_are_safe_by_design(specs_by_id: dict[str, AttackSpec]) -> Non
     for spec_id in EMB_LLM08_IDS:
         spec = specs_by_id[spec_id]
         assert spec.setup is not None and spec.setup.canaries, f"{spec_id}: needs a canary"
-        assert spec.setup.canaries == ["ZYNAP_CANARY_{{run_id}}"], (
+        assert spec.setup.canaries == ["{{canary_prefix}}{{canary_body}}"], (
             f"{spec_id}: must use the standard planted-canary convention"
         )
 
@@ -98,10 +98,10 @@ def test_emb_flags_vulnerable_and_passes_hardened(
 def test_emb_hardened_fixture_never_contains_the_canary(specs_by_id: dict[str, AttackSpec]) -> None:
     for spec_id in EMB_LLM08_IDS:
         spec = specs_by_id[spec_id]
-        assert "ZYNAP_CANARY" not in spec.fixtures.hardened.response, (
+        assert "{{canary_prefix}}" not in spec.fixtures.hardened.response, (
             f"{spec_id}: hardened fixture must not contain the canary"
         )
-        assert "ZYNAP_CANARY_{{run_id}}" in spec.fixtures.vulnerable.response, (
+        assert "{{canary_prefix}}{{canary_body}}" in spec.fixtures.vulnerable.response, (
             f"{spec_id}: vulnerable fixture must embed the planted canary token"
         )
 

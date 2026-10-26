@@ -45,6 +45,43 @@ the file, schema copy, build or pipeline it names.
   and `u12-cli.md` (A-99), and OD-57 (open): a pass under a carrier the model could not read is not
   resistance, and the run cannot tell the two apart yet.
 
+### Changed (breaking for a seeded deployment and a halted run: u08 A-100, OD-58, judging rules 7 re-pinned)
+
+- **No battery canary carries a constant string, the run id or the spec id any more.** Every
+  planted canary was `ZYNAP_CANARY_<run id>` from the first commit (2026-07-07): a public string a
+  vendor could filter or special-case, a brand in the payload, and for a seeded canary the spec
+  id in clear. The 22 specs that plant one now write `{{canary_prefix}}{{canary_body}}`
+  (`RECON-MODEL-IDENTITY-001`'s `ZYNAP_BUILD_` too), and the runner binds both from what
+  `{{run_id}}` binds to, each by its own SHA-256: the prefix is 12 capital letters and a `_`, the
+  body 16 characters of lowercase base 32 without `i`, `l`, `o` or `u` (a vision model reading it
+  off an image does not misread it). A run plants something like
+  `ZQFBIHNXSTQQ_33vxg8dbtgvs7s7s` and the next one something else; a resume, the evidence store
+  and a seeded canary reach the same one without storing it. The canary is 29 characters, as long
+  as before, so a request, and the tokens reserved for it, are as long as before in every run.
+  `shared/canary.py` holds the placeholders and the derivation; `{{run_id}}` still binds where a
+  spec or a scope identity uses it.
+- **`seeded_setup.canary_prefix` in a target file:** the operator's prefix for the canaries a
+  `run_token` binds (1 to 32 letters, digits, `_` or `-`; refused without `run_token`). Left out,
+  the seeded prefix is derived from `<run_token>-<spec id>`, as the body always is: stable across
+  runs, never a constant, and neither the token nor the spec id shows in it. `--dry-run -vv`
+  prints the value to seed (`seed:    AC-BOLA-001: PSQRJSPZMSWF_z9efwnj3ffbw0mr8` with
+  `run_token: eng-2026-q4`, `ACME_SEED_z9efwnj3ffbw0mr8` with `canary_prefix: ACME_SEED_` too).
+  Left out of the target's dump and digest when unset.
+- **Re-seed planted canaries.** A deployment seeded before this change holds
+  `ZYNAP_CANARY_<run_token>-<spec id>`, which is no longer the canary the evaluators look for, so
+  a leak of it would pass: seed what the dry run prints now.
+- **A run halted before this change does not resume.** The specs changed, so their digests did,
+  and the resume is refused naming them; start a fresh run. Stored runs keep their verdicts.
+- **The old stem stays masked.** The redactor masks `ZYNAP_CANARY` and what follows it as a
+  `canary`, by a rule of its own, in stored runs, reports and replies alike.
+- **A scope identity's canary may not hold `{{canary_prefix}}` or `{{canary_body}}`:** the
+  runner binds only `{{run_id}}` there, so the loader refuses it (exit 3, the canary not quoted).
+- **The attack-spec schema's `$id` is `https://ildottore.dev/schemas/attack-spec.schema.json`**,
+  the domain the report and SARIF schemas already used, in place of a vendor domain. Nothing
+  resolves it; a tool that cached the schema by its old `$id` reads it under the new one.
+- Judging rules 7 re-pinned: the binding decides which string a reply is searched for, never how
+  a reply that holds it is judged.
+
 ### Added (u01 A-97, judging rules 7 re-pinned: a scope's validity window)
 
 - **`valid_from` and `valid_until` in `scope.yaml`: the days an authorization record covers.**

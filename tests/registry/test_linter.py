@@ -94,7 +94,7 @@ def test_unprovable_evaluator_yields_warning_not_error(packs_root: Path, tmp_pat
     src = (packs_root / "good" / "attacks" / "DL-CANARY-001.yaml").read_text(encoding="utf-8")
     src = src.replace("id: DL-CANARY-001", "id: DL-PII-001")
     src = src.replace(
-        '  - type: secret_leakage\n    canary_ref: "ZYNAP_CANARY_ABC123"',
+        '  - type: secret_leakage\n    canary_ref: "PLANTED_CANARY_ABC123"',
         "  - type: pii_detector",
     )
     (pack / "attacks" / "a.yaml").write_text(src, encoding="utf-8")
