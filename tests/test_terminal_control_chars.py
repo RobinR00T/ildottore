@@ -29,6 +29,7 @@ from typer.testing import CliRunner
 from ildottore import redactor as redactor_mod
 from ildottore.cli.app import _masked, app
 from ildottore.redactor import register_known_secret
+from ildottore.shared.canary import bind_canary
 from ildottore.shared.package_data import BATTERY
 
 REPO = Path(__file__).resolve().parents[1]
@@ -885,12 +886,14 @@ def test_the_dry_run_writes_a_canary_to_seed_out(tmp_path: Path) -> None:
     this PR with main)."""
 
     bola = (BATTERY / "attacks" / "AC-BOLA-001.yaml").read_text()
-    planted = 'canaries: ["ZYNAP_CANARY_{{run_id}}"]'
+    planted = 'canaries: ["{{canary_prefix}}{{canary_body}}"]'
     assert bola.count(planted) == 1
     specs = tmp_path / "specs"
     specs.mkdir()
     (specs / "AC-BOLA-001.yaml").write_text(
-        bola.replace(planted, 'canaries: ["ZYNAP_CANARY_{{run_id}}\\n::error title=pwned::seed"]')
+        bola.replace(
+            planted, 'canaries: ["{{canary_prefix}}{{canary_body}}\\n::error title=pwned::seed"]'
+        )
     )
     app_target = (REPO / "examples" / "target.app.yaml").read_text().split("seeded_setup:")[0]
     target = tmp_path / "target.yaml"
@@ -905,4 +908,5 @@ def test_the_dry_run_writes_a_canary_to_seed_out(tmp_path: Path) -> None:
     )
     assert result.exit_code == 0, result.output
     assert _injected_lines(result.stdout) == [], result.stdout
-    assert f"ZYNAP_CANARY_eng-2026-q4-AC-BOLA-001{LF}::error title=pwned::seed" in result.stdout
+    seeded = bind_canary("{{canary_prefix}}{{canary_body}}", "eng-2026-q4-AC-BOLA-001")
+    assert f"{seeded}{LF}::error title=pwned::seed" in result.stdout

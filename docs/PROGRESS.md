@@ -5,6 +5,39 @@ The carryover ledger. Every agent session updates this so context survives even 
 newest merge on top: a branch's entries land together when it merges, so the dates of
 neighbouring entries can interleave (an older branch merged later sits above a newer one).
 
+## State, 2026-10-26: no constant canary stem (`feat/neutral-canary-prefix`, u08 A-100)
+
+- **What.** Every battery canary was `ZYNAP_CANARY_<run id>` since the first commit: a public
+  string a vendor could filter, a brand in the payload, and for a seeded canary the spec id in
+  clear. The 22 canary-planting specs now write `{{canary_prefix}}{{canary_body}}`: 12 capital
+  letters and `_`, then 16 lowercase base-32 characters, each derived by SHA-256 from what
+  `{{run_id}}` binds to (`shared/canary.py`), so a resume, the evidence store and a seeded canary
+  reach it with no new state, and neither the run id nor the spec id shows. 29 characters, as
+  before. `seeded_setup.canary_prefix` lets an operator choose the prefix of what they seed. The
+  redactor masks the old stem as a `canary`. The attack-spec schema's `$id` moved to
+  `ildottore.dev`, the other schemas' domain.
+- **Decision OD-58, decided 2026-10-26 by the owner** (u08 §9, index ledger): as built (derived,
+  not a neutral constant or a stored random value; the operator's prefix only for seeded
+  canaries; the run id out of the canary), and the shape not varied for now: the public prompts
+  fingerprint a scan more easily than the canary's shape. Revisit when the canary's shape is the
+  last fingerprint left.
+- **Operator to-do.** Re-seed every planted canary (`dottore run --dry-run -vv` prints the values);
+  a run halted before this change does not resume (spec digests changed). Both in the CHANGELOG
+  and `docs/MANUAL.md`.
+- **Verified.** `tests/shared/test_canary.py` (6), the canary-prefix tests added to
+  `tests/core/test_seeded_setup.py` (4, plus 3 loader refusals), the scope and redactor tests;
+  `--dry-run -vv` prints `seed:    AC-BOLA-001: PSQRJSPZMSWF_z9efwnj3ffbw0mr8`, and
+  `ACME_SEED_z9efwnj3ffbw0mr8` with `canary_prefix: ACME_SEED_`. The default redactor masks the
+  bound canary in 2,000 of 2,000 labelled sentences, 3,000 of 3,000 in prose and 3,000 of 3,000
+  standing alone.
+- **Docs.** `docs/MANUAL.md` (seeded setup, evidence masking, the media example), `docs/FAQ.md`,
+  `docs/03`, `man/man5/dottore-scope.5`, `examples/target.app.yaml`, CHANGELOG, u08 contract and
+  00-INDEX.
+- **Gates.** `PYTHONPATH=<worktree>/src make --no-print-directory gates` green (2026-10-26, 15:35
+  to 15:46, 659 s): ruff, format (515 files), mypy strict (175 files), import-linter (4 contracts
+  kept), spec lint (0 errors, 78 specs), 8149 tests passed and 3 skipped, coverage 97.69%,
+  self-scan 0 high or critical, bandit clean, pip-audit no known vulnerabilities.
+
 ## State, 2026-10-26: a scope's validity window (`feat/scope-validity-window`, u01 A-97)
 
 - **What.** `scope.yaml` may bound the days it authorizes: optional `valid_from` and `valid_until`,

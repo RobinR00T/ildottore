@@ -27,7 +27,7 @@ from ildottore.cli.app import app
 
 KEY = "sk-proj-Qx7Lm2Vt9Rw4Zb8Nc3Kp6Hy1Js5Df0Ga"
 CREDENTIAL = "CorrectHorseBatteryStaple-2026-ops"
-_CANARY = re.compile(r"ZYNAP_CANARY_[A-Za-z0-9_-]+")
+_CANARY = re.compile(r"\b[A-Z]{12}_[0-9a-hjkmnp-tv-z]{16}\b")
 
 
 def _pieces(text: str, size: int = 3) -> list[str]:

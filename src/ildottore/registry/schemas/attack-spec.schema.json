@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://zynap.dev/ildottore/schemas/attack-spec.schema.json",
+  "$id": "https://ildottore.dev/schemas/attack-spec.schema.json",
   "title": "AttackSpec",
   "type": "object",
   "required": [

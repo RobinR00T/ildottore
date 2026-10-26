@@ -278,9 +278,9 @@ def test_url_with_port_survives_entropy_fallback() -> None:
     "secret",
     [
         "CANARY-8f3a-secret-token-42",  # planted canary: mixed case, never id-shaped
-        "ZYNAP_CANARY_run-20260920-abcdef",  # substituted canary stem
-        "ZYNAP-CANARY-A1B2C3D4E5F6G7H8",  # id-shaped wrapper, opaque 16-char segment
-        "ZYNAP-CANARY-ABCDEF123456",  # id-shaped wrapper, alphanumeric (key-shaped) segment
+        "QKZVTRBMXWPL_33vxg8dbtgvs7s7s",  # a bound canary (u08 A-100)
+        "PLANTED-CANARY-A1B2C3D4E5F6G7H8",  # id-shaped wrapper, opaque 16-char segment
+        "PLANTED-CANARY-ABCDEF123456",  # id-shaped wrapper, alphanumeric (key-shaped) segment
         "AB1CD-2EF3G-H4IJK-5LMN6-OPQ7R",  # license-key shape: segments mix letters + digits
         "Zk9Qw3Xr7Lm2Vt8Np5Bd6Yc4Hs1Gf0",  # unknown-shape high-entropy token
     ],
@@ -410,3 +410,15 @@ def test_date_exemption_does_not_carry_a_digit_run() -> None:
         out = r.redact_text(text)
         assert text not in out
         assert "«REDACTED:" in out
+
+
+@pytest.mark.parametrize(
+    "legacy",
+    ["ZYNAP_CANARY_run-4c397602a2e0", "ZYNAP_CANARY_eng-2026-q4-AC-BOLA-001", "ZYNAP_CANARY"],
+)
+def test_the_stem_of_the_battery_before_a_100_is_still_masked_as_a_canary(legacy: str) -> None:
+    """A run stored before u08 A-100, or a model that learnt the public stem, still shows it."""
+
+    out = Redactor(salt="s").redact_text(f"the reply said {legacy} and stopped")
+    assert "ZYNAP" not in out
+    assert "«REDACTED:canary:" in out

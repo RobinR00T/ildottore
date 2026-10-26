@@ -509,9 +509,11 @@ def planted_secrets(
     The stems of :func:`declared_canaries`, but an identity canary's only when it holds no
     ``{{run_id}}``: the scope accepts any canary that holds it, so its stem can be one letter, which
     masked every ``a`` of the evidence (pre-commit audit of A-94, M2); the store's folded match
-    finds it whole, the run id filled. A templated canary (``ZYNAP_CANARY_{{run_id}}``)
-    cannot match a substituted value verbatim, so its stable stem (before ``{{``) is registered
-    instead, the evidence redactor then masks the concrete token. This closes the gap where a
+    finds it whole, the run id filled. A templated canary cannot match a substituted value
+    verbatim, so its stable stem (before ``{{``), when it has one, is registered instead, the
+    evidence redactor then masks the concrete token; the battery's canaries
+    (``{{canary_prefix}}{{canary_body}}``, u08 A-100) have none, and the store's folded match masks
+    them whole, both placeholders bound. This closes the gap where a
     leaked engagement secret (a shape the built-in patterns don't know) persisted in clear in
     evidence. The evidence store also masks each declared canary as the evaluators read it
     (``FsEvidenceStore``'s ``folded_canaries``, u10 A-94).
@@ -2161,14 +2163,14 @@ def _seeded_setup(path: Path, raw: object, target_type: TargetType) -> SeededSet
         )
     if not isinstance(raw, dict):
         raise ValueError(f"target file {path} 'seeded_setup' must be a mapping")
-    known = ("specs", "tools", "granted_tools", "run_token")
+    known = ("specs", "tools", "granted_tools", "run_token", "canary_prefix")
     # A key that is a number too long to write out raised in `str` (A-40).
     unknown = sorted(described() if too_long(key) else str(key) for key in raw if key not in known)
     if unknown:
         # The names the file gives, up to 300 characters in all (clause A-51).
         raise ValueError(
             f"target file {path} 'seeded_setup' has unknown key(s) {cut(', '.join(unknown))}; "
-            "expected 'specs', 'tools', 'granted_tools' and 'run_token'"
+            "expected 'specs', 'tools', 'granted_tools', 'run_token' and 'canary_prefix'"
         )
     specs = raw.get("specs", [])
     if not (isinstance(specs, list) and all(isinstance(s, str) and s for s in specs)):
@@ -2210,12 +2212,24 @@ def _seeded_setup(path: Path, raw: object, target_type: TargetType) -> SeededSet
             f"target file {path} 'seeded_setup.run_token' must be 8 to 64 letters, digits, '_' "
             "or '-' (it replaces {{run_id}} in the canaries the operator seeds)"
         )
+    prefix = raw.get("canary_prefix")
+    if prefix is not None and not (isinstance(prefix, str) and _CANARY_PREFIX.fullmatch(prefix)):
+        raise ValueError(
+            f"target file {path} 'seeded_setup.canary_prefix' must be 1 to 32 letters, digits, "
+            "'_' or '-' (it replaces {{canary_prefix}} in the canaries the operator seeds)"
+        )
+    if prefix is not None and token is None:
+        raise ValueError(
+            f"target file {path} 'seeded_setup.canary_prefix' needs 'seeded_setup.run_token': "
+            "it applies only to the canaries the run token binds"
+        )
     return SeededSetup(
         specs=list(specs),
         tools=dict(tools),
         granted_tools=granted,
         run_token=token,
         not_destructive=sorted(declared),
+        canary_prefix=prefix,
     )
 
 
@@ -2311,6 +2325,8 @@ def _granted_tools(path: Path, raw: object) -> tuple[list[str], list[str]]:
 #: A run token goes into a canary the evaluators match exactly: plain characters, and long
 #: enough not to occur by chance.
 _RUN_TOKEN = re.compile(r"[A-Za-z0-9_-]{8,64}")
+#: An operator's canary prefix (u08 A-100): the run token's characters, 1 to 32 of them.
+_CANARY_PREFIX = re.compile(r"[A-Za-z0-9_-]{1,32}")
 
 
 def _websocket_spec(
