@@ -35,9 +35,10 @@ lessons, §6's design intent), read it as design, not as a shipped feature.
    connectors, MCP servers, tool wiring, RAG plumbing. → target types `agent`/`rag`/`api`, and
    an MCP/tool-abuse block.
 5. **Mutators = garak "buffs".** Encoding, translation, obfuscation, ASCII-smuggling,
-   zero-width, homoglyph: apply as transforms over base payloads (our Prompt Mutator; 19
-   built-in mutators ship, ASCII-smuggling is **(not built)**, and `translate` glosses a
-   keyword table rather than translating, `docs/03 §4`).
+   zero-width, homoglyph: apply as transforms over base payloads (our Prompt Mutator; 29
+   built-in mutators ship, ASCII-smuggling among them since u05 A-99 (`smuggle:tags`), run on
+   request with `--obfuscate` or `--fuzz`, and `translate` glosses a keyword table rather than
+   translating, `docs/03 §4`).
 6. **Dataset-backed specs.** promptfoo pulls HarmBench, BeaverTails, CyberSecEval,
    DoNotAnswer, ToxicChat, XSTest. → a spec can be `dataset`-backed (sampled, seeded), not
    only hand-authored **(not built:** no `dataset` field; every spec is hand-authored).

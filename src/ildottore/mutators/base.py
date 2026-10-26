@@ -96,6 +96,15 @@ class BaseMutator:
         """Return the mutated text plus provenance. Overridden by every strategy."""
         raise NotImplementedError
 
+    def _reversible_for(self, seed: str) -> bool:
+        """Whether this seed's variant is reversible; one value for every variant by default.
+
+        A parameterized mutator whose variants differ overrides it (``encode:morse`` drops
+        case, ``encode:hex`` does not), so the evidence never calls a lossy carrier reversible.
+        """
+        del seed
+        return self.reversible
+
     def mutate(self, text: str, seed: str) -> str:
         """Protocol method: deterministic ``str -> str`` transform (``docs/01 §3``)."""
         transformed, _ = self._transform(text, seed)
@@ -109,6 +118,6 @@ class BaseMutator:
             strategy=self.name,
             seed=seed,
             params={},
-            reversible=self.reversible,
+            reversible=self._reversible_for(seed),
             provenance=provenance,
         )

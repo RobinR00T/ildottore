@@ -17,15 +17,23 @@ from importlib.metadata import entry_points
 
 from ildottore.mutators.adversarial_poetry import AdversarialPoetryMutator
 from ildottore.mutators.adversarial_suffix import AdversarialSuffixMutator
+from ildottore.mutators.ascii_art import AsciiArtMutator
 from ildottore.mutators.base import Mutator
 from ildottore.mutators.base64_wrap import Base64WrapMutator
+from ildottore.mutators.bijection import BijectionMutator
+from ildottore.mutators.bon import BestOfNMutator
+from ildottore.mutators.cipher import CipherMutator
 from ildottore.mutators.comment_carrier import (
     HtmlCommentCarrierMutator,
     MarkdownCommentCarrierMutator,
 )
 from ildottore.mutators.context_poisoning import ContextPoisoningMutator
+from ildottore.mutators.encode import EncodeMutator
+from ildottore.mutators.evade import EvadeMutator
+from ildottore.mutators.glyph import GlyphMutator
 from ildottore.mutators.gray_box import GrayBoxMutator
 from ildottore.mutators.identity import IdentityMutator
+from ildottore.mutators.image import ImageMutator
 from ildottore.mutators.leetspeak import LeetspeakMutator
 from ildottore.mutators.linguistic_confusion import LinguisticConfusionMutator
 from ildottore.mutators.math_problem import MathProblemMutator
@@ -34,6 +42,8 @@ from ildottore.mutators.payload_splitting import PayloadSplittingMutator
 from ildottore.mutators.refusal_suppression_prefix import RefusalSuppressionPrefixMutator
 from ildottore.mutators.roleplay_wrap import RoleplayWrapMutator
 from ildottore.mutators.rot13 import Rot13Mutator
+from ildottore.mutators.smuggle import SmuggleMutator
+from ildottore.mutators.structured import StructuredMutator
 from ildottore.mutators.translate import TranslateMutator
 from ildottore.mutators.unicode_confusable import UnicodeConfusableMutator
 from ildottore.mutators.zero_width_inject import ZeroWidthInjectMutator
@@ -47,7 +57,8 @@ __all__ = [
 
 ENTRY_POINT_GROUP = "dottore.mutators"
 
-# The 19 built-in strategies (docs/03 §4 + docs/14 enhancers + docs/12 P1 adversarial suffix).
+# The 29 built-in strategies (docs/03 §4 + docs/14 enhancers + docs/12 P1 adversarial suffix +
+# the ten obfuscation families of u05 A-99).
 # ``markdown_comment_carrier`` + ``html_comment_carrier`` are the two carriers named in the
 # docs; ``comment_carrier`` is the owning module (contract §1).
 _BUILTINS: tuple[type[Mutator], ...] = (
@@ -70,6 +81,17 @@ _BUILTINS: tuple[type[Mutator], ...] = (
     GrayBoxMutator,
     LinguisticConfusionMutator,
     ContextPoisoningMutator,
+    # u05 A-99: the obfuscation families behind --obfuscate and --fuzz.
+    EncodeMutator,
+    CipherMutator,
+    BijectionMutator,
+    SmuggleMutator,
+    GlyphMutator,
+    BestOfNMutator,
+    StructuredMutator,
+    AsciiArtMutator,
+    EvadeMutator,
+    ImageMutator,
 )
 
 
@@ -141,7 +163,7 @@ class MutatorRegistry:
 
 
 def build_default_registry(*, discover: bool = True) -> MutatorRegistry:
-    """Build a registry with the 12 built-ins and (optionally) discovered plugins."""
+    """Build a registry with the built-ins and (optionally) discovered plugins."""
     registry = MutatorRegistry()
     for cls in _BUILTINS:
         registry.register(cls(), origin="builtin")

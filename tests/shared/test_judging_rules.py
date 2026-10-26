@@ -355,6 +355,22 @@ PIN_HISTORY: tuple[tuple[int, str, str], ...] = (
         "is in a canary, and the attack-spec schema's $id on ildottore.dev; it changes which "
         "string a reply is searched for, never how a reply holding it is judged",
     ),
+    (
+        7,
+        "f34bd72254c380863707baff87328f367998dfab20e6167f6abe0572810add2b",
+        "re-pin 2026-10-26: u05 A-99 (obfuscation and fuzzing): ten mutator families, chains "
+        "(shared/mutation_chain.py), the image link's PNG part in the runner, the linter's chain "
+        "checks and the run flags; they change what is sent when a spec or the operator names "
+        "them, never how a reply is judged, and a spec without them is sent and judged as "
+        "before, so no stored verdict changes",
+    ),
+    (
+        7,
+        "7197208eba4188d2372bb39f05b5144e1d4f6c17b5167645a80a55877b4b96c8",
+        "re-pin 2026-10-26: u05 A-99 merged with main after u08 A-100 (the derived canary): the "
+        "two changes' code together, neither changed; what is sent and how a reply is judged "
+        "are each as their own pin says",
+    ),
 )
 
 #: The digest each version is pinned to now: the last line of :data:`PIN_HISTORY` for it.
@@ -365,7 +381,7 @@ PINNED: dict[int, str] = {
     4: "86d4391094d167c454d0e05ec076a36ca10c585c57b1d00574a7e86e87c0fe40",
     5: "c352e9bd55c8e3b0629e4164411b64667327a5c3cd533e003a7cb84475ecf9c4",
     6: "47293b7afb2a5409bff93319a9fa384621c3ecbe8b9a261be8bb428e05d0f4f7",
-    7: "1cfc6a3eaf8457b8451dbb66c374ea62133a15d4e62fcaa873ad3eecaf8b3931",
+    7: "7197208eba4188d2372bb39f05b5144e1d4f6c17b5167645a80a55877b4b96c8",
 }
 
 #: One ``<version> <digest>`` line per pin, appended to and never edited: the history must start

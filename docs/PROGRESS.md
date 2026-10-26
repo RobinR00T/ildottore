@@ -5,6 +5,36 @@ The carryover ledger. Every agent session updates this so context survives even 
 newest merge on top: a branch's entries land together when it merges, so the dates of
 neighbouring entries can interleave (an older branch merged later sits above a newer one).
 
+## State, 2026-10-26: obfuscation and fuzzing on request (`feat/obfuscation-mode`, u05 A-99)
+
+- **What.** Ten mutator families (`mutators/{encode,cipher,bijection,smuggle,glyph,bon,structured,ascii_art,evade,image}.py`),
+  presets and seeded fuzz chains (`mutators/obfuscation.py`), one chain grammar
+  (`shared/mutation_chain.py`) read by the linter, the runner and the CLI, the image link sent as
+  a PNG part on a `multimodal` target (`core/runner.py` `_carrier`, `shared/media.py` charset
+  `ascii`), `run --obfuscate` and `--fuzz` (`cli/run.py` `obfuscated`), and the previews
+  `registry mutators` and `mutate` (`cli/mutate.py`). The fingerprint's carrier layer skips the
+  families (`fingerprint_probe = False`).
+- **Open decision OD-57** (u05 §9, index ledger): a pass under a carrier the model could not read
+  is not resistance; nothing measures comprehension for the added carriers yet.
+- **Not built.** A comprehension check per carrier (OD-57); image chains on a multi-turn spec; a
+  shipped spec that declares the families (they run on request only).
+- **Numbering.** A-97 and OD-55 are PR #139's, A-98 is kept for the guard follow-up; this branch
+  is A-99 and OD-57.
+- **Docs.** Scenario J (obfuscation) and Scenario K (a first live scan of a deployed assistant, in
+  order) in `examples/README.md`, with USAGE, FAQ, MANUAL §5, §6 and §13, `docs/03`, `09`, `10`,
+  REFERENCES, the man page and both contracts.
+- **Verified.** `make gates` green on 2026-10-26, 11:43 to 11:54, after merging main (A-97)
+  into the branch (8241 tests passed, 3 skipped, coverage 97.65 %, bandit and pip-audit clean,
+  self-scan 0 high/critical; judging rules 7 re-pinned to `f34bd722` on top of A-97); the new CLI tests also pass with
+  `GITHUB_ACTIONS=true FORCE_COLOR=1`. Hypothesis found `bon` raising on a Unicode digit in the
+  seed (`int('¹')`), fixed: the sample is read against `accepted_params`.
+- **Merged with main after u08 A-100** (2026-10-26): conflicts only in the append-only pin
+  history, the index, the CHANGELOG and this ledger, each kept whole (main's pins first, this
+  branch's after); judging rules 7 re-pinned to `7197208e`. `make gates` green (17:21 to 17:32,
+  657 s): ruff, format (531 files), mypy strict (188 files), import-linter (4 contracts kept), spec
+  lint (0 errors, 78 specs), 8258 tests passed and 3 skipped, coverage 97.67%, self-scan 0 high or
+  critical, bandit clean, pip-audit no known vulnerabilities.
+
 ## State, 2026-10-26: no constant canary stem (`feat/neutral-canary-prefix`, u08 A-100)
 
 - **What.** Every battery canary was `ZYNAP_CANARY_<run id>` since the first commit: a public

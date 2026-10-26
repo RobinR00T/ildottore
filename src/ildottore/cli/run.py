@@ -71,6 +71,8 @@ from ildottore.core.setup_delivery import (
     trace_gap,
 )
 from ildottore.fingerprint import failed_probes
+from ildottore.mutators import build_default_registry as build_mutator_registry
+from ildottore.mutators.obfuscation import ObfuscationError, expand_obfuscation, fuzz_chains
 from ildottore.policy import Scope, authorize_target, utc_today
 from ildottore.policy.errors import PolicyError, ScopeError
 from ildottore.redactor import Redactor, visible_controls
@@ -103,6 +105,7 @@ from ildottore.shared.models import (
     TestRun,
     TestRunSummary,
 )
+from ildottore.shared.mutation_chain import ends_in_image
 from ildottore.shared.provider_filter import (
     blocked_attempt_ids,
     blocked_by_provider_filter,
@@ -223,6 +226,13 @@ class RunOptions:
     spec_globs: list[str] = field(default_factory=list)
     exclude_globs: list[str] = field(default_factory=list)
     top_tests: int | None = None
+    #: ``--obfuscate`` / ``--fuzz`` (u05 A-99): mutations added to every selected spec in memory,
+    #: so the estimate, the dry-run, the evidence and ``--resume`` see them as declared ones.
+    obfuscate: list[str] = field(default_factory=list)
+    fuzz: int = 0
+    fuzz_depth: int = 2
+    fuzz_seed: int = 0
+    fuzz_image: bool = False
     template: int = 3
     # Intensity / mode flags. Every one of these used to be parsed by typer and never read:
     # ``-sn`` ("discovery only, no attacks") sent the full battery, ``-sV``/``-A`` did
@@ -288,6 +298,78 @@ class RunOutcome:
 
 
 # --- spec selection ----------------------------------------------------------------
+
+
+def obfuscated(specs: list[AttackSpec], opts: RunOptions) -> list[AttackSpec]:
+    """``specs`` with the mutations ``--obfuscate`` and ``--fuzz`` add (u05 A-99).
+
+    Each spec keeps its own mutations first; the added ones follow, de-duplicated. A spec that
+    already carries its payload in ``attack.media`` is left as declared (its attack is the image),
+    and a multi-turn spec gets no ``image`` mutation (a conversation's history carries no media).
+    The specs are copies: the battery on disk is untouched, and the change shows in the spec
+    digests a resume compares, so a resume without the same flags is refused.
+    """
+
+    if opts.fuzz_image and not opts.fuzz:
+        raise ValueError("--fuzz-image ends the chains --fuzz draws; give --fuzz N as well")
+    if not opts.obfuscate and not opts.fuzz:
+        return specs
+    try:
+        added = expand_obfuscation(opts.obfuscate, build_mutator_registry())
+        out = []
+        for spec in specs:
+            if spec.attack.media:
+                out.append(spec)
+                continue
+            extra = added + fuzz_chains(
+                spec.id,
+                opts.fuzz,
+                depth=opts.fuzz_depth,
+                seed=opts.fuzz_seed,
+                image=opts.fuzz_image,
+            )
+            if len(spec.attack.turns or []) >= 2:
+                extra = [mutation for mutation in extra if not ends_in_image(mutation)]
+            declared = list(spec.mutations or [])
+            merged = list(dict.fromkeys([*declared, *extra]))
+            if merged != declared:
+                spec = spec.model_copy(update={"mutations": merged})
+            out.append(spec)
+    except ObfuscationError as exc:
+        raise ValueError(str(exc)) from exc
+    return out
+
+
+def _fuzz_record(opts: RunOptions) -> dict[str, int] | None:
+    """The ``--fuzz`` settings as the run context records them; ``None`` without ``--fuzz``."""
+
+    if not opts.fuzz:
+        return None
+    return {
+        "count": opts.fuzz,
+        "depth": opts.fuzz_depth,
+        "seed": opts.fuzz_seed,
+        "image": int(opts.fuzz_image),
+    }
+
+
+def _check_image_targets(specs: list[AttackSpec], targets: list[Target]) -> None:
+    """Refuse an ``image`` mutation for a target that does not declare multimodal input.
+
+    The runner would refuse every such spec on that target (``image_carrier_unsupported``),
+    losing its text mutations too; a run that cannot send what it was asked to is refused here,
+    before anything goes out.
+    """
+
+    if not any(ends_in_image(m) for spec in specs for m in spec.mutations or []):
+        return
+    blind = [target.id for target in targets if not target.capabilities.multimodal]
+    if blind:
+        raise ValueError(
+            f"image mutations send the carrier as a PNG, and {', '.join(blind)} do(es) not "
+            "declare `capabilities: {multimodal: true}`. Declare it on a target whose model "
+            "reads images, or drop the image preset, the image links and --fuzz-image."
+        )
 
 
 def select_specs(
@@ -1187,6 +1269,7 @@ def _print_dry_run_plan(
     detail: int = 0,
     filtered: bool = False,
     judge_notes: list[str] | None = None,
+    obfuscation: str | None = None,
     scope_window: str = "",
 ) -> None:
     """Print the resolved plan (one line under ``--quiet``).
@@ -1289,6 +1372,8 @@ def _print_dry_run_plan(
                 canaries = seeded_canaries(spec, plan.target)
                 if canaries:
                     print(f"  seed:    {spec.id}: {visible_controls(', '.join(canaries))}")
+    if obfuscation is not None:
+        print(f"  obfuscation: {obfuscation}")
     print(f"  would send: {requests} requests over {specs} specs at runs={runs}")
     judge_requests = sum(p.estimate.judge_requests for p in plans)
     if judge_requests:
@@ -2177,6 +2262,25 @@ def _execute_run(
             f"(got {len(loaded_targets)}); pass -t/--target more than once."
         )
 
+    # --obfuscate / --fuzz (u05 A-99): their mutations join each spec's own, in memory, before
+    # anything is planned, so every later step reads them as declared ones.
+    before = selected
+    selected = obfuscated(selected, opts)
+    _check_image_targets(selected, [loaded.target for loaded in loaded_targets])
+    # Counted before the plan: a spec the target then skips still shows here (a media spec or a
+    # conversation gets fewer or none, ``obfuscated``).
+    added = [
+        len(new.mutations or []) - len(old.mutations or [])
+        for old, new in zip(before, selected, strict=True)
+    ]
+    obfuscation_note = (
+        resume_mod.obfuscation_flags({"obfuscate": opts.obfuscate, "fuzz": _fuzz_record(opts)})
+        + f" added {sum(added)} mutation(s) to {sum(1 for n in added if n)} of the "
+        f"{len(selected)} selected spec(s), before the plan"
+        if opts.obfuscate or opts.fuzz
+        else None
+    )
+
     timing = resolve_timing(
         opts.template,
         rate=opts.rate,
@@ -2296,6 +2400,8 @@ def _execute_run(
         spec=opts.spec_globs,
         exclude=opts.exclude_globs,
         top_tests=opts.top_tests,
+        obfuscate=opts.obfuscate,
+        fuzz=_fuzz_record(opts),
     )
     if opts.resume is not None:
         # Same campaign first, then money. The ceiling refusals below used to run first and
@@ -2801,6 +2907,7 @@ def _execute_run(
             filtered=bool(
                 opts.categories or opts.spec_globs or opts.exclude_globs or opts.top_tests
             ),
+            obfuscation=obfuscation_note,
             judge_notes=(
                 judge_sampling_notes(judge_runtime, applied=apply_sampling_defaults)
                 if judge_runtime is not None

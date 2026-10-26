@@ -2122,6 +2122,20 @@ spec's figure by u07's function beside its pooled rate (`reproducibility of <spe
 trials exploited, <s> of them an identity sweep's; the report's figure)`). CI results that change
 are listed in u08 A-87.
 
+**A-99 (u05's families; this unit's line, added 2026-10-26).** `run --obfuscate <preset|mutation>`
+(repeatable, comma lists) and `--fuzz N` (0 to 1000; `--fuzz-depth`, `--fuzz-seed`,
+`--fuzz-image`, which needs `--fuzz`) add mutations to copies of the selected specs before the
+plan (`cli.run.obfuscated`): a spec with `attack.media` gets none, a multi-turn spec no image
+chain, and an unknown link, a bad parameter or an image link before the end is refused before
+anything is sent, exit 3. An image chain on a target without `capabilities.multimodal` is refused
+before anything is sent (`_check_image_targets`). `--dry-run` prints `obfuscation: <flags> added
+N mutation(s) to K of the M selected spec(s), before the plan`; the selection record keeps the
+flags only when given, so a resume without them is refused by the spec digests and its advice
+names them (`resume.obfuscation_flags`). `registry mutators` lists every mutator, its parameters
+and the presets; `mutate <mutation> <text> [--spec-id] [--out]` prints what a run sends for that
+spec and writes the PNG of an image chain with its SHA-256; neither sends anything
+(`tests/cli/test_obfuscate_flags.py`).
+
 ## §8 Out of scope / forbidden
 - MUST NOT implement attack/mutation/evaluation/scoring/reporting/fingerprint logic (u05-u11,
   u13): only wire and call them. MUST NOT own `cli/lint.py` (u02) or edit any spec YAML.

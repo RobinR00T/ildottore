@@ -39,6 +39,7 @@ from ildottore.cli import describe as describe_mod
 from ildottore.cli import diff as diff_mod
 from ildottore.cli import fingerprint as fingerprint_mod
 from ildottore.cli import fleet as fleet_mod
+from ildottore.cli import mutate as mutate_mod
 from ildottore.cli import new_spec as new_spec_mod
 from ildottore.cli import registry as registry_mod
 from ildottore.cli import render_media as render_media_mod
@@ -48,6 +49,7 @@ from ildottore.cli.exit_codes import ExitCode
 from ildottore.cli.flags import DEFAULT_TEMPLATE
 from ildottore.cli.lint import run_lint
 from ildottore.cli.run import RunOptions, ScopeRequiredError
+from ildottore.mutators import build_default_registry as build_mutator_registry
 from ildottore.policy.errors import PolicyError
 from ildottore.redactor import (
     CREDENTIAL_MASK,
@@ -1101,6 +1103,35 @@ def run(
     top_tests: Annotated[
         int | None, typer.Option("--top-tests", help="Keep the N highest-signal specs.")
     ] = None,
+    obfuscate: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--obfuscate",
+            help=(
+                "Add mutations to every selected spec: a preset (encodings, ciphers, unicode, "
+                "structured, evasion, art, framing, bon, image, all), a mutation (encode:uu) or "
+                "a chain (structured:js+encode:uu+image:decode). Comma-separated, repeatable."
+            ),
+        ),
+    ] = None,
+    fuzz: Annotated[
+        int,
+        typer.Option(
+            "--fuzz", help="Add N random chains per spec (seeded, replayable; 0 to 1000)."
+        ),
+    ] = 0,
+    fuzz_depth: Annotated[
+        int, typer.Option("--fuzz-depth", help="Links per fuzzed chain, besides Best-of-N.")
+    ] = 2,
+    fuzz_seed: Annotated[
+        int, typer.Option("--fuzz-seed", help="Seed of the --fuzz draw (same seed, same chains).")
+    ] = 0,
+    fuzz_image: Annotated[
+        bool,
+        typer.Option(
+            "--fuzz-image", help="End every fuzzed chain in an image (multimodal targets only)."
+        ),
+    ] = False,
     sn: Annotated[bool, typer.Option("-sn", help="Discovery only (no attacks).")] = False,
     sv: Annotated[bool, typer.Option("-sV", help="Fingerprint before attacking.")] = False,
     aggressive: Annotated[
@@ -1265,6 +1296,11 @@ def run(
         spec_globs=list(spec_glob or []),
         exclude_globs=list(exclude or []),
         top_tests=top_tests,
+        obfuscate=list(obfuscate or []),
+        fuzz=fuzz,
+        fuzz_depth=fuzz_depth,
+        fuzz_seed=fuzz_seed,
+        fuzz_image=fuzz_image,
         template=resolved_template,
         discovery_only=sn,
         fingerprint_first=sv or aggressive,
@@ -1666,6 +1702,39 @@ def registry_ls(
         typer.echo(row)
     for note in registry_mod.unloaded_warnings(unloaded):
         typer.echo(note, err=True)
+
+
+@registry_app.command("mutators")
+def registry_mutators() -> None:
+    """List the mutators, the parameters each takes, and the --obfuscate presets."""
+
+    typer.echo(mutate_mod.render_mutators(build_mutator_registry()))
+
+
+@app.command()
+def mutate(
+    mutation: Annotated[
+        str, typer.Argument(help="Mutation or chain, e.g. 'structured:js+encode:uu+image:decode'.")
+    ],
+    text: Annotated[str, typer.Argument(help="The text to mutate (a spec's prompt, say).")],
+    spec_id: Annotated[
+        str,
+        typer.Option("--spec-id", help="Seed the links as for this spec (a run's exact bytes)."),
+    ] = mutate_mod.PREVIEW_SPEC_ID,
+    out_dir: Annotated[
+        Path, typer.Option("--out", help="Where an image link writes its PNG.")
+    ] = Path(),
+) -> None:
+    """Show what one mutation or chain sends for a text, image included (read-only, no target)."""
+
+    try:
+        result = mutate_mod.preview(
+            build_mutator_registry(), text, mutation, spec_id=spec_id, out_dir=out_dir
+        )
+    except mutate_mod.MutateError as exc:
+        typer.echo(f"error: {_masked(exc)}", err=True)
+        raise typer.Exit(ExitCode.ERROR) from exc
+    typer.echo(mutate_mod.render_preview(result))
 
 
 @app.command()

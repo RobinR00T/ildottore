@@ -8,7 +8,10 @@ Stage-2 build contract. 9-section anatomy per `docs/00 §2`. Read `AGENTS.md` + 
   helpers), `registry.py` (entry-point discovery per `docs/06 §3`), and one module per strategy:
   `identity.py`, `translate.py`, `base64_wrap.py`, `rot13.py`, `unicode_confusable.py`,
   `zero_width_inject.py`, `roleplay_wrap.py`, `nested_instruction.py`, `comment_carrier.py`
-  (markdown + html carriers), `payload_splitting.py`, `refusal_suppression_prefix.py`.
+  (markdown + html carriers), `payload_splitting.py`, `refusal_suppression_prefix.py`; since
+  A-99 the obfuscation families `encode.py`, `cipher.py`, `bijection.py`, `smuggle.py`,
+  `glyph.py`, `bon.py`, `structured.py`, `ascii_art.py`, `evade.py`, `image.py`, and
+  `obfuscation.py` (presets, `--fuzz` chains).
 - **MUST NOT touch:** `shared/`, `adapters/`, `core/`, `evaluators/`, `scoring/`, `policy/`,
   `registry/` (spec registry, u02), any spec/suite YAML, `schemas/`.
 
@@ -36,10 +39,28 @@ naming an unknown mutation is a linter error (u02), never a silent skip.
   `BaseMutator.mutate_result` adds the `MutationResult`. A mutator may declare
   `accepted_params`: `None` (the `BaseMutator` default, and any plugin that does not set it)
   accepts any `name:param`; a `frozenset` lists the parameters it implements, compared
-  lower-cased and stripped; an empty one means no parameter. All 19 built-ins declare it
-  (`translate`: `es`, `fr`, `de`, `zh`; the rest none). The spec linter (u02, fed the names and
+  lower-cased and stripped; an empty one means no parameter. All 29 built-ins declare it
+  (`translate`: `es`, `fr`, `de`, `zh`; the ten A-99 families their schemes, techniques or
+  variants; the rest none). The spec linter (u02, fed the names and
   parameters by `cli/lint.py`) and the runner (u08) refuse an unaccepted parameter
   (`UNKNOWN_MUTATOR_TYPE`; `unknown_mutator_parameter`, nothing sent). `docs/06 §3`.
+- **As built (2026-10-26, A-99): obfuscation and fuzzing.** Ten families, each a pure function
+  of `(text, seed)` with its parameter read from the seed's tail: `encode`, `cipher`,
+  `bijection`, `smuggle`, `glyph`, `bon`, `structured`, `ascii_art`, `evade` (the IDS and WAF
+  evasions of Ptacek and Newsham, 1998, and of web filters) and `image`. Each sets
+  `fingerprint_probe = False`, so the fingerprint's carrier layer (u09) never sends them. A
+  mutation may be a chain of up to four links joined with `+` (`shared/mutation_chain.py`, so
+  the linter, the runner and the CLI read one grammar): links apply left to right, each seeded
+  `<spec-id>::<link>`; `identity` is not a link; `image` is the last link or none, and its
+  `MutationResult.provenance["media"]` is a `render_text` image part (charset `ascii`, 48
+  columns) the runner (u08) appends to the request's media, under `media_sha256`, only on a
+  target that declares `multimodal` (`image_carrier_unsupported` otherwise) and never on a
+  multi-turn spec (the linter refuses it). `obfuscation.py` holds the `--obfuscate` presets and
+  `fuzz_chains(spec_id, count, depth, seed, image)`, a seeded draw from a pool that leaves out
+  links an image cannot draw (`UNDRAWABLE`). The CLI (u12) adds them to spec copies before the
+  plan (`--obfuscate`, `--fuzz`), records the flags in the selection a resume compares, and
+  previews them (`registry mutators`, `mutate`). Sources: docs/REFERENCES.md, "Obfuscation and
+  fuzzing". OD-57 open.
 
 ## §4 Known constraints: KEEP / DECIDE
 - KEEP: every strategy is a **pure function** of `(text, seed, params)`; no I/O, no global state,
@@ -106,3 +127,11 @@ extend the schema.
   cue (F9, 2026-10-03 audit). This unit's half: `leetspeak` substitutes characters in whatever it
   is given, an encoded payload included. Recommended (`00-INDEX.md`): drop `leetspeak` from that
   spec's `mutations` and decide `rot13`'s cue apart, changing no mutator.
+- **OD-57** (numbered 2026-10-26, u05 A-99; open, owner to decide): a pass under a carrier the
+  model could not read (a cipher it cannot decode, an image it cannot see) is not resistance,
+  and the run cannot tell the two apart today. Built: nothing reads comprehension for the added
+  carriers; the docs say to read the replies. Recommended: a comprehension check per carrier
+  before its attempts (a benign sentence under the same chain, the decoded text compared), and
+  a pass under a carrier the model did not read reported `inconclusive: carrier_not_read`;
+  alternatives: the fingerprint's carrier layer extended to the families (more probes per
+  fingerprint), or leave it to the operator.
