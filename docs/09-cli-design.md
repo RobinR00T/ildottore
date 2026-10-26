@@ -63,6 +63,13 @@ SELECTION
   --spec <id|glob>                  run specific spec(s), e.g. --spec 'PI-*'. Repeatable
   --exclude <id|glob>               repeatable
   --top-tests N                     N highest-signal specs
+  --obfuscate <family|preset|chain> add carriers to every selected spec for this run: a
+                                    preset (encodings, ciphers, unicode, structured,
+                                    evasion, art, framing, bon, image, all) or a mutation
+                                    or chain (encode:uu+image:decode). Repeatable
+  --fuzz N  [--fuzz-depth D] [--fuzz-seed S] [--fuzz-image]
+                                    N random chains per spec, replayable from the seed;
+                                    --fuzz-image ends each in an image (multimodal only)
 
 EXECUTION
   -T <0-5>                          timing/aggressiveness template (default T3; an explicit
@@ -106,6 +113,9 @@ OTHER COMMANDS
   dottore -v <command> ...                  any command, with an internal error's traceback
   dottore coverage [--framework all|owasp|atlas|iopc|aisvs] [--suite ..] [--gaps] [--json]
   dottore registry ls [--category ..] [--owasp ..] [--tag ..] [--suite ..]
+  dottore registry mutators                 every mutator, its parameters, the presets
+  dottore mutate <mutation> <text> [--spec-id ID] [--out DIR]
+                                            what a mutation or chain sends; writes the PNG
   dottore describe <spec-id>
   dottore lint <path> [--json]              schema + policy + fixtures-prove-detection
   dottore new-spec --family <f> --id <ID>   scaffold a spec + empty fixtures

@@ -24,6 +24,11 @@ mapping the code checks).
   `--navigator-layer` for the ATT&CK Navigator, `-oN` on a run).
   `dottore registry ls` lists them all.
 - **Fingerprint** a target's model + guardrails before attacking (`-sV`).
+- **Obfuscation and fuzzing** without editing a spec: `--obfuscate` wraps every attack in
+  encodings, ciphers, Unicode smuggling, files and code, IDS/WAF evasions (overlong UTF-8,
+  `String.fromCharCode`, `/**/`) or an image the model must read, alone or chained
+  (`structured:js+encode:uu+image:decode`); `--fuzz N` adds N seeded random chains per spec.
+  `dottore mutate` shows what a chain sends before anything goes out.
 - **Multi-turn** attacks (Crescendo, Linear, Sequential, Bad-Likert, Tree) whose turns are
   pinned in the spec, so a conversation is as reproducible as a single shot.
 - **Deterministic-first evaluators** decide the verdict; an optional **LLM-as-judge**

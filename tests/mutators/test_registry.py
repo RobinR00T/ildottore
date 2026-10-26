@@ -52,7 +52,7 @@ def _fake_entry_points(mapping: dict[str, type]):
 
 def test_default_registry_has_all_builtins() -> None:
     reg = build_default_registry(discover=False)
-    assert len(reg.names()) == 19
+    assert len(reg.names()) == 29
     assert reg.has("identity")
 
 
@@ -91,7 +91,7 @@ def test_build_default_registry_discovers_plugins(monkeypatch: pytest.MonkeyPatc
     monkeypatch.setattr(EntryPoint, "load", lambda self: GoodPlugin, raising=False)
     reg = build_default_registry(discover=True)
     assert reg.has("stub_plugin")
-    assert len(reg.names()) == 20
+    assert len(reg.names()) == 30
 
 
 def test_malformed_plugin_missing_name_raises(monkeypatch: pytest.MonkeyPatch) -> None:

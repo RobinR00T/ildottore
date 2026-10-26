@@ -14,3 +14,14 @@ targets:
     identities:
       - name: default
         auth_ref: "env://ASSISTANT_AGENT_JWT"
+  # The --judge model is a target of the run too, so the scope authorizes it as well: without
+  # this entry `--judge examples/target.judge.yaml` is refused before anything is sent ("target
+  # 'local-judge' not in scope"). Here the local Ollama judge of target.judge.yaml (Scenario K).
+  - id: local-judge                 # must match target.judge.yaml's id
+    base_url: "http://localhost:11434/v1/chat/completions"
+    endpoints:
+      - host: "localhost:11434"
+        path_prefixes: ["/v1/chat/completions"]
+    identities:
+      - name: default
+        auth_ref: "env://NONE"     # Ollama takes no credential

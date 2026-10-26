@@ -60,7 +60,19 @@ deterministic evaluator passes, a judge fail still decides the attempt, and the 
 reported as needing review, never confirmed on the judge's word alone, so it gates CI only with
 `--include-needs-review` (OD-19, since 2026-10-11). A live run without `--judge` warns before
 sending anything (and in the dry run), and a judge outage, or a judge whose output cannot be
-parsed, counts as no judge, never as a pass.
+parsed, counts as no judge, never as a pass. The judge is a target of the run, so the scope
+authorizes its id and endpoint too, or the run is refused with `target '<judge-id>' not in scope`;
+pick a model other than the one under test.
+
+### My first live run came back all `inconclusive`. What did I miss?
+
+Usually three things, which `dottore run --dry-run -vv` names before anything is sent: no
+`--judge` (the specs backed by `semantic_judge` abstain), specs whose scene the deployment does
+not have (`setup_not_seeded`: seed the documents, tools or memory and list the spec under
+`seeded_setup.specs`, never one you did not seed) and capabilities the target file does not
+declare (`capability_unavailable`). Then read the replies: the same sentence for every attack is
+the deployment's own filter answering, not the model resisting. examples/README.md, Scenario K,
+walks a first live scan in order with real output.
 
 ### Why does `fleet --judge` say the fleet file does not declare the judge?
 

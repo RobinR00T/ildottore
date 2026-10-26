@@ -31,7 +31,9 @@ import zlib
 from collections.abc import Mapping, Sequence
 
 __all__ = [
+    "CHARSETS",
     "MediaError",
+    "glyph_rows",
     "media_digest",
     "media_digests",
     "render_media_part",
@@ -110,9 +112,77 @@ _FONT: dict[str, tuple[str, ...]] = {
 }
 _UNKNOWN: tuple[str, ...] = ("#####", "#####", "#####", "#####", "#####", "#####", "#####")
 
+# The rest of printable ASCII, drawn only under ``charset: "ascii"``: the ``image`` carrier
+# (u05 A-99) draws code, base64 and uuencode, which need lowercase and every symbol. Kept apart
+# so the declared carriers of the built-in battery render to the same bytes as before.
+_FONT_ASCII: dict[str, tuple[str, ...]] = {
+    "a": (".....", ".....", ".###.", "....#", ".####", "#...#", ".####"),
+    "b": ("#....", "#....", "#.##.", "##..#", "#...#", "#...#", "####."),
+    "c": (".....", ".....", ".###.", "#....", "#....", "#...#", ".###."),
+    "d": ("....#", "....#", ".##.#", "#..##", "#...#", "#...#", ".####"),
+    "e": (".....", ".....", ".###.", "#...#", "#####", "#....", ".###."),
+    "f": ("..##.", ".#..#", ".#...", "###..", ".#...", ".#...", ".#..."),
+    "g": (".....", ".....", ".####", "#...#", ".####", "....#", ".###."),
+    "h": ("#....", "#....", "#.##.", "##..#", "#...#", "#...#", "#...#"),
+    "i": ("..#..", ".....", ".##..", "..#..", "..#..", "..#..", ".###."),
+    "j": ("...#.", ".....", "..##.", "...#.", "...#.", "#..#.", ".##.."),
+    "k": ("#....", "#....", "#..#.", "#.#..", "##...", "#.#..", "#..#."),
+    "l": (".##..", "..#..", "..#..", "..#..", "..#..", "..#..", ".###."),
+    "m": (".....", ".....", "##.#.", "#.#.#", "#.#.#", "#...#", "#...#"),
+    "n": (".....", ".....", "#.##.", "##..#", "#...#", "#...#", "#...#"),
+    "o": (".....", ".....", ".###.", "#...#", "#...#", "#...#", ".###."),
+    "p": (".....", ".....", "####.", "#...#", "####.", "#....", "#...."),
+    "q": (".....", ".....", ".##.#", "#..##", ".####", "....#", "....#"),
+    "r": (".....", ".....", "#.##.", "##..#", "#....", "#....", "#...."),
+    "s": (".....", ".....", ".###.", "#....", ".###.", "....#", "####."),
+    "t": (".#...", ".#...", "###..", ".#...", ".#...", ".#..#", "..##."),
+    "u": (".....", ".....", "#...#", "#...#", "#...#", "#..##", ".##.#"),
+    "v": (".....", ".....", "#...#", "#...#", "#...#", ".#.#.", "..#.."),
+    "w": (".....", ".....", "#...#", "#...#", "#.#.#", "#.#.#", ".#.#."),
+    "x": (".....", ".....", "#...#", ".#.#.", "..#..", ".#.#.", "#...#"),
+    "y": (".....", ".....", "#...#", "#...#", ".####", "....#", ".###."),
+    "z": (".....", ".....", "#####", "...#.", "..#..", ".#...", "#####"),
+    "+": (".....", "..#..", "..#..", "#####", "..#..", "..#..", "....."),
+    "=": (".....", ".....", "#####", ".....", "#####", ".....", "....."),
+    "*": (".....", "#.#.#", ".###.", "#####", ".###.", "#.#.#", "....."),
+    "<": ("...#.", "..#..", ".#...", "#....", ".#...", "..#..", "...#."),
+    ">": (".#...", "..#..", "...#.", "....#", "...#.", "..#..", ".#..."),
+    "[": (".###.", ".#...", ".#...", ".#...", ".#...", ".#...", ".###."),
+    "]": (".###.", "...#.", "...#.", "...#.", "...#.", "...#.", ".###."),
+    "{": ("..##.", ".#...", ".#...", "#....", ".#...", ".#...", "..##."),
+    "}": (".##..", "...#.", "...#.", "....#", "...#.", "...#.", ".##.."),
+    "#": (".#.#.", ".#.#.", "#####", ".#.#.", "#####", ".#.#.", ".#.#."),
+    "@": (".###.", "#...#", "#.###", "#.#.#", "#.###", "#....", ".####"),
+    "$": ("..#..", ".####", "#.#..", ".###.", "..#.#", "####.", "..#.."),
+    "%": ("##...", "##..#", "...#.", "..#..", ".#...", "#..##", "...##"),
+    "&": (".##..", "#..#.", "#.#..", ".#...", "#.#.#", "#..#.", ".##.#"),
+    "^": ("..#..", ".#.#.", "#...#", ".....", ".....", ".....", "....."),
+    "`": (".#...", "..#..", "...#.", ".....", ".....", ".....", "....."),
+    "~": (".....", ".....", ".#...", "#.#.#", "...#.", ".....", "....."),
+    "|": ("..#..", "..#..", "..#..", "..#..", "..#..", "..#..", "..#.."),
+    "\\": ("#....", "#....", ".#...", "..#..", "...#.", "....#", "....#"),
+}
 
-def _glyph(char: str) -> tuple[str, ...]:
+#: ``charset`` values a ``render_text`` part takes: ``basic`` (the default: uppercase, digits and
+#: common punctuation; lowercase drawn as uppercase) or ``ascii`` (every printable ASCII
+#: character, lowercase kept). Anything else is a solid block in both.
+CHARSETS: tuple[str, ...] = ("ascii", "basic")
+
+
+def _glyph(char: str, charset: str = "basic") -> tuple[str, ...]:
+    if charset == "ascii" and char in _FONT_ASCII:
+        return _FONT_ASCII[char]
     return _FONT.get(char.upper(), _UNKNOWN)
+
+
+def glyph_rows(char: str) -> tuple[str, ...]:
+    """The seven 5-column rows (``#`` ink, ``.`` paper) the renderer draws ``char`` with.
+
+    Shared with the ``ascii_art`` mutator, so a word drawn in text and a word drawn in a PNG use
+    one font. A character the font lacks is a solid block.
+    """
+
+    return _glyph(char, "ascii")
 
 
 def _png_chunk(tag: bytes, data: bytes) -> bytes:
@@ -145,13 +215,16 @@ def _encode_png_grayscale(pixels: list[list[int]]) -> bytes:
     )
 
 
-def render_text_png(text: str, *, scale: int = 3, columns: int = 32, margin: int = 4) -> bytes:
+def render_text_png(
+    text: str, *, scale: int = 3, columns: int = 32, margin: int = 4, charset: str = "basic"
+) -> bytes:
     """Render ``text`` into a deterministic black-on-white 8-bit grayscale PNG.
 
     ``columns`` wraps the text into lines of at most that many characters (word-preserving is not
     attempted: a fixed hard wrap keeps the layout byte-stable regardless of locale). ``scale``
     nearest-neighbour-magnifies each pixel so the 5x7 font is legible to a vision model. The
-    output is a pure function of ``(text, scale, columns, margin)``.
+    output is a pure function of ``(text, scale, columns, margin, charset)``; ``charset`` is a
+    key of :data:`CHARSETS`.
 
     ``scale``, ``columns`` and the projected output area are bounded so a spec cannot request a
     multi-hundred-megapixel image (a memory-amplification DoS at plan/render time).
@@ -163,6 +236,8 @@ def render_text_png(text: str, *, scale: int = 3, columns: int = 32, margin: int
         raise MediaError(f"render_text_png: scale {scale} exceeds the max of {_MAX_SCALE}")
     if columns > _MAX_COLUMNS:
         raise MediaError(f"render_text_png: columns {columns} exceeds the max of {_MAX_COLUMNS}")
+    if charset not in CHARSETS:
+        raise MediaError(f"render_text_png: charset {charset!r} is not one of {CHARSETS}")
 
     lines = _wrap(text, columns)
     cell_w = _GLYPH_COLS + 1  # 1px inter-glyph gap
@@ -184,7 +259,7 @@ def render_text_png(text: str, *, scale: int = 3, columns: int = 32, margin: int
         y0 = line_idx * cell_h
         for col_idx, char in enumerate(line):
             x0 = col_idx * cell_w
-            glyph = _glyph(char)
+            glyph = _glyph(char, charset)
             for gy in range(_GLYPH_ROWS):
                 pattern = glyph[gy]
                 for gx in range(_GLYPH_COLS):
@@ -268,9 +343,14 @@ def _render_image_part(part: Mapping[str, object]) -> tuple[str, bytes]:
     if isinstance(render_text, str):
         scale = part.get("scale", 3)
         columns = part.get("columns", 32)
+        charset = part.get("charset", "basic")
         if not isinstance(scale, int) or not isinstance(columns, int):
             raise MediaError("media 'scale'/'columns' must be integers")
-        return "image/png", render_text_png(render_text, scale=scale, columns=columns)
+        if not isinstance(charset, str):
+            raise MediaError("media 'charset' must be a string")
+        return "image/png", render_text_png(
+            render_text, scale=scale, columns=columns, charset=charset
+        )
 
     raise MediaError("image media part needs either 'render_text' or 'data_b64'")
 

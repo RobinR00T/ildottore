@@ -556,17 +556,21 @@ def selection_record(
     spec: list[str],
     exclude: list[str],
     top_tests: int | None,
+    obfuscate: list[str] | None = None,
+    fuzz: dict[str, int] | None = None,
 ) -> dict[str, object]:
     """The selection flags of an invocation, as the run context records them (M1).
 
     Each string masked with the fixed identity salt the store masks a target id with, so a glob
     that reads as a secret is not kept in clear and the record still compares equal across
-    processes; a spec id or an ordinary glob is kept as written.
+    processes; a spec id or an ordinary glob is kept as written. ``--obfuscate`` and ``--fuzz``
+    (u05 A-99) add mutations to every selected spec, so they are recorded too, and only when
+    given: a run without them records what a run before them did.
     """
 
     from ildottore.redactor import redact_identity
 
-    return {
+    record: dict[str, object] = {
         "suite": redact_identity(suite) if suite is not None else None,
         "quick": quick,
         "categories": [redact_identity(token) for token in categories],
@@ -574,6 +578,29 @@ def selection_record(
         "exclude": [redact_identity(glob) for glob in exclude],
         "top_tests": top_tests,
     }
+    if obfuscate:
+        record["obfuscate"] = list(obfuscate)
+    if fuzz:
+        record["fuzz"] = dict(fuzz)
+    return record
+
+
+def obfuscation_flags(selection: object) -> str:
+    """The ``--obfuscate`` / ``--fuzz`` flags a recorded selection holds; ``""`` if none."""
+
+    if not isinstance(selection, dict):
+        return ""
+    parts = []
+    tokens = selection.get("obfuscate")
+    if isinstance(tokens, list) and tokens:
+        parts.append(f"--obfuscate {shlex.quote(','.join(str(token) for token in tokens))}")
+    fuzz = selection.get("fuzz")
+    if isinstance(fuzz, dict) and fuzz.get("count"):
+        parts.append(
+            f"--fuzz {fuzz.get('count')} --fuzz-depth {fuzz.get('depth')} "
+            f"--fuzz-seed {fuzz.get('seed')}" + (" --fuzz-image" if fuzz.get("image") else "")
+        )
+    return " ".join(parts)
 
 
 def selection_flags(selection: dict[str, object]) -> str:
@@ -592,6 +619,8 @@ def selection_flags(selection: dict[str, object]) -> str:
     parts += [f"--exclude {shlex.quote(glob)}" for glob in strings("exclude")]
     if isinstance(selection.get("top_tests"), int):
         parts.append(f"--top-tests {selection['top_tests']}")
+    if obfuscation_flags(selection):
+        parts.append(obfuscation_flags(selection))
     return " ".join(parts) or "no selection flag"
 
 
@@ -692,7 +721,16 @@ def _assert_same_specs(
                 "Resume with the selection flags the run was made with (--suite, --quick, -p, "
                 "--spec, --exclude, --top-tests) and its --spec-path"
             )
-    if changed:
+    then_obf = obfuscation_flags(context.get("selection"))
+    now_obf = obfuscation_flags(selection)
+    if changed and then_obf != now_obf:
+        # The mutations a spec carries changed because the flags that add them did (A-99).
+        advice.append(
+            f"The run was made with {then_obf or 'no --obfuscate or --fuzz'} and this "
+            f"invocation passes {now_obf or 'neither'}: resume with "
+            f"{then_obf or 'neither flag'}"
+        )
+    elif changed:
         advice.append(
             "Point --spec-path at the specs the run was made with (a copy of them, or the "
             "built-in battery of the version that started it)"

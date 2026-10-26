@@ -44,6 +44,11 @@ noted, over the wire.
   of a commit from then on) runs with no checkout (`INSTALL.md`); CI builds and runs it (the
   `package` job) and tests the declared dependency floors (the `floors` job). Not released: the
   only tag, `v0.1.0`, predates it, and nothing is on PyPI.
+- ✅ **Obfuscation and fuzzing on request** (2026-10-26, u05 A-99): ten carrier families
+  (encodings, ciphers, bijection, Unicode smuggling, glyphs, Best-of-N, the request as a file or
+  code, ASCII art, IDS/WAF evasions, the request drawn into an image), chains of up to four
+  links, `run --obfuscate` and `--fuzz` with no spec edited, and `dottore mutate` to preview what
+  a carrier sends. Whether the model read a carrier is the operator's to check today (OD-57).
 
 ## Near-term (candidates, not committed)
 

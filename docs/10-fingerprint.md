@@ -41,7 +41,9 @@ Two roles for fingerprinting: both first-class:
    probes only (contract §8). The split is computed, not listed: a mutator whose output still
    contains the original sentence has *added* instructions around it. On the shipped set that
    is 7 carriers probed of 18, and every carrier the repo documents as an attack is on the
-   other side.
+   other side. The ten obfuscation families of u05 A-99 (`encode`, `cipher`, `evade`, `image`
+   and the rest) declare `fingerprint_probe = False` and are never probed: they run only when the
+   operator asks (`--obfuscate`, `--fuzz`), so a fingerprint pass still costs what it did.
 
    **Cost:** one request per probed carrier, so a fingerprint pass is 18 requests rather than the 11
    it would be without them. The resolved plan prints the figure (`fingerprint: +N probe(s) per

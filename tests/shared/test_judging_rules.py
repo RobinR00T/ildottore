@@ -329,6 +329,15 @@ PIN_HISTORY: tuple[tuple[int, str, str], ...] = (
         "judged, and a scope without the fields authorizes as before, so no stored verdict "
         "changes",
     ),
+    (
+        7,
+        "f34bd72254c380863707baff87328f367998dfab20e6167f6abe0572810add2b",
+        "re-pin 2026-10-26: u05 A-99 (obfuscation and fuzzing): ten mutator families, chains "
+        "(shared/mutation_chain.py), the image link's PNG part in the runner, the linter's chain "
+        "checks and the run flags; they change what is sent when a spec or the operator names "
+        "them, never how a reply is judged, and a spec without them is sent and judged as "
+        "before, so no stored verdict changes",
+    ),
 )
 
 #: The digest each version is pinned to now: the last line of :data:`PIN_HISTORY` for it.
@@ -339,7 +348,7 @@ PINNED: dict[int, str] = {
     4: "86d4391094d167c454d0e05ec076a36ca10c585c57b1d00574a7e86e87c0fe40",
     5: "c352e9bd55c8e3b0629e4164411b64667327a5c3cd533e003a7cb84475ecf9c4",
     6: "47293b7afb2a5409bff93319a9fa384621c3ecbe8b9a261be8bb428e05d0f4f7",
-    7: "6764e7c12a1c64266369fffbf2779c99d8a0ecab782efefbc47a4f02f984a32d",
+    7: "f34bd72254c380863707baff87328f367998dfab20e6167f6abe0572810add2b",
 }
 
 #: One ``<version> <digest>`` line per pin, appended to and never edited: the history must start
