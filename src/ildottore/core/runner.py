@@ -46,7 +46,7 @@ import re
 import time
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any, Final, Protocol, runtime_checkable
+from typing import Any, Final, Protocol, cast, runtime_checkable
 
 from ildottore.core.budgets import BudgetExhausted, BudgetLedger, Spend
 from ildottore.core.conversation import reproduce_conversation
@@ -128,6 +128,13 @@ from ildottore.shared.models import (
     TestRun,
     TestRunSummary,
     Verdict,
+)
+from ildottore.shared.mutation_chain import (
+    CHAIN_SEPARATOR,
+    IMAGE_LINK,
+    chain_links,
+    chain_problem,
+    ends_in_image,
 )
 from ildottore.shared.protocols import (
     Evaluator,
@@ -1033,7 +1040,9 @@ class CampaignRunner:
         # An unregistered mutation is an authoring defect, isolated to this spec. It used to
         # fall back to the identity prompt and be recorded under the unknown name, so the
         # evidence claimed a variant that was never sent (audit 2026-10-03, F3 / F-11).
-        reserved = [m for m in mutators if _base(m) == IDENTITY_SWEEP]
+        reserved = [
+            m for m in mutators if any(_base(link) == IDENTITY_SWEEP for link in chain_links(m))
+        ]
         if reserved:
             # The identity sweep's trial is stored under this name, and every reader that groups
             # attempts by variant reads it apart (u08 A-87): a variant so named would be too.
@@ -1045,7 +1054,22 @@ class CampaignRunner:
                     "not a mutator; nothing was sent for this spec"
                 ),
             )
-        unknown = [m for m in mutators if m != "identity" and not self._mutators.has(_base(m))]
+        # A chain (``a+b``, u05 A-99) is checked link by link, as each link is applied.
+        malformed = [problem for m in mutators if (problem := chain_problem(m)) is not None]
+        if malformed:
+            return self._media_error_finding(
+                spec,
+                target,
+                reason=(
+                    f"malformed_mutation: {'; '.join(malformed)}; nothing was sent for this spec"
+                ),
+            )
+        unknown = [
+            m
+            for m in mutators
+            if m != "identity"
+            and not all(self._mutators.has(_base(link)) for link in chain_links(m))
+        ]
         if unknown:
             return self._media_error_finding(
                 spec,
@@ -1057,7 +1081,11 @@ class CampaignRunner:
             )
         # A parameter the mutator does not implement (translate:klingon) was sent as a language
         # picked by hash and recorded under the name it asked for (review of PR #32).
-        bad_params = [m for m in mutators if m != "identity" and not self._param_accepted(m)]
+        bad_params = [
+            m
+            for m in mutators
+            if m != "identity" and not all(self._param_accepted(link) for link in chain_links(m))
+        ]
         if bad_params:
             return self._media_error_finding(
                 spec,
@@ -1092,6 +1120,26 @@ class CampaignRunner:
         # OD-18 (ADR-0009, option A): against a bare model, the spec's documents, tools and
         # memory seed are built into the request instead of being left behind.
         scene = in_band_setup(spec) if delivers_in_band(spec, target) else None
+        # An ``image`` link (u05 A-99) sends the carrier as a picture: only a target that takes
+        # images can be sent one, and only in one turn (a conversation's history carries no media).
+        imaged = [m for m in mutators if ends_in_image(m)]
+        if imaged:
+            unfit = None
+            if multi_turn:
+                unfit = "a multi-turn spec, whose turns carry no image"
+            elif not adapter.capabilities().multimodal:
+                unfit = f"target {target.id}, which does not declare multimodal input"
+            if unfit is not None:
+                return self._capability_skipped_finding(
+                    spec,
+                    target,
+                    reason=(
+                        f"image_carrier_unsupported: {', '.join(imaged)} send the carrier as an "
+                        f"image, and this is {unfit}; nothing was sent for this spec (drop the "
+                        "image mutations for it, or declare `capabilities: {multimodal: true}` "
+                        "on a target that reads images)"
+                    ),
+                )
         undelivered = _undelivered(scene, spec, adapter) if scene is not None else None
         if undelivered is not None:
             return self._capability_skipped_finding(
@@ -1154,7 +1202,9 @@ class CampaignRunner:
                     # An in-band scene runs as a conversation (the tool rounds are its sends),
                     # except with media, whose turn the history cannot carry yet: one round,
                     # tools attached.
-                    if multi_turn or (scene is not None and not spec.attack.media):
+                    if multi_turn or (
+                        scene is not None and not spec.attack.media and not ends_in_image(mutation)
+                    ):
                         await self._reproduce_multi_turn(
                             spec, adapter, mutation, ledger, completed, scene=scene, into=batch
                         )
@@ -1270,8 +1320,10 @@ class CampaignRunner:
     ) -> list[AttemptResult]:
         """Reproduce one (spec, mutation) as N single-turn sends (the classic path)."""
 
-        mutated_prompt = self._apply_mutation(spec, mutation, base_prompt)
-        request = _build_request(spec, mutated_prompt, scene=scene, sampling=self._sampling(spec))
+        mutated_prompt, media = self._carrier(spec, mutation, base_prompt)
+        request = _build_request(
+            spec, mutated_prompt, scene=scene, sampling=self._sampling(spec), media=media
+        )
         return await reproduce(
             adapter,
             request,
@@ -2218,7 +2270,8 @@ class CampaignRunner:
     def _apply_mutation(self, spec: AttackSpec, mutation: str, text: str) -> str:
         """Apply one mutation to the base carrier (identity → unchanged).
 
-        Supports a parameterized ``name:param`` form (docs/12 P1): the registry is looked up
+        Supports a parameterized ``name:param`` form (docs/12 P1) and a chain of them joined by
+        ``+`` (u05 A-99, applied link by link). The registry is looked up
         by the BASE name (before the first ``:``), and the FULL ``name:param`` is folded into
         the seed so a parameter-aware mutator can read it, e.g. ``translate:fr`` runs the
         ``translate`` mutator whose ``_resolve_lang`` reads ``fr`` from the seed. Seeded by
@@ -2226,11 +2279,37 @@ class CampaignRunner:
         replays. An unregistered base falls back to identity.
         """
 
-        base = _base(mutation)
-        if mutation == "identity" or not self._mutators.has(base):
-            return text
-        seed = f"{spec.id}::{mutation}"
-        return self._mutators.get(base).mutate(text, seed)
+        # A chain applies its links left to right, each seeded as if it stood alone (u05 A-99),
+        # so ``structured:json+encode:hex`` hex-encodes the JSON file ``structured:json`` writes.
+        for link in chain_links(mutation):
+            base = _base(link)
+            if link == "identity" or not self._mutators.has(base):
+                continue
+            text = self._mutators.get(base).mutate(text, f"{spec.id}::{link}")
+        return text
+
+    def _carrier(
+        self, spec: AttackSpec, mutation: str, text: str
+    ) -> tuple[str, list[JsonDict] | None]:
+        """The text one mutation sends and the media part its ``image`` link adds, if any.
+
+        A chain that ends in ``image`` (u05 A-99) applies its other links as text, then draws
+        the result into a PNG part; the text turn becomes the image link's instruction.
+        """
+
+        if not ends_in_image(mutation):
+            return self._apply_mutation(spec, mutation, text), None
+        links = chain_links(mutation)
+        head = CHAIN_SEPARATOR.join(links[:-1])
+        if head:
+            text = self._apply_mutation(spec, head, text)
+        # The image link needs the provenance the Mutator protocol does not carry.
+        mutate_result = getattr(self._mutators.get(IMAGE_LINK), "mutate_result", None)
+        if mutate_result is None:  # pragma: no cover - a plugin that replaced `image`
+            raise ValueError(f"the {IMAGE_LINK!r} mutator draws no media part")
+        drawn = mutate_result(text, f"{spec.id}::{links[-1]}")
+        part = drawn.provenance["media"]
+        return drawn.text, [cast("JsonDict", part)]
 
     def _turn_mutator(self, spec: AttackSpec, mutation: str) -> Callable[[str], str]:
         """A per-turn transform closure for the multi-turn path (applies ``mutation``)."""
@@ -2585,6 +2664,7 @@ def _build_request(
     *,
     scene: InBandSetup | None = None,
     sampling: Sampling | None = None,
+    media: list[JsonDict] | None = None,
 ) -> ModelRequest:
     """Build a :class:`ModelRequest` from a spec + mutated prompt (pinned sampling).
 
@@ -2597,11 +2677,13 @@ def _build_request(
     part under ``metadata.media_sha256`` (chain of custody): the declarative part replays to
     identical bytes, so the digest proves exactly which image was sent and an auditor can re-derive
     it. Computing a hash is not transport rendering; the adapter still owns what goes on the wire.
+    A mutation's ``image`` link adds its drawn part after the spec's own (``media``).
     """
 
     sampling = sampling if sampling is not None else spec_sampling(spec)
     system_prompt = spec.setup.system_prompt if spec.setup is not None else None
-    media = spec.attack.media
+    # ``media`` is what a mutation's ``image`` link drew (u05 A-99): it follows the spec's own.
+    media = [*(spec.attack.media or []), *(media or [])] or None
     metadata: JsonDict | None = {"media_sha256": media_digests(media)} if media else None
     if scene is None:
         return ModelRequest(

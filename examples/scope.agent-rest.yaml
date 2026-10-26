@@ -1,4 +1,4 @@
-# scope.agent-rest.yaml, the AUTHORIZATION record for the deployed agent over HTTP (Scenario J).
+# scope.agent-rest.yaml, the AUTHORIZATION record for the deployed agent over HTTP (Scenario L).
 #
 # Default-DENY, as every scope: the adapter refuses any host or path not listed under `endpoints`
 # before a request goes out, and a redirect is never followed. The JWT is referenced by env-var

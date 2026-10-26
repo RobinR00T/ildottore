@@ -82,6 +82,19 @@ six-stage method, PITV harness, contract anatomy and operating discipline in `AG
   `PI-INDIRECT-TOOL-001`; MCP tool metadata, `MCP-TOOLPOISON-001` and `AG-TOOLMETA-POISON-001`;
   supply chain, `SUPPLY-SLOPSQUAT-001`).
 
+## Obfuscation and fuzzing (`--obfuscate`, `--fuzz`; u05 A-99)
+- Wei, Haghtalab, Steinhardt: Jailbroken: How Does LLM Safety Training Fail? (NeurIPS 2023, competing objectives and mismatched generalization, encodings): https://arxiv.org/abs/2307.02483
+- Yuan et al.: GPT-4 Is Too Smart To Be Safe: Stealthy Chat with LLMs via Cipher (CipherChat, ICLR 2024): https://arxiv.org/abs/2308.06463
+- Lv et al.: CodeChameleon: Personalized Encryption Framework for Jailbreaking LLMs (the request as code): https://arxiv.org/abs/2402.16717
+- Huang et al.: Endless Jailbreaks with Bijection Learning: https://arxiv.org/abs/2410.01294
+- Hughes et al.: Best-of-N Jailbreaking (random augmentations, power-law scaling): https://arxiv.org/abs/2412.03556
+- Jiang et al.: ArtPrompt: ASCII Art-based Jailbreak Attacks against Aligned LLMs (ACL 2024): https://arxiv.org/abs/2402.11753
+- Gong et al.: FigStep: Jailbreaking Large Vision-Language Models via Typographic Visual Prompts (AAAI 2025): https://arxiv.org/abs/2311.05608
+- Ptacek, Newsham: Insertion, Evasion, and Denial of Service: Eluding Network Intrusion Detection (Secure Networks, 1998): insertion, evasion, fragmentation and reordering
+- HiddenLayer: Policy Puppetry, the request as a policy file (2025)
+- Goodside; Rehberger (Embrace The Red): ASCII smuggling with Unicode tag characters (2024)
+- Butler: emoji variation selectors as a hidden channel (2025)
+
 ## Agentic-abuse / LLM-driven threats (docs/13)
 - Sysdig: JADEPUFFER: agentic ransomware for automated database extortion (2026): https://www.sysdig.com/blog/jadepuffer-agentic-ransomware-for-automated-database-extortion
 - The Register: first end-to-end agentic ransomware attack (2026-07): https://www.theregister.com/security/2026/07/02/smooth-ai-criminal-drives-first-end-to-end-agentic-ransomware-attack/

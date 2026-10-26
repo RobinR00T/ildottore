@@ -156,9 +156,15 @@ def is_obscuring(mutator: Mutator, *, probe: str = CARRIER_PROBE_PROMPT) -> bool
 
 
 def obscuring_mutators(mutators: Sequence[Mutator]) -> list[Mutator]:
-    """The subset of ``mutators`` this layer may probe with (see :func:`is_obscuring`)."""
+    """The subset of ``mutators`` this layer may probe with (see :func:`is_obscuring`).
 
-    return [m for m in mutators if is_obscuring(m)]
+    A mutator that sets ``fingerprint_probe = False`` is left out: the obfuscation families of
+    u05 A-99 (``encode``, ``evade``, ``image`` and the rest), which run only when an operator
+    asks for them with ``--obfuscate`` or ``--fuzz``, so a fingerprint costs what it cost before
+    them, and ``image`` cannot be probed as text at all.
+    """
+
+    return [m for m in mutators if getattr(m, "fingerprint_probe", True) and is_obscuring(m)]
 
 
 def effective_mutators(comprehension: dict[str, float]) -> list[str]:

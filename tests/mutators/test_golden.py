@@ -40,12 +40,23 @@ EXPECTED_BUILTINS = {
     "linguistic_confusion",
     "context_poisoning",
     "adversarial_suffix",
+    # u05 A-99: the obfuscation families behind --obfuscate and --fuzz
+    "encode",
+    "cipher",
+    "bijection",
+    "smuggle",
+    "glyph",
+    "bon",
+    "structured",
+    "ascii_art",
+    "evade",
+    "image",
 }
 
 
 def test_all_builtins_present() -> None:
     assert set(_NAMES) == EXPECTED_BUILTINS
-    assert len(_NAMES) == 19
+    assert len(_NAMES) == 29
 
 
 def test_every_builtin_has_a_golden_fixture() -> None:

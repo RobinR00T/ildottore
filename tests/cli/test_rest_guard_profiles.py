@@ -182,7 +182,7 @@ def test_the_guard_line_names_the_window_and_when_it_opens() -> None:
 
 
 def test_the_worked_example_dry_run_prints_the_rest_guard(monkeypatch: pytest.MonkeyPatch) -> None:
-    """examples/README.md, Scenario J, prints this plan (sends nothing); the clock is a Saturday."""
+    """examples/README.md, Scenario L, prints this plan (sends nothing); the clock is a Saturday."""
 
     monkeypatch.setattr(run_mod, "time", SimpleNamespace(time=lambda: _at(2027, 1, 16, 12)))
     result = CliRunner().invoke(

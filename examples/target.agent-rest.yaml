@@ -1,5 +1,5 @@
 # target.agent-rest.yaml, a DEPLOYED AI AGENT OVER PLAIN HTTP, with its guard and a window
-# (Scenario J in examples/README.md). Its authorization record is examples/scope.agent-rest.yaml.
+# (Scenario L in examples/README.md). Its authorization record is examples/scope.agent-rest.yaml.
 #
 # The same `guard` block a WebSocket agent declares (target.agent.yaml), under `rest:`: the loader
 # reads it with the same rules and the REST adapter runs the same checks (docs/MANUAL.md §4.2).

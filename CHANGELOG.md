@@ -32,10 +32,48 @@ the file, schema copy, build or pipeline it names.
   bare name is looked up (no separator, no `.yaml` or `.yml` suffix): a path is read as before. A
   name that is also a file here, a profile written as both `.yaml` and `.yml`, or a name found
   nowhere is refused, exit 3, saying where it looked.
-- **`examples/target.agent-rest.yaml` and `examples/scope.agent-rest.yaml`** (Scenario J in
+- **`examples/target.agent-rest.yaml` and `examples/scope.agent-rest.yaml`** (Scenario L in
   `examples/README.md`), placeholders only. Docs: `README.md`, `USAGE.md`, `docs/MANUAL.md` §4.2,
   `man/man1/dottore.1`, `man/man5/dottore-scope.5`, `specs/contracts/u04-target-adapters.md`
   (A-98, OD-56). No verdict changes (judging rules 7 re-pinned).
+
+### Added (u05 A-99, judging rules 7 re-pinned: obfuscation and fuzzing on request)
+
+- **Ten mutator families, 29 built-ins in all:** `encode:<scheme>` (hex, base32, base85, uu, qp,
+  url, morse, braille, nato, binary), `cipher:<name>` (atbash, caesar, reverse, word_reverse),
+  `bijection:<letters|digits>`, `smuggle:<tags|variation>` (Unicode tag characters, variation
+  selectors), `glyph:<style>`, `bon:<0-99>` (Best-of-N augmentations), `structured:<format>`
+  (the request as JSON, YAML, XML, CSV, INI, Markdown, Python, JavaScript or a policy file),
+  `ascii_art`, `evade:<technique>` (the IDS and WAF evasions: double URL encoding, overlong UTF-8,
+  HTML entities, JavaScript escapes, `String.fromCharCode`, concatenation, `/**/` splits,
+  out-of-order fragments, soft hyphens) and `image:<decode|figstep|plain>`, which draws the
+  request into a PNG sent with the turn. Each tells the target how to read what it gets. None is
+  a fingerprint probe, so a fingerprint pass costs what it did, and no shipped spec declares
+  them. Sources in `docs/REFERENCES.md`.
+- **Chains:** a mutation may join up to four links with `+` (`structured:js+encode:uu+image:decode`),
+  applied left to right, each seeded `<spec-id>::<link>`. `image` goes last, runs only on a
+  target that declares `capabilities.multimodal` (`inconclusive: image_carrier_unsupported`
+  otherwise, nothing sent) and never on a multi-turn spec (`dottore lint` refuses it); the PNG's
+  SHA-256 is recorded as `media_sha256`.
+- **`dottore run --obfuscate <preset|mutation>` and `--fuzz N`** (`--fuzz-depth`, `--fuzz-seed`,
+  `--fuzz-image`) add carriers to every selected spec for one run, with no spec edited. Presets:
+  encodings, ciphers, unicode, structured, evasion, art, framing, bon, image, and `all` (55
+  mutations, Best-of-N and images left out). `--dry-run` names what was added; a resume needs the
+  same flags and its advice names them. An image chain on a target without `multimodal` is
+  refused before anything is sent.
+- **`dottore registry mutators`** lists every mutator with its parameters and the presets;
+  **`dottore mutate <mutation> <text>`** prints what a run sends (with `--spec-id`, byte for byte)
+  and writes the PNG of an image chain. Neither sends anything.
+- **`render_text` images may use the full printable ASCII** (`charset: ascii`); the default
+  (`basic`) keeps every shipped image byte for byte.
+- **Docs and examples:** `examples/target.vision.yaml` and `examples/scope.vision.yaml`
+  (Scenario J); Scenario K in `examples/README.md`, a first live scan of a deployed assistant in
+  order (plan with `-vv`, a judge the scope authorizes, `seeded_setup`, estimate, `-oA`, pacing,
+  reading the replies, carriers last), with the matching sections in `USAGE.md`, `docs/FAQ.md`
+  and `docs/MANUAL.md` §13; `examples/scope.agent.yaml` authorizes the local `--judge`. MANUAL §5
+  and §6, `docs/03` §4, `docs/09`, `docs/10`, the man page, `specs/contracts/u05-prompt-mutator.md`
+  and `u12-cli.md` (A-99), and OD-57 (open): a pass under a carrier the model could not read is not
+  resistance, and the run cannot tell the two apart yet.
 
 ### Changed (breaking for a seeded deployment and a halted run: u08 A-100, OD-58, judging rules 7 re-pinned)
 

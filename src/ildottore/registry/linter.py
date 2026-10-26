@@ -58,6 +58,7 @@ from ildottore.shared.frameworks import (
 )
 from ildottore.shared.iopc import IOPC_TAXONOMY_VERSION, unknown_codes
 from ildottore.shared.media import MediaError, render_media_part
+from ildottore.shared.mutation_chain import chain_links, chain_problem, ends_in_image
 from ildottore.shared.patterns import SpecPatternError, compile_spec_pattern, quote
 from ildottore.shared.refusal_tells import STRONG_COMPLIANCE
 from ildottore.shared.tool_abuse import cleared_verbs, handoff_shaped, value_pattern_key
@@ -1023,37 +1024,80 @@ def _check_mutators(
     if known is None:
         return []
     findings: list[LintError] = []
-    for mutation in dict.fromkeys(spec.mutations or []):
-        if mutation == "identity":
+    for declared in dict.fromkeys(spec.mutations or []):
+        if declared == "identity":
             continue
-        base, _, param = mutation.partition(":")
-        if base not in known:
+        shape = chain_problem(declared)
+        if shape is not None:
             findings.append(
-                LintError(
-                    code=LintCode.UNKNOWN_MUTATOR_TYPE,
-                    message=(
-                        f"mutation {mutation!r} names no registered mutator (known: "
-                        f"{', '.join(sorted(known))})"
-                    ),
-                    spec_id=spec.id,
-                )
+                LintError(code=LintCode.UNKNOWN_MUTATOR_TYPE, message=shape, spec_id=spec.id)
             )
             continue
-        accepted = (params or {}).get(base)
-        if param and accepted is not None and param.strip().lower() not in accepted:
+        for mutation in chain_links(declared):
+            findings.extend(_check_link(spec, mutation, declared, known, params))
+        if ends_in_image(declared) and len(spec.attack.turns or []) >= 2:
+            # A conversation's history carries no media, so the runner refuses the spec (A-99).
             findings.append(
                 LintError(
                     code=LintCode.UNKNOWN_MUTATOR_TYPE,
                     message=(
-                        f"mutation {mutation!r}: {param!r} is not a parameter {base} accepts "
-                        f"({', '.join(sorted(accepted))})"
-                        if accepted
-                        else f"mutation {mutation!r}: {base} takes no parameter"
+                        f"mutation {declared!r} sends its carrier as an image, which a multi-turn "
+                        "spec cannot carry"
                     ),
                     spec_id=spec.id,
                 )
             )
     return findings
+
+
+def _check_link(
+    spec: AttackSpec,
+    mutation: str,
+    declared: str,
+    known: frozenset[str],
+    params: Mapping[str, frozenset[str]] | None,
+) -> list[LintError]:
+    """The lint findings of one link of ``declared`` (the whole mutation, when not a chain)."""
+
+    if mutation == "identity":
+        return []
+    where = "" if mutation == declared else f" (in chain {declared!r})"
+    base, _, param = mutation.partition(":")
+    if base not in known:
+        return [
+            LintError(
+                code=LintCode.UNKNOWN_MUTATOR_TYPE,
+                message=(
+                    f"mutation {mutation!r}{where} names no registered mutator (known: "
+                    f"{', '.join(sorted(known))})"
+                ),
+                spec_id=spec.id,
+            )
+        ]
+    accepted = (params or {}).get(base)
+    if not param or accepted is None or param.strip().lower() in accepted:
+        return []
+    return [
+        LintError(
+            code=LintCode.UNKNOWN_MUTATOR_TYPE,
+            message=(
+                f"mutation {mutation!r}{where}: {param!r} is not a parameter {base} accepts "
+                f"({_shown(accepted)})"
+                if accepted
+                else f"mutation {mutation!r}{where}: {base} takes no parameter"
+            ),
+            spec_id=spec.id,
+        )
+    ]
+
+
+def _shown(accepted: frozenset[str]) -> str:
+    """The accepted parameters for a message; a numeric range (``bon:0`` .. ``bon:99``) as one."""
+
+    if accepted and all(value.isdigit() for value in accepted):
+        numbers = sorted(int(value) for value in accepted)
+        return f"{numbers[0]} to {numbers[-1]}"
+    return ", ".join(sorted(accepted))
 
 
 def lint_packs(

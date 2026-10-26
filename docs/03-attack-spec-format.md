@@ -79,13 +79,33 @@ See `src/ildottore/battery/attacks/PI-INDIRECT-RAG-001.yaml`. Key improvements o
 ## 4. Mutation strategies (Prompt Mutator)
 
 Declared per-spec; each is a deterministic transform seeded by `(spec.id, mutation.name)` so
-runs are reproducible. Built-in strategies (19 in the registry):
+runs are reproducible. Built-in strategies (29 in the registry):
 
 `identity`, `translate:<lang>`, `base64_wrap`, `rot13`, `unicode_confusable`,
 `zero_width_inject`, `roleplay_wrap`, `nested_instruction`, `markdown_comment_carrier`,
 `html_comment_carrier`, `payload_splitting`, `refusal_suppression_prefix`, `leetspeak`,
 `adversarial_poetry`, `adversarial_suffix`, `context_poisoning`, `gray_box`,
-`linguistic_confusion`, `math_problem`.
+`linguistic_confusion`, `math_problem`, and ten obfuscation families that take a parameter
+(u05 A-99): `encode:<scheme>` (`hex`, `base32`, `base85`, `uu`, `qp`, `url`, `morse`,
+`braille`, `nato`, `binary`), `cipher:<name>` (`atbash`, `caesar`, `reverse`, `word_reverse`),
+`bijection:<letters|digits>`, `smuggle:<tags|variation>`, `glyph:<style>` (`bold`, `circled`,
+`fullwidth`, `spaced`, `zalgo`), `bon:<0-99>`, `structured:<format>` (`csv`, `ini`, `js`,
+`json`, `markdown`, `policy`, `python`, `xml`, `yaml`), `ascii_art`, `evade:<technique>`
+(`comment_split`, `concat`, `double_url`, `fragment`, `fromcharcode`, `html_entity`,
+`js_escape`, `overlong`, `soft_hyphen`) and `image:<decode|figstep|plain>`. A bare family name
+picks its parameter from the seed. `dottore registry mutators` lists them with their
+parameters, and `dottore mutate <mutation> <text>` prints what one sends (MANUAL §6,
+"Obfuscation and fuzzing"). They run when a spec declares them or when the operator adds them
+for one run (`--obfuscate`, `--fuzz`); no shipped spec declares them.
+
+**Chains.** An entry of `mutations` may join up to four links with `+`
+(`structured:json+encode:hex`): the links apply left to right, each seeded
+`<spec-id>::<link>`, and the chain is one attempt. `identity` is not a link. `image` is the last
+link or none: it draws the text the links before it made into a PNG sent with the turn, so the
+target must declare `capabilities.multimodal` (otherwise the spec is `inconclusive:
+image_carrier_unsupported` and nothing is sent for it), and a multi-turn spec cannot carry it
+(`dottore lint` reports `UNKNOWN_MUTATOR_TYPE`). The image's SHA-256 is recorded as
+`media_sha256`, as for a spec's own media.
 
 `translate:<lang>` does not translate the prompt. `<lang>` is one of `es`, `fr`, `de`, `zh`
 (`LANGUAGES` in `mutators/translate.py`). The mutator replaces each space-separated word whose

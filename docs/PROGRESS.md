@@ -26,10 +26,10 @@ neighbouring entries can interleave (an older branch merged later sits above a n
 - **Not built.** An SSE transport (none exists: `streaming_enabled` is a flag and a REST target
   reads one JSON reply); a run that waits for its window to open.
 - **Verified.** `tests/adapters/test_agent_guard_window_rest.py` (26) and
-  `tests/cli/test_rest_guard_profiles.py` (20); the dry-run of Scenario J copied from a real run.
+  `tests/cli/test_rest_guard_profiles.py` (20); the dry-run of Scenario L copied from a real run.
   The root `conftest` points both profile directories at an empty temporary directory per test.
   Judging rules 7 re-pinned (no verdict path touched).
-- **Docs.** `README.md`, `USAGE.md`, `docs/MANUAL.md` §4.2, `examples/README.md` (Scenario J, and
+- **Docs.** `README.md`, `USAGE.md`, `docs/MANUAL.md` §4.2, `examples/README.md` (Scenario L, and
   the profile paths of Scenario I), `examples/target.agent.yaml`, `man/man1/dottore.1`,
   `man/man5/dottore-scope.5`, `CHANGELOG.md`, `specs/contracts/u04-target-adapters.md` (A-98,
   OD-56), `specs/contracts/00-INDEX.md`.
@@ -45,6 +45,44 @@ neighbouring entries can interleave (an older branch merged later sits above a n
   (176 files), import-linter (4 contracts kept), spec lint (0 errors, 78 specs), 8196 tests passed
   and 3 skipped, coverage 97.68%, self-scan 0 high or critical, bandit clean, pip-audit no known
   vulnerabilities.
+- **Merged with main after u05 A-99** (2026-10-26): conflicts in the append-only pins, the index,
+  the CHANGELOG, this ledger and `examples/README.md`, each kept whole (main's pins first, this
+  branch's after; index rows in number order). Both branches had added a Scenario J: main's
+  (obfuscation) keeps the letter, this branch's HTTP guard is now Scenario L, its references
+  moved with it. Judging rules 7 re-pinned to `d9f2d827`. `make gates` green (19:13 to 19:26,
+  769 s): ruff, format (534 files), mypy strict (189 files), import-linter (4 contracts kept),
+  spec lint (0 errors, 78 specs), 8305 tests passed and 3 skipped, coverage 97.67%, self-scan 0
+  high or critical, bandit clean, pip-audit no known vulnerabilities.
+
+## State, 2026-10-26: obfuscation and fuzzing on request (`feat/obfuscation-mode`, u05 A-99)
+
+- **What.** Ten mutator families (`mutators/{encode,cipher,bijection,smuggle,glyph,bon,structured,ascii_art,evade,image}.py`),
+  presets and seeded fuzz chains (`mutators/obfuscation.py`), one chain grammar
+  (`shared/mutation_chain.py`) read by the linter, the runner and the CLI, the image link sent as
+  a PNG part on a `multimodal` target (`core/runner.py` `_carrier`, `shared/media.py` charset
+  `ascii`), `run --obfuscate` and `--fuzz` (`cli/run.py` `obfuscated`), and the previews
+  `registry mutators` and `mutate` (`cli/mutate.py`). The fingerprint's carrier layer skips the
+  families (`fingerprint_probe = False`).
+- **Open decision OD-57** (u05 §9, index ledger): a pass under a carrier the model could not read
+  is not resistance; nothing measures comprehension for the added carriers yet.
+- **Not built.** A comprehension check per carrier (OD-57); image chains on a multi-turn spec; a
+  shipped spec that declares the families (they run on request only).
+- **Numbering.** A-97 and OD-55 are PR #139's, A-98 is kept for the guard follow-up; this branch
+  is A-99 and OD-57.
+- **Docs.** Scenario J (obfuscation) and Scenario K (a first live scan of a deployed assistant, in
+  order) in `examples/README.md`, with USAGE, FAQ, MANUAL §5, §6 and §13, `docs/03`, `09`, `10`,
+  REFERENCES, the man page and both contracts.
+- **Verified.** `make gates` green on 2026-10-26, 11:43 to 11:54, after merging main (A-97)
+  into the branch (8241 tests passed, 3 skipped, coverage 97.65 %, bandit and pip-audit clean,
+  self-scan 0 high/critical; judging rules 7 re-pinned to `f34bd722` on top of A-97); the new CLI tests also pass with
+  `GITHUB_ACTIONS=true FORCE_COLOR=1`. Hypothesis found `bon` raising on a Unicode digit in the
+  seed (`int('¹')`), fixed: the sample is read against `accepted_params`.
+- **Merged with main after u08 A-100** (2026-10-26): conflicts only in the append-only pin
+  history, the index, the CHANGELOG and this ledger, each kept whole (main's pins first, this
+  branch's after); judging rules 7 re-pinned to `7197208e`. `make gates` green (17:21 to 17:32,
+  657 s): ruff, format (531 files), mypy strict (188 files), import-linter (4 contracts kept), spec
+  lint (0 errors, 78 specs), 8258 tests passed and 3 skipped, coverage 97.67%, self-scan 0 high or
+  critical, bandit clean, pip-audit no known vulnerabilities.
 
 ## State, 2026-10-26: no constant canary stem (`feat/neutral-canary-prefix`, u08 A-100)
 
