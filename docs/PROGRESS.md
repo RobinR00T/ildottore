@@ -5,6 +5,51 @@ The carryover ledger. Every agent session updates this so context survives even 
 newest merge on top: a branch's entries land together when it merges, so the dates of
 neighbouring entries can interleave (an older branch merged later sits above a newer one).
 
+## State, 2026-10-27: the MCP catalogue, its parameters and its pins (`feat/mcp-rug-pull`, u04 A-101)
+
+- **Why.** A public list of vulnerable LLM labs (read 2026-10-27) names two MCP risks the battery
+  did not see: the rug pull (Damn Vulnerable MCP Server: a server changes a reviewed definition)
+  and poisoning outside the tool's description. Discovery looked at one listing at a time and
+  rendered only each tool's `description`.
+- **What.** `adapters/mcp.py`: `_parameter_lines` renders each described `inputSchema` property;
+  `catalogue_fingerprints` (SHA-256 per entry, canonical JSON) into `raw_ids.mcp_catalogue`;
+  `MCPAdapter.pins` and `_pin_lines` (`Pinned catalogue ... matches` / `drifted`). `shared/models.py`
+  `McpSpec`, `Target.mcp`, `Capabilities.mcp_pins`; enums, schema, planner and golden mapping
+  `mcp_pins`; `cli/wiring.py` `_mcp_spec`, `_mcp_pins_capability`, pins to the adapter;
+  `cli/fleet.py` refuses `mcp_pins`; `shared/digest.py` leaves an absent block out;
+  `reporting/masking.py` `_restore_digests` keeps the fingerprints and the target's pins readable.
+  New spec `MCP-RUGPULL-001` in the `mcp` suite.
+- **Found on the way.** Running the manual's example: with pins, the run's report was not written
+  at all (the pins, masked as secrets, failed the `TestRun` validation, exit 3). Fixed in the same
+  branch before any commit, with a CLI test that writes the JSON and HTML reports.
+  And the new spec decided a reply that answers nothing: an offline `bare` mock declaring
+  `mcp_pins` failed `MCP-RUGPULL-001` (its `regex_presence` on `matches` reads a canned string as
+  a missing marker), against OD-16. A pin on a mock is now refused unless it replays the spec's
+  fixtures (`vulnerable`, `hardened`); the whole battery against `bare` is 79 `inconclusive`.
+  Judging rules stay 7, re-pinned (no evaluator or combination changed).
+- **Open decision OD-59** (u04 §9, index ledger, ADR-0015): pins compared in the adapter; any drift
+  fails; fingerprints copied from the report (no `dottore mcp pin` yet); LLM06, not LLM03 (LLM03
+  would move the OWASP coverage figure from 8/10 to 9/10).
+- **Docs.** `docs/MANUAL.md` (capabilities, the rendering, "Pinning an MCP server's catalogue" with
+  output from a real run against a local server, the suite table, 79 specs), `docs/FAQ.md`,
+  `examples/README.md` (Scenario F), `examples/target.mcp.yaml`, `docs/03`, `docs/08`, `docs/15`,
+  `docs/17`, `INSTALL.md`, `ROADMAP.md`, ADR-0015, u04 and u13 contracts, 00-INDEX, CHANGELOG.
+- **Docs pass, every example run first.** A docs audit listed 39 gaps; fixed here: the target-key
+  lists (MANUAL §4.2, `dottore-scope.5`: `rest`, `mcp`, `filter_stops`), 78 to 79 specs (README,
+  the sampling figures: `seed` 42 in 77, `top_p` unset in 73), `NEW_FAIL` to the CLI's `NEW-FAIL`,
+  the two `ONLY-IN-*` drift labels; a real `diff` and `calibrate` example (MANUAL, new
+  `examples/labels.example.yaml`); Scenario M in `examples/README.md` (after `--quick` holds: a
+  staged campaign against a guarded agent, each stage's real estimate, the resume after the
+  hourly stop); FAQ entries for that and for carriers; `new-spec` with its required flags;
+  `mcp.pins` in `dottore-scope.5`. Found on the way: `--suite` takes one suite and a second on the
+  same command silently replaces the first (documented; a refusal is a follow-up). The rest of
+  the audit (a `run` examples block, guard stop messages, MCP stdio example pair, `-oN`, `--compare`)
+  stays open.
+- **Gates.** `make gates` green on the final tree, 2026-10-27 09:02 to 09:55: ruff, ruff format,
+  mypy strict (189 files), import-linter (4 contracts kept), spec lint (0 errors, 79 specs, 14
+  suites), the full suite with coverage 97.67%, self-scan 0 high or critical, bandit and pip-audit
+  clean. The new MCP tests also pass with `GITHUB_ACTIONS=true FORCE_COLOR=1`.
+
 ## State, 2026-10-27: an option given two values is refused (`fix/repeated-option`, u12 A-103)
 
 - **Why.** Writing the manual's campaign example (`feat/mcp-rug-pull`) showed that `dottore run

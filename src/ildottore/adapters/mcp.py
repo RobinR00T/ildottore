@@ -24,6 +24,7 @@ an over-the-wire scan and its offline golden are evaluated by the identical eval
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import os
 from dataclasses import dataclass, field
@@ -52,7 +53,7 @@ from ildottore.shared.models import Capabilities, ModelRequest, ModelResponse
 from ildottore.shared.nesting import NestedTooDeeply, bounded_loads
 from ildottore.shared.wellformed import well_formed_json
 
-__all__ = ["MCPAdapter"]
+__all__ = ["MCPAdapter", "catalogue_fingerprints"]
 
 # JSON-RPC "method not found", the server simply lacks that capability (e.g. no prompts);
 # treat as an empty list, not a product defect.
@@ -88,6 +89,99 @@ def _stdio_environment() -> dict[str, str]:
     return {name: os.environ[name] for name in _STDIO_ENV_PASSTHROUGH if name in os.environ}
 
 
+def _entry_key(kind: str, entry: dict[str, Any]) -> str:
+    """``<kind>:<name>``, a resource's URI when it has no name (what ``mcp.pins`` is keyed by)."""
+
+    label = entry.get("name") or (entry.get("uri") if kind == "resource" else None) or "?"
+    return f"{kind}:{label}"
+
+
+def _entry_digest(entry: dict[str, Any]) -> str:
+    """The SHA-256 of an entry as the server advertised it, every field included.
+
+    Canonical JSON (sorted keys, no whitespace), so the same definition always hashes the same and
+    any change to it, a parameter's description or a default as much as the tool's own text, does
+    not. A lone surrogate was already read as U+FFFD where the reply was parsed.
+    """
+
+    canonical = json.dumps(entry, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return hashlib.sha256(canonical.encode("utf-8", "surrogatepass")).hexdigest()
+
+
+def catalogue_fingerprints(
+    tools: list[dict[str, Any]],
+    resources: list[dict[str, Any]],
+    prompts: list[dict[str, Any]],
+) -> dict[str, str]:
+    """``{"<kind>:<name>": sha256}`` for every entry a server advertises (u04 A-101).
+
+    What an operator pins under ``mcp.pins`` after reviewing the listing. Two entries under one
+    key (a server listing a tool twice) hash together, in sorted order, so a second definition
+    slipped in beside a reviewed one changes the key's fingerprint whatever order it is listed in.
+    """
+
+    grouped: dict[str, list[str]] = {}
+    for kind, entries in (("tool", tools), ("resource", resources), ("prompt", prompts)):
+        for entry in entries:
+            grouped.setdefault(_entry_key(kind, entry), []).append(_entry_digest(entry))
+    return {
+        key: digests[0]
+        if len(digests) == 1
+        else hashlib.sha256("".join(sorted(digests)).encode()).hexdigest()
+        for key, digests in sorted(grouped.items())
+    }
+
+
+def _pin_lines(pins: dict[str, str], current: dict[str, str]) -> list[str]:
+    """The ``Pinned catalogue`` section: whether what is advertised is what was pinned.
+
+    Any difference is a drift, read conservatively: a pinned entry whose definition changed (the
+    rug pull), an entry nobody pinned, and a pinned entry the server no longer lists (a reviewed
+    tool swapped for one under another name reads as both of the last two).
+    """
+
+    changed = sorted(key for key in pins.keys() & current.keys() if pins[key] != current[key])
+    unpinned = sorted(current.keys() - pins.keys())
+    missing = sorted(pins.keys() - current.keys())
+    head = f"Pinned catalogue ({len(pins)} pinned):"
+    if not (changed or unpinned or missing):
+        return [f"{head} matches"]
+    lines = [
+        f"{head} drifted ({len(changed)} changed, {len(unpinned)} unpinned, {len(missing)} missing)"
+    ]
+    for label, keys in (("changed", changed), ("unpinned", unpinned), ("missing", missing)):
+        lines.extend(f"- {label}: {key}" for key in keys)
+    return lines
+
+
+def _parameter_lines(schema: object, prefix: str = "") -> list[str]:
+    """``  - param <path>: <description>`` for each described property of a tool's input schema.
+
+    An agent reads a parameter's description as it reads the tool's, so an instruction hidden
+    there hijacks it the same way ("full-schema poisoning"); the rendering showed only the tool's
+    own description, and a poisoned parameter passed the metadata check unseen (u04 A-101).
+    Nested objects are walked with a dotted path; the reply's nesting is already bounded where it
+    is parsed, so the walk is too.
+    """
+
+    if not isinstance(schema, dict):
+        return []
+    properties = schema.get("properties")
+    if not isinstance(properties, dict):
+        return []
+    lines: list[str] = []
+    for name, prop in properties.items():
+        if not isinstance(prop, dict):
+            continue
+        path = f"{prefix}{name}"
+        description = prop.get("description")
+        if isinstance(description, str) and description.strip():
+            lines.append(f"  - param {path}: {description}".rstrip())
+        lines.extend(_parameter_lines(prop, f"{path}."))
+        lines.extend(_parameter_lines(prop.get("items"), f"{path}[]."))
+    return lines
+
+
 @dataclass
 class MCPAdapter:
     """A read-only MCP-server discovery target (implements ``TargetAdapter``)."""
@@ -113,15 +207,18 @@ class MCPAdapter:
     transport: str = "http"  # "http" | "stdio"
     command: tuple[str, ...] = ()
     authorized_commands: tuple[str, ...] = ()
+    # The catalogue the target file pins (``mcp.pins``, u04 A-101): with any, the rendering ends
+    # in a ``Pinned catalogue`` section that ``MCP-RUGPULL-001`` reads.
+    pins: dict[str, str] = field(default_factory=dict)
 
     _rpc_id: int = field(default=0, init=False)
     _cached: ModelResponse | None = field(default=None, init=False)
 
     def capabilities(self) -> Capabilities:
         """An MCP server is a tool provider (so ``tools``-gated specs apply) and an MCP server
-        (so the ``mcp``-gated specs apply, OD-44)."""
+        (so the ``mcp``-gated specs apply, OD-44); with pins, a pinned one (u04 A-101)."""
 
-        return Capabilities(tools=True, mcp=True)
+        return Capabilities(tools=True, mcp=True, mcp_pins=bool(self.pins))
 
     @property
     def unreadable_advice(self) -> str:
@@ -552,6 +649,7 @@ class MCPAdapter:
         lines.append(f"Tools ({len(tools)}):")
         for tool in tools:
             lines.append(f"- {tool.get('name', '?')}: {tool.get('description', '')}".rstrip())
+            lines.extend(_parameter_lines(tool.get("inputSchema")))
         lines.append(f"Resources ({len(resources)}):")
         for res in resources:
             label = res.get("name") or res.get("uri") or "?"
@@ -559,14 +657,22 @@ class MCPAdapter:
         lines.append(f"Prompts ({len(prompts)}):")
         for prompt in prompts:
             lines.append(f"- {prompt.get('name', '?')}: {prompt.get('description', '')}".rstrip())
+        fingerprints = catalogue_fingerprints(tools, resources, prompts)
+        if self.pins:
+            lines.extend(_pin_lines(self.pins, fingerprints))
 
         raw_ids: dict[str, Any] = {"mcp_server": name, "mcp_version": version, "protocol": proto}
+        redacted = self.redactor.redact(raw_ids)
+        # The fingerprints the operator pins from, kept as computed: a SHA-256 is the tool's own
+        # and the entropy rule cannot tell it from a key (``reporting.masking`` keeps them too).
+        if isinstance(redacted, dict):
+            redacted["mcp_catalogue"] = fingerprints
         return ModelResponse(
             text="\n".join(lines),
             tool_calls=[],
             logprobs=None,
             finish_reason="mcp_discovery",
-            raw_ids=self.redactor.redact(raw_ids),
+            raw_ids=redacted if isinstance(redacted, dict) else {},
             # Discovery bills no model tokens. Saying so lets the token ledger release the send's
             # reservation; without a token field it kept about 514 tokens per MCP attempt.
             usage={

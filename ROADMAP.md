@@ -7,7 +7,7 @@ Where the project is and what is left. The living, prioritized gap analysis is
 
 ## Shipped
 
-The battery is **78 specs across 14 suites**, mapped to OWASP LLM Top 10 (2025), MITRE ATLAS and
+The battery is **79 specs across 14 suites**, mapped to OWASP LLM Top 10 (2025), MITRE ATLAS and
 the Nova IoPC taxonomy, with a NIST AI RMF 1.0 subcategory token on every spec (NIST AI 600-1 is
 a reference, not a mapping the code checks). Everything below runs offline against a mock and, where
 noted, over the wire.

@@ -114,7 +114,7 @@ def _target_payload(target: Target, mock_scenario: str | None) -> dict[str, Any]
     payload = {k: v for k, v in dumped.items() if k not in _TARGET_COSMETIC}
     # Absent, it is left out, so a run stored before the field existed still resumes; present,
     # it is part of what answers (which specs the deployment holds the scene for).
-    for optional in ("seeded_setup", "websocket", "rest"):
+    for optional in ("seeded_setup", "websocket", "rest", "mcp"):
         if payload.get(optional) is None:
             payload.pop(optional, None)
     # A WebSocket target's `guard` decides whether and when a query goes out (the cooldown, the
@@ -148,6 +148,10 @@ def _target_payload(target: Target, mock_scenario: str | None) -> dict[str, Any]
     provider = str(payload.get("provider") or "").strip().lower()
     if isinstance(capabilities, dict) and (not capabilities.get("mcp") or provider == "mcp"):
         capabilities.pop("mcp", None)
+    # And `capabilities.mcp_pins` (u04 A-101): false, or set by `mcp.pins` (already in the digest),
+    # likewise; declared by an offline mock, part of what answers.
+    if isinstance(capabilities, dict) and (not capabilities.get("mcp_pins") or payload.get("mcp")):
+        capabilities.pop("mcp_pins", None)
     payload["__route__"] = mock_scenario or "live"
     return payload
 

@@ -135,6 +135,7 @@ from ildottore.shared.models import (
     AttackSpec,
     Attempt,
     Capabilities,
+    McpSpec,
     ModelFingerprint,
     ModelRequest,
     ModelResponse,
@@ -1023,6 +1024,7 @@ def build_real_adapter(
                 transport="stdio",
                 command=tuple(target.command or ()),
                 authorized_commands=authorized_commands,
+                pins=dict(target.mcp.pins) if target.mcp else {},
             )
         # MCP posts JSON-RPC to the endpoint PATH itself (e.g. /mcp), so the adapter keeps the
         # full URL as base_url (unlike openai/anthropic, whose path is a fixed _endpoint_path).
@@ -1034,6 +1036,7 @@ def build_real_adapter(
             api_key=api_key,
             model=target.model,
             **extra,
+            pins=dict(target.mcp.pins) if target.mcp else {},
         )
     # Refused before anything is built, so a run sends nothing to the target when the judge's is
     # the short one (u04 A-78); each adapter refuses it again before its own first request.
@@ -2128,6 +2131,8 @@ def _target_from(path: Path, raw: dict[str, Any]) -> Target:
     seeded = _seeded_setup(path, raw.get("seeded_setup"), target_type)
     websocket = _websocket_spec(path, raw.get("websocket"), provider, endpoint, auth_ref)
     rest = _rest_spec(path, raw.get("rest"), provider, endpoint, auth_ref)
+    mcp = _mcp_spec(path, raw.get("mcp"), provider)
+    caps = _mcp_pins_capability(path, raw, caps_raw, caps, mcp)
 
     return Target(
         id=target_id,
@@ -2144,6 +2149,7 @@ def _target_from(path: Path, raw: dict[str, Any]) -> Target:
         seeded_setup=seeded,
         websocket=websocket,
         rest=rest,
+        mcp=mcp,
         filter_stops=_filter_stops(path, raw.get("filter_stops"), provider),
     )
 
@@ -2637,6 +2643,69 @@ def _rest_spec(
         )
     _check_guard(path, spec.guard, "rest", urlsplit(endpoint or ""), auth_ref, {})
     return spec
+
+
+def _mcp_spec(path: Path, raw: object, provider: object) -> McpSpec | None:
+    """The ``mcp`` block of a ``provider: mcp`` target: the catalogue it pins (u04 A-101).
+
+    Any other provider is refused the block, as a REST target is refused ``websocket``: only the
+    MCP adapter reads a server's catalogue, so pins anywhere else would compare nothing.
+    """
+
+    if raw is None:
+        return None
+    routed = provider.strip().lower() if isinstance(provider, str) else provider
+    if routed != "mcp":
+        raise ValueError(f"target file {path} declares 'mcp', which is read only by provider mcp")
+    if not isinstance(raw, dict):
+        raise ValueError(f"target file {path} 'mcp' must be a mapping")
+    try:
+        return McpSpec.model_validate(raw)
+    except ValidationError as exc:
+        raise ValueError(
+            f"target file {path} 'mcp' failed validation: {validation_problems(exc)}"
+        ) from exc
+
+
+#: The offline scenarios that replay ``MCP-RUGPULL-001``'s fixtures, the only ones a pin may run on.
+_PIN_REPLAYS = ("vulnerable", "hardened")
+
+
+def _mcp_pins_capability(
+    path: Path,
+    raw: dict[str, Any],
+    caps_raw: dict[str, Any],
+    caps: Capabilities,
+    mcp: McpSpec | None,
+) -> Capabilities:
+    """``capabilities.mcp_pins``: true exactly when an MCP target pins its catalogue (u04 A-101).
+
+    It follows ``mcp.pins`` as ``mcp`` follows the provider (OD-44): declared on a live target, it
+    says what the file does not hold and is refused; an offline mock may declare it, to replay
+    ``MCP-RUGPULL-001``'s fixtures, and only a mock that replays them: a ``bare`` or
+    ``comprehending`` mock answers a canned string, which carries no catalogue, and the spec's
+    oracle would fail it (OD-16: no shipped spec decides a reply that answers nothing).
+    """
+
+    pinned = mcp is not None and bool(mcp.pins)
+    if (
+        (pinned or caps.mcp_pins)
+        and _uses_mock(raw)
+        and raw.get("mock_scenario") not in _PIN_REPLAYS
+    ):
+        raise ValueError(
+            f"target file {path} pins an MCP catalogue on an offline mock that replays no "
+            "fixtures; set mock_scenario to vulnerable or hardened, or point it at an MCP server: "
+            "a canned reply carries no catalogue to compare"
+        )
+    if pinned:
+        return caps.model_copy(update={"mcp_pins": True})
+    if "mcp_pins" in caps_raw and not _uses_mock(raw):
+        raise ValueError(
+            f"target file {path} 'capabilities' declares mcp_pins; leave it out: pinning the "
+            "catalogue under mcp.pins sets it"
+        )
+    return caps
 
 
 def _placeholder_names(names: list[str]) -> str:

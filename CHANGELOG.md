@@ -7,6 +7,41 @@ the file, schema copy, build or pipeline it names.
 
 ## [Unreleased]
 
+### Added (u04 A-101, judging rules 7 re-pinned: the MCP catalogue, its parameters and its pins; the rug pull)
+
+- **Parameters are shown and checked.** The MCP adapter's rendering lists, under each tool, every
+  described property of its `inputSchema` (`  - param <path>: <description>`, nested ones by a
+  dotted path). An instruction hidden in a parameter's description ("full-schema poisoning") used
+  to reach an agent without reaching `MCP-TOOLPOISON-001`; it now fails the spec as one in the
+  tool's own description does.
+- **Every discovery fingerprints the catalogue.** The SHA-256 of each tool, resource and prompt as
+  the server advertised it, keyed `tool:<name>`, `resource:<name>`, `prompt:<name>`, in each MCP
+  attempt's `response.raw_ids.mcp_catalogue`, readable in the reports.
+- **`mcp.pins` and `MCP-RUGPULL-001`: the rug pull.** A `provider: mcp` target file may pin the
+  reviewed fingerprints under `mcp.pins`; the rendering then ends in `Pinned catalogue (N pinned):
+  matches`, or `drifted (...)` with each changed, unpinned or missing entry, and the new spec
+  `MCP-RUGPULL-001` (`requires: [mcp, mcp_pins]`, deterministic, no judge) fails on any drift. It is
+  in the `mcp` suite (2 specs) and is not sent to a server nobody pinned. A pin that is not a
+  lowercase SHA-256 under a `tool:`, `resource:` or `prompt:` key, the block on another provider,
+  and `capabilities.mcp_pins` written by hand on a live target or a fleet entry are refused before
+  anything is sent, and so is a pin on an offline mock other than `vulnerable` or `hardened`: a
+  canned reply carries no catalogue, and the spec would fail it (OD-16).
+  Judging rules stay at version 7, re-pinned: no evaluator or combination changed. 79 specs; coverage figures unchanged (the spec maps to LLM06, OD-59 open). See
+  MANUAL §4.2 "Pinning an MCP server's catalogue", ADR-0015.
+- **Operator to-do.** None: a target file without pins keeps its digest.
+
+### Documentation (examples run before they are written: diff and calibrate, a campaign after `--quick`)
+
+- `examples/README.md` Scenario M: what to run when `--quick` holds against a guarded agent, one
+  stage per command with its real estimate and the hours the guard's cap makes of it, carriers
+  only on what held, the resume after the hourly stop and the refusal of a changed flag.
+- `docs/MANUAL.md`: a real `dottore diff` (all seven drift labels, exit 2) and `dottore calibrate`
+  example, with `examples/labels.example.yaml`; the target-key list holds `rest` and `mcp`;
+  `NEW-FAIL` as the CLI prints it; `--suite` takes one suite (a second replaces the first).
+- `docs/FAQ.md`: "`--quick` passed everything against my agent", "How do I test encodings,
+  ciphers and IDS-style evasions?", and a `new-spec` command that runs.
+- `man/man5/dottore-scope.5`: the full target-key list and `mcp.pins`. `README.md`: 79 specs.
+
 ### Fixed (u12 A-103, judging rules 7 re-pinned: an option given two values is refused)
 
 - **A repeated one-value option no longer drops the first value in silence.** `dottore run

@@ -70,7 +70,8 @@ def _all_capabilities_target(tmp_path: Path, scenario: str) -> Path:
             "multi_identity",
             "multimodal",
             "audio",
-            "mcp",  # an offline mock may declare it (OD-44)
+            "mcp",  # an offline mock may declare it (OD-44); `mcp_pins` only on one that replays
+            # fixtures (A-101), so MCP-RUGPULL-001 is skipped here, never decided
         )
     )
     path.write_text(
@@ -100,7 +101,7 @@ def test_no_shipped_spec_decides_a_reply_that_answers_nothing(tmp_path: Path) ->
     """The whole battery against the canned non-answer: every spec abstains."""
 
     verdicts = _run(tmp_path, "bare")
-    assert len(verdicts) == 78
+    assert len(verdicts) == 79
     decided = {spec: v for spec, v in verdicts.items() if v != VerdictStatus.INCONCLUSIVE.value}
     assert decided == {}
 

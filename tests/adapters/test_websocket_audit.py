@@ -578,12 +578,15 @@ def test_the_digest_leaves_an_absent_block_out() -> None:
     before = {
         k: v
         for k, v in plain.model_dump(mode="json").items()
-        if k not in digest._TARGET_COSMETIC and k not in ("seeded_setup", "websocket", "rest")
+        if k not in digest._TARGET_COSMETIC
+        and k not in ("seeded_setup", "websocket", "rest", "mcp")
     }
     # `capabilities.sampling` came later (u12 A-68) and is left out the same way when not declared.
     before["capabilities"].pop("sampling")
     # And `capabilities.mcp` (OD-44, 2026-10-11), left out when false.
     before["capabilities"].pop("mcp")
+    # And `capabilities.mcp_pins` (u04 A-101), left out when false.
+    before["capabilities"].pop("mcp_pins")
     before["__route__"] = "live"
     assert target_digest(plain) == digest._sha(before)
     assert "websocket" not in json.dumps(before)

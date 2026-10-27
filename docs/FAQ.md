@@ -74,6 +74,28 @@ declare (`capability_unavailable`). Then read the replies: the same sentence for
 the deployment's own filter answering, not the model resisting. examples/README.md, Scenario K,
 walks a first live scan in order with real output.
 
+### `--quick` passed everything against my agent. Is it secure?
+
+It held the triage, which is less than it sounds. `--quick` is the 18 single-turn specs of the
+T0 battery, with no mutation: a deployed agent with a scope filter often answers all of them with
+one refusal. Next, one stage per command, cheapest first, each with `--estimate` before it and
+`--judge` on it: `--suite guardrail-evasion`, `--suite multi-turn`, `--suite agentic-owasp2026`
+(seed and declare its scenes), then every spec the target can run (no selection flag), then
+carriers (`--obfuscate`, `--fuzz`) on the specs that held, never on everything: on the example
+agent the three encoding families over every spec with `--fuzz 10` are 1968 requests at `--runs
+1`, four days at its guard's 20 an hour. `--suite` takes one suite; a second on the same command
+replaces the first. examples/README.md, Scenario M, has each stage's real estimate and the
+resume after the guard's hourly stop.
+
+### How do I test encodings, ciphers and IDS-style evasions?
+
+`--obfuscate` adds carriers to the specs you select, by family preset (`encodings`, `unicode`,
+`structured`, `evasion` and others; `dottore registry mutators` lists them), by one mutation
+(`encode:uu`), or by a chain; `--fuzz N` adds N seeded random chains per spec. Each mutation is
+`--runs` more requests per spec, so preview one with `dottore mutate` and size the run with
+`--estimate` first. A halted run resumes only with the flags it started with. examples/README.md,
+Scenarios J and M.
+
 ### Why does `fleet --judge` say the fleet file does not declare the judge?
 
 Since 2026-10-03 the judge `fleet` authorizes comes from the fleet file, in a `judge:` block
@@ -299,9 +321,11 @@ Category aliases for `-p`: `pi`, `jailbreak`, `leakage`, `tool`, `rag`, `output`
 
 ### Can I add my own attack without touching the code?
 
-Yes, that is the point. `dottore new-spec …` scaffolds a YAML spec; fill `attack`,
+Yes, that is the point. `dottore new-spec --id PI-MYORG-001 --family prompt_injection --out
+mine` scaffolds `mine/PI-MYORG-001.yaml` (`--id` and `--family` are required); fill `attack`,
 `expected_secure_behavior`, `evaluators` and golden `fixtures` (a vulnerable fixture the
-scanner must flag, a hardened one it must pass), then `dottore lint <its directory>` (the
+scanner must flag, a hardened one it must pass), then `dottore lint mine` (the fresh scaffold
+fails it, 3 errors, until its `TODO`s are filled; for the
 built-in battery, inside the package since u12 A-84: `dottore lint src/ildottore/battery`). A
 directory with a
 `pack.yaml` is read as a pack (`attacks/` and `suites/`); one without is read as loose specs, its
@@ -326,6 +350,19 @@ target has when its `provider` is `mcp`, so on a chat model it is skipped as
 `capability_unavailable` and not counted as covered (since 2026-10-11, OD-44). Before, the
 default battery sent its discovery request to a chat model as a prompt, and a model that
 explained what poisoned metadata looks like came out a confirmed Critical.
+The descriptions of a tool's parameters are shown and checked too (since 2026-10-27, u04 A-101):
+an instruction hidden in one hijacks an agent as one in the tool's own description does.
+
+### A server I reviewed changed its tools afterwards. Can the scan catch that?
+
+Yes, if you pin what you reviewed (the "rug pull", u04 A-101). Every MCP discovery fingerprints
+each tool, resource and prompt (a SHA-256 of the entry as the server sent it), and the JSON report
+keeps them under `response.raw_ids.mcp_catalogue`. Copy them into the target file under
+`mcp.pins`; from then on the `mcp` suite also sends `MCP-RUGPULL-001`, which fails when anything
+differs from the pins: a changed definition (a parameter's description or a default counts, even
+when the tool's own description did not change), a tool nobody pinned, a pinned tool gone. It is
+deterministic, so it needs no `--judge`. Without pins it is not sent. Steps and real output:
+MANUAL §4.2, "Pinning an MCP server's catalogue".
 
 ### My assistant only talks over a WebSocket. Can I scan it?
 

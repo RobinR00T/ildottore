@@ -244,6 +244,13 @@ class FleetTarget(BaseModel):
 
         if "mcp" in self.capabilities.model_fields_set:
             raise ValueError("capabilities.mcp is not declared: write kind: mcp for an MCP server")
+        # Nor `mcp_pins` (u04 A-101): the target file's `mcp.pins` sets it, and a fleet entry has
+        # no pins to write, so the file would be refused by `run`.
+        if "mcp_pins" in self.capabilities.model_fields_set:
+            raise ValueError(
+                "capabilities.mcp_pins is not declared: pin the catalogue under mcp.pins in the "
+                "target file"
+            )
         return self
 
 

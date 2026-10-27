@@ -74,10 +74,10 @@ specs, which is exactly what this pass does.
 | T2.001 | Retrieval / RAG Poisoning | PI-INDIRECT-RAG-001 (injection vector); EMB-* (embedding side) | partial |
 | T2.002 | Persistent Memory Poisoning | **MEM-POISON-001** | GAP-CLOSED |
 | T2.003 | Training & Fine-tuning Data Poisoning | (training pipeline, not a live endpoint) | out-of-scope |
-| T2.004 | AI Supply Chain Compromise | MCP-TOOLPOISON-001 (MCP metadata); broader chain not runtime | partial |
+| T2.004 | AI Supply Chain Compromise | MCP-TOOLPOISON-001 (MCP metadata), MCP-RUGPULL-001 (an MCP definition changed after review, against pins); broader chain not runtime | partial |
 | T2.005 | Hallucinated Dependency Exploitation (slopsquatting) | **SUPPLY-SLOPSQUAT-001** | GAP-CLOSED |
 | T3.001 | Agentic Tool Misuse | AG-TOOL-UNAUTH-001, AC-*, AG-* | OK |
-| T3.002 | Tool & Context Poisoning | MCP-TOOLPOISON-001, AG-TOOLMETA-POISON-001 | OK |
+| T3.002 | Tool & Context Poisoning | MCP-TOOLPOISON-001, MCP-RUGPULL-001, AG-TOOLMETA-POISON-001 | OK |
 | T3.003 | Cross-Agent Context Propagation | AG-INTERAGENT-COMPROMISE-001; deepened by AG-WORM-PROPAGATE-001 | partial |
 | T3.004 | Human-Agent Trust Exploitation | **AG-TRUST-APPROVAL-001** | GAP-CLOSED |
 | T4.001 | Agent Identity & Privilege Abuse | AG-IDENTITY-ABUSE-001, AC-RBAC/BFLA/BOLA-001 | OK |

@@ -180,10 +180,11 @@
           "multi_identity",
           "multimodal",
           "audio",
-          "mcp"
+          "mcp",
+          "mcp_pins"
         ]
       },
-      "description": "Capabilities the target must offer for the spec to run. mcp: the target is an MCP server (provider mcp), whose advertised surface the read-only MCP adapter renders (OD-44)."
+      "description": "Capabilities the target must offer for the spec to run. mcp: the target is an MCP server (provider mcp), whose advertised surface the read-only MCP adapter renders (OD-44). mcp_pins: the MCP target pins its catalogue (mcp.pins), which the adapter compares against what the server advertises (u04 A-101)."
     },
     "description": {
       "type": "string"

@@ -64,7 +64,7 @@ suite at `-T0`. `--deep` changes the timing template to `-T2` and not the select
 `--suite` it runs the full battery, as no flag does; adaptive ordering needs a fingerprint, so it
 applies only with `-sV` (or `-A`, which adds it): `docs/09 §2`. `--suite agentic` is not T2: it
 resolves to `agentic-extortion`, 7 specs. The "150+" in the original design table was a target, not
-a measurement: the battery ships 78 specs. (Until 2026-09-21 both flags only moved the timing
+a measurement: the battery ships 79 specs. (Until 2026-09-21 both flags only moved the timing
 template and changed no battery at all.)
 
 ## 3. The minimum battery (T0 "Quick"): mapped to OWASP LLM Top 10 2025

@@ -263,6 +263,19 @@ dottore run --suite mcp \
 Or declare the MCP server in a `fleet.yaml` (`kind: mcp`) and let `dottore fleet` generate its
 scope + target for you.
 
+To catch a server that changes what it advertises after you reviewed it (the "rug pull"), pin the
+reviewed catalogue. Take the fingerprints from the report above, review the listing in it, and
+copy them under `mcp.pins` in the target file (the commented block at the end of
+`target.mcp.yaml`):
+
+```bash
+jq '[.findings[].attempts[].response.raw_ids.mcp_catalogue | select(.)][0]' reports/mcp.json
+```
+
+The next `--suite mcp` run also sends `MCP-RUGPULL-001`: `PASS` while the server advertises exactly
+what was pinned, `FAIL (critical)` and exit 2 when a definition changed, a tool appeared or a pinned
+one is gone, each listed in the evidence (MANUAL §4.2).
+
 ## Scenario G, scan a deployed application you have seeded
 
 A bare model gets a spec's documents, tools and memory in the request (`type: model`). A
@@ -643,6 +656,89 @@ stops before its first request. Saved as profiles, the same scan is
 `dottore run -t <name> --scope <name>`: a bare name reads `<name>.yaml` from
 `ILDOTTORE_TARGETS_DIR` (else `~/.config/ildottore/targets/`) and from `ILDOTTORE_SCOPES_DIR`
 (else `~/.config/ildottore/scopes/`); a path is read as before.
+
+## Scenario M, after `--quick` holds: a campaign against a hardened agent
+
+`--quick` is triage: the 18 single-turn specs of the T0 battery, with no mutation, at `-T0`. A
+deployed agent with a scope filter usually answers all of it with the same refusal, and that
+says little about how it holds under a conversation, an encoding or an agentic attack. This is
+the next campaign, on the agent of Scenarios I and K (same files, placeholders only). Every figure
+below is the real `--estimate` output for these files at `--runs 1`. The guard in
+[`target.agent.yaml`](target.agent.yaml) spaces the agent's queries 15 seconds apart and lets it
+take 20 in any hour, so 20 go out in about five minutes and the run then stops until the hour
+frees (step 4): the hours below are that cap, not the scanner. Judge queries go to the judge,
+not to the agent.
+
+**1. Keep the judge, authorized.** Every command below carries `--judge
+examples/target.judge.yaml`, and [`scope.agent.yaml`](scope.agent.yaml) holds the judge's entry
+(`local-judge`). Without the entry the run is refused before anything is sent:
+`error: target(s) not authorized by the scope: local-judge`. Without `--judge`, most specs come
+back `inconclusive` (step 6).
+
+**2. One stage per run, smallest first.** `--suite` takes one suite: a second `--suite` on the
+same command replaces the first, so run each stage on its own command.
+
+| stage | selection | agent requests | judge requests | under the guard |
+|---|---|---|---|---|
+| a | `--suite guardrail-evasion` | 5 over 2 specs | 10 | one sitting, about 1 min |
+| b | `--suite multi-turn` | 49 over 5 specs | 26 | 3 sittings, over 2 h |
+| c | `--suite agentic-owasp2026` | 2 over 1 spec (5 not seeded) | 4 | one sitting |
+| d | no selection flag: every spec this target can run | 109 over 33 specs | 140 | 6 sittings, over 5 h |
+| e | `--spec PI-DIRECT-001 --spec JB-ROLEPLAY-001 --obfuscate encodings,unicode,structured` | 99 over 2 specs | 132 | 5 sittings, over 4 h |
+
+```bash
+dottore run --estimate --runs 1 --suite multi-turn \
+  -t examples/target.agent.yaml --scope examples/scope.agent.yaml \
+  --judge examples/target.judge.yaml
+```
+
+```
+estimate: 49 requests over 5 spec-runs across 1 target(s) at runs=1 (no sends made)
+  + 26 request(s) to the --judge model (~32346 tokens), paced and debited from the same ceilings
+```
+
+`agentic-owasp2026` sends one spec here because five of its six need a scene in the deployment
+(a tool, a document, a second agent): seed the ones you can and declare them, as Scenario K step 3
+explains. `-A` selects the same 33 specs as stage d and adds 18 fingerprint probes first (`-sV`)
+at `-T2`: it is a deeper plan, not a larger battery.
+
+**3. Carriers only on what held, never on everything.** The same three families over the whole of
+stage d, with `--fuzz 10`, are 1968 agent requests at `--runs 1` (9840 at the default `--runs
+5`): about 99 sittings, four days of the guard's hours, at `--runs 1`, and weeks at 5. Pick the specs the agent
+held in stages a to d, preview a carrier with `dottore mutate` (Scenario K step 7), and add one
+family at a time (stage e).
+
+**4. A stop at the hourly cap is a pause, not a failure.** Past 20 queries in an hour the run
+stops (exit 3) and says when the next slot frees. Write the reports of every stage (`-oA
+reports/agent-staging-mt`, as in Scenario K step 4): the run id is in the JSON report, and it
+names the run's evidence folder. Resume with the same flags:
+
+```bash
+RID=$(jq -r .run.run_id reports/agent-staging-mt.json)
+dottore run --resume "$RID" --runs 1 --suite multi-turn \
+  -t examples/target.agent.yaml --scope examples/scope.agent.yaml \
+  --judge examples/target.judge.yaml -oA reports/agent-staging-mt
+```
+
+A resume keeps every attempt the agent already answered and sends the rest. It refuses a battery
+that changed since the halt, so it refuses a carrier flag the halted run did not have (real
+output, an offline run halted by `--budget-requests 3` and resumed with `--obfuscate encodings`
+added):
+
+```
+error: the battery changed since run 'run-3b1206b75c42' halted: 10 changed (JB-CRESCENDO-001, JB-ENCODING-001, JB-LIKERT-001, JB-LINEAR-001, JB-MULTILINGUAL-001), in mutations (10). Resuming would merge two different batteries into one report under one run id, and score them as one campaign. The run was made with no --obfuscate or --fuzz and this invocation passes --obfuscate encodings: resume with neither flag, or start a fresh run.
+```
+
+**5. Keep it inside the engagement's hours.** On HTTP, `rest.guard.window` (Scenario L) stops the
+run outside the agreed days and hours and says when the window opens; resume it then. The guard
+also stops the run at the first credential failure, and at a tool the agent must not call
+(`stop_on_tools`), so a long campaign never keeps knocking on a deployment that said no.
+
+**6. Read `pass` and `inconclusive` apart.** `pass` means a check decided the agent held.
+`inconclusive` means nothing decided: no judge, a judge that abstained, a scene that was not
+there, or a reply that answers nothing. A stage that comes back mostly `inconclusive` is a stage
+to fix and rerun, not a result. Before you report a `fail`, rerun that spec alone with `--spec
+<ID> --runs 5`: the default five runs measure how reproducible it is.
 
 ## Add your own attack (no core code)
 

@@ -75,6 +75,7 @@ _REQUIRES_TO_CAPABILITY: dict[RequiresCapability, str] = {
     RequiresCapability.MULTI_IDENTITY: "multi_identity",
     RequiresCapability.MULTIMODAL: "multimodal",
     RequiresCapability.MCP: "mcp",
+    RequiresCapability.MCP_PINS: "mcp_pins",
 }
 
 
