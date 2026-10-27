@@ -135,7 +135,7 @@ def test_the_repository_root_reads_the_built_in_battery_and_says_so(
         f"reads the built-in battery inside the installed package: {BATTERY} (pass --spec-path "
         "to read another)\n"
     )
-    assert len(result.stdout.splitlines()) == 78
+    assert len(result.stdout.splitlines()) == 79
     # `lint` stays strict there: it reads the contracts' specs/ and names the battery.
     result = runner.invoke(app, ["lint"])
     assert result.exit_code == 3, result.output

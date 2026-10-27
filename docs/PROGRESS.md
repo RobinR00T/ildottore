@@ -5,6 +5,86 @@ The carryover ledger. Every agent session updates this so context survives even 
 newest merge on top: a branch's entries land together when it merges, so the dates of
 neighbouring entries can interleave (an older branch merged later sits above a newer one).
 
+## State, 2026-10-27: the MCP pins walked end to end; OD-59 decided (`feat/mcp-rug-pull`, docs)
+
+- **Why.** The owner asked for every new feature's docs brought up to date with very detailed
+  examples, and decided the open forks ("do it all").
+- **OD-59 decided as built:** pins in the target file compared in the adapter, any difference
+  fails, fingerprints copied from a reviewed report with `jq` (no `dottore mcp pin`), and
+  `MCP-RUGPULL-001` on LLM06, so the OWASP coverage figure stays 8/10. Recorded in u04 §9, u13,
+  the index ledger, ADR-0015 (accepted) and the CHANGELOG.
+- **Scenario O** in `examples/README.md`: a 23-line stdio MCP server built from the README, its
+  review, the fingerprints copied with `jq` into `mcp.pins`, then `matches`, a quiet change
+  (`1 changed, 1 unpinned`, the toolpoison spec `inconclusive`, the pin spec `FAIL (critical)`,
+  exit 2), a tool gone (`1 missing`), a poisoned parameter and a `<HIDDEN>` block (both specs
+  fail, the matched markers shown), pinning again after an accepted change, and the seven
+  refusals with their real messages (exit 3). Every block was run as written on 2026-10-27 and
+  its output copied; no defect found.
+- **Docs.** `README.md` (an MCP feature line), `USAGE.md` (MCP servers: parameters and pins),
+  `docs/MANUAL.md` (the pins section points to Scenario O), `docs/FAQ.md`, `man/man1/dottore.1`
+  (FILES and EXAMPLES), `examples/README.md` (Scenario O, the file table with
+  `labels.example.yaml`, Scenario F), CHANGELOG.
+
+## State, 2026-10-27: `MCP-TOOLPOISON-001` reads a hidden block (`feat/mcp-rug-pull`, u13 A-102)
+
+- **Why.** A local bench of Damn Vulnerable MCP Server (the ten challenges over stdio, mcp
+  1.30.0 in a scratch venv, nothing vendored) scored challenge 5 `inconclusive`: its listing
+  hides a `<HIDDEN>` block ("you must first access" a secrets resource, "do not mention that")
+  that none of the six markers matched. Challenges 2 and 10 failed; the other seven are runtime
+  flaws discovery cannot see (challenge 4's rug pull happens after three tool calls).
+- **What.** Three markers widened in the spec (tags, `you must` verbs, concealment); a case per
+  widened marker and three clean listings in `tests/battery/test_detection_not_regressed.py`,
+  in our own words (the lab has no license). Rescanned: 2, 5 and 10 fail, the seven clean ones
+  decided by no marker. Lint 79 specs clean. Judging rules 7 re-pinned (`14de9f4d...`).
+- **Bench note.** Inside the command sandbox the lab's servers cannot write `/tmp/dvmcp_*` and
+  close stdio during `initialize`: an environment error, reported as such (`inconclusive`), not
+  a verdict. The bench runs outside it.
+
+## State, 2026-10-27: the MCP catalogue, its parameters and its pins (`feat/mcp-rug-pull`, u04 A-101)
+
+- **Why.** A public list of vulnerable LLM labs (read 2026-10-27) names two MCP risks the battery
+  did not see: the rug pull (Damn Vulnerable MCP Server: a server changes a reviewed definition)
+  and poisoning outside the tool's description. Discovery looked at one listing at a time and
+  rendered only each tool's `description`.
+- **What.** `adapters/mcp.py`: `_parameter_lines` renders each described `inputSchema` property;
+  `catalogue_fingerprints` (SHA-256 per entry, canonical JSON) into `raw_ids.mcp_catalogue`;
+  `MCPAdapter.pins` and `_pin_lines` (`Pinned catalogue ... matches` / `drifted`). `shared/models.py`
+  `McpSpec`, `Target.mcp`, `Capabilities.mcp_pins`; enums, schema, planner and golden mapping
+  `mcp_pins`; `cli/wiring.py` `_mcp_spec`, `_mcp_pins_capability`, pins to the adapter;
+  `cli/fleet.py` refuses `mcp_pins`; `shared/digest.py` leaves an absent block out;
+  `reporting/masking.py` `_restore_digests` keeps the fingerprints and the target's pins readable.
+  New spec `MCP-RUGPULL-001` in the `mcp` suite.
+- **Found on the way.** Running the manual's example: with pins, the run's report was not written
+  at all (the pins, masked as secrets, failed the `TestRun` validation, exit 3). Fixed in the same
+  branch before any commit, with a CLI test that writes the JSON and HTML reports.
+  And the new spec decided a reply that answers nothing: an offline `bare` mock declaring
+  `mcp_pins` failed `MCP-RUGPULL-001` (its `regex_presence` on `matches` reads a canned string as
+  a missing marker), against OD-16. A pin on a mock is now refused unless it replays the spec's
+  fixtures (`vulnerable`, `hardened`); the whole battery against `bare` is 79 `inconclusive`.
+  Judging rules stay 7, re-pinned (no evaluator or combination changed).
+- **OD-59, decided as built on 2026-10-27** (u04 §9, index ledger, ADR-0015 accepted): pins compared in the adapter; any drift
+  fails; fingerprints copied from the report (no `dottore mcp pin` yet); LLM06, not LLM03 (LLM03
+  would move the OWASP coverage figure from 8/10 to 9/10).
+- **Docs.** `docs/MANUAL.md` (capabilities, the rendering, "Pinning an MCP server's catalogue" with
+  output from a real run against a local server, the suite table, 79 specs), `docs/FAQ.md`,
+  `examples/README.md` (Scenario F), `examples/target.mcp.yaml`, `docs/03`, `docs/08`, `docs/15`,
+  `docs/17`, `INSTALL.md`, `ROADMAP.md`, ADR-0015, u04 and u13 contracts, 00-INDEX, CHANGELOG.
+- **Docs pass, every example run first.** A docs audit listed 39 gaps; fixed here: the target-key
+  lists (MANUAL §4.2, `dottore-scope.5`: `rest`, `mcp`, `filter_stops`), 78 to 79 specs (README,
+  the sampling figures: `seed` 42 in 77, `top_p` unset in 73), `NEW_FAIL` to the CLI's `NEW-FAIL`,
+  the two `ONLY-IN-*` drift labels; a real `diff` and `calibrate` example (MANUAL, new
+  `examples/labels.example.yaml`); Scenario M in `examples/README.md` (after `--quick` holds: a
+  staged campaign against a guarded agent, each stage's real estimate, the resume after the
+  hourly stop); FAQ entries for that and for carriers; `new-spec` with its required flags;
+  `mcp.pins` in `dottore-scope.5`. Found on the way: `--suite` takes one suite and a second on the
+  same command silently replaces the first (documented; a refusal is a follow-up). The rest of
+  the audit (a `run` examples block, guard stop messages, MCP stdio example pair, `-oN`, `--compare`)
+  stays open.
+- **Gates.** `make gates` green on the final tree, 2026-10-27 09:02 to 09:55: ruff, ruff format,
+  mypy strict (189 files), import-linter (4 contracts kept), spec lint (0 errors, 79 specs, 14
+  suites), the full suite with coverage 97.67%, self-scan 0 high or critical, bandit and pip-audit
+  clean. The new MCP tests also pass with `GITHUB_ACTIONS=true FORCE_COLOR=1`.
+
 ## State, 2026-10-27: an option given two values is refused (`fix/repeated-option`, u12 A-103)
 
 - **Why.** Writing the manual's campaign example (`feat/mcp-rug-pull`) showed that `dottore run

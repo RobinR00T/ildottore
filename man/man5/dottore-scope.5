@@ -131,8 +131,9 @@ sampling_defaults: { temperature: 0.0, top_p: 1.0 }
 .B id
 and
 .B type
-are required; the rest are needed only for a live scan. The file holds these keys and name,
-transport, command, seeded_setup, websocket and mock_scenario, and no others: any other key, or
+are required; the rest are needed only for a live scan. The file holds these keys (id, type,
+name, provider, endpoint, model, auth_ref, capabilities, sampling_defaults, transport, command,
+seeded_setup, websocket, rest, mcp, filter_stops and mock_scenario) and no others: any other key, or
 a name, provider, endpoint, model, auth_ref or transport that is not text, is refused before
 anything is sent, naming the file and the key. Quote a model id YAML reads as a number, a date or
 a boolean.
@@ -312,6 +313,24 @@ HTTP 401 or 403, or a listed error code in the body, is an authentication failur
 naming another tenant or a listed tool stops the run after that reply, which is not read; every
 request, a retry included, takes a pacing slot; token.tenant is written as is. Worked file:
 examples/target.agent-rest.yaml.
+.PP
+.B mcp
+(provider mcp only) pins the catalogue a server was reviewed with: under
+.BR pins ,
+one key per advertised entry, tool:<name>, resource:<name or URI> or prompt:<name>, each a
+lowercase SHA-256 of the entry as the server advertised it:
+.PP
+.nf
+mcp:
+  pins:
+    "tool:read_file": "450eebaa7c7770c88530446943bd1a78fc946e6510f72ef566ab0d7d2cdcb3da"
+.fi
+.PP
+Pins set capabilities.mcp_pins, which runs MCP-RUGPULL-001: any changed, unpinned or missing
+entry fails it. Copy the fingerprints of a reviewed run from its JSON report
+(response.raw_ids.mcp_catalogue of an MCP attempt). A pin of another shape, the block on another
+provider and mcp_pins written by hand on a live target are refused before anything is sent; an
+offline mock may pin only as mock_scenario vulnerable or hardened.
 .PP
 A target or scope given as a bare name (no separator, no .yaml or .yml suffix) is read from
 <name>.yaml under ILDOTTORE_TARGETS_DIR (else ~/.config/ildottore/targets) or

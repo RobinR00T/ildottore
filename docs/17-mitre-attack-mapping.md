@@ -53,7 +53,7 @@ in a run is a third-party report).
   MITRE ATT&CK Enterprise tactics (v20.0)    8/15   53%
 ```
 
-41 of 78 specs carry a mapping; 18 distinct techniques are declared, 14 observed and 4
+41 of 79 specs carry a mapping; 18 distinct techniques are declared, 14 observed and 4
 capability-only. Covered: Reconnaissance, Resource Development, Execution, Persistence, Stealth,
 Credential Access, Exfiltration, Impact. Not covered yet, all **roadmap** (a black-box runtime
 scanner driving an agent can observe each in the target's own tool calls): Initial Access,

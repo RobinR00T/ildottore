@@ -362,6 +362,10 @@ class Capabilities(_Frozen):
     # reads the MCP adapter's rendering of a server's advertised surface requires it, so it is not
     # sent to a chat model as a prompt.
     mcp: bool = False
+    # Whether an MCP target pins its catalogue (u04 A-101): true exactly when its ``mcp.pins`` is
+    # not empty, which the target loader sets; an offline mock may declare it. ``MCP-RUGPULL-001``
+    # requires it, so a server nobody pinned is not judged against a catalogue it never had.
+    mcp_pins: bool = False
 
 
 class SeededSetup(_Frozen):
@@ -752,6 +756,28 @@ class RestSpec(_Frozen):
     guard: WebSocketGuard | None = None
 
 
+#: A pinned entry of an MCP server's catalogue: ``tool:``, ``resource:`` or ``prompt:`` and the
+#: entry's name (a resource's URI when it has no name), and the lowercase SHA-256 of the entry as
+#: the server advertised it (``adapters.mcp.catalogue_fingerprints``).
+_MCP_PIN_KEY_PATTERN = r"^(tool|resource|prompt):\S.*$"
+_SHA256_HEX_PATTERN = r"^[0-9a-f]{64}$"
+
+
+class McpSpec(_Frozen):
+    """The ``mcp:`` block of a ``provider: mcp`` target: the catalogue it pins (u04 A-101).
+
+    ``pins`` maps each entry the operator reviewed to its fingerprint. With pins declared, the
+    adapter compares what the server advertises against them and ``MCP-RUGPULL-001`` fails on any
+    difference: a definition changed after it was reviewed (the "rug pull"), an entry nobody
+    reviewed, or a reviewed one gone. Without pins, the spec is not sent.
+    """
+
+    pins: dict[
+        Annotated[str, Field(pattern=_MCP_PIN_KEY_PATTERN, max_length=512)],
+        Annotated[str, Field(pattern=_SHA256_HEX_PATTERN)],
+    ] = Field(default_factory=dict, max_length=10_000)
+
+
 class WebSocketSpec(_Frozen):
     """The ``websocket:`` block of a ``provider: websocket`` target (``docs/MANUAL.md`` §4.2).
 
@@ -808,6 +834,8 @@ class Target(_Frozen):
     websocket: WebSocketSpec | None = None
     # A ``provider: rest`` target's guard (u04 A-98; ``None`` for every other provider).
     rest: RestSpec | None = None
+    # A ``provider: mcp`` target's pinned catalogue (u04 A-101; ``None`` for every other provider).
+    mcp: McpSpec | None = None
     # The provider filter stops an ``openai`` or ``anthropic`` target's adapter reads, when its
     # file says (u04 A-79): ``[]`` for an endpoint that speaks the provider's API and has no such
     # filter behind it, so its stops on a reply with text or a tool call, and Azure's HTTP 400,

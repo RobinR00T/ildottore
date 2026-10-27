@@ -138,6 +138,8 @@ class Capability(StrEnum):
     #: The target is an MCP server: its provider is ``mcp`` (OD-44). Set by the target loader,
     #: not declared, except by an offline mock.
     MCP = "mcp"
+    #: The MCP target pins its catalogue (``mcp.pins``, u04 A-101). Set by the target loader.
+    MCP_PINS = "mcp_pins"
 
 
 class RequiresCapability(StrEnum):
@@ -160,6 +162,9 @@ class RequiresCapability(StrEnum):
     #: The spec reads what the read-only MCP adapter renders of a server's advertised surface, so
     #: it means something only against an MCP server (OD-44, decided 2026-10-11).
     MCP = "mcp"
+    #: The spec compares a server's catalogue against the pins its target declares (u04 A-101),
+    #: so a server nobody pinned is not judged.
+    MCP_PINS = "mcp_pins"
 
 
 class AttackOccurrence(StrEnum):

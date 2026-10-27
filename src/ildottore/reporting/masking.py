@@ -81,6 +81,11 @@ def mask_run(run: TestRun, redactor: Redactor) -> TestRun:
     # Each target is named as its findings name it (`report_identity`).
     for masked_target, target in zip(masked.get("targets") or [], run.targets, strict=True):
         masked_target["id"] = report_identity(target.id)
+        # An MCP target's pins are SHA-256s (u04 A-101), not secrets; masked, they no longer
+        # validated and the report was not written at all.
+        masked_mcp = masked_target.get("mcp")
+        if target.mcp is not None and isinstance(masked_mcp, dict):
+            _restore_digests(target.mcp.pins, masked_mcp.get("pins"))
     # The scope digest is the tool's own SHA-256 of the authorization record; the entropy rule
     # cannot tell it from a key, and masked it says nothing. Kept only in the shape it has.
     if run.scope_sha256 is not None and _SHA256.fullmatch(run.scope_sha256):
@@ -125,7 +130,40 @@ def _masked_attempt(raw: object, redactor: Redactor) -> dict[str, object]:
     masked = redact_split(redactor, keyed)
     if not isinstance(masked, dict):  # pragma: no cover - redact preserves shape
         raise TypeError("redactor changed the shape of an attempt dump")
+    _restore_catalogue_fingerprints(raw, masked)
     return masked
+
+
+def _restore_catalogue_fingerprints(raw: dict[str, object], masked: dict[str, object]) -> None:
+    """Put back an MCP discovery's catalogue fingerprints (u04 A-101), as the scope digest is.
+
+    ``raw_ids["mcp_catalogue"]`` maps each advertised entry to the SHA-256 the adapter computed,
+    which the operator copies into ``mcp.pins``; the entropy rule masked every one, and a masked
+    fingerprint pins nothing. Only a value of a SHA-256's shape is put back.
+    """
+
+    def catalogue(attempt: dict[str, object]) -> object:
+        response = attempt.get("response")
+        raw_ids = response.get("raw_ids") if isinstance(response, dict) else None
+        return raw_ids.get("mcp_catalogue") if isinstance(raw_ids, dict) else None
+
+    computed = catalogue(raw)
+    if isinstance(computed, dict):
+        _restore_digests(computed, catalogue(masked))
+
+
+def _restore_digests(computed: Mapping[str, object], shown: object) -> None:
+    """Put back in ``shown`` each value of ``computed`` that has a SHA-256's shape.
+
+    Beside its key as the masking left it (a key is a server's or an operator's text), matched in
+    order: masking keeps a mapping's order and its size.
+    """
+
+    if not isinstance(shown, dict) or len(computed) != len(shown):
+        return
+    for key, value in zip(list(shown), computed.values(), strict=True):
+        if isinstance(value, str) and _SHA256.fullmatch(value):
+            shown[key] = value
 
 
 def _restore_tool_fields(masked: object, finding: Finding, redactor: Redactor) -> dict[str, object]:

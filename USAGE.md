@@ -290,6 +290,21 @@ uses `transport: stdio` + `command` and is launched as a subprocess only if the 
 `commands` list authorizes that exact command
 line (default-deny). See [`docs/MANUAL.md`](docs/MANUAL.md).
 
+What the `mcp` suite reads is what an agent reads: each tool's description and, under it, the
+description of every parameter of its `inputSchema`. `MCP-TOOLPOISON-001` fails a poisoned
+listing without a judge and passes a clean one only with `--judge`. To catch a server that
+changes after you reviewed it (the "rug pull"), pin what you reviewed:
+
+```bash
+dottore run --suite mcp -t target.yaml --scope scope.yaml -oJ reports/review.json
+jq '[.findings[].attempts[].response.raw_ids.mcp_catalogue | select(.)][0]' reports/review.json
+```
+
+Copy the fingerprints under `mcp.pins` in the target file; every later `--suite mcp` run also
+sends `MCP-RUGPULL-001`, which fails (`critical`, exit 2) on a changed, unpinned or missing
+entry. Step by step against a local server, with every refusal: Scenario O in
+[`examples/README.md`](examples/README.md).
+
 ## A chat endpoint over a WebSocket
 
 An assistant whose only chat surface is a WebSocket that streams JSON frames is declared with

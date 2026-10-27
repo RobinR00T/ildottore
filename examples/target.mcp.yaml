@@ -11,3 +11,15 @@ capabilities:
 # capability says without being written (OD-44), so `MCP-TOOLPOISON-001` runs here and on no chat
 # model. Scan it with the `mcp` suite:
 #   dottore run --suite mcp -t examples/target.mcp.yaml --scope examples/scope.mcp.yaml
+#
+# Pin the catalogue you reviewed (u04 A-101, MANUAL §4.2 "Pinning an MCP server's catalogue"):
+# with pins, the `mcp` suite also sends `MCP-RUGPULL-001`, which fails when the server advertises
+# anything other than what was pinned (a definition changed after review, an entry nobody
+# reviewed, a reviewed one gone). Take the fingerprints from a reviewed run's JSON report:
+#   jq '[.findings[].attempts[].response.raw_ids.mcp_catalogue | select(.)][0]' review.json
+# Review the listing before you pin it: a pin says "this catalogue was reviewed". Step by step
+# against a local stdio server, every kind of drift and every refusal: examples/README.md, Scenario O.
+# mcp:
+#   pins:
+#     "tool:read_file": "450eebaa7c7770c88530446943bd1a78fc946e6510f72ef566ab0d7d2cdcb3da"
+#     "tool:send_file": "c333a5a1798f713c048c8d7c444cdb177bfa86f4bcbba1a2f7fbdaabef56bcce"

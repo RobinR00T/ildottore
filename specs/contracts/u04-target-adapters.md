@@ -658,6 +658,32 @@ reads as U+FFFD, since httpx decodes the stream as text.
   `tests/adapters/test_agent_guard_window_rest.py` (26) and `tests/cli/test_rest_guard_profiles.py`
   (20).
 
+- **A-101 (added 2026-10-27): the MCP catalogue, its parameters and its pins (ADR-0015).**
+  - The rendering shows each described property of a tool's `inputSchema` under the tool
+    (`  - param <path>: <description>`, nested by a dotted path, an array's items with `[]`;
+    `_parameter_lines`), so an instruction in a parameter's description reaches the evaluators.
+  - `catalogue_fingerprints(tools, resources, prompts)`: the SHA-256 of each entry as advertised
+    (canonical JSON, sorted keys, every field), keyed `tool:<name>`, `resource:<name or URI>`,
+    `prompt:<name>`; two entries under one key hash together in sorted order. Always in
+    `response.raw_ids.mcp_catalogue`, kept readable by `reporting.masking._restore_digests`, which
+    also keeps `run.targets[].mcp.pins` readable (masked, the run's report failed its own
+    validation and was not written; found running the manual's example).
+  - `MCPAdapter.pins` (from the target's `mcp.pins`, `shared.models.McpSpec`: key
+    `^(tool|resource|prompt):\S.*$`, value a lowercase SHA-256, at most 10,000): with any, the
+    rendering ends in `Pinned catalogue (N pinned): matches`, or `drifted (c changed, u unpinned,
+    m missing)` and a line per difference (`_pin_lines`), and `capabilities()` says `mcp_pins`.
+  - The loader reads `mcp` for `provider: mcp` only, refuses a malformed pin naming the file, and
+    sets `capabilities.mcp_pins` exactly when `mcp.pins` is not empty; declared on a live target it
+    is refused (an offline mock may declare it, or pin, only as `vulnerable` or `hardened`, the
+    scenarios that replay the spec's fixtures: a canned reply would fail it, OD-16); a fleet entry
+    may not declare it. The pins are in
+    the target digest; an absent block and a false `mcp_pins` are left out, so a target without
+    them hashes as before.
+  - `MCP-RUGPULL-001` (u13): `requires: [mcp, mcp_pins]`, `regex_presence` on `matches` and
+    `regex_absence` on `drifted`, no judge; in the `mcp` suite. LLM06, not LLM03 (OD-59, decided).
+  Still read-only: no `tools/call`. Checked by `tests/adapters/test_mcp.py` (6 added) and
+  `tests/cli/test_mcp_rug_pull.py` (15), against a live local server.
+
 ## §8 Out of scope / forbidden
 - MUST NOT import or call vendor SDKs (`openai`, `anthropic` packages): httpx only (ADR-0002).
 - MUST NOT use LiteLLM as the core abstraction (optional wrapped adapter is MVP-2+, not here).
@@ -860,3 +886,14 @@ reads as U+FFFD, since httpx decodes the stream as text.
   is refused rather than resolved either way. Reversal: `_check_window` in `adapters/agent_guard.py`,
   `RestAdapter._before_attempt` and `_handle_final_response`, and `resolve_profile` in
   `cli/wiring.py`.
+
+- **OD-59** (2026-10-27, A-101, ADR-0015; **decided by the owner on 2026-10-27 ("do it all"), as
+  built**): four choices of the MCP pins, all four kept as built. (a) Pins live in the target file and are compared in
+  the adapter, so one run decides; not taken: compare two reports in `dottore diff`, or re-list
+  within a run. (b) Any difference fails, a pinned entry gone included. (c) The operator copies
+  the fingerprints from a reviewed run's JSON report (`jq`); a `dottore mcp pin` command is not
+  built. (d) `MCP-RUGPULL-001` maps to LLM06, not LLM03: LLM03 is listed out of reach and the
+  remap moves the OWASP coverage figure from 8/10 to 9/10, which one spec does not earn (the
+  figure stays 8/10). Reversal: `_pin_lines` and
+  `catalogue_fingerprints` in `adapters/mcp.py`, `_mcp_spec` in `cli/wiring.py`, the spec's
+  `owasp` and `shared/frameworks.py` `OUT_OF_REACH["LLM03"]`.

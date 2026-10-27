@@ -201,7 +201,7 @@ def test_a_wheel_built_by_hatchling_runs_from_outside_the_checkout(tmp_path: Pat
             )
     linted = _dottore(site, outside, "lint", str(battery))
     assert linted.returncode == 0, linted.stdout + linted.stderr
-    assert "across 78 spec(s), 14 suite(s), 1 pack(s)" in linted.stdout
+    assert "across 79 spec(s), 14 suite(s), 1 pack(s)" in linted.stdout
     digests = [
         subprocess.run(
             [

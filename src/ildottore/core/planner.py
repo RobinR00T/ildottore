@@ -75,6 +75,7 @@ _REQUIRES_TO_CAP: dict[RequiresCapability, str] = {
     RequiresCapability.MULTIMODAL: "multimodal",
     RequiresCapability.AUDIO: "audio",
     RequiresCapability.MCP: "mcp",
+    RequiresCapability.MCP_PINS: "mcp_pins",
 }
 
 
