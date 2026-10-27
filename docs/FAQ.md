@@ -362,7 +362,10 @@ keeps them under `response.raw_ids.mcp_catalogue`. Copy them into the target fil
 differs from the pins: a changed definition (a parameter's description or a default counts, even
 when the tool's own description did not change), a tool nobody pinned, a pinned tool gone. It is
 deterministic, so it needs no `--judge`. Without pins it is not sent. Steps and real output:
-MANUAL §4.2, "Pinning an MCP server's catalogue".
+MANUAL §4.2, "Pinning an MCP server's catalogue", and Scenario O in `examples/README.md`, which
+builds a local server and changes it four ways. Notice the quiet case there: a parameter's
+description that now allows paths outside the workspace reads clean, so `MCP-TOOLPOISON-001`
+stays `inconclusive`, and only the pins catch it.
 
 ### My assistant only talks over a WebSocket. Can I scan it?
 

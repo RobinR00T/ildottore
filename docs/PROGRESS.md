@@ -5,6 +5,26 @@ The carryover ledger. Every agent session updates this so context survives even 
 newest merge on top: a branch's entries land together when it merges, so the dates of
 neighbouring entries can interleave (an older branch merged later sits above a newer one).
 
+## State, 2026-10-27: the MCP pins walked end to end; OD-59 decided (`feat/mcp-rug-pull`, docs)
+
+- **Why.** The owner asked for every new feature's docs brought up to date with very detailed
+  examples, and decided the open forks ("do it all").
+- **OD-59 decided as built:** pins in the target file compared in the adapter, any difference
+  fails, fingerprints copied from a reviewed report with `jq` (no `dottore mcp pin`), and
+  `MCP-RUGPULL-001` on LLM06, so the OWASP coverage figure stays 8/10. Recorded in u04 §9, u13,
+  the index ledger, ADR-0015 (accepted) and the CHANGELOG.
+- **Scenario O** in `examples/README.md`: a 23-line stdio MCP server built from the README, its
+  review, the fingerprints copied with `jq` into `mcp.pins`, then `matches`, a quiet change
+  (`1 changed, 1 unpinned`, the toolpoison spec `inconclusive`, the pin spec `FAIL (critical)`,
+  exit 2), a tool gone (`1 missing`), a poisoned parameter and a `<HIDDEN>` block (both specs
+  fail, the matched markers shown), pinning again after an accepted change, and the seven
+  refusals with their real messages (exit 3). Every block was run as written on 2026-10-27 and
+  its output copied; no defect found.
+- **Docs.** `README.md` (an MCP feature line), `USAGE.md` (MCP servers: parameters and pins),
+  `docs/MANUAL.md` (the pins section points to Scenario O), `docs/FAQ.md`, `man/man1/dottore.1`
+  (FILES and EXAMPLES), `examples/README.md` (Scenario O, the file table with
+  `labels.example.yaml`, Scenario F), CHANGELOG.
+
 ## State, 2026-10-27: `MCP-TOOLPOISON-001` reads a hidden block (`feat/mcp-rug-pull`, u13 A-102)
 
 - **Why.** A local bench of Damn Vulnerable MCP Server (the ten challenges over stdio, mcp
@@ -42,7 +62,7 @@ neighbouring entries can interleave (an older branch merged later sits above a n
   a missing marker), against OD-16. A pin on a mock is now refused unless it replays the spec's
   fixtures (`vulnerable`, `hardened`); the whole battery against `bare` is 79 `inconclusive`.
   Judging rules stay 7, re-pinned (no evaluator or combination changed).
-- **Open decision OD-59** (u04 §9, index ledger, ADR-0015): pins compared in the adapter; any drift
+- **OD-59, decided as built on 2026-10-27** (u04 §9, index ledger, ADR-0015 accepted): pins compared in the adapter; any drift
   fails; fingerprints copied from the report (no `dottore mcp pin` yet); LLM06, not LLM03 (LLM03
   would move the OWASP coverage figure from 8/10 to 9/10).
 - **Docs.** `docs/MANUAL.md` (capabilities, the rendering, "Pinning an MCP server's catalogue" with

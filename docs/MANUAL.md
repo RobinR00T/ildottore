@@ -1097,6 +1097,12 @@ refused before anything is sent (`error: target file target.yaml 'mcp' failed va
 twice gets one fingerprint for both, the same whatever order they come in, so a second definition
 slipped in beside a reviewed one is a `changed`.
 
+Scenario O in [`../examples/README.md`](../examples/README.md) runs all of this against a local
+stdio server built from the page: the review, the `jq` that appends the block, `matches`, each
+kind of drift, a poisoned parameter, pinning again, and every refusal with its message. The
+choices above (compare in the adapter, fail on any difference, copy from a report, LLM06) are
+the owner's, decided on 2026-10-27 (OD-59, ADR-0015).
+
 #### A chat endpoint over a WebSocket (`provider: websocket`)
 
 Many deployed assistants expose their chat only over a WebSocket that streams the answer in

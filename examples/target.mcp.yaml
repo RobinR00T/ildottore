@@ -17,6 +17,8 @@ capabilities:
 # anything other than what was pinned (a definition changed after review, an entry nobody
 # reviewed, a reviewed one gone). Take the fingerprints from a reviewed run's JSON report:
 #   jq '[.findings[].attempts[].response.raw_ids.mcp_catalogue | select(.)][0]' review.json
+# Review the listing before you pin it: a pin says "this catalogue was reviewed". Step by step
+# against a local stdio server, every kind of drift and every refusal: examples/README.md, Scenario O.
 # mcp:
 #   pins:
 #     "tool:read_file": "450eebaa7c7770c88530446943bd1a78fc946e6510f72ef566ab0d7d2cdcb3da"

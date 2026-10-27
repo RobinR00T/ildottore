@@ -35,6 +35,11 @@ mapping the code checks).
   (`--judge`) is a hardened secondary that can never turn a deterministic fail into a pass,
   and a fail only the judge reported is reported for review, never confirmed (OD-19).
 - **Fleet mode**: declare every LLM / URL / MCP endpoint in one `fleet.yaml` and scan the lot.
+- **MCP servers, read-only**: discovery lists a server's tools, resources and prompts (it never
+  calls a tool) and flags poisoning in a tool's description or in any of its parameters' (a
+  `<HIDDEN>` block included). Pin the catalogue you reviewed under `mcp.pins` and every later
+  scan fails when the server changes it (the "rug pull"): a walk-through with real output is
+  Scenario O in [`examples/README.md`](examples/README.md).
 - **Any AI agent over a WebSocket or plain HTTP**, one profile per agent and no code: the wire
   shape is declared in the target file, and its `guard` keeps the scan polite and contained (the
   JWT checked for its tenant and expiry before it is sent, a stop at the first authentication

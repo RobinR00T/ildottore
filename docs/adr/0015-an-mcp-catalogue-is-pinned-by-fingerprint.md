@@ -1,7 +1,7 @@
 # ADR-0015: an MCP server's catalogue is pinned by fingerprint (u04 A-101)
 
-* **Status:** proposed, 2026-10-27; built as the smallest reversible version, owner to decide
-  (OD-59)
+* **Status:** accepted, 2026-10-27: the owner decided OD-59 as built ("do it all"); proposed
+  the same day as the smallest reversible version
 * **Date:** 2026-10-27
 * **Context:** clause u04 A-101 in `specs/contracts/u04-target-adapters.md` with its halves in u00,
   u02, u11, u12 and u13; the public labs that exercise MCP risks (Damn Vulnerable MCP Server's
@@ -55,8 +55,9 @@ judges that rendering. Two things went unseen on `9dda026b`:
   operator than copying from the report with `jq`; a new command is u12 work and left for later.
 * **Map the spec to OWASP LLM03 (Supply Chain).** It is the closer category, but the coverage
   lists LLM03 as out of reach for a black-box scanner (`shared/frameworks.py`), and the remap would
-  move the OWASP coverage figure from 8/10 to 9/10. Mapped to LLM06, as `MCP-TOOLPOISON-001` is,
-  until the owner decides (OD-59).
+  move the OWASP coverage figure from 8/10 to 9/10. Mapped to LLM06, as `MCP-TOOLPOISON-001` is
+  (OD-59, decided as built: one spec does not earn a category the coverage lists as out of
+  reach, and the figure stays 8/10).
 
 ## Consequences
 

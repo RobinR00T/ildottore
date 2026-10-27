@@ -7,6 +7,20 @@ the file, schema copy, build or pipeline it names.
 
 ## [Unreleased]
 
+### Documentation (the MCP pins walked end to end; OD-59 decided as built)
+
+- `examples/README.md` Scenario O: build a small stdio MCP server, review it, copy its
+  fingerprints into `mcp.pins` with `jq`, then watch `matches`, a quiet rug pull (a parameter's
+  description changed and a tool added: `MCP-RUGPULL-001` `FAIL (critical)` while
+  `MCP-TOOLPOISON-001` stays `inconclusive`), a pinned tool gone, a poisoned parameter and a
+  `<HIDDEN>` block, pinning again after an accepted change, and every refusal of the block with
+  its message. Every command was run as written; the output is copied from it.
+- OD-59 decided by the owner on 2026-10-27, as built: pins in the target file compared in the
+  adapter, any difference fails, fingerprints copied from a reviewed report, LLM06 (the OWASP
+  coverage figure stays 8/10). ADR-0015 accepted.
+- `README.md`, `USAGE.md`, `docs/MANUAL.md`, `docs/FAQ.md` and `man/man1/dottore.1` point to it;
+  the examples table lists `labels.example.yaml`.
+
 ### Changed (u13 A-102, judging rules 7 re-pinned: `MCP-TOOLPOISON-001` reads a hidden block)
 
 - **Three markers widened.** A local bench against Damn Vulnerable MCP Server (the ten
@@ -45,7 +59,7 @@ the file, schema copy, build or pipeline it names.
   and `capabilities.mcp_pins` written by hand on a live target or a fleet entry are refused before
   anything is sent, and so is a pin on an offline mock other than `vulnerable` or `hardened`: a
   canned reply carries no catalogue, and the spec would fail it (OD-16).
-  Judging rules stay at version 7, re-pinned: no evaluator or combination changed. 79 specs; coverage figures unchanged (the spec maps to LLM06, OD-59 open). See
+  Judging rules stay at version 7, re-pinned: no evaluator or combination changed. 79 specs; coverage figures unchanged (the spec maps to LLM06; OD-59 decided as built). See
   MANUAL §4.2 "Pinning an MCP server's catalogue", ADR-0015.
 - **Operator to-do.** None: a target file without pins keeps its digest.
 
