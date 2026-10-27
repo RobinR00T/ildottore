@@ -54,6 +54,11 @@ mapping the code checks).
   `examples/target.agent-rest.yaml` have placeholders only.
 - **Reports** in JSON, HTML, SARIF and JUnit; **`replay`** re-derives any run from evidence;
   **`diff`** gates a pipeline on regressions vs a baseline.
+- **Your labels feed the gate**: `dottore calibrate report.json labels.yaml --record
+  labels.jsonl` keeps each verdict you give, and `run --fp-ledger labels.jsonl` holds for review
+  a spec whose last labelled fails were more than 30% false alarms (5 at least, the last 50
+  counted). The spec still runs and its fail is still reported; it just stops failing the
+  pipeline until new labels bring the rate down (Scenario N in [`examples/`](examples/)).
 
 ## Quickstart
 

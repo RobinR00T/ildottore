@@ -285,6 +285,29 @@ still reported and scored, no longer gating unless you pass `--include-needs-rev
 keeps running, so the next labels can bring the rate back down. See `docs/MANUAL.md`, "Holding a
 spec that raises false alarms".
 
+### The spec was fixed (or I was wrong). How do I stop holding it?
+
+Keep labelling. Each fail you confirm (`fail` in the labels file) lowers the rate: after 5 false
+alarms, the hold stays at 5 of 16 (31%) and lifts at 5 of 17 (29%), so the twelfth confirmed
+fail does it. The false alarms also stop counting once 50 newer labelled fails push them out of
+the window. To stop holding at once, run without `--fp-ledger` or start a new ledger. There is
+no expiry by date (OD-61, decided as built): a hold that lapsed would gate again on the same
+false alarm nobody re-examined.
+
+### I labelled a fail `inconclusive`. Does that count as a false alarm?
+
+Yes. `inconclusive` means you could not confirm the exploit from the evidence, and a fail you
+cannot confirm is not one to gate on, so it counts toward the 30% as `pass` does (OD-61). If you
+did see the exploit, label it `fail`.
+
+### Can I edit or merge ledgers by hand?
+
+Yes, as long as every line stays a label record: the five keys `operator`, `recorded_at`,
+`run_id`, `scanner` and `spec_id`, verdicts `pass`, `fail` or `inconclusive`. A line the run cannot
+read stops it before anything is sent (exit 3, naming the line), because a breaker that skipped it
+would hold less than you labelled. Order matters, not `recorded_at`: the last 50 lines of a spec
+are its window, and a run and spec that appear twice count once, at the later line.
+
 ### My agent sets `confirm: true` on a destructive call. Why is it still a finding?
 
 Because the model set it. Only a confirmation from outside the model counts: the user's reply

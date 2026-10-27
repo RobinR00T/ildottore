@@ -1,7 +1,8 @@
 # ADR-0017: labelled false positives hold a spec for review (u08 A-105)
 
-* **Status:** accepted as the smallest reversible version, 2026-10-27; the figures are open
-  decision OD-61 (owner to decide)
+* **Status:** accepted, 2026-10-27. OD-61 decided the same day by the owner, as built: per
+  spec, the last 50 labelled fails, more than 30% false alarms with 5 at least, `inconclusive`
+  counted as a false alarm, no expiry
 * **Date:** 2026-10-27
 * **Context:** `dottore calibrate` (docs/12, "Human-in-the-loop feedback loop", built 2026-09-03)
   measured the scanner against an operator's labels and threw the labels away. A spec that keeps
@@ -47,11 +48,15 @@ the one place that answer is made.
 
 * **Per spec and target.** Holding a spec only on the target its false alarms came from is more
   precise and needs many more labels per pair before a rate means anything. The ledger records the
-  run id, from which the target can be recovered later; OD-61 asks whether to key on the pair.
+  run id, from which the target can be recovered later. OD-61 kept the spec as the key (2026-10-27);
+  it is the first thing to revisit when one spec is scanned against targets that differ.
 * **Changing the verdict.** A held fail stays a fail: the operator decides, the scanner does not
   rewrite what it saw.
 * **Dropping the spec from the run.** It would stop measuring the very spec whose rate the next
   labels have to bring down.
+* **An expiry.** A hold that lapsed after some days without a label would gate again on the
+  same false alarm nobody re-examined. OD-61 chose none: new labels lift a hold, and so does the
+  window of 50 once the false alarms leave it.
 * **Writing the ledger from `run`.** The labels are the operator's; only `calibrate`, which reads
   them, writes them.
 

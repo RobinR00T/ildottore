@@ -407,6 +407,36 @@ evidence (prompt, response, tool traces, the aggregate verdict and its reasoning
 `dottore replay` re-derives a run from stored evidence. See
 [`docs/05-scoring-model.md`](docs/05-scoring-model.md).
 
+## False alarms: the labels ledger
+
+When you read a finding's evidence and decide it was no exploit, say so once and keep it:
+
+```bash
+# labels.yaml: spec_id -> pass | fail | inconclusive, what you found in the evidence
+dottore calibrate report.json labels.yaml --record labels.jsonl
+dottore run -t target.yaml --scope scope.yaml --fp-ledger labels.jsonl
+```
+
+The rule, per spec: take its last 50 labelled fails (a `fail` the scanner reported and you
+labelled); with 5 or more, the spec is held when more than 30% were labelled `pass` or
+`inconclusive`. A held spec still runs and its fail is still reported, as `FAIL (<band>, needs
+review)`, so it gates only with `--include-needs-review`. Some counts:
+
+| Labelled fails | False alarms among them | Held? |
+|---:|---:|---|
+| 4 | 4 | no: under the minimum of 5 |
+| 5 | 5 | yes (100%) |
+| 10 | 3 | no: 30% is not more than 30% |
+| 10 | 4 | yes (40%) |
+| 16 | 5 | yes (31%) |
+| 17 | 5 | no (29%): twelve confirmed fails after five false alarms lift the hold |
+
+A report recorded twice counts once. There is no expiry: a hold lifts through new labels. The
+ledger is refused whole on a line it cannot read (exit 3, before anything is sent), and a resume
+keeps the holds its run started with. Worked end to end, with real output, in
+[`examples/README.md`](examples/README.md) Scenario N; the reference is
+[`docs/MANUAL.md`](docs/MANUAL.md), "Holding a spec that raises false alarms".
+
 ## Adding a technique (no core code)
 
 The product's whole point is extensibility. A new attack is usually just YAML:

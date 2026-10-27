@@ -23,10 +23,13 @@ the file, schema copy, build or pipeline it names.
   `--quiet` too, and in `--dry-run`. The ledger is read before anything is sent and refused whole
   on a bad line (exit 3); a `-o` report path that is the ledger is refused. The run context
   records `review_holds`, and `--resume` holds the same specs and refuses `--fp-ledger`.
-- ADR-0017; open decision OD-61 (the figures, per spec or per spec and target, whether an
-  `inconclusive` label counts, whether a hold expires). Docs: MANUAL ("Holding a spec that raises
-  false alarms", the `--fp-ledger` row), USAGE, FAQ, `dottore(1)`, docs/09, docs/12; examples:
-  Scenario N with `target.mock.yaml`, `scope.mock.yaml` and `labels.mock.yaml`.
+- ADR-0017; OD-61 decided by the owner on 2026-10-27, as built: per spec (not per spec and
+  target), the last 50 labelled fails, more than 30% false alarms with 5 at least, an
+  `inconclusive` label counted as a false alarm, no expiry (a hold lifts through new labels).
+  Docs: README, MANUAL ("Holding a spec that raises false alarms", with the rule worked through,
+  the ledger's fields, lifting a hold and every refusal; the `--fp-ledger` row), USAGE, FAQ,
+  `dottore(1)`, docs/09, docs/12; examples: Scenario N, step by step from the first labelled run
+  to the hold lifting, with `target.mock.yaml`, `scope.mock.yaml` and `labels.mock.yaml`.
 - Judging rules stay at version 7, re-pinned: `core/runner.py` takes the holds; no evaluator or
   combination changed, so a reply is judged as before, and without `--fp-ledger` nothing is held.
 - Tests: `tests/shared/test_review_holds.py` (8), `tests/cli/test_fp_breaker.py` (14).

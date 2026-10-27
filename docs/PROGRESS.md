@@ -20,7 +20,18 @@ neighbouring entries can interleave (an older branch merged later sits above a n
 - **Verified.** 22 new tests; the manual's Scenario N run by hand with the shipped example files
   (five mock runs recorded, the sixth holds `PI-DIRECT-001`: exit 2 with the other spec, 0 alone,
   2 alone with `--include-needs-review`).
-- **Open.** OD-61 (figures, key, `inconclusive`, expiry). Judging rules 7 re-pinned.
+- **Documented in full (2026-10-27, evening).** Scenario N now walks the breaker step by step
+  with real output: four labelled runs hold nothing (the minimum is 5), the fifth holds
+  `PI-DIRECT-001`, the same report recorded again counts once, `inconclusive` labels hold as
+  `pass` ones do, a halted run's resume keeps the hold and refuses `--fp-ledger`, every refusal
+  with its message (exit 3), and twelve confirmed fails lift the hold (5 of 16 still holds, 5 of
+  17 does not). The manual, README, USAGE, FAQ and `dottore(1)` carry the same rule.
+- **Gates.** `make gates` on the documented branch, 2026-10-27, 22:05 to 22:21 (15 min): ruff,
+  format, mypy (191 files), four import contracts kept, 78 specs lint OK, 8,395 tests passed and 3
+  skipped, coverage 97.70%, self-scan 0 high or critical, bandit clean; pip-audit reports only
+  `msgpack` 1.2.2 (CVE-2026-114613), pulled in by pip-audit's own `CacheControl`.
+- **Decided.** OD-61, by the owner on 2026-10-27 ("do it all"), as built: per spec, 50 / 30% /
+  5, `inconclusive` counted as a false alarm, no expiry. Judging rules 7 re-pinned.
 
 ## State, 2026-10-27: a stdio MCP server in a container (`feat/mcp-stdio-isolation`, u04 A-104)
 
