@@ -276,6 +276,15 @@ exploits, never the undecided results: a format-valid secret/PII hit without cor
 `inconclusive` by design (needs review, never a confirmed leak), so it does not trip the gate
 with or without the flag. See [`05-scoring-model.md`](05-scoring-model.md).
 
+### A spec keeps failing the gate and every time I look there is no exploit. Do I have to drop it?
+
+No. Label the run (`dottore calibrate report.json labels.yaml --record labels.jsonl`) each time
+you check it, and run with `--fp-ledger labels.jsonl`. Once 5 or more of a spec's labelled fails
+are on record and more than 30% of its last 50 were false alarms, its fail is held for review:
+still reported and scored, no longer gating unless you pass `--include-needs-review`. The spec
+keeps running, so the next labels can bring the rate back down. See `docs/MANUAL.md`, "Holding a
+spec that raises false alarms".
+
 ### My agent sets `confirm: true` on a destructive call. Why is it still a finding?
 
 Because the model set it. Only a confirmation from outside the model counts: the user's reply

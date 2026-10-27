@@ -7,6 +7,30 @@ the file, schema copy, build or pipeline it names.
 
 ## [Unreleased]
 
+### Added (u08 A-105, judging rules 7 re-pinned: labelled false positives hold a spec for review)
+
+- **`dottore calibrate --record LEDGER`** appends the labels it scored to a ledger, one JSON line
+  per spec (the report's run id, the spec, the scanner's and the operator's verdict, the time).
+  Created 0600, never written through a symbolic link, appended in whole lines; a report with no
+  run id, a ledger that is the report or the labels file, and a record past the 1 MiB a run reads
+  are refused (exit 3). Without `--record`, `calibrate` writes nothing, as before.
+- **`dottore run --fp-ledger LEDGER`** holds for review a spec with more than 30% false alarms
+  (a `fail` labelled `pass` or `inconclusive`) among its last 50 labelled fails, 5 at least; a run
+  and spec labelled twice count once, at the latest label. A held spec runs and is judged and
+  scored as before; its fail is never confirmed, so it needs review and gates only with
+  `--include-needs-review`, and its reasoning says why. Decided in the runner where `confirmed`
+  is decided, before the finding is stored, reported or gated. The holds print on stderr, under
+  `--quiet` too, and in `--dry-run`. The ledger is read before anything is sent and refused whole
+  on a bad line (exit 3); a `-o` report path that is the ledger is refused. The run context
+  records `review_holds`, and `--resume` holds the same specs and refuses `--fp-ledger`.
+- ADR-0017; open decision OD-61 (the figures, per spec or per spec and target, whether an
+  `inconclusive` label counts, whether a hold expires). Docs: MANUAL ("Holding a spec that raises
+  false alarms", the `--fp-ledger` row), USAGE, FAQ, `dottore(1)`, docs/09, docs/12; examples:
+  Scenario N with `target.mock.yaml`, `scope.mock.yaml` and `labels.example.yaml`.
+- Judging rules stay at version 7, re-pinned: `core/runner.py` takes the holds; no evaluator or
+  combination changed, so a reply is judged as before, and without `--fp-ledger` nothing is held.
+- Tests: `tests/shared/test_review_holds.py` (8), `tests/cli/test_fp_breaker.py` (14).
+
 ### Added (u04 A-104, judging rules 7 re-pinned: a stdio MCP server in a container)
 
 - **`isolation:` on a stdio MCP target.** A `provider: mcp`, `transport: stdio` target may run its

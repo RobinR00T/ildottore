@@ -811,6 +811,20 @@ def _is_names(value: object) -> bool:
     return isinstance(value, list) and all(isinstance(item, str) for item in value)
 
 
+def _is_holds(value: object) -> bool:
+    """A map of spec id to ``[false alarms, labelled]``, as the run records its review holds."""
+
+    return isinstance(value, dict) and all(
+        isinstance(spec_id, str)
+        and isinstance(counts, list)
+        and len(counts) == 2
+        and _is_count(counts[0], 0)
+        and _is_count(counts[1], 1)
+        and counts[0] <= counts[1]
+        for spec_id, counts in value.items()
+    )
+
+
 def _is_field_digests(value: object) -> bool:
     return isinstance(value, dict) and all(
         isinstance(field, str) and isinstance(d, str) and _FIELD_DIGEST.fullmatch(d) is not None
@@ -893,6 +907,8 @@ _CONTEXT_FIELDS: Final[dict[str, tuple[bool, Any, str]]] = {
     ),
     "route": (False, _is_name, "a route name"),
     "selection": (False, _is_selection, "the selection flags this tool records"),
+    # u08 A-105: the specs the labels ledger held, each with its two counts.
+    "review_holds": (False, _is_holds, "a map of spec ids to two counts"),
     "spec_fields": (
         False,
         lambda v: (

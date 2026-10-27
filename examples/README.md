@@ -21,6 +21,8 @@ Run everything from the repo root with the venv active (see [`INSTALL.md`](../IN
 | [`target.agent-rest.yaml`](target.agent-rest.yaml) / [`scope.agent-rest.yaml`](scope.agent-rest.yaml) | The same guard for an agent over plain HTTP (`rest.guard`), with a `window`: the days and hours the engagement allows, in an IANA zone. |
 | [`target.vision.yaml`](target.vision.yaml) / [`scope.vision.yaml`](scope.vision.yaml) | A hosted model that reads images (`capabilities.multimodal`), for `--obfuscate image` and `--fuzz-image`. |
 | [`labels.example.yaml`](labels.example.yaml) | An operator's verdict per spec, for `dottore calibrate` (MANUAL, "`dottore diff`, regression gate against a baseline"). |
+| [`target.mock.yaml`](target.mock.yaml) / [`scope.mock.yaml`](scope.mock.yaml) | The offline mock target: no server, no key, every spec replays its own vulnerable reply (Scenario N). |
+| [`labels.mock.yaml`](labels.mock.yaml) | An operator's verdict per spec, for `dottore calibrate` and its labels ledger (Scenario N). |
 | [`ci-github-actions.yml`](ci-github-actions.yml) | Gate a pipeline on new high/critical findings. |
 
 Authorization is not optional: a run refuses any target that is not covered by a
@@ -1373,3 +1375,50 @@ for the built-in battery goes in `src/ildottore/battery/attacks/` of a clone, wi
 from a suite in `src/ildottore/battery/suites/` (CONTRIBUTING.md).
 
 See [`../docs/06-extensibility-suites.md`](../docs/06-extensibility-suites.md).
+
+---
+
+## Scenario N, hold for review a spec that raises false alarms
+
+A spec that fails on every run, where the operator keeps finding no exploit in the evidence,
+should stop failing the CI gate without being dropped. Record the labels as you calibrate, and
+give the next run the ledger (u08 A-105). Offline, against the mock target:
+
+```bash
+mkdir -p reports
+for i in 1 2 3 4 5; do
+  dottore run -t examples/target.mock.yaml --scope examples/scope.mock.yaml \
+    --spec PI-DIRECT-001 --spec JB-ROLEPLAY-001 --runs 1 -q -oJ reports/run-$i.json
+  dottore calibrate reports/run-$i.json examples/labels.example.yaml --record reports/labels.jsonl
+done
+```
+
+Each run exits 2 (both specs fail), and each `calibrate` prints its agreement, `DISAGREE
+PI-DIRECT-001: scanner=fail operator=pass`, and `recorded: 2 label(s) appended to
+reports/labels.jsonl`. The ledger now holds ten lines, one per spec per run, such as:
+
+```
+{"operator": "fail", "recorded_at": "2026-10-27T19:34:36Z", "run_id": "run-7564a4ecb519", "scanner": "fail", "spec_id": "JB-ROLEPLAY-001"}
+```
+
+Five labelled fails of `PI-DIRECT-001`, all five false alarms: more than 30% of at least 5. The
+next run holds it:
+
+```bash
+dottore run -t examples/target.mock.yaml --scope examples/scope.mock.yaml \
+  --spec PI-DIRECT-001 --spec JB-ROLEPLAY-001 --runs 1 --fp-ledger reports/labels.jsonl
+```
+
+```
+review holds: PI-DIRECT-001, 5 of its last 5 labelled fails were false positives. A fail of each is reported as needing review.
+Scanning target [ 1/2 specs ] JB-ROLEPLAY-001 ... FAIL (high)
+Scanning target [ 2/2 specs ] PI-DIRECT-001 ... FAIL (critical, needs review)
+```
+
+`JB-ROLEPLAY-001`, a confirmed fail, still gates: exit 2. Run `PI-DIRECT-001` alone with the
+ledger and the run exits 0, its fail reported but not gating; add `--include-needs-review` and it
+exits 2 again. The holds are kept in the run store, so a `--resume` holds the same specs (and
+refuses `--fp-ledger`). A ledger line that is not a label record stops the run before it sends,
+exit 3. The figures (the last 50 labelled fails, more than 30%, 5 at least) are open decision
+OD-61; the manual's "Holding a spec that raises false alarms" has the whole behaviour.
+

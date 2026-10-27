@@ -1,0 +1,11 @@
+# target.mock.yaml, the offline mock target: no server, no key, nothing leaves the process.
+#
+# `mock_scenario: vulnerable` replays each spec's own `fixtures.vulnerable` reply, so every spec
+# fails as a real exploit would read. Used by Scenario N (the false-positive breaker); swap in
+# `hardened` (every spec passes) or `bare` (every spec inconclusive) to see the other states.
+id: demo
+type: chatbot
+mock_scenario: vulnerable
+capabilities:
+  tools: false
+  rag: false

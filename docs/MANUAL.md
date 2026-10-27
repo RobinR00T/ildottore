@@ -1619,6 +1619,7 @@ $ echo $?
 | `-oA PATH` | write all four to `<prefix>.json`, `.html`, `.sarif` and `.xml`. The prefix is extended, never cut: `-oA report.v2` writes `report.v2.json`, `report.v2.html` and so on. A prefix that already ends in one of those four extensions (any case) drops it first, so `-oA report.json` writes `report.json`, `report.html`, `report.sarif`, `report.xml`. An explicit `-oJ`/`-oH`/`-oS`/`-oX` replaces that one format's `-oA` path |
 | `--fail-on BAND` | CI gate: `info\|low\|medium\|high\|critical` (default `high`; `info` gates on any confirmed finding). A fail only the judge reported is never confirmed (OD-19, since 2026-10-11), so it does not trip this gate; `--include-needs-review` makes it, and also every intermittent fail (a variant that did not fail on every attempt). `dottore diff` reads statuses, not confirmation, so it counts a judge-only fail as `NEW-FAIL` either way |
 | `--include-needs-review` | also gate unconfirmed exploits: a `fail` that is not confirmed, because no mutation variant failed on every attempt, its mean confidence is below the spec's `confidence_threshold`, or only the judge reported its fails (§9). Undecided (`inconclusive`) results never gate, with or without it. With it, the SARIF report gives such a fail its band's level, as for a confirmed one (§11) |
+| `--fp-ledger LEDGER` | the labels ledger `dottore calibrate --record` writes: a spec with more than 30% false positives among its last 50 labelled fails (5 at least) is held, and its fail is reported, scored and never confirmed, so it needs review and gates only with `--include-needs-review`. The holds print on stderr, under `--quiet` too. Read before anything is sent: a line that is not a label record stops the run (exit 3). A resume holds what its run held and refuses the flag. See "Holding a spec that raises false alarms" below (u08 A-105, OD-61) |
 | `--evidence-root PATH` | evidence store root (default `.dottore/evidence`). Checked before anything is sent: a root that is a regular file, or lies under one, is refused in every mode (`cannot write evidence under <root>: it is not a directory`, exit 3), and a sending run creates `<root>/<run-id>/attempts` (and `probes` with `-sV`) for each target and writes and removes a temporary file there before its first request. Until 2026-10-12 such a root was found by the first attempt's write, after its batch was paid for |
 | `--run-db PATH` | run store SQLite path (default `.dottore/runs.sqlite`). A directory, a file that is not SQLite, or a path under a regular file is refused in every mode before anything is sent (`cannot open the run store at <path>: <reason>`, exit 3; the dry run and the estimate write nothing), and a sending run opens it before its first request (with `-sV`, before the probes). Several runs may share one store, a new one included: a statement waits up to 30 s for a lock another process holds, in tries of 0.1 s that Ctrl-C and SIGTERM stop at once, and after a second says so on stderr, once per run (`note: waiting for the run store at <path>: another process holds its lock (up to 30 s; Ctrl-C stops the wait)`); a lock held longer fails the run with `the run store at <path> stayed locked by another process for 30 s` (exit 3), named wherever it is met, mid-run included. Until 2026-10-12 runs started together on a new store could die with a traceback and exit 1 (1 and 2 of 18 runs in two measurements, 5 of 6 in the audit that found it), and a wait held Ctrl-C for up to 30 s |
 | `--spec-path PATH` | spec search path. Default: `specs/` in the working directory when it is a directory, as before, refused (exit 3) when it holds no spec and never swapped for the battery; else the built-in battery inside the installed package (`ildottore/battery`, in a wheel as in a source checkout or an editable install, since u12 A-84), and the battery too at the root of Il Dottore's own checkout, whose `specs/` holds the unit contracts. The same for `run`, `fleet --run`, `registry ls`, `describe`, `coverage` and `render-media`, which say on stderr when they read the battery (`note: there is no specs/ directory here, so this reads the built-in battery inside the installed package: <path> (pass --spec-path to read another)`, or `note: this is Il Dottore's own checkout, whose specs/ holds the unit contracts, so ...`), and, with `GITHUB_ACTIONS=true`, the same text as a `::warning title=dottore spec path::` line. A name for the built-in battery itself (`--spec-path builtin`) is OD-51, open. `dottore lint` does not fall back. With none given, a default that is not there is refused as `spec path not found: <path>. Pass --spec-path <dir>; ...`; a path given that does not exist or holds no spec and no suite is refused as `a spec path gives nothing to run: ...` (exit 3 either way) |
@@ -2282,6 +2283,48 @@ calibration: 2 spec(s) scored, agreement 50% (1/2, exact status match)
 ```
 
 and exits `0`: it measures, it does not gate.
+
+#### Holding a spec that raises false alarms (`calibrate --record`, `run --fp-ledger`)
+
+A spec that keeps failing on a target where the operator, looking at the evidence, keeps finding
+no exploit should stop failing the CI gate without being dropped from the run. Record the labels
+as you calibrate, and give the run the ledger (u08 A-105, ADR-0017):
+
+```
+dottore calibrate report.json labels.yaml --record labels.jsonl
+dottore run -t target.yaml --scope scope.yaml --fp-ledger labels.jsonl -oJ next.json
+```
+
+`--record LEDGER` appends one JSON line per spec the report and the labels both hold: the
+report's run id, the spec, the scanner's verdict, the operator's and the time, then prints
+`recorded: N label(s) appended to LEDGER`. The ledger is created readable by its owner only
+(0600), never written through a symbolic link, and refused when it is the report or the labels
+file. A bare list of findings has no run id and cannot be recorded, and a record that would take
+the ledger past 1 MiB (about 8,000 labels) is refused: start a new ledger, since only the last 50
+labelled fails of a spec count.
+
+`run --fp-ledger LEDGER` reads the ledger before it sends anything. For each selected spec it
+takes the last 50 records whose scanner verdict was `fail`; with 5 or more, the spec is held when
+more than 30% of them were labelled anything but `fail` (`pass` or `inconclusive`). The same run
+and spec recorded twice count once, at the latest label, so recording a report again or
+correcting a label does not count a decision twice. A held spec still runs and is judged and
+scored as before: only its fail is never confirmed. The run prints, on stderr and under
+`--quiet` too:
+
+```
+review holds: PI-DIRECT-001, 4 of its last 10 labelled fails were false positives. A fail of each is reported as needing review.
+```
+
+and the finding's reasoning ends with `; held for review by the labels ledger: 4 of its last 10
+labelled fails were false positives`. Its progress line reads `FAIL (<band>, needs review)`, the
+gate lets it through unless `--include-needs-review` is given, and the SARIF caps it at
+`warning`. A line of the ledger that is not a label record (not JSON, a missing key, a verdict
+that is not `pass`, `fail` or `inconclusive`, a run id or spec id of the wrong shape) stops the
+run before any send, exit 3, naming the line: a breaker that skipped it would hold less than you
+labelled. A `-o` report path that is the ledger is refused like any input. The holds are recorded
+in the run store; `--resume` holds the same specs whatever the ledger says by then, and refuses
+`--fp-ledger`. The figures (50, 30%, 5) and keying on the spec rather than the spec and target
+are open decision OD-61.
 
 ### `dottore schema export`, the JSON Schemas
 

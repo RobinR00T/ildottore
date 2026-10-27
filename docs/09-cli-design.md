@@ -98,6 +98,8 @@ OUTPUT
   --include-needs-review                   also gate on unconfirmed fails (never on an
                                            inconclusive or a pass); SARIF gives them their
                                            band's level
+  --fp-ledger <ledger>                     hold for review the specs whose labelled fails were
+                                           mostly false positives (calibrate --record; u08 A-105)
   --compare                                model-comparison matrix (two or more targets)
   -v, -vv, -q, --no-color                  (-v also prints an internal error's traceback)
   --evidence-root <dir>  --run-db <path>  --spec-path <dir>
@@ -122,7 +124,7 @@ OTHER COMMANDS
   dottore render-media <spec-id> --out <dir>
   dottore replay <run-id>                   re-read a run from stored evidence; sends nothing
   dottore diff <baseline.json> <current.json>
-  dottore calibrate <report.json> <labels.yaml>
+  dottore calibrate <report.json> <labels.yaml> [--record <ledger>]
   dottore schema export [--name ..]
 ```
 

@@ -149,6 +149,7 @@ from ildottore.shared.models import (
 )
 from ildottore.shared.package_data import BATTERY
 from ildottore.shared.protocols import Reporter, TargetAdapter
+from ildottore.shared.review_holds import ReviewHold
 from ildottore.store import FsEvidenceStore, SqliteRunStore
 
 __all__ = [
@@ -2846,6 +2847,7 @@ def build_runner(
     judge_target: Target | None = None,
     spend_sink: Callable[[Spend], None] | None = None,
     apply_sampling_defaults: bool = True,
+    review_holds: Mapping[str, ReviewHold] | None = None,
 ) -> BuiltRunner:
     """Assemble the whole middle tier into a :class:`CampaignRunner` (contract §5.2).
 
@@ -2962,6 +2964,7 @@ def build_runner(
             if real_target is not None and apply_sampling_defaults
             else None
         ),
+        review_holds=review_holds,
     )
     return BuiltRunner(
         runner=runner,
