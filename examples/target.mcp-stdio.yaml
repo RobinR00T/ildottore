@@ -1,5 +1,6 @@
 # A local MCP server launched over stdio, run in a container (u04 A-104). Read-only discovery,
 # as over HTTP: the adapter lists what the server advertises and never calls a tool.
+# Walk-through, with real output: Scenario F in examples/README.md.
 id: local-mcp-stdio
 type: api                            # an MCP server is a tool provider, not a chat model
 provider: mcp
@@ -7,19 +8,24 @@ transport: stdio                     # launched as a subprocess; the scope autho
 command: ["node", "/app/dist/index.js"]   # run inside the container, as its entrypoint
 capabilities:
   tools: true
-# Without this block the server runs on your machine as you. With it, it runs in a container
-# with no network, a read-only root, no capabilities and an unprivileged user, and is removed
-# after the scan. The image is never pulled: pull the one you reviewed first
-# (`docker pull <image>`), and a missing runtime or image stops the run, never falls back.
+# Without this block the server runs on your machine as you (isolation is opt-in per target,
+# OD-60). With it, it runs in a container with no network, a read-only root, a 64 MB /tmp that
+# cannot run programs, no capabilities, no privilege gain, the user 65534 and no variable from
+# your environment, and is removed after the scan. The block cannot loosen any of that.
+# The image is never pulled: pull the one you reviewed first (`docker pull <image>`), and a
+# missing runtime or image stops the run (exit 3), never falls back to the host.
 isolation:
-  # Replace with the image you reviewed, pinned by digest (a tag can move; a digest cannot).
+  # Required. The image you reviewed, pinned by digest: name@sha256: and 64 hex digits (a tag can
+  # move; a digest cannot, and a tag is refused). Read it after the pull with
+  # `docker image inspect --format '{{index .RepoDigests 0}}' <name>:<tag>`. A placeholder here.
   image: "ghcr.io/example/mcp-server@sha256:0000000000000000000000000000000000000000000000000000000000000000"
-  runtime: docker                    # or podman
-  memory: 512m
-  cpus: 1
-  pids: 128
-  # A directory the server reads, always read-only: its resolved path (no symbolic link), and
-  # never your home or a directory above it.
+  runtime: docker                    # docker (the default) or podman, found on PATH
+  memory: 512m                       # a whole number and k, m or g; swap is capped at the same
+  cpus: 1                            # more than 0, at most 64
+  pids: 128                          # processes, 8 to 4096
+  # Optional: a directory the server reads, always read-only, at most 16. The source must exist
+  # and be written as its resolved path (no symbolic link: on macOS /tmp is /private/tmp), and
+  # never your home or a directory above it; both paths absolute, with no comma or colon.
   # mounts:
   #   - { source: /srv/mcp-data, target: /data }
-  # workdir: /data
+  # workdir: /data                   # optional, an absolute path inside the container

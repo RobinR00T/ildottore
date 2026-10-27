@@ -279,11 +279,80 @@ what was pinned, `FAIL (critical)` and exit 2 when a definition changed, a tool 
 one is gone, each listed in the evidence (MANUAL §4.2). Scenario O does all of it against a local
 server, with the output of every step.
 
-A **local** server over stdio is a program the scan starts on your machine. Run it in a container
-instead: `target.mcp-stdio.yaml` declares an `isolation:` block (the image pinned by digest, the
-runtime, the limits, optional read-only mounts) and `scope.mcp-stdio.yaml` authorizes the command
-run inside it. Replace the placeholder image with the one you reviewed and pull it first: the scan
-never pulls one. The dry run says where the server will run:
+### A local MCP server, in a container (`isolation:`, u04 A-104)
+
+A **local** server over stdio is a program the scan starts on your machine, as you: discovery alone
+runs its start-up and listing code, with your files, your network and your processes within reach.
+`isolation:` runs it in a Docker or Podman container instead. It is opt-in per target (OD-60,
+decided 2026-10-27): a target without the block runs the server on the host, as before. The worked
+pair is `target.mcp-stdio.yaml` and `scope.mcp-stdio.yaml`.
+
+**1. What you need first.**
+
+* Docker or Podman on `PATH`, with its daemon or socket reachable. The variables the runtime reads
+  to find it (`DOCKER_HOST`, `DOCKER_CONTEXT`, `CONTAINER_HOST` and the like) reach the runtime's
+  command, never the container.
+* The server's image, **reviewed and pulled by you**. The scan runs the runtime with `--pull never`
+  and never reaches a registry, which the scope's allowlist does not cover. Pull it, then read the
+  digest you will pin:
+
+  ```bash
+  docker pull ghcr.io/example/mcp-server:1.4.2
+  docker image inspect --format '{{index .RepoDigests 0}}' ghcr.io/example/mcp-server:1.4.2
+  ```
+
+  The second command prints `ghcr.io/example/mcp-server@sha256:` and 64 hex digits: that is the
+  value of `isolation.image`. A tag is refused (step 4), because a tag can move to another image
+  between the review and the scan; a digest cannot.
+* The command the server runs **inside** the image (`node /app/dist/index.js` here). It becomes
+  the container's entrypoint, so the image's own entrypoint adds nothing to it.
+
+**2. The target, field by field.** From `target.mcp-stdio.yaml`, with lowered limits (the digest
+is a placeholder: put the one step 1 printed):
+
+```yaml
+id: local-mcp-stdio
+type: api                    # an MCP server is a tool provider, not a chat model
+provider: mcp
+transport: stdio             # launched as a process; the scope authorizes the command
+command: ["node", "/app/dist/index.js"]   # run inside the container, as its entrypoint
+capabilities:
+  tools: true
+isolation:
+  # Required, pinned by digest: name@sha256: and 64 hex digits.
+  image: "ghcr.io/example/mcp-server@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+  runtime: docker            # docker (default) or podman
+  memory: 256m               # default 512m; a whole number and k, m or g (also the swap cap)
+  cpus: 0.5                  # default 1; more than 0, at most 64
+  pids: 64                   # default 128; 8 to 4096 processes
+```
+
+A server that reads files gets them through `mounts`, at most 16 and **always read-only**, and may
+start in a `workdir`. Add under `isolation:` (the source must exist when the file loads, written
+as its resolved path):
+
+```yaml
+  mounts:
+    - { source: /srv/mcp-data, target: /data }
+  workdir: /data             # an absolute path inside the container
+```
+
+What the block cannot change, whatever it says: no network, a read-only root, a 64 MB `/tmp` that
+cannot run programs, every capability dropped, no privilege gain, an unprivileged user and no
+variable from your environment. The block only takes rights away; it never grants one.
+
+**3. The scope.** A stdio server is authorized by its command line, exactly as the target's
+`command` joins with spaces, not by an endpoint. The container changes nothing here:
+
+```yaml
+targets:
+  - id: local-mcp-stdio
+    base_url: "stdio://local"
+    endpoints: []
+    commands: ["node /app/dist/index.js"]
+```
+
+**4. The dry run says where the server will run.** Nothing starts and the runtime is not called:
 
 ```bash
 dottore run --dry-run --suite mcp \
@@ -292,16 +361,114 @@ dottore run --dry-run --suite mcp \
 ```
 
 ```text
+dry-run: plan resolved, sent nothing.
+  scope:   examples/scope.mcp-stdio.yaml
   target:  local-mcp-stdio (api) authorized at stdio://node /app/dist/index.js
   battery: mcp, 1 specs selected
     agent_tool_abuse: 1
+  skipped: 1 spec(s) on local-mcp-stdio, capability not declared by the target
   isolation: docker, image ghcr.io/example/mcp-server@sha256:0000000000000000000000000000000000000000000000000000000000000000 (not pulled); no network, read-only root, 512m memory, 1 CPU, 128 pids
+  would send: 5 requests over 1 specs at runs=5
 ```
 
-Run as it ships, with the placeholder image, it stops before anything starts (exit 3): `aborted on
-IsolationUnavailable: local-mcp-stdio: docker has no local copy of the image, or cannot reach its
-daemon; the scan never pulls an image, so nothing was started.` It never falls back to running the
-server on your machine.
+The skipped spec is `MCP-RUGPULL-001`: this target pins no catalogue, so the rug-pull check is
+not sent (Scenario O pins one). With the optional fields of step 2 filled in, the same line reads `isolation: docker, image
+ghcr.io/example/mcp-server@sha256:... (not pulled); no network, read-only root, 256m memory, 0.5
+CPU, 64 pids; reads /srv/mcp-data at /data`. A target without the block prints no `isolation:`
+line: its server would run on your machine.
+
+**5. What the runtime is asked to run.** The argv is built from the block (the step 2 values;
+the container's name is random per session):
+
+```text
+docker run --rm -i --pull never --init \
+  --name dottore-mcp-5e0b9c41d2a7 --label dottore.mcp=1 \
+  --network none --read-only --tmpfs /tmp:rw,noexec,nosuid,nodev,size=64m \
+  --cap-drop ALL --security-opt no-new-privileges --user 65534:65534 \
+  --memory 256m --memory-swap 256m --cpus 0.5 --pids-limit 64 \
+  --mount type=bind,source=/srv/mcp-data,target=/data,readonly --workdir /data \
+  --entrypoint=node \
+  ghcr.io/example/mcp-server@sha256:0000000000000000000000000000000000000000000000000000000000000000 \
+  /app/dist/index.js
+```
+
+| Flag | What it keeps out |
+|------|-------------------|
+| `--rm`, `--name dottore-mcp-<12 hex>`, `--label dottore.mcp=1` | A container left behind: it is also removed by name (`rm -f`) after the session, whether the server exited, hung or crashed. |
+| `-i` | Nothing: stdin carries the JSON-RPC, as on the host. |
+| `--pull never` | A registry: an image you did not pull is never fetched. |
+| `--init` | Zombie processes: a small init reaps them. |
+| `--network none` | Every network: the server reaches neither the internet, your LAN nor `localhost`. |
+| `--read-only`, `--tmpfs /tmp:...,noexec,...,size=64m` | Writes that persist: only `/tmp` is writable, holds 64 MB, cannot run a program, and goes with the container. |
+| `--cap-drop ALL`, `--security-opt no-new-privileges` | Kernel capabilities and set-uid escalation. |
+| `--user 65534:65534` | Root inside the container (`nobody`). |
+| `--memory`, `--memory-swap`, `--cpus`, `--pids-limit` | A server that eats the machine: the block's limits, swap capped at the memory. |
+| `--mount ...,readonly`, `--workdir` | Writes to your files: a mount is read-only, always. |
+| `--entrypoint=<command[0]>`, then the image, then the rest of `command` | The image's own entrypoint, and a command word read as a runtime flag. |
+
+No `-e` is ever passed: the container gets no variable from your environment, so no API key
+another target reads can reach it. A server that needs a variable gets it on the authorized
+command line (`env NAME=value node ...`), where the scope has to name it.
+
+**6. A real run, and what happens when something is missing.** There is no fallback: when the
+container cannot start as declared, nothing starts and the run says why (exit 3). As shipped, with
+the placeholder image:
+
+```bash
+dottore run --suite mcp \
+  -t examples/target.mcp-stdio.yaml \
+  --scope examples/scope.mcp-stdio.yaml
+```
+
+```text
+Specs run: 0 of 1 planned · pass 0 · fail 0 · inconclusive 0
+error: run on local-mcp-stdio did not complete: aborted on IsolationUnavailable: local-mcp-stdio: docker has no local copy of the image, or cannot reach its daemon; the scan never pulls an image, so nothing was started. Pull the image the target file's isolation.image names first (docker pull <image>); 1 of 1 specs never ran or did not finish
+```
+
+The message does not quote the image: the redactor masks its digest as a high-entropy string, and
+you have it in the target file. With `runtime: podman` on a machine without Podman:
+
+```text
+error: run on local-mcp-stdio did not complete: aborted on IsolationUnavailable: local-mcp-stdio: isolation runs the server with podman, which is not on PATH; nothing was started (a target that asks for a container never runs on the host); 1 of 1 specs never ran or did not finish
+```
+
+With the image present, the server runs in the container, the adapter lists its tools, resources
+and prompts as it does over HTTP (it never calls a tool), and the container is removed when the
+session ends.
+
+**7. What the loader refuses.** Each is refused when the target file loads, before anything is
+planned, by `--dry-run` too (exit 3). Run from a directory holding the files (`$PWD` stands for
+it):
+
+| In the block | The error |
+|--------------|-----------|
+| a tag, `image: "ghcr.io/example/mcp-server:1.4.2"` | `target file t-tag.yaml 'isolation' failed validation: image: Value error, image must be pinned by digest: name@sha256:<64 hex digits>` |
+| `memory: 1.5g` | `... failed validation: memory: Value error, memory must be a whole number and k, m or g (for example 512m)` |
+| a mount `target: data` (relative) | `... failed validation: mounts.0.target: Value error, target must be an absolute, normalized path other than /` |
+| a mount whose source is a file | `target file t-file.yaml 'isolation' mounts '$PWD/srv/file.txt', which is not a directory` |
+| a mount through a symbolic link | `target file t-link.yaml 'isolation' mounts '$PWD/data-link' through a symbolic link; write the resolved path ('$PWD/srv/mcp-data')` |
+| a mount of `/Users` (it holds the home directory) | `target file t-home.yaml 'isolation' mounts '/Users', which holds the home directory; mount the directory the server reads, not one above it` |
+| the block on an HTTP MCP target (an `endpoint`, no `transport: stdio`) | `target file t-http.yaml declares 'isolation', which is read only by provider mcp with transport stdio (a local MCP server)` |
+
+A mount source is checked on disk as written: write its resolved path (on macOS `/tmp` is
+`/private/tmp`), and never your home directory or a directory above it, which would hand the
+server every key under it. A path holding a comma or a colon is refused too: those separate the
+fields of the runtime's `--mount` value.
+
+**8. Resume, and a stray container.** The image, the mounts and the working directory are part of
+the target digest, so a `dottore resume` after changing one is refused as another target; the
+runtime and the limits are not. Every container this tool starts carries the label
+`dottore.mcp=1`; if a crash of the scanner itself ever left one behind, list and remove it:
+
+```bash
+docker ps -a --filter label=dottore.mcp=1 --format '{{.Names}} {{.Status}}'
+docker rm -f <name>
+```
+
+**Not run here:** a real MCP server inside a container. There is no image with an MCP server at
+hand, and pulling one is the operator's call; the argv of step 5 was run against Docker 29.4.0
+with a local image, a read-only mount, a working directory and lowered limits (accepted, exit 0,
+no container left), and every output above is copied from a real `dottore run`.
 
 ## Scenario G, scan a deployed application you have seeded
 

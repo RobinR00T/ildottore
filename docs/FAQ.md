@@ -367,6 +367,25 @@ builds a local server and changes it four ways. Notice the quiet case there: a p
 description that now allows paths outside the workspace reads clean, so `MCP-TOOLPOISON-001`
 stays `inconclusive`, and only the pins catch it.
 
+### A local MCP server runs on my machine when I scan it. Can it run in a container instead?
+
+Yes, since u04 A-104 (ADR-0016). A local server (`provider: mcp`, `transport: stdio`) is a
+program the scan starts as you, and discovery alone runs its start-up code. Add an `isolation:`
+block to its target and it runs through Docker or Podman: no network, a read-only root, every
+capability dropped, an unprivileged user, no variable from your environment, your limits on
+memory, CPU and processes, and only the directories you mount, read-only. It is removed after the
+scan. The image must be pinned by digest (a tag is refused) and pulled by you first: the scan
+never pulls one.
+
+It is opt-in per target, and there is no fallback (OD-60, decided by the owner on 2026-10-27, as
+built). A runtime that is not on `PATH`, or an image with no local copy, stops the run before
+anything starts (exit 3), so a target that asked for a container never runs on the host. A server
+that needs its upstream API cannot reach it from the container: run that one without the block,
+knowing it runs on your machine. The scope authorizes the command run inside, as without the
+block. Step by step, with real output: Scenario F in
+[`../examples/README.md`](../examples/README.md); the reference is
+[`MANUAL.md`](MANUAL.md) §4.2.
+
 ### My assistant only talks over a WebSocket. Can I scan it?
 
 Yes. `provider: websocket` with a `ws://` or `wss://` endpoint and a `websocket:` block that

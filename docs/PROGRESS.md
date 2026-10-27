@@ -15,9 +15,16 @@ neighbouring entries can interleave (an older branch merged later sits above a n
   variable and `--pull never`, and is removed after the session. A missing runtime or local image
   aborts the run before anything starts; there is no fallback to the host. The scope still
   authorizes the inner command. ADR-0016.
-- **Open decision OD-60** (u04 §9, index ledger): opt-in per target (built) or the default; no
-  network (built) or a declared egress; the block at the top level (built) or under A-101's
-  `mcp:`; which mounts are refused besides the home directory.
+- **OD-60 decided** (u04 §9, index ledger, ADR-0016 accepted): the owner took it as built on
+  2026-10-27 ("do it all"): opt-in per target, no network, the block at the top level (it stays
+  there when A-101's `mcp:` lands), and only a mount holding the home directory, or one above it,
+  is refused.
+- **Docs pass (2026-10-27, after the decision).** Scenario F in `examples/README.md` grew a
+  step-by-step walk-through with real output: prerequisites, the block field by field, the dry
+  run, the runtime's argv flag by flag, each refusal of the loader and of the launch with its
+  message and exit code, and how to find a stray container. `examples/target.mcp-stdio.yaml` is
+  commented field by field; `docs/FAQ.md`, `README.md`, `man/man1/dottore.1` and
+  `man/man5/dottore-scope.5` say the same. Every refusal shown was run through `dottore run`.
 - **Numbering.** A-101 and A-102 are `feat/mcp-rug-pull`'s, A-103 is `fix/repeated-option`'s,
   ADR-0015 and OD-59 are A-101's; none is on main yet, so this branch skips them.
 - **Verified.** `tests/adapters/test_mcp_isolation.py` (28, one real container skipped unless

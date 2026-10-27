@@ -932,12 +932,13 @@ reads as U+FFFD, since httpx decodes the stream as text.
   figure stays 8/10). Reversal: `_pin_lines` and
   `catalogue_fingerprints` in `adapters/mcp.py`, `_mcp_spec` in `cli/wiring.py`, the spec's
   `owasp` and `shared/frameworks.py` `OUT_OF_REACH["LLM03"]`.
-- **OD-60** (2026-10-27, A-104, ADR-0016; **open, owner to decide; built as the smallest
-  reversible version**): (a) isolation is opt-in per target (built) or the default for every stdio
-  server, which needs a runtime and an image wherever one is scanned; (b) the container has no
-  network (built), so a server that needs its upstream API runs unisolated, or a declared egress
-  is allowed through an allowlist inside the container; (c) the block is a top-level key (built)
-  or moves under the `mcp:` block A-101 adds, once that lands; (d) a mount holding the home
-  directory is refused (built), or also a list of sensitive directories (`~/.ssh`, `~/.aws`) under
-  any source. Reversal: `_isolation_spec` in `cli/wiring.py`, the `isolation` branches of
-  `MCPAdapter._discover_stdio`, `adapters/isolation.py`.
+- **OD-60** (2026-10-27, A-104, ADR-0016; **decided 2026-10-27 by the owner ("do it all"), as
+  built**): (a) isolation is opt-in per target (built), not the default for every stdio server,
+  which would need a runtime and an image wherever one is scanned; (b) the container has no
+  network (built), so a server that needs its upstream API runs unisolated, by the operator's
+  choice; a declared egress through an allowlist inside the container is not built; (c) the block
+  is a top-level key (built) and stays there when A-101's `mcp:` block lands, rather than moving
+  under it; (d) a mount holding the home directory, or a directory above it, is refused (built);
+  no further list of sensitive directories (`~/.ssh`, `~/.aws`) is checked under another source.
+  Reversal, should the owner revisit it: `_isolation_spec` in `cli/wiring.py`, the `isolation`
+  branches of `MCPAdapter._discover_stdio`, `adapters/isolation.py`.

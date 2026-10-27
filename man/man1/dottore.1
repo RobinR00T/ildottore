@@ -261,7 +261,9 @@ Resolve and validate the plan, authorize every target; send nothing. Its samplin
 sampling: lines say what a target or judge file's sampling_defaults fills and what does not go
 out, and an operator: line names each granted tool the target file declares not destructive
 (dottore-scope(5)). A credential variable that is not set is a warning: line naming it, which a
-live run refuses before it sends anything.
+live run refuses before it sends anything. A stdio MCP target with an isolation block gets an
+isolation: line (the runtime, the image marked not pulled, no network, read-only root, the
+limits and each read-only mount); the runtime is not called.
 .TP
 .B --estimate
 Print a pre-run cost estimate (requests and tokens) and the ceilings each target runs under
@@ -534,7 +536,9 @@ pipe, or a run that did not finish (a hard budget ceiling halted it, every attem
 transport or got a reply that could not be read, the provider's filter answered every attempt
 for the model and none failed (filtered), or an error stopped it: a non-retryable 4xx,
 or replies that could not be read, 5 in a row before any was read or 20 in a row after, aborted
-on UnreadableReplies). 3 takes precedence over 2: a run that did not finish exits 3 even when it
+on UnreadableReplies, or a stdio MCP server whose isolation cannot start as declared, a runtime
+not on PATH or an image with no local copy, aborted on IsolationUnavailable with nothing
+started). 3 takes precedence over 2: a run that did not finish exits 3 even when it
 found confirmed exploits, so read summary.status.reason before treating 3 as a retryable
 infrastructure error.
 .PP
@@ -690,6 +694,14 @@ every later run fails when the server changes them:
 .B dottore run --suite mcp -t target.yaml --scope scope.yaml -oJ review.json
 .br
 .B jq '[.findings[].attempts[].response.raw_ids.mcp_catalogue | select(.)][0]' review.json
+.RE
+.PP
+A local MCP server in a container (its target declares isolation:), checked first, then scanned:
+.PP
+.RS
+.B dottore run --dry-run --suite mcp -t target.mcp-stdio.yaml --scope scope.mcp-stdio.yaml
+.br
+.B dottore run --suite mcp -t target.mcp-stdio.yaml --scope scope.mcp-stdio.yaml -oJ mcp.json
 .RE
 .SH "SEE ALSO"
 .BR dottore-scope (5)

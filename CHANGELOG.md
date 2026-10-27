@@ -30,6 +30,16 @@ the file, schema copy, build or pipeline it names.
   `man/man5/dottore-scope.5`, `docs/adr/0016-a-stdio-mcp-server-may-run-in-a-container.md`,
   `specs/contracts/u04-target-adapters.md` (A-104, OD-60). No verdict changes (judging rules 7
   re-pinned).
+- **OD-60 decided by the owner on 2026-10-27, as built** (ADR-0016 accepted): isolation stays
+  opt-in per target, the container has no network, `isolation:` stays a top-level key when the
+  `mcp:` block of A-101 lands, and only a mount holding the home directory (or one above it) is
+  refused.
+- **A detailed walk-through** in Scenario F of `examples/README.md`, from real runs: what to have
+  first, the block field by field, the dry run, the runtime's argv flag by flag and what each
+  flag keeps out, every refusal with its message and exit code, and how to find a stray
+  container. Also `docs/FAQ.md`, `README.md`, `man/man1/dottore.1` and a field-by-field
+  `examples/target.mcp-stdio.yaml`.
+
 ### Documentation (the MCP pins walked end to end; OD-59 decided as built)
 
 - `examples/README.md` Scenario O: build a small stdio MCP server, review it, copy its

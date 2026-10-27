@@ -1149,8 +1149,17 @@ authorizes the command run inside, exactly as without the block (`commands: ["no
   read-only root, 512m memory, 1 CPU, 128 pids`.
 * The image, the mounts and the working directory are part of the target digest, so a resume after
   changing one is refused as another target; the runtime and the limits are not.
-* Not here yet (OD-60): a server that needs its upstream API cannot reach it from the container, so
-  it runs without the block; isolation is opt-in per target.
+* **The loader refuses** (exit 3, by `--dry-run` too): a tag instead of a digest; a `memory` that
+  is not a whole number and `k`, `m` or `g`; `cpus` outside (0, 64]; `pids` outside 8 to 4096; more
+  than 16 mounts or two sharing a target; a mount or `workdir` path that is relative, not
+  normalized, `/` or holds a comma, a colon or a control character; and the block on any target
+  but a stdio MCP one.
+* **Decided (OD-60, the owner, 2026-10-27, as built).** Isolation is opt-in per target; the
+  container has no network, so a server that needs its upstream API runs without the block, by
+  your choice; `isolation:` stays a top-level key; only a mount holding the home directory, or one
+  above it, is refused (keep `~/.ssh` and `~/.aws` out of what you mount yourself).
+* **Step by step**, with the runtime's argv flag by flag and every refusal's real message:
+  Scenario F in [`../examples/README.md`](../examples/README.md).
 
 #### A chat endpoint over a WebSocket (`provider: websocket`)
 

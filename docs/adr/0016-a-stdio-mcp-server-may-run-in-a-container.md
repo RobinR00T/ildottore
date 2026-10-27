@@ -1,7 +1,8 @@
 # ADR-0016: a stdio MCP server may run in a container (u04 A-104)
 
-* **Status:** proposed, 2026-10-27; built as the smallest reversible version, owner to decide
-  (OD-60)
+* **Status:** accepted on 2026-10-27 by the owner ("do it all"), as built (OD-60): opt-in per
+  target, no network, `isolation:` a top-level key that stays there when A-101's `mcp:` block
+  lands, and a mount holding the home directory (or one above it) refused
 * **Date:** 2026-10-27
 * **Context:** clause u04 A-104 in `specs/contracts/u04-target-adapters.md` with its halves in u00
   and u12; `docs/02` (S3, the safety charter), the stdio transport of the MCP adapter, the bench
