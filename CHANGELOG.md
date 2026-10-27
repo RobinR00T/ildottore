@@ -7,6 +7,25 @@ the file, schema copy, build or pipeline it names.
 
 ## [Unreleased]
 
+### Changed (u13 A-102, judging rules 7 re-pinned: `MCP-TOOLPOISON-001` reads a hidden block)
+
+- **Three markers widened.** A local bench against Damn Vulnerable MCP Server (the ten
+  challenges over stdio, 2026-10-27) found a poisoned listing the spec scored `inconclusive`: a
+  `<HIDDEN>` block telling the agent it "must first access" a secrets resource and to "not
+  mention that" it did. The spec now fails on any `<important>`, `<hidden>`, `<secret>`,
+  `<system>` or `<instructions>` tag (opening or closing), on `you must ... access`, `read`,
+  `fetch` or `retrieve` (beside `call`, `use`, `invoke`, `send`, `forward`, `run`), and on
+  `do not`, `don't` or `never` followed by `mention`, `reveal`, `disclose`, `tell` (and the rest)
+  and `that` or `anyone` as well as the user, operator or human. Measured on the same bench:
+  challenges 2, 5 and 10 fail, the seven whose descriptions are clean (one labelled "DO NOT
+  SHARE") are not decided by a marker. The other seven challenges are runtime flaws that
+  read-only discovery cannot see, by design.
+- `tests/battery/test_detection_not_regressed.py` holds a case per widened marker, the whole
+  shape, and three clean listings that must trip none, all in our own words (the lab has no
+  license; nothing of it is in the repository).
+- The spec's digest moves: a run halted before this commit does not resume. Judging rules stay
+  at version 7, re-pinned: no evaluator or combination changed.
+
 ### Added (u04 A-101, judging rules 7 re-pinned: the MCP catalogue, its parameters and its pins; the rug pull)
 
 - **Parameters are shown and checked.** The MCP adapter's rendering lists, under each tool, every

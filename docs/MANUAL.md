@@ -1002,6 +1002,17 @@ Resources (0):
 Prompts (0):
 ```
 
+What fails `MCP-TOOLPOISON-001` without a judge, in a description or a parameter: an order to
+ignore earlier instructions; `you must` (optionally `first`, `always`, `also` ...) followed by
+`call`, `use`, `invoke`, `send`, `forward`, `run`, `access`, `read`, `fetch` or `retrieve`;
+`before using any other tool`; a concealment (`do not`, `don't` or `never` with `tell`,
+`mention`, `reveal`, `disclose` ... and the user, the operator, `that` or `anyone`); an e-mail
+address after `to`; and a tag such as `<IMPORTANT>`, `<HIDDEN>`, `<SECRET>`, `<SYSTEM>` or
+`<instructions>`. A clean listing needs the judge to pass (OD-16). On a local bench of the ten
+Damn Vulnerable MCP Server challenges (2026-10-27, stdio, no judge), challenges 2, 5 and 10 fail
+and the other seven are not decided: their flaws show only when a tool is called, which
+discovery never does.
+
 ##### Pinning an MCP server's catalogue (the rug pull)
 
 A server you reviewed can change what it advertises after you wired it in: a tool's description,

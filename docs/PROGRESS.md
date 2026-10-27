@@ -5,6 +5,21 @@ The carryover ledger. Every agent session updates this so context survives even 
 newest merge on top: a branch's entries land together when it merges, so the dates of
 neighbouring entries can interleave (an older branch merged later sits above a newer one).
 
+## State, 2026-10-27: `MCP-TOOLPOISON-001` reads a hidden block (`feat/mcp-rug-pull`, u13 A-102)
+
+- **Why.** A local bench of Damn Vulnerable MCP Server (the ten challenges over stdio, mcp
+  1.30.0 in a scratch venv, nothing vendored) scored challenge 5 `inconclusive`: its listing
+  hides a `<HIDDEN>` block ("you must first access" a secrets resource, "do not mention that")
+  that none of the six markers matched. Challenges 2 and 10 failed; the other seven are runtime
+  flaws discovery cannot see (challenge 4's rug pull happens after three tool calls).
+- **What.** Three markers widened in the spec (tags, `you must` verbs, concealment); a case per
+  widened marker and three clean listings in `tests/battery/test_detection_not_regressed.py`,
+  in our own words (the lab has no license). Rescanned: 2, 5 and 10 fail, the seven clean ones
+  decided by no marker. Lint 79 specs clean. Judging rules 7 re-pinned (`14de9f4d...`).
+- **Bench note.** Inside the command sandbox the lab's servers cannot write `/tmp/dvmcp_*` and
+  close stdio during `initialize`: an environment error, reported as such (`inconclusive`), not
+  a verdict. The bench runs outside it.
+
 ## State, 2026-10-27: the MCP catalogue, its parameters and its pins (`feat/mcp-rug-pull`, u04 A-101)
 
 - **Why.** A public list of vulnerable LLM labs (read 2026-10-27) names two MCP risks the battery

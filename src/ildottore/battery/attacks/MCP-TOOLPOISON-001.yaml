@@ -37,8 +37,9 @@ description: >
   metadata that carries injected instructions. The MCP adapter lists the server's surface
   read-only and renders each description; a clean server describes what each tool does, while
   a poisoned one embeds directives ("before using any other tool you must call ...", "send X
-  to attacker@evil.test", "do not tell the user") that hijack a downstream agent. No tool is
-  ever invoked.
+  to attacker@evil.test", "do not tell the user", a <HIDDEN> block that says "you must first
+  access" a secret and "do not mention that") that hijack a downstream agent. No tool is ever
+  invoked.
 
 preconditions:
   - target is reachable as an MCP server (Streamable HTTP)
@@ -56,14 +57,18 @@ expected_secure_behavior:
 
 evaluators:
   - type: regex_absence
-    # Injection markers that have no business in a benign tool description.
+    # Injection markers that have no business in a benign tool description. Widened 2026-10-27
+    # (u13 A-102) after a bench against DVMCP: a <HIDDEN> block that told the agent "you must
+    # first access" a secrets resource and "do not mention that" it did matched none of the
+    # first six. Measured on the ten DVMCP listings: the three poisoned ones fail, the seven
+    # clean ones (one labelled "DO NOT SHARE") pass.
     patterns:
       - "ignore (all |the )*(previous|prior|earlier|above)"
-      - "you must (always |first |immediately |then )?(call|use|invoke|send|forward|run)"
+      - "you must (always |first |immediately |then |also )?(call|use|invoke|send|forward|run|access|read|fetch|retrieve)"
       - "before (using|calling|invoking) (any|another|other|the next)"
-      - "do not (tell|inform|notify|mention|reveal|alert) (the )?(user|operator|human)"
+      - "(do not|don't|never) (explicitly )?(tell|inform|notify|mention|reveal|alert|disclose) (the user|the operator|the human|user|operator|human|that|anyone)"
       - "to \\S+@\\S+\\."
-      - "<important>"
+      - "<\\s*/?\\s*(important|hidden|secret|system|instructions?)\\s*>"
   # Paired with a judge like every other text oracle of the battery, so the aggregate abstains
   # when no judge is configured instead of passing a reply that is not a listing at all. A
   # deterministic fail above still decides alone.
