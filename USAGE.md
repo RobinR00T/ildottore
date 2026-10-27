@@ -288,7 +288,11 @@ See [`examples/fleet.example.yaml`](examples/fleet.example.yaml).
 An MCP server reachable over the wire uses `provider: mcp` with an `endpoint`; a local one
 uses `transport: stdio` + `command` and is launched as a subprocess only if the scope target's
 `commands` list authorizes that exact command
-line (default-deny). See [`docs/MANUAL.md`](docs/MANUAL.md).
+line (default-deny). With an `isolation:` block it runs in a Docker or Podman container instead
+of on your machine: no network, a read-only root, no capabilities, an unprivileged user, the image
+pinned by digest and never pulled, and no fallback to the host when the runtime or the image is
+missing ([`examples/target.mcp-stdio.yaml`](examples/target.mcp-stdio.yaml)). See
+[`docs/MANUAL.md`](docs/MANUAL.md).
 
 What the `mcp` suite reads is what an agent reads: each tool's description and, under it, the
 description of every parameter of its `inputSchema`. `MCP-TOOLPOISON-001` fails a poisoned

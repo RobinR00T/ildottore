@@ -15,6 +15,7 @@ Run everything from the repo root with the venv active (see [`INSTALL.md`](../IN
 | [`target.app.yaml`](target.app.yaml) / [`scope.app.yaml`](scope.app.yaml) | A deployed application, with the specs whose scene its operator seeded (`seeded_setup`). |
 | [`fleet.yaml`](fleet.yaml) | Declare several targets in one file and scan them all. |
 | [`target.mcp.yaml`](target.mcp.yaml) / [`scope.mcp.yaml`](scope.mcp.yaml) | A Model Context Protocol server target (read-only discovery), with a commented `mcp.pins` block for the rug pull (Scenario O builds a local server and walks the pins end to end). |
+| [`target.mcp-stdio.yaml`](target.mcp-stdio.yaml) / [`scope.mcp-stdio.yaml`](scope.mcp-stdio.yaml) | A local MCP server over stdio, run in a container (`isolation:`): no network, read-only root, the image pinned by digest and never pulled. |
 | [`target.websocket.yaml`](target.websocket.yaml) / [`scope.websocket.yaml`](scope.websocket.yaml) | A chat endpoint over a WebSocket, its wire shape declared in the file (`provider: websocket`). |
 | [`target.agent.yaml`](target.agent.yaml) / [`scope.agent.yaml`](scope.agent.yaml) | A deployed AI agent over a WebSocket, with its `guard`: tenant-checked JWT, stop at the first auth failure, pacing across processes, tools that close the connection. Its scope also authorizes the local `--judge` (Scenario K, a first live scan in order). |
 | [`target.agent-rest.yaml`](target.agent-rest.yaml) / [`scope.agent-rest.yaml`](scope.agent-rest.yaml) | The same guard for an agent over plain HTTP (`rest.guard`), with a `window`: the days and hours the engagement allows, in an IANA zone. |
@@ -277,6 +278,30 @@ The next `--suite mcp` run also sends `MCP-RUGPULL-001`: `PASS` while the server
 what was pinned, `FAIL (critical)` and exit 2 when a definition changed, a tool appeared or a pinned
 one is gone, each listed in the evidence (MANUAL §4.2). Scenario O does all of it against a local
 server, with the output of every step.
+
+A **local** server over stdio is a program the scan starts on your machine. Run it in a container
+instead: `target.mcp-stdio.yaml` declares an `isolation:` block (the image pinned by digest, the
+runtime, the limits, optional read-only mounts) and `scope.mcp-stdio.yaml` authorizes the command
+run inside it. Replace the placeholder image with the one you reviewed and pull it first: the scan
+never pulls one. The dry run says where the server will run:
+
+```bash
+dottore run --dry-run --suite mcp \
+  -t examples/target.mcp-stdio.yaml \
+  --scope examples/scope.mcp-stdio.yaml
+```
+
+```text
+  target:  local-mcp-stdio (api) authorized at stdio://node /app/dist/index.js
+  battery: mcp, 1 specs selected
+    agent_tool_abuse: 1
+  isolation: docker, image ghcr.io/example/mcp-server@sha256:0000000000000000000000000000000000000000000000000000000000000000 (not pulled); no network, read-only root, 512m memory, 1 CPU, 128 pids
+```
+
+Run as it ships, with the placeholder image, it stops before anything starts (exit 3): `aborted on
+IsolationUnavailable: local-mcp-stdio: docker has no local copy of the image, or cannot reach its
+daemon; the scan never pulls an image, so nothing was started.` It never falls back to running the
+server on your machine.
 
 ## Scenario G, scan a deployed application you have seeded
 

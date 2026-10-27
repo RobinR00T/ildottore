@@ -1,0 +1,25 @@
+# A local MCP server launched over stdio, run in a container (u04 A-104). Read-only discovery,
+# as over HTTP: the adapter lists what the server advertises and never calls a tool.
+id: local-mcp-stdio
+type: api                            # an MCP server is a tool provider, not a chat model
+provider: mcp
+transport: stdio                     # launched as a subprocess; the scope authorizes the command
+command: ["node", "/app/dist/index.js"]   # run inside the container, as its entrypoint
+capabilities:
+  tools: true
+# Without this block the server runs on your machine as you. With it, it runs in a container
+# with no network, a read-only root, no capabilities and an unprivileged user, and is removed
+# after the scan. The image is never pulled: pull the one you reviewed first
+# (`docker pull <image>`), and a missing runtime or image stops the run, never falls back.
+isolation:
+  # Replace with the image you reviewed, pinned by digest (a tag can move; a digest cannot).
+  image: "ghcr.io/example/mcp-server@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+  runtime: docker                    # or podman
+  memory: 512m
+  cpus: 1
+  pids: 128
+  # A directory the server reads, always read-only: its resolved path (no symbolic link), and
+  # never your home or a directory above it.
+  # mounts:
+  #   - { source: /srv/mcp-data, target: /data }
+  # workdir: /data

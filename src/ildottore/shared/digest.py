@@ -114,9 +114,16 @@ def _target_payload(target: Target, mock_scenario: str | None) -> dict[str, Any]
     payload = {k: v for k, v in dumped.items() if k not in _TARGET_COSMETIC}
     # Absent, it is left out, so a run stored before the field existed still resumes; present,
     # it is part of what answers (which specs the deployment holds the scene for).
-    for optional in ("seeded_setup", "websocket", "rest", "mcp"):
+    for optional in ("seeded_setup", "websocket", "rest", "mcp", "isolation"):
         if payload.get(optional) is None:
             payload.pop(optional, None)
+    # A stdio MCP server's container (u04 A-104): its image, mounts and working directory are
+    # part of what answers; the runtime and the limits decide where and how fast, so a resume
+    # after moving from Docker to Podman, or after raising the memory, is the same target.
+    isolation = payload.get("isolation")
+    if isinstance(isolation, dict):
+        for where in ("runtime", "memory", "cpus", "pids"):
+            isolation.pop(where, None)
     # A WebSocket target's `guard` decides whether and when a query goes out (the cooldown, the
     # pacing, a tool that closes the connection), never what answers it, as `--rate` and the
     # budgets do not: left out, so a run the hourly cap stopped resumes after the operator eases

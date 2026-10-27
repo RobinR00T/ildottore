@@ -5,6 +5,43 @@ The carryover ledger. Every agent session updates this so context survives even 
 newest merge on top: a branch's entries land together when it merges, so the dates of
 neighbouring entries can interleave (an older branch merged later sits above a newer one).
 
+## State, 2026-10-27: a stdio MCP server in a container (`feat/mcp-stdio-isolation`, u04 A-104)
+
+- **What.** A `provider: mcp`, `transport: stdio` target may declare `isolation:`
+  (`shared/models.py` `IsolationSpec`, `IsolationMount`; `adapters/isolation.py`;
+  `adapters/mcp.py` `MCPAdapter.isolation`; `cli/wiring.py` `_isolation_spec`; `cli/run.py`
+  `_isolation_line`; `shared/digest.py`). The server then runs through Docker or Podman with no
+  network, a read-only root, no capabilities, `no-new-privileges`, the user 65534, an init, no host
+  variable and `--pull never`, and is removed after the session. A missing runtime or local image
+  aborts the run before anything starts; there is no fallback to the host. The scope still
+  authorizes the inner command. ADR-0016.
+- **Open decision OD-60** (u04 §9, index ledger): opt-in per target (built) or the default; no
+  network (built) or a declared egress; the block at the top level (built) or under A-101's
+  `mcp:`; which mounts are refused besides the home directory.
+- **Numbering.** A-101 and A-102 are `feat/mcp-rug-pull`'s, A-103 is `fix/repeated-option`'s,
+  ADR-0015 and OD-59 are A-101's; none is on main yet, so this branch skips them.
+- **Verified.** `tests/adapters/test_mcp_isolation.py` (28, one real container skipped unless
+  `DOTTORE_TEST_DOCKER_IMAGE` names a local image with `python3`) and
+  `tests/cli/test_mcp_isolation_target.py` (13). The argv `container_argv` builds was run against
+  Docker 29.4.0 with a local image, a read-only mount, a working directory and lowered limits:
+  accepted, exit 0, no container left. The example run copied from a real run: with the
+  placeholder image it aborts, exit 3, and starts nothing. Not run: a real MCP server in a
+  container (no local image with `python3`; pulling one needs the owner's go-ahead).
+- **Docs.** `USAGE.md`, `docs/MANUAL.md` §4.2, `examples/README.md` (Scenario F),
+  `examples/target.mcp-stdio.yaml`, `examples/scope.mcp-stdio.yaml`, `man/man5/dottore-scope.5`,
+  `CHANGELOG.md`, `docs/adr/0016-a-stdio-mcp-server-may-run-in-a-container.md`,
+  `specs/contracts/u04-target-adapters.md` (A-104, OD-60), `specs/contracts/00-INDEX.md`.
+- **Gates.** Not green in one pass. Third `make gates` (16:35 to 17:20, 45 min, load average 56
+  to 60 from other sessions): ruff, format, mypy strict (190 files), import-linter (4 contracts
+  kept), spec lint (0 errors, 78 specs) and every test but two passed, coverage 97.66%; the two
+  failures are redactor timing tests (`test_hostile_text_is_redacted_and_scanned_in_linear_time`
+  [emails and phones], `test_merging_many_masks_into_one_stretch_stays_linear`), with
+  `redactor.py` unchanged, and both passed when rerun alone at 17:21. The steps `make` then
+  skipped, run by hand: self-scan 0 high or critical, bandit clean, pip-audit one finding,
+  `msgpack` 1.2.2 (CVE-2026-114613, fixed in 1.2.3), which only `CacheControl` (pip-audit's own
+  dependency) pulls into the venv, not this package. The two earlier runs failed on this branch's
+  own code and were fixed: a runtime option written as a literal (`test_flags`: built with
+  `_option` now) and two digest tests that list the optional target fields by hand.
 ## State, 2026-10-27: the MCP pins walked end to end; OD-59 decided (`feat/mcp-rug-pull`, docs)
 
 - **Why.** The owner asked for every new feature's docs brought up to date with very detailed

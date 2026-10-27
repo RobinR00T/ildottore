@@ -10,6 +10,7 @@ schema ``additionalProperties: false`` (contract §4 KEEP).
 from __future__ import annotations
 
 import math
+import posixpath
 import re
 from typing import Annotated, Any, Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -778,6 +779,83 @@ class McpSpec(_Frozen):
     ] = Field(default_factory=dict, max_length=10_000)
 
 
+#: An image the container runtime runs, pinned by its content digest: a tag can be moved under
+#: the reviewer, a digest cannot (u04 A-104).
+_IMAGE_BY_DIGEST = re.compile(r"[a-z0-9][a-z0-9._/:-]{0,400}@sha256:[0-9a-f]{64}")
+#: A memory limit as the runtimes write it: a whole number and a unit (``512m``, ``2g``).
+_MEMORY_LIMIT = re.compile(r"[1-9][0-9]{0,5}[kmg]")
+
+
+def _container_path(value: str, field: str) -> str:
+    """An absolute, normalized POSIX path other than ``/``, with no ``,`` or ``:``.
+
+    The comma and the colon separate the fields of the runtime's ``--mount`` value, so a path
+    holding one would be read as another field; it is refused, never escaped (u04 A-104).
+    """
+
+    if not value.startswith("/") or posixpath.normpath(value) != value or value == "/":
+        raise ValueError(f"{field} must be an absolute, normalized path other than /")
+    if any(ch in value for ch in ",:") or any(ord(ch) < 0x20 or ord(ch) == 0x7F for ch in value):
+        raise ValueError(f"{field} must not hold a comma, a colon or a control character")
+    return value
+
+
+class IsolationMount(_Frozen):
+    """A host directory a contained MCP server reads, always read-only (u04 A-104)."""
+
+    source: str
+    target: str
+
+    @field_validator("source", "target")
+    @classmethod
+    def _a_container_path(cls, value: str, info: ValidationInfo) -> str:
+        return _container_path(value, str(info.field_name))
+
+
+class IsolationSpec(_Frozen):
+    """The ``isolation:`` block of a stdio MCP target: the server runs in a container (u04 A-104).
+
+    The container has no network, a read-only root, no capabilities and an unprivileged user,
+    whatever the block says; the block names the image, the runtime, the limits and what the
+    server may read. The loader checks a mount's source on disk (``cli.wiring``).
+    """
+
+    image: str
+    runtime: Literal["docker", "podman"] = "docker"
+    memory: str = "512m"
+    cpus: Annotated[float, Field(gt=0, le=64)] = 1.0
+    pids: Annotated[int, Field(ge=8, le=4096)] = 128
+    mounts: list[IsolationMount] = Field(default_factory=list, max_length=16)
+    workdir: str | None = None
+
+    @field_validator("image")
+    @classmethod
+    def _pinned_by_digest(cls, value: str) -> str:
+        if not _IMAGE_BY_DIGEST.fullmatch(value):
+            raise ValueError("image must be pinned by digest: name@sha256:<64 hex digits>")
+        return value
+
+    @field_validator("memory")
+    @classmethod
+    def _a_memory_limit(cls, value: str) -> str:
+        if not _MEMORY_LIMIT.fullmatch(value):
+            raise ValueError("memory must be a whole number and k, m or g (for example 512m)")
+        return value
+
+    @field_validator("workdir")
+    @classmethod
+    def _an_absolute_workdir(cls, value: str | None) -> str | None:
+        return None if value is None else _container_path(value, "workdir")
+
+    @field_validator("mounts")
+    @classmethod
+    def _one_mount_per_target(cls, value: list[IsolationMount]) -> list[IsolationMount]:
+        targets = [mount.target for mount in value]
+        if len(set(targets)) != len(targets):
+            raise ValueError("two mounts share a target path")
+        return value
+
+
 class WebSocketSpec(_Frozen):
     """The ``websocket:`` block of a ``provider: websocket`` target (``docs/MANUAL.md`` §4.2).
 
@@ -828,6 +906,8 @@ class Target(_Frozen):
     # is spawned only if the scope's target authorized that exact command line.
     transport: str | None = None
     command: list[str] | None = None
+    # A stdio MCP server run in a container, never on the host (u04 A-104; ``None``: on the host).
+    isolation: IsolationSpec | None = None
     # OD-18 option B: what a deployed application's operator has seeded (``None``: nothing).
     seeded_setup: SeededSetup | None = None
     # The wire shape of a ``provider: websocket`` target (``None`` for every other provider).

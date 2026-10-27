@@ -1,0 +1,11 @@
+# Authorization for the stdio MCP scenario. A stdio server is authorized by its command line,
+# exactly as the target's `command` joins with spaces, not by an endpoint.
+version: "1.0"
+targets:
+  - id: local-mcp-stdio             # must match target.mcp-stdio.yaml's id
+    base_url: "stdio://local"        # no endpoint: nothing goes over the network
+    endpoints: []
+    commands: ["node /app/dist/index.js"]
+    identities:
+      - name: default
+        auth_ref: "env://NONE"       # a local server is sent no credential

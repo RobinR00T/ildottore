@@ -1364,6 +1364,9 @@ def _print_dry_run_plan(
         guard = _guard_line(plan.target, plan.estimate.requests)
         if guard is not None:
             print(f"  guard:   {guard}")
+        contained = _isolation_line(plan.target)
+        if contained is not None:
+            print(f"  isolation: {contained}")
         # Per field, how many specs the block fills it on (a spec's own value wins, so a block's
         # temperature reaches none of the shipped battery), and what never goes out (OD-39).
         for note in plan.sampling_notes:
@@ -1511,6 +1514,27 @@ def _guard_line(target: Target, requests: int, now: float | None = None) -> str 
         parts.append(f"{on_tools} {len(guard.stop_on_tools.names)} tool name(s)")
     if guard.max_response_bytes is not None:
         parts.append(f"{guard.max_response_bytes} bytes per {unit}")
+    return "; ".join(parts)
+
+
+def _isolation_line(target: Target) -> str | None:
+    """Where a stdio MCP server's ``isolation`` block runs it (``None``: no block, on the host).
+
+    Said before anything starts (u04 A-104): the runtime, the image, the limits and the mounts,
+    and that the container has no network and the image is not pulled.
+    """
+
+    spec = target.isolation
+    if spec is None:
+        return None
+    parts = [
+        f"{spec.runtime}, image {spec.image} (not pulled)",
+        f"no network, read-only root, {spec.memory} memory, {spec.cpus:g} CPU, {spec.pids} pids",
+    ]
+    if spec.mounts:
+        parts.append(
+            "reads " + ", ".join(f"{mount.source} at {mount.target}" for mount in spec.mounts)
+        )
     return "; ".join(parts)
 
 

@@ -135,6 +135,7 @@ from ildottore.shared.models import (
     AttackSpec,
     Attempt,
     Capabilities,
+    IsolationSpec,
     McpSpec,
     ModelFingerprint,
     ModelRequest,
@@ -1025,6 +1026,7 @@ def build_real_adapter(
                 command=tuple(target.command or ()),
                 authorized_commands=authorized_commands,
                 pins=dict(target.mcp.pins) if target.mcp else {},
+                isolation=target.isolation,
             )
         # MCP posts JSON-RPC to the endpoint PATH itself (e.g. /mcp), so the adapter keeps the
         # full URL as base_url (unlike openai/anthropic, whose path is a fixed _endpoint_path).
@@ -2133,6 +2135,7 @@ def _target_from(path: Path, raw: dict[str, Any]) -> Target:
     rest = _rest_spec(path, raw.get("rest"), provider, endpoint, auth_ref)
     mcp = _mcp_spec(path, raw.get("mcp"), provider)
     caps = _mcp_pins_capability(path, raw, caps_raw, caps, mcp)
+    isolation = _isolation_spec(path, raw.get("isolation"), provider, transport)
 
     return Target(
         id=target_id,
@@ -2146,6 +2149,7 @@ def _target_from(path: Path, raw: dict[str, Any]) -> Target:
         sampling_defaults=sampling,
         transport=transport,
         command=command,
+        isolation=isolation,
         seeded_setup=seeded,
         websocket=websocket,
         rest=rest,
@@ -2706,6 +2710,55 @@ def _mcp_pins_capability(
             "catalogue under mcp.pins sets it"
         )
     return caps
+
+
+def _isolation_spec(
+    path: Path, raw: object, provider: object, transport: object
+) -> IsolationSpec | None:
+    """The ``isolation`` block of a stdio MCP target, its mounts checked on disk (u04 A-104).
+
+    Only ``provider: mcp`` with ``transport: stdio`` launches a process, so any other target is
+    refused the block. A mount's source must be a directory that exists, written as its resolved
+    path (no symbolic link anywhere in it, so what is mounted is what the file names), and
+    neither the operator's home nor a directory above it, which would hand the server every key
+    under it, read-only or not.
+    """
+
+    if raw is None:
+        return None
+    routed = (provider or "").strip().lower() if isinstance(provider, str) else provider
+    carried = (transport or "").strip().lower() if isinstance(transport, str) else transport
+    if routed != "mcp" or carried != "stdio":
+        raise ValueError(
+            f"target file {path} declares 'isolation', which is read only by provider mcp with "
+            "transport stdio (a local MCP server)"
+        )
+    if not isinstance(raw, dict):
+        raise ValueError(f"target file {path} 'isolation' must be a mapping")
+    try:
+        spec = IsolationSpec.model_validate(raw)
+    except ValidationError as exc:
+        raise ValueError(
+            f"target file {path} 'isolation' failed validation: {validation_problems(exc)}"
+        ) from exc
+    home = os.path.realpath(os.path.expanduser("~"))
+    for mount in spec.mounts:
+        source = mount.source
+        if not os.path.isdir(source):
+            raise ValueError(
+                f"target file {path} 'isolation' mounts {quoted(source)}, which is not a directory"
+            )
+        if os.path.realpath(source) != source:
+            raise ValueError(
+                f"target file {path} 'isolation' mounts {quoted(source)} through a symbolic link; "
+                f"write the resolved path ({quoted(os.path.realpath(source))})"
+            )
+        if home == source or home.startswith(source.rstrip("/") + "/"):
+            raise ValueError(
+                f"target file {path} 'isolation' mounts {quoted(source)}, which holds the home "
+                "directory; mount the directory the server reads, not one above it"
+            )
+    return spec
 
 
 def _placeholder_names(names: list[str]) -> str:
