@@ -83,9 +83,9 @@ one refusal. Next, one stage per command, cheapest first, each with `--estimate`
 (seed and declare its scenes), then every spec the target can run (no selection flag), then
 carriers (`--obfuscate`, `--fuzz`) on the specs that held, never on everything: on the example
 agent the three encoding families over every spec with `--fuzz 10` are 1968 requests at `--runs
-1`, four days at its guard's 20 an hour. `--suite` takes one suite; a second on the same command
-replaces the first. examples/README.md, Scenario M, has each stage's real estimate and the
-resume after the guard's hourly stop.
+1`, four days at its guard's 20 an hour. `--suite` takes one suite; a second with another suite
+on the same command is refused (exit 3). examples/README.md, Scenario M, has each stage's real
+estimate and the resume after the guard's hourly stop.
 
 ### How do I test encodings, ciphers and IDS-style evasions?
 

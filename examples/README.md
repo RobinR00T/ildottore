@@ -675,8 +675,8 @@ examples/target.judge.yaml`, and [`scope.agent.yaml`](scope.agent.yaml) holds th
 `error: target(s) not authorized by the scope: local-judge`. Without `--judge`, most specs come
 back `inconclusive` (step 6).
 
-**2. One stage per run, smallest first.** `--suite` takes one suite: a second `--suite` on the
-same command replaces the first, so run each stage on its own command.
+**2. One stage per run, smallest first.** `--suite` takes one suite: a second `--suite` with
+another suite on the same command is refused (exit 3), so run each stage on its own command.
 
 | stage | selection | agent requests | judge requests | under the guard |
 |---|---|---|---|---|
