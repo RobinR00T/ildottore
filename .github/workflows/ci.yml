@@ -154,7 +154,10 @@ jobs:
   floors:
     name: floors (the lowest dependency versions pyproject.toml allows)
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # 45, not 30 (2026-10-27): its nine complete runs of 26 and 27 October took 22m58s to 29m54s,
+    # and two more were cancelled at the limit with every test passed so far (main on 26 October
+    # at 97 percent, #143 at 95 percent): a cut, not a failure.
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v7
