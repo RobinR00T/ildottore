@@ -2136,6 +2136,14 @@ and the presets; `mutate <mutation> <text> [--spec-id] [--out]` prints what a ru
 spec and writes the PNG of an image chain with its SHA-256; neither sends anything
 (`tests/cli/test_obfuscate_flags.py`).
 
+**A-103 (added 2026-10-27) An option that keeps one value is refused when given two.** The root
+group's `parse_args` reads the words as typed, down to the sub-command they name, and raises a
+usage error (exit 3, the command's own usage block) for any option that is neither repeatable,
+counted nor eager given again with another value, or a flag pair given both ways; the same value
+again loses nothing and passes. A value is skipped with its option, and `--` ends the options. Click kept the last value in silence, so `run --suite mcp
+--suite owasp:llm` ran one suite. Pinned by `tests/cli/test_repeated_option_refused.py`, which
+walks the command tree.
+
 ## §8 Out of scope / forbidden
 - MUST NOT implement attack/mutation/evaluation/scoring/reporting/fingerprint logic (u05-u11,
   u13): only wire and call them. MUST NOT own `cli/lint.py` (u02) or edit any spec YAML.
