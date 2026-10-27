@@ -455,6 +455,79 @@ def run_masked(call: Callable[[], Any]) -> NoReturn:
 _banner_env_for: Callable[[IO[Any] | None], banner.Env] = banner.env_for
 
 
+def _single_valued(command: Any) -> dict[str, Any]:
+    """Each spelling of ``command``'s options that keep one value, to the option.
+
+    A flag pair (``--gaps/--no-gaps``) is one option; a repeatable one (``--spec``), a counted
+    one (``-v``) and an eager one (``--help``, ``--version``) are left out.
+    """
+
+    found: dict[str, Any] = {}
+    for param in command.params:
+        if param.param_type_name != "option" or param.multiple or param.count:
+            continue
+        if param.is_eager:
+            continue
+        for name in (*param.opts, *param.secondary_opts):
+            found[name] = param
+    return found
+
+
+def _refuse_repeated_options(ctx: Any, command: Any, words: Sequence[str]) -> None:
+    """Refuse an option that keeps one value given two, down to the sub-command named.
+
+    Click keeps the last value and says nothing: ``dottore run --suite mcp --suite owasp:llm``
+    ran one suite, and the operator believed it ran two. Read off the words as typed, before any
+    command runs: an option given again with another value, or a flag pair given both ways
+    (``--gaps --no-gaps``), is a usage error; given again as it was, it loses nothing and is let
+    through. A value is skipped with its option (``--spec --runs`` names a spec), and ``--`` ends
+    the options. The usage block shown is the command's, as for any usage error.
+    """
+
+    options = _single_valued(command)
+    seen: dict[int, tuple[str, tuple[str, ...]]] = {}
+    index = 0
+    while index < len(words):
+        word = words[index]
+        index += 1
+        if word == "--":
+            return
+        inline = word.startswith("--") and "=" in word
+        name = word.split("=", 1)[0] if inline else word
+        param = options.get(name)
+        if param is None:
+            sub = None if word.startswith("-") else _sub_command(ctx, command, word)
+            if sub is not None:
+                sub_ctx = sub.context_class(sub, info_name=word, parent=ctx)
+                _refuse_repeated_options(sub_ctx, sub, words[index:])
+                return
+            continue
+        if inline:
+            given: tuple[str, ...] = (word.split("=", 1)[1],)
+        elif param.is_flag:
+            given = (name,)
+        else:
+            given = tuple(words[index : index + param.nargs])
+            index += param.nargs
+        first = seen.setdefault(id(param), (name, given))
+        if first[1] == given:
+            continue
+        what = f"{name} given twice" if first[0] == name else f"{first[0]} and {name} both given"
+        usage_error: Any = _typer_error("UsageError")  # click's, which takes the context
+        raise usage_error(
+            f"{what}, with two values: the option keeps one, and the second would replace the "
+            "first without a word. Give it once.",
+            ctx=ctx,
+        )
+
+
+def _sub_command(ctx: Any, command: Any, word: str) -> Any:
+    """The sub-command ``word`` names under a group, or ``None`` (a command, or no such name)."""
+
+    get_command = getattr(command, "get_command", None)
+    return get_command(ctx, word) if callable(get_command) else None
+
+
 class _MaskedGroup(OperationalErrorGroup):
     """The root command, whose usage errors go through the CLI's mask on every path (u12 A-82).
 
@@ -485,6 +558,12 @@ class _MaskedGroup(OperationalErrorGroup):
         except _CLICK_ERRORS as exc:
             _mask_in_place(exc)
             raise
+
+    def parse_args(self, ctx: Any, args: list[str]) -> list[str]:
+        words = list(args)
+        rest = super().parse_args(ctx, args)
+        _refuse_repeated_options(ctx, self, words)
+        return rest
 
     def format_help(self, ctx: Any, formatter: Any) -> None:
         # The logo above the root help only: bare `dottore`, `dottore --help`. A sub-command's

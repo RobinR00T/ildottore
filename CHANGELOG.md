@@ -7,6 +7,21 @@ the file, schema copy, build or pipeline it names.
 
 ## [Unreleased]
 
+### Fixed (u12 A-103, judging rules 7 re-pinned: an option given two values is refused)
+
+- **A repeated one-value option no longer drops the first value in silence.** `dottore run
+  --suite mcp --suite owasp:llm` ran the `owasp:llm` suite alone: the command-line library keeps
+  the last value of an option that takes one and says nothing. The root command now reads the
+  words as typed and refuses, before anything runs, any option that is neither repeatable (`-t`,
+  `--spec`, `--obfuscate` ...) nor counted (`-v`) given again with another value: `error: --suite
+  given twice, with two values`, the command's usage block, exit 3. A flag pair given both ways
+  (`--gaps --no-gaps`) is named both. The same value again loses nothing and is accepted. Found writing the manual's campaign example, 2026-10-27.
+- `tests/cli/test_repeated_option_refused.py` tries every such option of every command, found by
+  walking the command tree. Judging rules stay at version 7, re-pinned: no evaluator or
+  combination changed.
+- **Operator to-do.** A script that gave an option two values and relied on the last one now
+  exits 3: keep the one it meant.
+
 ### Changed (CI only: the `floors` job's limit is 45 minutes)
 
 - The `floors` job (the test suite at the lowest dependency versions `pyproject.toml` allows)

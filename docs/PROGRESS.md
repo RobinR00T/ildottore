@@ -5,6 +5,20 @@ The carryover ledger. Every agent session updates this so context survives even 
 newest merge on top: a branch's entries land together when it merges, so the dates of
 neighbouring entries can interleave (an older branch merged later sits above a newer one).
 
+## State, 2026-10-27: an option given two values is refused (`fix/repeated-option`, u12 A-103)
+
+- **Why.** Writing the manual's campaign example (`feat/mcp-rug-pull`) showed that `dottore run
+  --suite mcp --suite owasp:llm` ran one suite: click keeps the last value of a one-value option
+  without a word, on every command.
+- **What.** `cli/app.py`: `_MaskedGroup.parse_args` calls `_refuse_repeated_options`, which reads
+  the words down to the sub-command named and raises a usage error (exit 3, the command's usage
+  block) for an option that is neither repeatable, counted nor eager given again with another
+  value, or a flag pair given both ways; the same value again loses nothing and passes (three
+  campaign tests give `--concurrency 1` twice). A value is skipped with its option and `--` ends
+  the options. `tests/cli/test_repeated_option_refused.py`
+  walks the command tree. Judging rules 7 re-pinned (`09544f8e...`).
+- **Numbering.** A-101 and A-102 are on `feat/mcp-rug-pull`, not merged yet; this is A-103.
+
 ## State, 2026-10-27: the `floors` CI job's limit is 45 minutes (`ci/floors-timeout`)
 
 - **Why.** The `floors` job's nine complete runs of 26 and 27 October took 22m58s to 29m54s;

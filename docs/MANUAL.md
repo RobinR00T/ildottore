@@ -1373,11 +1373,26 @@ dottore run [OPTIONS] [TARGET_POS]...
 Targets may be passed positionally or with `-t/--target` (repeatable). `--scope` is
 required.
 
+An option marked repeatable (`-t`, `--spec`, `--exclude`, `--obfuscate` ...) may be given as
+often as needed; every other option keeps one value, and giving it a second, different value (or
+a flag both ways, `--gaps --no-gaps`) is a usage error, on every command (u12 A-103). The
+command-line library would keep the last value without a word. The same value again loses
+nothing and is accepted.
+
+```text
+$ dottore run --suite mcp --suite owasp:llm -t target.yaml --scope scope.yaml
+Usage: dottore run [OPTIONS] [TARGET_POS]...
+Try 'dottore run --help' for help.
+error: --suite given twice, with two values: the option keeps one, and the second would replace the first without a word. Give it once.
+$ echo $?
+3
+```
+
 **Selection**
 
 | Flag | Meaning |
 |------|---------|
-| `--suite TEXT` | suite id or alias (`owasp:llm`, `quick`, `multi-turn`, `access-control`, `agentic-owasp2026`, `obfuscation-enhancers`, `embeddings`, `agentic-extortion`, `mcp`, `responsible-ai`, `guardrail-evasion`, `multimodal`, `structured-output`, `nova-iopc`). Aliases that resolve, the three `run --help` names: `owasp:llm` and `baseline` (both `owasp-llm-top10`), `agentic` (`agentic-extortion`). `mitre:atlas`, `nist:ai`, `eu:ai-act`, `dora` and `iso:42001` are still accepted as aliases but point at no registered suite and exit 3 |
+| `--suite TEXT` | suite id or alias (`owasp:llm`, `quick`, `multi-turn`, `access-control`, `agentic-owasp2026`, `obfuscation-enhancers`, `embeddings`, `agentic-extortion`, `mcp`, `responsible-ai`, `guardrail-evasion`, `multimodal`, `structured-output`, `nova-iopc`). Aliases that resolve, the three `run --help` names: `owasp:llm` and `baseline` (both `owasp-llm-top10`), `agentic` (`agentic-extortion`). `mitre:atlas`, `nist:ai`, `eu:ai-act`, `dora` and `iso:42001` are still accepted as aliases but point at no registered suite and exit 3. One per command: a second, different `--suite` is refused (exit 3) instead of replacing the first; run each suite on its own, or pick specs with `--spec` |
 | `-p/--categories TEXT` | comma-separated categories (`pi,jailbreak,leakage,tool,rag,output,dos,safety,bias`; long forms accepted) |
 | `--spec TEXT` | spec id or glob, e.g. `PI-*` (repeatable) |
 | `--exclude TEXT` | exclude spec id/glob (repeatable) |
@@ -1431,7 +1446,8 @@ required.
 
 **Exit codes:** `0` clean · `1` findings below `--fail-on` · `2` findings at/above · `3`
 error. Only an exploited (`fail`) finding trips the gate; `pass`/`inconclusive` never do. A
-usage error (an unknown option, a value of the wrong type) is `3` too: the command-line library
+usage error (an unknown option, a value of the wrong type, an option that keeps one value given
+two) is `3` too: the command-line library
 defaults to `2`, which here would read as "findings". The usage error goes through the same mask
 as every other error line: `dottore run --runs "$KEY"` printed `Invalid value for '--runs':
 'sk-ant-api03-...' is not a valid integer.` with the key in clear until 2026-10-11, since the
