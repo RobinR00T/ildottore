@@ -1389,7 +1389,7 @@ mkdir -p reports
 for i in 1 2 3 4 5; do
   dottore run -t examples/target.mock.yaml --scope examples/scope.mock.yaml \
     --spec PI-DIRECT-001 --spec JB-ROLEPLAY-001 --runs 1 -q -oJ reports/run-$i.json
-  dottore calibrate reports/run-$i.json examples/labels.example.yaml --record reports/labels.jsonl
+  dottore calibrate reports/run-$i.json examples/labels.mock.yaml --record reports/labels.jsonl
 done
 ```
 

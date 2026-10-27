@@ -26,7 +26,7 @@ the file, schema copy, build or pipeline it names.
 - ADR-0017; open decision OD-61 (the figures, per spec or per spec and target, whether an
   `inconclusive` label counts, whether a hold expires). Docs: MANUAL ("Holding a spec that raises
   false alarms", the `--fp-ledger` row), USAGE, FAQ, `dottore(1)`, docs/09, docs/12; examples:
-  Scenario N with `target.mock.yaml`, `scope.mock.yaml` and `labels.example.yaml`.
+  Scenario N with `target.mock.yaml`, `scope.mock.yaml` and `labels.mock.yaml`.
 - Judging rules stay at version 7, re-pinned: `core/runner.py` takes the holds; no evaluator or
   combination changed, so a reply is judged as before, and without `--fp-ledger` nothing is held.
 - Tests: `tests/shared/test_review_holds.py` (8), `tests/cli/test_fp_breaker.py` (14).
