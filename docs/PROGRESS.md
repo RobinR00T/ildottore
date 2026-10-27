@@ -5,6 +5,15 @@ The carryover ledger. Every agent session updates this so context survives even 
 newest merge on top: a branch's entries land together when it merges, so the dates of
 neighbouring entries can interleave (an older branch merged later sits above a newer one).
 
+## State, 2026-10-27: the `floors` CI job's limit is 45 minutes (`ci/floors-timeout`)
+
+- **Why.** The `floors` job's nine complete runs of 26 and 27 October took 22m58s to 29m54s;
+  the 30-minute limit cancelled it on `main` (26 October, 21:14 CET) and on #143
+  (27 October, 12:49 CET), at 97 and 95 percent with every test passed so far. A cut read as
+  a red check, on a PR that had nothing wrong.
+- **What.** `.github/workflows/ci.yml`: `floors` `timeout-minutes` 30 to 45, with the
+  measurement in a comment. Nothing else; no judging re-pin (no package file changed).
+
 ## State, 2026-10-26: the guard's window, the guard over HTTP, profiles by name (`feat/guard-window-http`, u04 A-98)
 
 - **What.** The three pieces A-96 left as "Not built". `guard.window` (`shared/models.py`

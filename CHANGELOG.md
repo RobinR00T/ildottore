@@ -7,6 +7,13 @@ the file, schema copy, build or pipeline it names.
 
 ## [Unreleased]
 
+### Changed (CI only: the `floors` job's limit is 45 minutes)
+
+- The `floors` job (the test suite at the lowest dependency versions `pyproject.toml` allows)
+  took 22m58s to 29m54s over its nine complete runs of 26 and 27 October, and its 30-minute
+  limit cancelled two more with no test failed (`main` on 2026-10-26 at 97 percent, #143 on
+  2026-10-27 at 95 percent). The limit is 45 minutes. No code, test or verdict changes.
+
 ### Added (u04 A-98, judging rules 7 re-pinned: the guard's window, the guard over HTTP, profiles by name)
 
 - **`guard.window`: the engagement's days and hours.** `timezone` (an IANA zone, required: a
