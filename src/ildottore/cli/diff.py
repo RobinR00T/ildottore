@@ -38,6 +38,7 @@ __all__ = [
     "load_findings",
     "render_diff",
     "report_declarations",
+    "report_run_id",
     "report_target",
 ]
 
@@ -341,6 +342,18 @@ def report_declarations(path: Path) -> dict[str, list[str]]:
         for target, names in tools.items()
         if isinstance(names, list)
     }
+
+
+def report_run_id(path: Path) -> object:
+    """The report's ``run.run_id`` as written, or ``None`` for a bare findings list (u08 A-105).
+
+    Returned unchecked: the caller that needs a run id (``calibrate --record``) refuses one that
+    is not.
+    """
+
+    data = _read_report(path)
+    run = data.get("run") if isinstance(data, dict) else None
+    return run.get("run_id") if isinstance(run, dict) else None
 
 
 def diff_reports(baseline_path: Path, current_path: Path) -> DriftReport:

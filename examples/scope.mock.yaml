@@ -1,0 +1,14 @@
+# scope.mock.yaml, the AUTHORIZATION record for the offline mock target (target.mock.yaml).
+#
+# A mock run sends nothing, and still needs a scope: no run starts without one. The identity's
+# key is an env reference the mock never reads.
+version: "1.0"
+targets:
+  - id: demo                        # must match target.mock.yaml's id
+    base_url: "mock://demo"
+    endpoints:
+      - host: "demo"
+        path_prefixes: ["/"]
+    identities:
+      - name: default
+        auth_ref: "env://MOCK_KEY"

@@ -147,7 +147,8 @@ level), without sending anything; the gaps print in three groups (not covered ye
 reach for a black-box scanner, deliberately not tested), each with its reason.
 .TP
 .B calibrate
-Compare a run's findings against operator labels (human in the loop).
+Compare a run's findings against operator labels (human in the loop); with --record, keep the
+labels in a ledger that run --fp-ledger reads.
 .TP
 .B render-media
 Render a multimodal spec's carriers to disk for inspection (a PNG for an image part, the
@@ -342,6 +343,17 @@ result is at most a warning (a confirmed fail keeps its band's level), so code s
 not fail a check on a finding --fail-on lets through; with this flag it gates, so it keeps its
 band's level too, and the SARIF run's properties say include_needs_review: true.
 .TP
+.B --fp-ledger \fILEDGER\fR
+The labels ledger calibrate --record writes. A spec with more than 30% false positives among
+its last 50 labelled fails (5 at least) is held: its fail is reported and scored, never
+confirmed, so it needs review and gates only with --include-needs-review. A pass or
+inconclusive label on a fail is a false alarm; a run and spec labelled twice count once. So 5
+of 5 holds, 4 of 4 does not (under the minimum), 3 of 10 does not (30% is not more than 30%),
+5 of 16 holds and 5 of 17 does not: new confirmed fails lift a hold, which never expires by
+date. The holds print on stderr, under --quiet and --dry-run too. Read before anything is
+sent; a line that is not a label record stops the run (exit 3). A resume holds what its run
+held and refuses this flag.
+.TP
 .B --evidence-root \fIPATH\fR, --run-db \fIPATH\fR
 Evidence store root (default .dottore/evidence) and run store SQLite path (default
 \&.dottore/runs.sqlite). A store path that is a directory, a file that is not SQLite or a path
@@ -512,7 +524,13 @@ Run store whose findings are the evidence manifest (default .dottore/runs.sqlite
 Print one schema: attack-spec, pack, report, suite or test-plan; any other name is refused
 (exit 3) with that list. Without it, one JSON object holds all five.
 .SS "diff \fIBASELINE CURRENT\fR, calibrate \fIREPORT LABELS\fR"
-Arguments only: two JSON run reports, or a report and an operator labels file.
+Arguments: two JSON run reports, or a report and an operator labels file.
+.TP
+.B --record \fILEDGER\fR
+calibrate only: also append one JSON line per spec scored (run id, spec, the scanner's and the
+operator's verdict) to the labels ledger run --fp-ledger reads. Created 0600, never through a
+symbolic link; a report with no run id, the report or labels file itself, and a record past
+1 MiB are refused (exit 3).
 .SH "EXIT STATUS"
 .TP
 .B 0
@@ -649,6 +667,11 @@ Many targets in one file; expanded by
 The built-in battery inside the installed package (pack.yaml, attacks/, suites/); in a source
 checkout, src/ildottore/battery. Lint it by its path.
 .TP
+.I labels.jsonl
+A labels ledger (any name): one JSON object per line with the keys operator, recorded_at,
+run_id, scanner and spec_id, appended by calibrate --record (mode 0600, never through a
+symbolic link, at most 1 MiB) and read whole by run --fp-ledger.
+.TP
 .I .dottore/
 Evidence store and run database (runtime artifacts; do not commit). Attempt files, a new run
 database and a new report file are readable by their owner only (mode 0600); an existing report
@@ -702,6 +725,14 @@ A local MCP server in a container (its target declares isolation:), checked firs
 .B dottore run --dry-run --suite mcp -t target.mcp-stdio.yaml --scope scope.mcp-stdio.yaml
 .br
 .B dottore run --suite mcp -t target.mcp-stdio.yaml --scope scope.mcp-stdio.yaml -oJ mcp.json
+.RE
+.PP
+Keep the verdicts you give a run, and hold for review the specs they show to raise false alarms:
+.PP
+.RS
+.B dottore calibrate report.json labels.yaml --record labels.jsonl
+.br
+.B dottore run -t target.yaml --scope scope.yaml --fp-ledger labels.jsonl --fail-on high
 .RE
 .SH "SEE ALSO"
 .BR dottore-scope (5)

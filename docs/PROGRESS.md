@@ -5,6 +5,34 @@ The carryover ledger. Every agent session updates this so context survives even 
 newest merge on top: a branch's entries land together when it merges, so the dates of
 neighbouring entries can interleave (an older branch merged later sits above a newer one).
 
+## State, 2026-10-27: labelled false positives hold a spec for review (`feat/fp-breaker`, u08 A-105)
+
+- **Why.** `calibrate` measured the scanner against the operator's labels and kept nothing. A
+  spec that kept raising false alarms on a target failed the gate run after run, and the only
+  remedies were dropping it from the selection or ignoring the gate by hand.
+- **Built.** `calibrate --record LEDGER` (JSON lines, `cli/labels_ledger.py`), the pure rule
+  `shared/review_holds.py` (last 50 labelled fails, more than 30% false alarms, 5 at least, a
+  label recorded again counted once) and `run --fp-ledger LEDGER`: a held spec's fail is never
+  confirmed (`CampaignRunner(review_holds=...)`, decided in `_score_finding`), so it needs review
+  and gates only with `--include-needs-review`. Read before any send, refused whole on a bad line;
+  the run context keeps `review_holds` (validated in `store/run_sqlite.py`) and a resume holds
+  the same and refuses the flag. ADR-0017.
+- **Verified.** 22 new tests; the manual's Scenario N run by hand with the shipped example files
+  (five mock runs recorded, the sixth holds `PI-DIRECT-001`: exit 2 with the other spec, 0 alone,
+  2 alone with `--include-needs-review`).
+- **Documented in full (2026-10-27, evening).** Scenario N now walks the breaker step by step
+  with real output: four labelled runs hold nothing (the minimum is 5), the fifth holds
+  `PI-DIRECT-001`, the same report recorded again counts once, `inconclusive` labels hold as
+  `pass` ones do, a halted run's resume keeps the hold and refuses `--fp-ledger`, every refusal
+  with its message (exit 3), and twelve confirmed fails lift the hold (5 of 16 still holds, 5 of
+  17 does not). The manual, README, USAGE, FAQ and `dottore(1)` carry the same rule.
+- **Gates.** `make gates` on the documented branch, 2026-10-27, 22:05 to 22:21 (15 min): ruff,
+  format, mypy (191 files), four import contracts kept, 78 specs lint OK, 8,395 tests passed and 3
+  skipped, coverage 97.70%, self-scan 0 high or critical, bandit clean; pip-audit reports only
+  `msgpack` 1.2.2 (CVE-2026-114613), pulled in by pip-audit's own `CacheControl`.
+- **Decided.** OD-61, by the owner on 2026-10-27 ("do it all"), as built: per spec, 50 / 30% /
+  5, `inconclusive` counted as a false alarm, no expiry. Judging rules 7 re-pinned.
+
 ## State, 2026-10-27: a stdio MCP server in a container (`feat/mcp-stdio-isolation`, u04 A-104)
 
 - **What.** A `provider: mcp`, `transport: stdio` target may declare `isolation:`

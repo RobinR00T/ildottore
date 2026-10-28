@@ -1413,6 +1413,30 @@ prefix bound and judged, the derived one stable across runs, the loader's refusa
 spec placeholders refused in an identity canary) and
 `tests/policy/test_redactor.py` (the legacy stem masked as a canary).
 
+- **A-105 (added 2026-10-27): labelled false positives hold a spec for review (ADR-0017,
+  OD-61).** `CampaignRunner` takes `review_holds` (spec id to `shared.review_holds.ReviewHold`,
+  the counts that held it), injected by the composition root (u12). In `_score_finding`, a fail
+  `_is_confirmed` confirms is not confirmed when its spec is held, and its reasoning ends with
+  `; held for review by the labels ledger: N of its last M labelled fails were false
+  positives`; its status, risk, attempts and evidence are untouched. The decision is made there,
+  before the finding is stored, reported or gated, never after the exit code. The rule is
+  `shared.review_holds` (pure): per spec, the last `WINDOW` (50) labelled records whose scanner
+  verdict was `fail`, held at `MINIMUM` (5) or more of them when more than `RATE_PERCENT` (30) per
+  cent were labelled anything but `fail`, a run and spec labelled twice counted once at the
+  latest label. The ledger, its reading (refused whole on any bad line) and its writing (0600, no
+  symbolic link, whole lines appended, refused past the 1 MiB read cap) are u12's
+  (`cli/labels_ledger.py`, `calibrate --record`, `run --fp-ledger`); the run context records
+  `review_holds` (u10, validated as a map of spec id to two counts) and a resume holds the same
+  specs and refuses `--fp-ledger`. **Costs, stated:** judging rules 7 re-pinned, no rule of
+  judgement changed. **Acceptance:** `tests/shared/test_review_holds.py` (minimum, rate, window,
+  an undecided label, records the scanner did not fail, a label recorded again, order) and
+  `tests/cli/test_fp_breaker.py` (a held spec needs review and the other still gates, every fail
+  held exits 0 and gates with `--include-needs-review`, a spec held but not selected, every
+  refusal of the ledger before a send, a report never written over it, the run context and a
+  resume of a halted run that holds after the ledger changed, `calibrate --record` end to end
+  over five runs, a report recorded five times counting once, the refusals of `--record`, the
+  cap, a symbolic link, and `--dry-run`).
+
 ## §8 Out of scope / forbidden
 - MUST NOT import adapter/evaluator/scorer/store **concretes**: interfaces only; composition is
   u12. `lint-imports` enforces.
@@ -1553,3 +1577,13 @@ spec placeholders refused in an identity canary) and
   prompts no longer fingerprint the battery and the canary's shape is the last fingerprint left.
   Reversal: write the old canary back into the 22 specs (the placeholders then bind nowhere) or
   make `derived_prefix` and `derived_body` return constants. Owner: human.
+- **OD-61** (2026-10-27, A-105, ADR-0017; **decided 2026-10-27 by the owner ("do it all"): as
+  built**): the false-positive breaker's figures and key. Decided: (1) the last 50 labelled fails,
+  held above 30% false alarms with 5 at least; (2) per spec, not per spec and target; (3) an
+  `inconclusive` label on a fail counts as a false alarm (the operator could not confirm the
+  exploit, so the fail is not one to gate on); (4) no expiry: a hold lifts only through new labels
+  (12 confirmed fails after 5 false alarms, 5 of 17 under 30%) or once the false alarms leave the
+  window of 50. A held fail needs review (never a verdict changed, never a spec dropped); a resume
+  holds what its run held. Revisit (2) when one spec is scanned against targets that differ in
+  what they expose. Reversal: the three constants of `shared.review_holds`, a run without
+  `--fp-ledger`, or `review_holds` dropped from the runner. Owner: human.

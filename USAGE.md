@@ -113,6 +113,9 @@ dottore diff baseline.json current.json
 
 # Human-in-the-loop: score a run against operator labels (agreement + precision/recall)
 dottore calibrate report.json labels.yaml
+# ... and keep the labels: a spec whose labelled fails were mostly false alarms is held for review
+dottore calibrate report.json labels.yaml --record labels.jsonl
+dottore run -t target.yaml --scope scope.yaml --fp-ledger labels.jsonl
 ```
 
 ## Flags that matter (`dottore run`)
@@ -145,6 +148,7 @@ dottore calibrate report.json labels.yaml
 | `-oJ/-oH/-oS/-oX/-oA` | JSON / HTML / SARIF / JUnit / all four to `<prefix>.json`, `.html`, `.sarif`, `.xml` (`-oA report.v2` keeps its name: `report.v2.json`; `-oA report.json` is not doubled: `report.json`, `report.html`, ...). Two formats pointed at the same file are refused before anything is sent, and so is a report path that is an input of the run (the scope, a target, the judge, the fleet file, the run store, a spec file; through a symlink or a hard link too) |
 | `--fail-on <band>` | CI gate on confirmed findings (`info\|low\|medium\|high\|critical`, default `high`; `info` gates on any confirmed finding) |
 | `--include-needs-review` | also gate unconfirmed exploits (an unconfirmed `fail`, a fail only the judge reported among them); an `inconclusive` result never gates. Without the flag such a fail is at most a `warning` in the SARIF, whatever its band; with it, it gates, and keeps its band's level (`error` for critical or high) |
+| `--fp-ledger` | the labels ledger `calibrate --record` writes: a spec with more than 30% false positives among its last 50 labelled fails (5 at least) is held, and its fail needs review (it gates only with `--include-needs-review`). Read before any send, refused whole on a bad line (exit 3); a resume holds what its run held |
 | `--spec-path` | spec search path (default `specs/` in the working directory when there is one, refused when it holds no spec, else the built-in battery inside the installed package, said on stderr when a command reads it; `lint` never falls back) |
 | `--evidence-root` / `--run-db` | evidence store root (default `.dottore/evidence`) and run store (default `.dottore/runs.sqlite`). Checked before anything is sent, writing nothing in `--dry-run`/`--estimate`/`-sn`: a directory as the store, a file that is not SQLite, a root that is a regular file, or a path under one, is refused (exit 3), and a sending run opens both before its first request. Runs may share one store (a lock is waited for up to 30 s, said on stderr, and Ctrl-C stops the wait) |
 | `-v` | prints the resolved plan, then runs (`-vv`: the skipped and blocked ids too); like the root `dottore -v <command>`, it also prints an internal error's traceback |
@@ -402,6 +406,36 @@ exploit prints `FAIL (<band>, needs review)` on its progress line. Every finding
 evidence (prompt, response, tool traces, the aggregate verdict and its reasoning), and
 `dottore replay` re-derives a run from stored evidence. See
 [`docs/05-scoring-model.md`](docs/05-scoring-model.md).
+
+## False alarms: the labels ledger
+
+When you read a finding's evidence and decide it was no exploit, say so once and keep it:
+
+```bash
+# labels.yaml: spec_id -> pass | fail | inconclusive, what you found in the evidence
+dottore calibrate report.json labels.yaml --record labels.jsonl
+dottore run -t target.yaml --scope scope.yaml --fp-ledger labels.jsonl
+```
+
+The rule, per spec: take its last 50 labelled fails (a `fail` the scanner reported and you
+labelled); with 5 or more, the spec is held when more than 30% were labelled `pass` or
+`inconclusive`. A held spec still runs and its fail is still reported, as `FAIL (<band>, needs
+review)`, so it gates only with `--include-needs-review`. Some counts:
+
+| Labelled fails | False alarms among them | Held? |
+|---:|---:|---|
+| 4 | 4 | no: under the minimum of 5 |
+| 5 | 5 | yes (100%) |
+| 10 | 3 | no: 30% is not more than 30% |
+| 10 | 4 | yes (40%) |
+| 16 | 5 | yes (31%) |
+| 17 | 5 | no (29%): twelve confirmed fails after five false alarms lift the hold |
+
+A report recorded twice counts once. There is no expiry: a hold lifts through new labels. The
+ledger is refused whole on a line it cannot read (exit 3, before anything is sent), and a resume
+keeps the holds its run started with. Worked end to end, with real output, in
+[`examples/README.md`](examples/README.md) Scenario N; the reference is
+[`docs/MANUAL.md`](docs/MANUAL.md), "Holding a spec that raises false alarms".
 
 ## Adding a technique (no core code)
 

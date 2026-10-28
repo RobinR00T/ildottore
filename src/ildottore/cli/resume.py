@@ -48,6 +48,7 @@ from ildottore.shared.models import (
     Target,
     TestRun,
 )
+from ildottore.shared.review_holds import ReviewHold
 from ildottore.store import paths
 from ildottore.store.replay import replay_run
 
@@ -62,6 +63,7 @@ __all__ = [
     "recorded_version",
     "selection_record",
     "stored_adaptive",
+    "stored_review_holds",
     "stored_runs",
     "stored_sampling_defaults",
     "stored_takes_sampling",
@@ -401,6 +403,25 @@ def stored_runs(run_db: Path, run_id: str) -> int | None:
         context = store.get_run_context(run_id)
     value = (context or {}).get("runs")
     return int(value) if value is not None else None
+
+
+def stored_review_holds(run_db: Path, run_id: str) -> dict[str, ReviewHold]:
+    """The specs the halted campaign held for review, so a resume holds the same (u08 A-105).
+
+    A run that recorded none (no ``--fp-ledger``, or made before the field existed) holds none.
+    """
+
+    from ildottore.store.run_sqlite import SqliteRunStore
+
+    if not Path(run_db).exists():
+        return {}
+    with SqliteRunStore(Path(run_db)) as store:
+        context = store.get_run_context(run_id)
+    stored = (context or {}).get("review_holds") or {}
+    return {
+        str(spec_id): ReviewHold(false_alarms=int(counts[0]), labelled=int(counts[1]))
+        for spec_id, counts in stored.items()
+    }
 
 
 def stored_adaptive(run_db: Path, run_id: str) -> bool | None:

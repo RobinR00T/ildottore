@@ -158,6 +158,7 @@ from ildottore.shared.provider_filter import (
     side_unknown_attempt_ids,
 )
 from ildottore.shared.resend import NEVER_A_PASS, one_per_attempt_id, send_number, with_send_number
+from ildottore.shared.review_holds import ReviewHold
 from ildottore.shared.tool_abuse import OPERATOR_DECLARATION, operator_cleared_calls, operator_note
 from ildottore.shared.toolcalls import call_name
 from ildottore.shared.unreadable import UNREADABLE_REPLY_KEY, unreadable_attempt_ids
@@ -562,6 +563,7 @@ class CampaignRunner:
         sampling_defaults: Sampling | None = None,
         sent_sampling: Callable[[Sampling], Sampling] | None = None,
         sampling_asked: Sampling | None = None,
+        review_holds: Mapping[str, ReviewHold] | None = None,
     ) -> None:
         self._policy = policy
         self._mutators = mutators
@@ -630,6 +632,9 @@ class CampaignRunner:
         # The target file's block as written, for the record of what was asked for and did not
         # go out: `sampling_defaults` has already lost what the adapter never sends (A-68).
         self._sampling_asked = sampling_asked
+        # The specs the labels ledger holds for review (u08 A-105, OD-61): a fail of one is
+        # reported and scored, never confirmed, so it needs review and does not gate on its own.
+        self._review_holds: Mapping[str, ReviewHold] = review_holds or {}
 
     async def run(
         self,
@@ -2189,6 +2194,11 @@ class CampaignRunner:
             ],
         )
         confirmed = _is_confirmed(status, attempts, spec)
+        # Decided here, before the finding is stored, reported or gated (u08 A-105): a hold read
+        # after the exit code was computed would hold nothing.
+        hold = self._review_holds.get(spec.id) if confirmed else None
+        if hold is not None:
+            confirmed = False
         blocked = len(blocked_attempt_ids(attempts))
         cut = len(cut_attempt_ids(attempts))
         unsaid = len(side_unknown_attempt_ids(attempts))
@@ -2215,6 +2225,11 @@ class CampaignRunner:
                 unsaid=unsaid,
                 unreadable=unreadable,
                 withheld=withheld,
+            )
+            + (
+                f"; held for review by the labels ledger: {hold.describe()}"
+                if hold is not None
+                else ""
             ),
         )
 

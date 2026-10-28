@@ -32,7 +32,7 @@ from typer.core import TyperGroup, TyperOption
 
 from ildottore import __version__
 from ildottore.adapters.base import AdapterError
-from ildottore.cli import banner, wiring
+from ildottore.cli import banner, labels_ledger, wiring
 from ildottore.cli import calibrate as calibrate_mod
 from ildottore.cli import coverage as coverage_mod
 from ildottore.cli import describe as describe_mod
@@ -1290,6 +1290,15 @@ def run(
             "never gate.",
         ),
     ] = False,
+    fp_ledger: Annotated[
+        Path | None,
+        typer.Option(
+            "--fp-ledger",
+            help="Labels ledger (calibrate --record): a spec with more than 30% false "
+            "positives among its last 50 labelled fails (5 at least) is held, and its fail is "
+            "reported as needing review. A resume keeps the holds its run started with.",
+        ),
+    ] = None,
     compare: Annotated[bool, typer.Option("--compare", help="Model-comparison matrix.")] = False,
     hardened: Annotated[
         bool, typer.Option("--hardened", help="Replay hardened fixtures (clean-run smoke).")
@@ -1409,6 +1418,7 @@ def run(
         resume_unverified=resume_unverified,
         fail_on=fail_on,
         include_needs_review=include_needs_review,
+        fp_ledger=fp_ledger,
         compare=compare,
         outputs=outputs,
         output_all_prefix=o_all,
@@ -1981,11 +1991,20 @@ def diff(
 def calibrate(
     report: Annotated[Path, typer.Argument(help="A JSON run report (-oJ output).")],
     labels: Annotated[Path, typer.Argument(help="Operator labels file (spec_id -> pass|fail).")],
+    record: Annotated[
+        Path | None,
+        typer.Option(
+            "--record",
+            help="Also append each scored label to this labels ledger (JSON lines), which "
+            "run --fp-ledger reads to hold for review the specs whose labelled fails were "
+            "often false positives.",
+        ),
+    ] = None,
 ) -> None:
     """Compare a run's findings against operator labels (human-in-the-loop).
 
-    Reports agreement plus precision/recall (fail = positive). Read-only: it consumes operator
-    verdicts to measure the scanner and its judge; it changes nothing and sends nothing.
+    Reports agreement plus precision/recall (fail = positive). It sends nothing, and changes
+    nothing unless --record names a ledger to append the labels to.
     """
 
     try:
@@ -1997,12 +2016,26 @@ def calibrate(
                 f"the report describes a run that did not complete ({incomplete}); calibrate "
                 "a complete run"
             )
-        result = calibrate_mod.calibrate_reports(report, labels)
+        # The labels ledger (u08 A-105): never the report or the labels it is written from.
+        if record is not None and os.path.realpath(record) in {
+            os.path.realpath(report),
+            os.path.realpath(labels),
+        }:
+            raise ValueError("--record names the report or the labels file; name a ledger")
+        findings = diff_mod.load_findings(report)
+        result = calibrate_mod.calibrate(findings, calibrate_mod.load_labels(labels))
+        recorded = (
+            labels_ledger.record_labels(record, diff_mod.report_run_id(report), findings, result)
+            if record is not None
+            else None
+        )
     except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
         typer.echo(f"error: {_masked(exc)}", err=True)
         raise typer.Exit(ExitCode.ERROR) from exc
 
     typer.echo(calibrate_mod.render_calibration(result))
+    if recorded is not None:
+        typer.echo(f"recorded: {recorded} label(s) appended to {visible_controls(str(record))}")
     raise typer.Exit(ExitCode.CLEAN)
 
 

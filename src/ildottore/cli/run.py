@@ -43,7 +43,7 @@ from types import FrameType
 from typing import Any
 
 from ildottore.adapters.agent_guard import in_window, next_opening, window_text
-from ildottore.cli import interrupts, wiring
+from ildottore.cli import interrupts, labels_ledger, wiring
 from ildottore.cli import resume as resume_mod
 from ildottore.cli.exit_codes import ExitCode, exit_code_for, fail_on_band
 from ildottore.cli.flags import QUICK_SUITE, resolve_suite_id, resolve_timing, unknown_suite
@@ -119,6 +119,7 @@ from ildottore.shared.provider_filter import (
     side_unknown_attempt_ids,
 )
 from ildottore.shared.resend import one_per_attempt_id
+from ildottore.shared.review_holds import ReviewHold
 from ildottore.shared.tool_abuse import cleared_verbs, handoff_shaped, scene_tool_names
 from ildottore.shared.unreadable import (
     UNREADABLE_REPLY_KEY,
@@ -271,6 +272,9 @@ class RunOptions:
     runs_explicit: bool = False
     fail_on: str = "high"
     include_needs_review: bool = False
+    #: ``--fp-ledger``: the labels ledger ``calibrate --record`` appends to; a spec whose recent
+    #: labelled fails were mostly false positives is held for review (u08 A-105).
+    fp_ledger: Path | None = None
     compare: bool = False
     outputs: dict[str, Path] = field(default_factory=dict)  # fmt -> path
     output_all_prefix: Path | None = None
@@ -1787,6 +1791,8 @@ def _check_outputs_spare_inputs(opts: RunOptions) -> None:
     if opts.judge is not None:
         named.append((f"the --judge file {opts.judge}", opts.judge))
     named += [(f"{label} {path}", path) for label, path in opts.extra_inputs]
+    if opts.fp_ledger is not None:
+        named.append((f"the --fp-ledger file {opts.fp_ledger}", opts.fp_ledger))
     store = Path(opts.run_db or DEFAULT_RUN_DB)
     stores = {
         _folded_path(Path(f"{base}{suffix}"))
@@ -2624,6 +2630,19 @@ def _execute_run(
                 )
             )
 
+    # Before anything is sent, the -sV probe pass included: a ledger the run cannot read stops
+    # it here. After the resume checks, so a run of newer judging rules is refused for its rules
+    # before the stored holds are read.
+    review_holds = _review_holds(opts, run_db, selected)
+    if review_holds:
+        # stderr and never suppressed, as the inherited --runs: a hold changes what gates.
+        print(
+            "review holds: "
+            + "; ".join(f"{spec_id}, {hold.describe()}" for spec_id, hold in review_holds.items())
+            + ". A fail of each is reported as needing review.",
+            file=sys.stderr,
+        )
+
     # -sV / -A: fingerprint before attacking, then let the plan use it.
     #
     # NOT under --dry-run/--estimate/-sn: fingerprinting SENDS (18 probes per target since u09
@@ -3003,6 +3022,7 @@ def _execute_run(
             ),
             resumed=opts.resume is not None,
             selection=selection,
+            review_holds=review_holds,
         )
         _record_scope(run_db, run_ids[target.id], scope_sha256, resumed=opts.resume is not None)
         _record_order(
@@ -3039,6 +3059,7 @@ def _execute_run(
             ),
             started_at=starts.get(target.id),
             apply_sampling_defaults=apply_sampling_defaults,
+            review_holds=review_holds,
         )
         results.append(result)
         _persist_run_spend(run_db, result)
@@ -3417,6 +3438,7 @@ def _run_one_target(
     prior_spend: Spend | None = None,
     started_at: str | None = None,
     apply_sampling_defaults: bool = True,
+    review_holds: dict[str, ReviewHold] | None = None,
 ) -> CampaignResult:
     """Assemble a runner for one target and drive one campaign to completion.
 
@@ -3452,6 +3474,7 @@ def _run_one_target(
         # Recorded however the campaign stops, Ctrl-C included, so a resume's ceiling is right.
         spend_sink=lambda spend: _record_spend_quietly(run_db, campaign_run_id, spend),
         apply_sampling_defaults=apply_sampling_defaults,
+        review_holds=review_holds,
     )
     try:
         return interrupts.run_until_stopped(
@@ -3469,6 +3492,30 @@ def _run_one_target(
         )
     finally:
         built.close()
+
+
+def _review_holds(
+    opts: RunOptions, run_db: Path, selected: list[AttackSpec]
+) -> dict[str, ReviewHold]:
+    """The selected specs the labels ledger holds for review (u08 A-105, OD-61).
+
+    A fresh run reads ``--fp-ledger``; a resume keeps the holds its run started with, so one
+    campaign is never gated under two ledgers, and refuses the flag rather than ignore it.
+    """
+
+    if opts.resume is not None:
+        if opts.fp_ledger is not None:
+            raise ValueError(
+                "--fp-ledger cannot be given with --resume: a resume keeps the review holds "
+                "its run started with"
+            )
+        held = resume_mod.stored_review_holds(run_db, opts.resume)
+    elif opts.fp_ledger is not None:
+        held = labels_ledger.load_review_holds(opts.fp_ledger)
+    else:
+        return {}
+    chosen = {spec.id for spec in selected}
+    return {spec_id: hold for spec_id, hold in held.items() if spec_id in chosen}
 
 
 def _check_store_paths(run_db: Path, evidence_root: Path) -> None:
@@ -3711,6 +3758,7 @@ def _persist_run_integrity(
     judge_takes_sampling: bool | None = None,
     resumed: bool = False,
     selection: dict[str, object] | None = None,
+    review_holds: dict[str, ReviewHold] | None = None,
 ) -> None:
     """Record WHAT this campaign is about to run, before it sends anything.
 
@@ -3784,6 +3832,12 @@ def _persist_run_integrity(
                 "target_fields": target_field_digests(target, mock_scenario=mock_scenario),
                 "route": mock_scenario or "live",
                 **({"selection": chosen} if chosen is not None else {}),
+                # The specs the labels ledger held, with their counts (u08 A-105): a resume
+                # holds the same ones, whatever the ledger says by then.
+                "review_holds": {
+                    spec_id: [hold.false_alarms, hold.labelled]
+                    for spec_id, hold in (review_holds or {}).items()
+                },
             },
         )
 
