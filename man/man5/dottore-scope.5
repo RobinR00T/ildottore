@@ -211,6 +211,18 @@ it gives an endpoint, or as a local subprocess it sets
 .B transport
 "stdio" and a command argv (authorized via scope commands). transport is http (the default) or
 stdio, and stdio is for provider mcp only.
+.B isolation
+(stdio MCP only) runs the server in a container, never on the host: image (required, pinned as
+name@sha256:<64 hex>, never pulled), runtime (docker or podman), memory (512m), cpus (1), pids
+(128), mounts (source and target, always read-only; the source an existing directory written as
+its resolved path, not the home directory or one above it) and workdir. The container has no
+network, a read-only root, no capabilities and the user 65534. A runtime not on PATH, or an image
+with no local copy, stops the run before anything starts (exit 3). The loader also refuses a
+memory that is not a whole number and k, m or g, cpus outside (0, 64], pids outside 8 to 4096,
+more than 16 mounts or two with one target, a mount or workdir path that is relative, not
+normalized, / or holds a comma, a colon or a control character, and the block on any other target. Isolation is opt-in
+per target and the block stays a top-level key (OD-60, decided by the owner on 2026-10-27, as
+built). The scope authorizes the command run inside by its commands list, as without the block.
 .B sampling_defaults
 values are finite numbers: .nan and .inf are refused.
 .PP

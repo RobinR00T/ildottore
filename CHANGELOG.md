@@ -7,6 +7,39 @@ the file, schema copy, build or pipeline it names.
 
 ## [Unreleased]
 
+### Added (u04 A-104, judging rules 7 re-pinned: a stdio MCP server in a container)
+
+- **`isolation:` on a stdio MCP target.** A `provider: mcp`, `transport: stdio` target may run its
+  server through Docker or Podman instead of on the operator's machine: `image` (required, pinned
+  by digest, a tag refused), `runtime`, `memory`, `cpus`, `pids`, read-only `mounts` and
+  `workdir`. The container has no network, a read-only root with a small `noexec` `/tmp`, no
+  capabilities, `no-new-privileges`, the user `65534:65534`, an init process and no host variable;
+  the authorized command is its entrypoint, so the image's own adds nothing. It is removed after
+  the scan whatever happened (`dottore-mcp-<12 hex>`, label `dottore.mcp=1`). The scope authorizes
+  the command inside, as before.
+- **Never a fallback, never a pull.** A runtime not on `PATH`, or an image with no local copy,
+  aborts the run before anything starts (`IsolationUnavailable`, exit 3). The scan never reaches a
+  registry: `--pull never`.
+- **The loader** refuses the block on any other target, a mount source that is not a directory,
+  one written through a symbolic link (naming the resolved path) and one holding the home
+  directory. `--dry-run` prints an `isolation:` line. The image, mounts and working directory are
+  in the target digest; the runtime and the limits are not; a target without the block hashes as
+  before.
+- **`examples/target.mcp-stdio.yaml` and `examples/scope.mcp-stdio.yaml`** (Scenario F in
+  `examples/README.md`), a placeholder image. Docs: `USAGE.md`, `docs/MANUAL.md` §4.2,
+  `man/man5/dottore-scope.5`, `docs/adr/0016-a-stdio-mcp-server-may-run-in-a-container.md`,
+  `specs/contracts/u04-target-adapters.md` (A-104, OD-60). No verdict changes (judging rules 7
+  re-pinned).
+- **OD-60 decided by the owner on 2026-10-27, as built** (ADR-0016 accepted): isolation stays
+  opt-in per target, the container has no network, `isolation:` stays a top-level key when the
+  `mcp:` block of A-101 lands, and only a mount holding the home directory (or one above it) is
+  refused.
+- **A detailed walk-through** in Scenario F of `examples/README.md`, from real runs: what to have
+  first, the block field by field, the dry run, the runtime's argv flag by flag and what each
+  flag keeps out, every refusal with its message and exit code, and how to find a stray
+  container. Also `docs/FAQ.md`, `README.md`, `man/man1/dottore.1` and a field-by-field
+  `examples/target.mcp-stdio.yaml`.
+
 ### Documentation (the MCP pins walked end to end; OD-59 decided as built)
 
 - `examples/README.md` Scenario O: build a small stdio MCP server, review it, copy its

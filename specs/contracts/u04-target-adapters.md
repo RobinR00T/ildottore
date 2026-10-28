@@ -14,7 +14,7 @@ Stage-2 build contract. 9-section anatomy per `docs/00 §2`. Read `AGENTS.md` + 
   credential as `{{token}}`, one connection per conversation, a turn bounded in time, bytes and
   frames; `tests/adapters/test_websocket.py` against a loopback server), and `comprehending.py`
   (the offline target that decodes what it is sent, test support for `-sV`; recorded
-  2026-10-12).
+  2026-10-12), and `isolation.py` (the container a stdio MCP server may run in, A-104).
 - **MUST NOT touch:** `shared/`, `policy/`, `evaluators/`, `core/`, `fingerprint/`, `scoring/`,
   `store/`, any spec/suite YAML. `adapters/mock.py` is u03's: do not create it here.
 
@@ -683,6 +683,41 @@ reads as U+FFFD, since httpx decodes the stream as text.
     `regex_absence` on `drifted`, no judge; in the `mcp` suite. LLM06, not LLM03 (OD-59, decided).
   Still read-only: no `tools/call`. Checked by `tests/adapters/test_mcp.py` (6 added) and
   `tests/cli/test_mcp_rug_pull.py` (15), against a live local server.
+- **A-104 (added 2026-10-27): a stdio MCP server may run in a container (ADR-0016).** A
+  `provider: mcp`, `transport: stdio` target file may declare `isolation:`
+  (`shared.models.IsolationSpec`, `adapters/isolation.py`); any other target is refused the block.
+  - The block: `image` (required, `name@sha256:<64 hex>`), `runtime` (`docker` or `podman`,
+    default `docker`), `memory` (default `512m`), `cpus` (default `1`, above 0, at most 64), `pids`
+    (default `128`, 8 to 4096), `mounts` (at most 16, each `source` and `target`, read-only with no
+    way to say otherwise, no two on one target) and `workdir`. A path is absolute, normalized,
+    not `/`, with no comma, colon or control character. The loader also refuses a mount whose
+    source is not a directory, is written through a symbolic link (the resolved path is named) or
+    holds the operator's home directory.
+  - `MCPAdapter.isolation`: after the scope authorizes the exact command (unchanged, before
+    anything else), `prepare_container` finds the runtime on the server's `PATH` and runs
+    `<runtime> image inspect <image>`; no runtime, or a non-zero answer, raises
+    `IsolationUnavailable` (`AdapterProductError`: the run aborts, exit 3) and nothing starts.
+    Never a fallback to the host. The launch is `container_argv`: `run --rm -i --pull never
+    --init --name dottore-mcp-<12 hex> --label dottore.mcp=1 --network none --read-only --tmpfs
+    /tmp:rw,noexec,nosuid,nodev,size=64m --cap-drop ALL --security-opt no-new-privileges --user
+    65534:65534 --memory M --memory-swap M --cpus C --pids-limit P`, a `--mount
+    type=bind,...,readonly` per mount, `--workdir`, then `--entrypoint=<command[0]>`, the image and
+    the rest of the command. The container gets no host variable; the runtime's own process gets
+    the server's environment and `DOCKER_HOST`, `DOCKER_CONTEXT`, `DOCKER_CONFIG`,
+    `DOCKER_CERT_PATH`, `DOCKER_TLS_VERIFY`, `CONTAINER_HOST`, `CONTAINERS_CONF` and
+    `XDG_RUNTIME_DIR`. After the session, `<runtime> rm -f <name>` runs whatever happened. The
+    message names neither the image nor its digest (the redactor masks a digest); it names
+    `isolation.image`.
+  - The block enters the target digest without `runtime`, `memory`, `cpus` and `pids`; absent, it
+    is left out. `--dry-run` prints an `isolation:` line (runtime, image, not pulled, no network,
+    read-only root, the limits, the mounts).
+  Judging rules 7 re-pinned (no verdict path touched). Checked by
+  `tests/adapters/test_mcp_isolation.py` (28: the argv flag by flag, 17 refusals of the block, the
+  launch through a stand-in runtime, no image, no runtime, an unauthorized command, a server that
+  dies, no block; one real container, opt-in by `DOTTORE_TEST_DOCKER_IMAGE`) and
+  `tests/cli/test_mcp_isolation_target.py` (13: the example, the loader's refusals, the wiring,
+  the digest, the dry-run line, a run with no runtime). The argv was run against Docker 29.4.0 on
+  2026-10-27 (with a mount, a workdir and lowered limits: accepted, the container removed).
 
 ## §8 Out of scope / forbidden
 - MUST NOT import or call vendor SDKs (`openai`, `anthropic` packages): httpx only (ADR-0002).
@@ -897,3 +932,13 @@ reads as U+FFFD, since httpx decodes the stream as text.
   figure stays 8/10). Reversal: `_pin_lines` and
   `catalogue_fingerprints` in `adapters/mcp.py`, `_mcp_spec` in `cli/wiring.py`, the spec's
   `owasp` and `shared/frameworks.py` `OUT_OF_REACH["LLM03"]`.
+- **OD-60** (2026-10-27, A-104, ADR-0016; **decided 2026-10-27 by the owner ("do it all"), as
+  built**): (a) isolation is opt-in per target (built), not the default for every stdio server,
+  which would need a runtime and an image wherever one is scanned; (b) the container has no
+  network (built), so a server that needs its upstream API runs unisolated, by the operator's
+  choice; a declared egress through an allowlist inside the container is not built; (c) the block
+  is a top-level key (built) and stays there when A-101's `mcp:` block lands, rather than moving
+  under it; (d) a mount holding the home directory, or a directory above it, is refused (built);
+  no further list of sensitive directories (`~/.ssh`, `~/.aws`) is checked under another source.
+  Reversal, should the owner revisit it: `_isolation_spec` in `cli/wiring.py`, the `isolation`
+  branches of `MCPAdapter._discover_stdio`, `adapters/isolation.py`.

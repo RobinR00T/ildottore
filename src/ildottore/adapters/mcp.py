@@ -46,10 +46,11 @@ from ildottore.adapters.base import (
     read_capped,
     refuse_short_credential,
 )
+from ildottore.adapters.isolation import ContainedLaunch, prepare_container
 from ildottore.policy import EndpointAllowlist
 from ildottore.redactor import Redactor
 from ildottore.shared.error_text import error_text
-from ildottore.shared.models import Capabilities, ModelRequest, ModelResponse
+from ildottore.shared.models import Capabilities, IsolationSpec, ModelRequest, ModelResponse
 from ildottore.shared.nesting import NestedTooDeeply, bounded_loads
 from ildottore.shared.wellformed import well_formed_json
 
@@ -210,6 +211,8 @@ class MCPAdapter:
     # The catalogue the target file pins (``mcp.pins``, u04 A-101): with any, the rendering ends
     # in a ``Pinned catalogue`` section that ``MCP-RUGPULL-001`` reads.
     pins: dict[str, str] = field(default_factory=dict)
+    # The container the stdio server runs in, never the host (u04 A-104); None: on the host.
+    isolation: IsolationSpec | None = None
 
     _rpc_id: int = field(default=0, init=False)
     _cached: ModelResponse | None = field(default=None, init=False)
@@ -487,12 +490,22 @@ class MCPAdapter:
             # Not authorized by the scope: refuse before spawning anything (S3 default-deny).
             raise EndpointNotAllowed(f"stdio://{joined}")
 
+        env = _stdio_environment()
+        argv: tuple[str, ...] = cmd
+        container: ContainedLaunch | None = None
+        if self.isolation is not None:
+            # Checked before anything starts: no runtime or no local image stops the run here,
+            # and the server never falls back to the host (u04 A-104).
+            container = await prepare_container(
+                self.isolation, cmd, target_id=self.id, environment=env
+            )
+            argv, env = container.argv, container.env
         proc = await asyncio.create_subprocess_exec(
-            *cmd,
+            *argv,
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.DEVNULL,
-            env=_stdio_environment(),
+            env=env,
             # A reply line may be as long as a reply over HTTP. The default was 64 KiB, and a
             # server listing 300 ordinary tools (148 KB on one line) stopped the campaign on the
             # ValueError `readline` raises past it (pre-commit audit, 2026-10-07).
@@ -524,6 +537,10 @@ class MCPAdapter:
             prompts = await self._stdio_list(proc, "prompts/list", "prompts")
         finally:
             await self._stdio_close(proc)
+            if container is not None:
+                # Gone whether the server exited, hung or was killed: the runtime's process
+                # ending does not always end the container (u04 A-104).
+                await container.remove()
 
         return self._render(server_info, tools, resources, prompts)
 

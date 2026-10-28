@@ -40,6 +40,10 @@ mapping the code checks).
   `<HIDDEN>` block included). Pin the catalogue you reviewed under `mcp.pins` and every later
   scan fails when the server changes it (the "rug pull"): a walk-through with real output is
   Scenario O in [`examples/README.md`](examples/README.md).
+- **A local MCP server in a container**: a stdio server's target may declare `isolation:`, and it
+  runs through Docker or Podman with no network, a read-only root, no capabilities and an
+  unprivileged user, from an image pinned by digest that the scan never pulls; a missing runtime
+  or image stops the run, never falls back to the host (Scenario F in `examples/README.md`).
 - **Any AI agent over a WebSocket or plain HTTP**, one profile per agent and no code: the wire
   shape is declared in the target file, and its `guard` keeps the scan polite and contained (the
   JWT checked for its tenant and expiry before it is sent, a stop at the first authentication

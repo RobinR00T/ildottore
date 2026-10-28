@@ -1102,6 +1102,64 @@ stdio server built from the page: the review, the `jq` that appends the block, `
 kind of drift, a poisoned parameter, pinning again, and every refusal with its message. The
 choices above (compare in the adapter, fail on any difference, copy from a report, LLM06) are
 the owner's, decided on 2026-10-27 (OD-59, ADR-0015).
+**In a container (`isolation:`, u04 A-104).** Without the block, a stdio server runs on your
+machine as you, with your files, network and processes within reach; discovery alone runs its
+start-up and listing code. With it, the server runs through Docker or Podman, never on the host:
+
+```yaml
+id: local-mcp-stdio
+type: api
+provider: mcp
+transport: stdio
+command: ["node", "/app/dist/index.js"]   # run inside the container, as its entrypoint
+capabilities: { tools: true }
+isolation:
+  # The image you reviewed, pinned by digest (name@sha256: and 64 hex digits); a placeholder here.
+  image: "ghcr.io/example/mcp-server@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+  runtime: docker          # or podman
+  memory: 512m             # the defaults: 512m, 1 CPU, 128 processes
+  cpus: 1
+  pids: 128
+  # mounts:                # optional: what the server reads, always read-only
+  #   - { source: /srv/mcp-data, target: /data }
+  # workdir: /data         # optional
+```
+
+What the container gets is fixed, whatever the block says: no network, a read-only root with a
+64 MB `noexec` `/tmp`, every capability dropped, `no-new-privileges`, the user `65534:65534`, an
+init process and no variable from your environment. It is named `dottore-mcp-<12 hex>`, labelled
+`dottore.mcp=1` and removed after the scan whether the server exited, hung or crashed. The scope
+authorizes the command run inside, exactly as without the block (`commands: ["node
+/app/dist/index.js"]`); the isolation only takes rights away. Worked pair:
+[`../examples/target.mcp-stdio.yaml`](../examples/target.mcp-stdio.yaml) and
+[`../examples/scope.mcp-stdio.yaml`](../examples/scope.mcp-stdio.yaml).
+
+* **The image is never pulled.** Pull the one you reviewed first (`docker pull <image>`); the scan
+  does not reach a registry. A tag is refused: only `name@sha256:<digest>` loads.
+* **No fallback to the host.** A runtime that is not on `PATH`, or an image with no local copy,
+  stops the run before anything starts (exit 3): `aborted on IsolationUnavailable: local-mcp-stdio:
+  docker has no local copy of the image, or cannot reach its daemon; the scan never pulls an image,
+  so nothing was started. Pull the image the target file's isolation.image names first (docker
+  pull <image>)`. The message does not quote the image: the redactor masks its digest.
+* **Mounts.** A source is a directory that exists, written as its resolved path (a path through a
+  symbolic link is refused and the resolved one named; on macOS `/tmp` is `/private/tmp`), and
+  never your home directory or one above it. A path holds no comma or colon.
+* `--dry-run` says where the server runs:
+  `isolation: docker, image ghcr.io/example/mcp-server@sha256:... (not pulled); no network,
+  read-only root, 512m memory, 1 CPU, 128 pids`.
+* The image, the mounts and the working directory are part of the target digest, so a resume after
+  changing one is refused as another target; the runtime and the limits are not.
+* **The loader refuses** (exit 3, by `--dry-run` too): a tag instead of a digest; a `memory` that
+  is not a whole number and `k`, `m` or `g`; `cpus` outside (0, 64]; `pids` outside 8 to 4096; more
+  than 16 mounts or two sharing a target; a mount or `workdir` path that is relative, not
+  normalized, `/` or holds a comma, a colon or a control character; and the block on any target
+  but a stdio MCP one.
+* **Decided (OD-60, the owner, 2026-10-27, as built).** Isolation is opt-in per target; the
+  container has no network, so a server that needs its upstream API runs without the block, by
+  your choice; `isolation:` stays a top-level key; only a mount holding the home directory, or one
+  above it, is refused (keep `~/.ssh` and `~/.aws` out of what you mount yourself).
+* **Step by step**, with the runtime's argv flag by flag and every refusal's real message:
+  Scenario F in [`../examples/README.md`](../examples/README.md).
 
 #### A chat endpoint over a WebSocket (`provider: websocket`)
 
