@@ -7,6 +7,20 @@ the file, schema copy, build or pipeline it names.
 
 ## [Unreleased]
 
+### Fixed (u05 A-99, judging rules 7 re-pinned: `encode:qp` decodes to the payload's bytes)
+
+- **Quoted-printable no longer rewrites a payload's line breaks.** `encode:qp` used text-mode
+  quoted-printable (`quopri.encodestring`), which keeps line breaks as text and, once it meets a
+  CRLF, writes every bare LF as CRLF too: a payload with `\r\n\n` decoded as `\r\n\r\n`,
+  though the scheme is listed as reversible byte for byte. It is now written in binary mode
+  (`binascii.b2a_qp(..., istext=False)`): a CR goes out as `=0D` and an LF as `=0A`, and the blob
+  decodes to the same bytes. A payload with no line break is sent as before. Found by the
+  property test `test_byte_encodings_decode_with_the_standard_library` while gating #147,
+  2026-10-28; the case is pinned there with `@example`.
+- `docs/MANUAL.md` (the obfuscation families) shows a multi-line payload through `dottore mutate`.
+  Judging rules stay at version 7, re-pinned: the change alters what one carrier sends, and no
+  evaluator or combination changed.
+
 ### Added (u08 A-105, judging rules 7 re-pinned: labelled false positives hold a spec for review)
 
 - **`dottore calibrate --record LEDGER`** appends the labels it scored to a ledger, one JSON line

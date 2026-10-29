@@ -23,7 +23,7 @@ from urllib.parse import unquote
 
 import pytest
 import yaml
-from hypothesis import given
+from hypothesis import example, given
 from hypothesis import strategies as st
 
 from ildottore.mutators import build_default_registry
@@ -67,6 +67,7 @@ def _blob(link: str, text: str = PAYLOAD) -> str:
 
 
 @given(text=st.text(min_size=1, max_size=120))
+@example(text="\r\n\n")  # a CRLF then a bare LF: text-mode quoted-printable wrote it \r\n\r\n
 def test_byte_encodings_decode_with_the_standard_library(text: str) -> None:
     data = text.encode("utf-8")
     assert bytes.fromhex(_blob("encode:hex", text)) == data

@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import base64
 import binascii
-import quopri
 
 from ildottore.mutators.base import BaseMutator, derive_int_seed
 
@@ -128,7 +127,10 @@ def encode_payload(text: str, scheme: str) -> str:
     if scheme == "uu":
         return _uu(data)
     if scheme == "qp":
-        return quopri.encodestring(data, quotetabs=True).decode("ascii")
+        # Binary mode: a line break in the payload is written =0D or =0A, so the blob decodes to
+        # the same bytes. Text mode (``quopri.encodestring``) rewrites line breaks: once it meets
+        # a CRLF it writes every bare LF as CRLF too.
+        return binascii.b2a_qp(data, quotetabs=True, istext=False).decode("ascii")
     if scheme == "url":
         return "".join(f"%{byte:02X}" for byte in data)
     if scheme == "morse":

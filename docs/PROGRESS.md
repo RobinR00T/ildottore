@@ -5,6 +5,19 @@ The carryover ledger. Every agent session updates this so context survives even 
 newest merge on top: a branch's entries land together when it merges, so the dates of
 neighbouring entries can interleave (an older branch merged later sits above a newer one).
 
+## State, 2026-10-28: `encode:qp` decodes to the payload's bytes (`fix/qp-roundtrip`, u05 A-99)
+
+- **Why.** Gating #147, the property test `test_byte_encodings_decode_with_the_standard_library`
+  failed on `text='\r\n\n'`: text-mode quoted-printable writes every line ending as CRLF once it
+  meets one, so the blob decoded with an extra CR. A real defect in `main` since #140, not a
+  Hypothesis deadline flake; any CI run could hit it.
+- **Built.** `mutators/encode.py` writes quoted-printable with `binascii.b2a_qp(data,
+  quotetabs=True, istext=False)`: line breaks go out as `=0D` and `=0A`. Judging rules 7
+  re-pinned (`1e1da387...`).
+- **Verified.** The failing case is pinned with `@example(text="\r\n\n")`; 20,000 random byte
+  strings over CR, LF, tab, space, `=`, NUL and 0xFF round-trip through `quopri.decodestring` and
+  `binascii.a2b_qp`. `dottore mutate "encode:qp"` on a three-line payload, output in the manual.
+
 ## State, 2026-10-27: labelled false positives hold a spec for review (`feat/fp-breaker`, u08 A-105)
 
 - **Why.** `calibrate` measured the scanner against the operator's labels and kept nothing. A
