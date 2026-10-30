@@ -314,6 +314,24 @@ verdict: nothing it says changes a status, `confirmed` or the exit code, because
 one evaluator a target can prompt-inject, and a confirmed finding rests on a deterministic fail.
 See the manual's "A second reader for each fail" and Scenario Q in `examples/README.md`.
 
+### How much will a run cost me, in euros?
+
+Declare what each model costs you in its target file, `pricing: { input_eur_per_mtok: 2.5,
+output_eur_per_mtok: 10 }` (euros per million tokens; the `--judge` files too), and run with
+`--estimate`: it prints `~cost: X EUR` and one line per model, on the same rough token gloss as
+the rest of the estimate. A model without rates is `unpriced` and the total is a floor (`at
+least`); write 0 for a model you host yourself. Il Dottore ships no price list: prices change
+and differ by contract, and a stale table would be a wrong number stated with authority. See the
+manual's `--estimate` row and Scenario R in `examples/README.md`.
+
+### My judge model is small and comes back inconclusive a lot. Do I need a bigger one everywhere?
+
+No. Keep the small one as `--judge` and add the bigger one as `--judge-escalate`: it is asked
+only for an attempt the small judge returns `inconclusive` (its two passes disagree, a low
+confidence, an outage). Its verdict stands, and a fail only a judge reported still never
+confirms a finding. `--estimate` prices the worst case, as if every judgement went to it. See
+the manual's "A cheap judge, and a second for what it cannot settle".
+
 ### I labelled a fail `inconclusive`. Does that count as a false alarm?
 
 Yes. `inconclusive` means you could not confirm the exploit from the evidence, and a fail you

@@ -100,6 +100,7 @@ def load_resume_run(
     adaptive: bool | None = None,
     allow_unverified: bool = False,
     adopt: bool = True,
+    judge_escalate: Target | None = None,
     selection: dict[str, object] | None = None,
     hardened: bool = False,
 ) -> TestRun:
@@ -139,6 +140,7 @@ def load_resume_run(
             adaptive=adaptive,
             allow_unverified=allow_unverified,
             hardened=hardened,
+            judge_escalate=judge_escalate,
         )
         if specs is not None:
             from ildottore.store.run_sqlite import SqliteRunStore
@@ -1173,6 +1175,7 @@ def _assert_same_context(
     adaptive: bool | None = None,
     allow_unverified: bool = False,
     hardened: bool = False,
+    judge_escalate: Target | None = None,
 ) -> None:
     """Refuse a resume whose TARGET, route or sample size changed since the halt.
 
@@ -1240,6 +1243,21 @@ def _assert_same_context(
             f"{which}. `semantic_judge` decides verdicts, so one campaign would be arbitrated by "
             "two different models and merged into one finding per spec. Resume with the same "
             "--judge, or start a fresh run."
+        )
+    # The model the judge hands what it cannot settle to (u06 A-109), bound as the judge is. A
+    # run stored before the flag records none, which reads as none.
+    stored_up = context.get("judge_escalate_digest")
+    current_up = target_digest(judge_escalate) if judge_escalate is not None else None
+    if stored_up != current_up:
+        which = (
+            "a different --judge-escalate file"
+            if stored_up and current_up
+            else f"{'one' if stored_up else 'none'} stored, {'one' if current_up else 'none'} now"
+        )
+        raise ValueError(
+            f"run {run_id!r} handed what its judge could not settle to a different model than "
+            f"this invocation offers ({which}): one campaign would be arbitrated two ways. "
+            "Resume with the same --judge-escalate, or start a fresh run."
         )
     stored_adaptive = context.get("adaptive")
     if adaptive is not None and stored_adaptive is not None and bool(stored_adaptive) != adaptive:

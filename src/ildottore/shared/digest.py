@@ -58,7 +58,9 @@ _COSMETIC_FIELDS: Final = frozenset({"name", "description", "preconditions", "ai
 
 #: Target fields outside the digest: they say nothing about what is on the other end of the
 #: wire. Everything else is in, including `endpoint`, `model`, `provider` and `capabilities`.
-_TARGET_COSMETIC: Final = frozenset({"name", "description", "tags"})
+#: `pricing` (u12 A-108) changes what a run costs, not what answers it: a resume after a new
+#: rate is the same target.
+_TARGET_COSMETIC: Final = frozenset({"name", "description", "tags", "pricing"})
 
 
 #: Hex digits of a field digest (:func:`spec_field_digests`): it names the field a refusal

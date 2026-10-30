@@ -11,6 +11,7 @@ Run everything from the repo root with the venv active (see [`INSTALL.md`](../IN
 | [`scope.local.yaml`](scope.local.yaml) | Authorization record for the local-Ollama scenario (default-deny allowlist). |
 | [`target.local.yaml`](target.local.yaml) | A local model served by Ollama over the OpenAI-compatible API. |
 | [`target.judge.yaml`](target.judge.yaml) | A second local model used as the LLM-as-judge (`--judge`). |
+| [`target.judge-strong.yaml`](target.judge-strong.yaml) | A stronger hosted judge for `--judge-escalate`, with its rates under `pricing:` (placeholders; Scenario R). `scope.agent.yaml` authorizes it. |
 | [`target.openai.yaml`](target.openai.yaml) | A hosted model (key by env-var reference, never inline). |
 | [`target.app.yaml`](target.app.yaml) / [`scope.app.yaml`](scope.app.yaml) | A deployed application, with the specs whose scene its operator seeded (`seeded_setup`). |
 | [`fleet.yaml`](fleet.yaml) | Declare several targets in one file and scan them all. |
@@ -769,7 +770,7 @@ estimate: 25 requests over 10 spec-runs across 1 target(s) at runs=1 (no sends m
   output_security: 3 requests
   prompt_injection: 3 requests
   availability_cost: 2 requests
-  no per-model pricing known; multiply by your provider's per-token rate.
+  no per-model pricing known; multiply by your provider's per-token rate, or declare pricing: in the target file for a figure in EUR.
 ```
 
 Then the same command without `--estimate`, plus `-oA reports/agent-staging-quick`, which writes
@@ -1817,4 +1818,109 @@ the exit code: the judge is the one evaluator a target can prompt-inject. A `--r
 
 ```bash
 rm -f reports/verify.json reports/verify.sarif
+```
+
+
+## Scenario R, the estimate in euros, and a cheap judge that hands on what it cannot settle
+
+`--estimate` counts requests and tokens; with `pricing:` in a target file it also prices them,
+per model, at the rates you declare (u12 A-108). `--judge-escalate` adds a second, stronger judge
+that is asked only when the `--judge` model cannot settle an attempt (u06 A-109). ADR-0020,
+OD-64, OD-65. The agent of Scenario K, nothing sent, every output copied from a real run on
+2026-10-30 (the stderr warning about unset credentials left out). The rates are placeholders:
+Il Dottore ships no price list, so copy yours from your provider.
+
+### Step 1, declare what the target costs you
+
+On a copy of the target file, as Scenario K's step 3 does:
+
+```bash
+mkdir -p reports
+cp examples/target.agent.yaml reports/agent.priced.yaml
+printf 'pricing: { input_eur_per_mtok: 2.5, output_eur_per_mtok: 10 }\n' >> reports/agent.priced.yaml
+dottore run --estimate --quick --runs 1 \
+  -t reports/agent.priced.yaml --scope examples/scope.agent.yaml \
+  --judge examples/target.judge.yaml
+```
+
+```
+estimate: 25 requests over 10 spec-runs across 1 target(s) at runs=1 (no sends made)
+  + 44 request(s) to the --judge model (~68166 tokens), paced and debited from the same ceilings
+  ~tokens: 751 in + 21992 out (~22743 total, rough gloss)
+  ~cost: at least 0.22 EUR at the rates the target files declare (pricing:), on the same rough gloss, a model that sends has none
+    agent-staging: 0.22 EUR (751 in + 21992 out tokens at 2.50 / 10.00 EUR per million)
+    --judge local-judge: unpriced (no pricing: in its target file)
+```
+
+(the ceilings and categories follow, as in Scenario K). The local judge has no `pricing:`, so the
+figure is a floor (`at least`). A model you run yourself costs nothing per token: declare
+`pricing: { input_eur_per_mtok: 0, output_eur_per_mtok: 0 }` in its file and the floor becomes a
+figure. A rate is a number from 0 to 10,000; a negative, an infinite, a missing half or an unknown
+key is refused when the file is loaded, naming the file. `pricing` is not part of the target
+digest: changing a rate never refuses a resume or splits a comparison.
+
+### Step 2, add a stronger judge for what the first cannot settle
+
+```bash
+export STRONG_JUDGE_KEY=...   # from your vault; never in a file
+dottore run --estimate --quick --runs 1 \
+  -t reports/agent.priced.yaml --scope examples/scope.agent.yaml \
+  --judge examples/target.judge.yaml \
+  --judge-escalate examples/target.judge-strong.yaml
+```
+
+```
+estimate: 25 requests over 10 spec-runs across 1 target(s) at runs=1 (no sends made)
+  + 88 request(s) to the judge models (~136332 tokens), paced and debited from the same ceilings
+  of which up to 44 to the --judge-escalate model (only what the --judge model cannot settle)
+  ~tokens: 751 in + 21992 out (~22743 total, rough gloss)
+  ~cost: at least 0.46 EUR at the rates the target files declare (pricing:), on the same rough gloss, a model that sends has none
+    agent-staging: 0.22 EUR (751 in + 21992 out tokens at 2.50 / 10.00 EUR per million)
+    --judge local-judge: unpriced (no pricing: in its target file)
+    --judge-escalate strong-judge: 0.24 EUR (59366 in + 8800 out tokens at 2.50 / 10.00 EUR per million)
+```
+
+The second judge is priced as the worst case, as if every judgement went to it; a run sends it
+only the attempts the first judge returns `inconclusive` (its two passes disagree, a confidence
+under the spec's threshold, an outage, free text, a tripwire). `--dry-run` says the same:
+
+```
+  judge:   +88 request(s) to the judge models, paced and debited from the same ceilings
+  escalate: up to 44 of them to the --judge-escalate model, only what the --judge model cannot settle
+```
+
+and `-q` keeps one line:
+
+```
+estimate: 25 requests over 10 spec-runs across 1 target(s) at runs=1, ~159075 tokens, +88 judge request(s), at least ~0.46 EUR
+```
+
+### Step 3, what an escalated verdict reads like
+
+The second judge's verdict stands, its own `inconclusive` included, and its reasoning says why
+it was asked:
+
+```
+escalated to the second judge (the first could not settle the attempt: self-consistency disagreement ...); ...
+```
+
+A settled `pass` or `fail` never reaches it, and a fail only a judge reported still never
+confirms a finding: a stronger judge is still the one evaluator a target can prompt-inject. The
+offline mock has no scripted second judge, so this step has no run to copy;
+`tests/evaluators/test_judge_escalation.py` pins each case.
+
+`--judge-escalate` without `--judge` is refused before anything is sent (exit 3):
+
+```
+error: --judge-escalate needs --judge: it is the model the --judge model hands an attempt it cannot settle to
+```
+
+The run store records the second judge's digest, and a `--resume` with another second judge,
+none where its run had one, or one where it had none, is refused: one campaign is not arbitrated
+two ways.
+
+### Clean up
+
+```bash
+rm -f reports/agent.priced.yaml
 ```

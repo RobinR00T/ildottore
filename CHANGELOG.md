@@ -7,6 +7,31 @@ the file, schema copy, build or pipeline it names.
 
 ## [Unreleased]
 
+### Added (u12 A-108 and u06 A-109, judging rules 7 re-pinned: the estimate in euros, and a judge that escalates)
+
+- **`pricing:` in a target file**: what the model costs the operator, in euros per million
+  tokens (`input_eur_per_mtok`, `output_eur_per_mtok`, both required, finite, 0 to 10,000, no
+  other key; refused when invalid, naming the file and the field). `run --estimate` prints
+  `~cost: X EUR` and one line per model (each target, the `--judge` model, the
+  `--judge-escalate` model) with its tokens at its rates; a model that sends without rates is
+  `unpriced` and makes the total `at least`; `-q` appends the figure. With nothing priced the
+  estimate reads as before, its last line saying where to declare a rate. No price list ships
+  with the tool. `pricing` is not part of the target digest.
+- **`dottore run --judge-escalate FILE`**: a second judge model, asked with the same passes and
+  hardening only when the `--judge` model returns `inconclusive` (a disagreement, a low
+  confidence, an outage, free text, a tripwire). Its verdict stands, its reasoning prefixed
+  `escalated to the second judge (...)`; a settled `pass` or `fail` never reaches it and a
+  judge-alone fail still never confirms. Needs `--judge`; authorized by the scope and its
+  credential checked; `--estimate` and `--dry-run` price the worst case (`of which up to N to
+  the --judge-escalate model`); the run context records its digest and a resume with another
+  second judge, none or a new one is refused.
+- Docs: ADR-0020, OD-64 and OD-65 (open), the manual (`pricing` in §4.2, the `--judge-escalate`
+  and `--estimate` rows, "A cheap judge, and a second for what it cannot settle"), USAGE, FAQ,
+  README, the man page, `docs/04`, `docs/09`, `docs/12`, `examples/target.judge-strong.yaml`
+  (authorized by `scope.agent.yaml`) and Scenario R in `examples/README.md` with real output.
+  Judging rules stay at version 7, re-pinned: no evaluator or combination changed, and without
+  `--judge-escalate` the judge reads as before.
+
 ### Added (u08 A-107, judging rules 7 re-pinned: a second pass of the judge tries to refute a fail)
 
 - **`dottore run --verify`**: a spec that fails sends one more request to the judge model (the

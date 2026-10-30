@@ -5,6 +5,27 @@ The carryover ledger. Every agent session updates this so context survives even 
 newest merge on top: a branch's entries land together when it merges, so the dates of
 neighbouring entries can interleave (an older branch merged later sits above a newer one).
 
+## State, 2026-10-30: the estimate in euros, and a judge that escalates (`feat/judge-cost`, u12 A-108, u06 A-109)
+
+- **Why.** `--estimate` ended with "multiply by your provider's per-token rate", per model, by
+  hand, the judge's share never told apart. And one judge model is either cheap and often
+  `inconclusive`, or strong and expensive on every attempt.
+- **Built.** `pricing:` in a target file (`shared.models.Pricing`, `Target.pricing`, cosmetic to
+  the digest) and a `~cost:` block in `--estimate`, one line per model, `unpriced` and `at least`
+  for a model without rates; no price list ships. `run --judge-escalate`: `SemanticJudgeEvaluator`
+  takes `escalate_to` and asks it only on an `inconclusive`; priced as the worst case, its digest
+  in the run context, a resume with another refused. Stacked on `feat/judge-verify`. Judging
+  rules 7 re-pinned. ADR-0020.
+- **Verified.** `tests/evaluators/test_judge_escalation.py` (settled never escalated, a
+  disagreement, a low confidence and an outage escalated, the second's `inconclusive` kept, none
+  without a second judge) and `tests/cli/test_judge_cost.py` (the rates and five refusals, the
+  digest and the dump, the arithmetic, the priced and unpriced estimate, `-q`, both judges priced
+  apart and the floor, the worst-case count, the refusal without `--judge`, the run context and
+  the resume refusal). Scenario R's `--estimate` and `--dry-run`, output in `examples/README.md`.
+- **Open.** OD-64 (the measured spend from the replies' `usage`, a ceiling in euros) and OD-65
+  (escalating a `fail` too, `--verify` on the second model): the owner's call. Not tracked for the
+  second judge: its sampling notes. No offline second judge, so no mock run shows an escalation.
+
 ## State, 2026-10-30: a second pass of the judge tries to refute a fail (`feat/judge-verify`, u08 A-107)
 
 - **Why.** A fail rests on the evaluators' first reading of one reply, and the operator re-read

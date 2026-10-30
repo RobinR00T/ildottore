@@ -141,6 +141,7 @@ from ildottore.shared.models import (
     ModelFingerprint,
     ModelRequest,
     ModelResponse,
+    Pricing,
     RestSpec,
     Sampling,
     SeededSetup,
@@ -1205,6 +1206,7 @@ def unset_credentials(
     *,
     judge: Target | None = None,
     specs: list[AttackSpec] | None = None,
+    judge_escalate: Target | None = None,
 ) -> list[str]:
     """One phrase per credential a live run would read from a variable that is not set.
 
@@ -1243,6 +1245,8 @@ def unset_credentials(
                 )
     if judge is not None and request_url_for(judge) is not None:
         check(f"the --judge model {quoted(judge.id)}", judge.auth_ref)
+    if judge_escalate is not None and request_url_for(judge_escalate) is not None:
+        check(f"the --judge-escalate model {quoted(judge_escalate.id)}", judge_escalate.auth_ref)
     return problems
 
 
@@ -2127,6 +2131,8 @@ def _target_from(path: Path, raw: dict[str, Any]) -> Target:
                 f"{validation_problems(exc)}"
             ) from exc
 
+    pricing = _pricing(path, raw.get("pricing"))
+
     transport = raw.get("transport")
     _check_provider_and_transport(path, provider, transport)
     command_raw = raw.get("command")
@@ -2161,7 +2167,27 @@ def _target_from(path: Path, raw: dict[str, Any]) -> Target:
         rest=rest,
         mcp=mcp,
         filter_stops=_filter_stops(path, raw.get("filter_stops"), provider),
+        pricing=pricing,
     )
+
+
+def _pricing(path: Path, raw: object) -> Pricing | None:
+    """The file's ``pricing:``, euros per million tokens in and out (u12 A-108), or ``None``.
+
+    Field and reason only, as ``sampling_defaults`` is refused: a rate is no secret, but the
+    loaders never quote what was written.
+    """
+
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        raise ValueError(f"target file {path} 'pricing' must be a mapping")
+    try:
+        return Pricing.model_validate(raw)
+    except ValidationError as exc:
+        raise ValueError(
+            f"target file {path} 'pricing' failed validation: {validation_problems(exc)}"
+        ) from exc
 
 
 def _check_provider_and_transport(path: Path, provider: object, transport: object) -> None:
@@ -2855,6 +2881,7 @@ def build_runner(
     review_holds: Mapping[str, ReviewHold] | None = None,
     control: bool = False,
     verify: bool = False,
+    judge_escalate_target: Target | None = None,
 ) -> BuiltRunner:
     """Assemble the whole middle tier into a :class:`CampaignRunner` (contract §5.2).
 
@@ -2910,8 +2937,20 @@ def build_runner(
     # The judge model the second pass asks (`run --verify`, u08 A-107): the one semantic_judge
     # reads, or none (the CLI refuses --verify on a live target without --judge).
     reviewer: TargetAdapter | None = judge_adapter
+    # The judge model a first judge that cannot settle an attempt hands it to (`run
+    # --judge-escalate`, u06 A-109), metered on the same ceilings as the first.
+    escalate_to = (
+        build_judge_adapter(
+            scope,
+            judge_escalate_target,
+            meter=meter,
+            apply_sampling_defaults=apply_sampling_defaults,
+        )
+        if judge_escalate_target is not None and meter is not None
+        else None
+    )
     if real_target is not None:
-        evaluators = build_evaluator_registry(judge=judge_adapter)
+        evaluators = build_evaluator_registry(judge=judge_adapter, escalate_to=escalate_to)
         factory = real_adapter_factory(scope, real_target)
     else:
         # Resolve the effective offline scenario (mock_scenario wins; else the legacy
@@ -2922,7 +2961,7 @@ def build_runner(
         if offline_judge is None:
             offline_judge = scenario_judge_adapter(effective_scenario)
         reviewer = offline_judge
-        evaluators = build_evaluator_registry(judge=offline_judge)
+        evaluators = build_evaluator_registry(judge=offline_judge, escalate_to=escalate_to)
         if mock_scenario is not None:
             factory = scenario_adapter_factory(mock_scenario)
         else:

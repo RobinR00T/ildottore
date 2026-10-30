@@ -1147,6 +1147,15 @@ def run(
             help="Judge model target.yaml (LLM-as-judge for semantic_judge on live scans).",
         ),
     ] = None,
+    judge_escalate: Annotated[
+        Path | None,
+        typer.Option(
+            "--judge-escalate",
+            help="A second judge model target.yaml, asked only when the --judge model cannot "
+            "settle an attempt (any inconclusive): a cheap first judge, an expensive second. "
+            "Needs --judge.",
+        ),
+    ] = None,
     scope: Annotated[
         Path | None,
         typer.Option(
@@ -1406,6 +1415,7 @@ def run(
         targets=targets,
         scope=scope,
         judge=judge,
+        judge_escalate=judge_escalate,
         suite=suite,
         categories=[c.strip() for c in categories.split(",")] if categories else [],
         spec_globs=list(spec_glob or []),

@@ -41,6 +41,8 @@ dottore run [<target.yaml> ...] [-t <target.yaml>] --scope <scope.yaml> [options
 TARGET
   <target.yaml> ...                 positional target file(s); or -t/--target, repeatable
   --judge <target.yaml>             LLM-as-judge for semantic_judge (must be in the scope)
+  --judge-escalate <target.yaml>    a second judge, only for what --judge cannot settle
+                                    (needs --judge; u06 A-109)
 
 SCAN TYPE
   -sn                               discovery only: authorized endpoint + declared
@@ -87,7 +89,8 @@ SAFETY / SCOPE
   --scope scope.yaml                REQUIRED authorization record (default-deny)
   --dry-run                         resolve + validate, send nothing
   --estimate                        pre-run cost estimate (requests + tokens) and the
-                                    ceilings, send nothing (one line under -q)
+                                    ceilings, send nothing (one line under -q); in EUR
+                                    per model when a target file declares pricing: (A-108)
   --hardened                        replay the hardened fixtures (clean-run smoke)
 
 OUTPUT

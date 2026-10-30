@@ -867,6 +867,7 @@ _CONTEXT_FIELDS: Final[dict[str, tuple[bool, Any, str]]] = {
     # target, which no flag waives (u12 A-24), rather than calling the record corrupt.
     "target_digest": (True, _is_digest, "a sha256 digest this tool writes"),
     "judge_digest": (True, _is_digest, "null or a sha256 digest this tool writes"),
+    "judge_escalate_digest": (True, _is_digest, "null or a sha256 digest this tool writes"),
     "adaptive": (False, _is_bool, "true or false"),
     "sampling_defaults_applied": (True, _is_bool, "true or false"),
     "takes_sampling": (True, _is_bool, "true or false"),

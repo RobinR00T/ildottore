@@ -881,6 +881,25 @@ class WebSocketSpec(_Frozen):
     guard: WebSocketGuard | None = None
 
 
+#: A list price per million tokens, in euros: what the operator pays, never a figure the scanner
+#: knows (u12 A-108). Finite and at most 10 000 EUR, so a typo cannot print an absurd estimate.
+EurPerMillion = Annotated[float, Field(ge=0.0, le=10_000.0, allow_inf_nan=False)]
+
+
+class Pricing(_Frozen):
+    """What a model costs the operator, per million tokens, in euros (u12 A-108, OD-64).
+
+    Declared in a target file (``pricing:``), the scanned target's or the ``--judge`` model's, so
+    ``--estimate`` prints a ceiling in euros beside the token gloss. The scanner ships no prices:
+    a list price changes, a contract rate differs, and a figure nobody declared is a figure made
+    up (``docs/12``, the estimate's own rule). Not part of the target digest: it changes what a
+    run costs, never what answers it.
+    """
+
+    input_eur_per_mtok: EurPerMillion
+    output_eur_per_mtok: EurPerMillion
+
+
 class Target(_Frozen):
     """A target under test (id + type + declared capabilities).
 
@@ -922,6 +941,9 @@ class Target(_Frozen):
     rest: RestSpec | None = None
     # A ``provider: mcp`` target's pinned catalogue (u04 A-101; ``None`` for every other provider).
     mcp: McpSpec | None = None
+    # What the model costs per million tokens, in euros (u12 A-108; ``None``: unpriced). Left out
+    # of a dump when ``None``, and out of the target digest always (``shared.digest``).
+    pricing: Pricing | None = None
     # The provider filter stops an ``openai`` or ``anthropic`` target's adapter reads, when its
     # file says (u04 A-79): ``[]`` for an endpoint that speaks the provider's API and has no such
     # filter behind it, so its stops on a reply with text or a tool call, and Azure's HTTP 400,
@@ -954,11 +976,16 @@ class Target(_Frozen):
     def _without_an_undeclared_filter(
         self, handler: SerializerFunctionWrapHandler
     ) -> dict[str, Any]:
-        """The dump as before A-79 when the file does not declare ``filter_stops``."""
+        """The dump as before A-79 and A-108 when the file declares no ``filter_stops``.
+
+        Nor ``pricing`` (u12 A-108): an unpriced target dumps as it did before the field.
+        """
 
         dumped: dict[str, Any] = handler(self)
         if dumped.get("filter_stops") is None:
             dumped.pop("filter_stops", None)
+        if dumped.get("pricing") is None:
+            dumped.pop("pricing", None)
         return dumped
 
 
