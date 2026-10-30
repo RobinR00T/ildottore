@@ -2172,6 +2172,19 @@ second judge, none where one was or one where none was. **Acceptance:**
 `tests/cli/test_judge_cost.py` (the refusal without `--judge`, the estimate and dry-run lines,
 the worst-case count, the run context and the resume refusal).
 
+**A-111 (added 2026-10-30) A reproduction pack per failing finding (ADR-0022, OD-67).** `dottore
+replay RUN_ID --pack DIR` writes, after `replay_checked`, one directory per failing finding the
+run store records (`cli/repro_pack.py`, `write_packs`): the finding's attempt artifacts copied byte
+for byte, `finding.json` (`PACK_FORMAT` 1), `README.md` (the `dottore run` line, each attempt's
+verdict and, for a fail, its request; never the reply) and `SHA256SUMS`. `--finding SPEC_ID`
+(repeatable, needs `--pack`) keeps those, each of which must have failed; `--spec-path` names the
+specs whose detail is attached when its digest matches the run's. Refused (exit 3): no run store
+at `--run-db`, a run it does not know, a `DIR` that is a file or a non-empty directory, a
+`--finding` that did not fail, evidence the manifest check refuses (nothing is written). Sends
+nothing. **Acceptance:** `tests/cli/test_repro_pack.py` (one pack per failing finding, the byte
+copies and their names, `SHA256SUMS`, `finding.json`, the README's reproduce line and no reply,
+the selection, the refusals, tampered evidence, a changed or missing spec, the fence).
+
 ## §8 Out of scope / forbidden
 - MUST NOT implement attack/mutation/evaluation/scoring/reporting/fingerprint logic (u05-u11,
   u13): only wire and call them. MUST NOT own `cli/lint.py` (u02) or edit any spec YAML.
@@ -2358,3 +2371,9 @@ the worst-case count, the run context and the resume refusal).
   estimate before the send, the worst case for an escalating judge. To decide: whether a run
   reports its measured spend from the replies' `usage` blocks, in the report and the run store;
   whether a campaign ceiling may be set in euros. Reversal: drop `pricing:`. Owner: human.
+- **OD-67** (2026-10-30, A-111, ADR-0022; **open**): the reproduction pack. Built as the
+  smallest reversible version: a `replay` option, read-only, one directory per failing finding,
+  no reply in the README, no script that sends. To decide: whether the run store records a
+  finding's `confirmed` state so a pack (and `--finding`) can keep the confirmed ones only;
+  whether a pack carries the spec file itself; whether a pack of a passing finding (a fix
+  verified) is useful. Reversal: run `replay` without `--pack`. Owner: human.

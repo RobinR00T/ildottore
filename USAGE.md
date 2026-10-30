@@ -107,6 +107,7 @@ dottore lint mine/           # exit 0 clean, 1 a spec fails lint, 3 a path that 
 dottore new-spec --id PI-XYZ-001 --family prompt_injection
 dottore schema export --name report   # the JSON report's schema (also suite, pack, test-plan, attack-spec)
 dottore replay <run-id> --evidence-root .dottore/evidence --run-db .dottore/runs.sqlite   # reproduce a past run, checked against the run store
+dottore replay <run-id> --run-db .dottore/runs.sqlite --pack packs/   # one reproduction pack per failing finding, for the target's owner (sends nothing)
 
 # Regression gate: compare a run against a stored baseline (CI-gateable)
 dottore diff baseline.json current.json

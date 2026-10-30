@@ -2220,6 +2220,27 @@ listed apart: a probe is not an attempt, so it never enters the reproducibility 
 count, but it is stored, hashed and replayable like one, which is what lets a run answer "what did
 this tool send my endpoint".
 
+#### A reproduction pack for the target's owner (`--pack`)
+
+```
+dottore replay RUN_ID --run-db PATH --pack DIR [--finding SPEC_ID ...] [--spec-path PATH]
+```
+
+Writes, after the checks above, one directory per failing finding of the run under `DIR`, which
+must not exist or be empty (a pack never overwrites): `attempts/<sha256>.json`, the attempts the
+finding was scored from, copied byte for byte so each is still named by its content's SHA-256;
+`finding.json`, the run, finding, spec and target ids, status, severity, reproducibility, the
+tool version, the judging rules and their digest, the spec digest the run recorded and the
+spec's name, OWASP code and CWE; `README.md`, the `dottore run` line that reproduces it, how to
+send the request by hand, and each attempt's verdict and, for a fail, its request; and
+`SHA256SUMS`, checked with `shasum -a 256 -c SHA256SUMS`. `--finding` keeps the findings of
+those specs, each of which must have failed. Nothing is sent. The reply stays in the attempt
+file, never in the README: it is text the target wrote. The spec's labels come from the specs
+read now (`--spec-path`), and only when the spec's digest matches the run's; otherwise the pack
+says the spec changed or was not found. Refused (exit 3): no run store at `--run-db`, a run it
+does not know, a used `DIR`, a `--finding` that did not fail, and evidence the manifest check
+refuses, in which case nothing is written (u12 A-111, ADR-0022; Scenario T in `examples/`).
+
 ### `dottore diff`, regression gate against a baseline
 
 ```
@@ -3448,7 +3469,9 @@ Two habits that catch most false alarms: read the `verdict.reasoning` first (it 
 evaluator failed the attempt and on what), and re-run the spec alone with `--runs 5` before
 raising it; a fail that does not reproduce is a reply, not a weakness. `--control` (does the
 fail follow from the attack?) and `--verify` (does it survive a reader told to refute it?)
-automate the first look for the specs and runs that support them.
+automate the first look for the specs and runs that support them. `dottore replay RUN_ID --pack
+DIR` writes the evidence of each failing finding, with the request to send again, for the
+target's owner (§5, `dottore replay`).
 
 ## 10. Reports, evidence and reproducibility
 

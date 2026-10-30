@@ -7,6 +7,18 @@ the file, schema copy, build or pipeline it names.
 
 ## [Unreleased]
 
+### Added (u12 A-111, judging rules 7 re-pinned: a reproduction pack per failing finding)
+
+- **`dottore replay RUN_ID --pack DIR`** writes, after the manifest check, one directory per
+  failing finding: its attempt artifacts copied byte for byte, `finding.json` (`pack_format` 1),
+  a `README.md` with the `dottore run` line that reproduces it, each attempt's verdict and the
+  requests sent (never the reply), and `SHA256SUMS`. `--finding SPEC_ID` keeps some;
+  `--spec-path` names the specs whose labels it attaches when the digest matches the run's.
+  Refuses no run store, a used directory, a finding that did not fail and tampered evidence.
+  Sends nothing.
+- Docs: ADR-0022, OD-67 (open), the manual (`replay`, §9), USAGE, the man page, FAQ, README,
+  `docs/12` and Scenario T in `examples/README.md` with real output.
+
 ### Added (u02 A-110, judging rules 7 re-pinned: a spec names its CWE, and each family says how to confirm a fail)
 
 - **`cwe:` on a spec**, optional: the MITRE CWE IDs of the weakness a fail of the spec shows in

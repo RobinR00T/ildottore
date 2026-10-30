@@ -546,6 +546,17 @@ Evidence store root (default .dottore/evidence).
 .TP
 .B --run-db \fIPATH\fR
 Run store whose findings are the evidence manifest (default .dottore/runs.sqlite).
+.TP
+.B --pack \fIDIR\fR
+Write one reproduction pack per failing finding into DIR, which must not exist or be empty:
+the attempts' evidence copied byte for byte, finding.json, README.md and SHA256SUMS. Needs the
+run store; sends nothing.
+.TP
+.B --finding \fISPEC_ID\fR
+With --pack, only the failing finding of this spec (repeatable).
+.TP
+.B --spec-path \fIPATH\fR
+Specs whose name, OWASP code and CWE a pack names, when the digest matches the run's.
 .SS "schema export"
 .TP
 .B --name \fITEXT\fR

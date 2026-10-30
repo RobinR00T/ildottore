@@ -44,6 +44,7 @@ from ildottore.cli import new_spec as new_spec_mod
 from ildottore.cli import registry as registry_mod
 from ildottore.cli import render_media as render_media_mod
 from ildottore.cli import replay as replay_mod
+from ildottore.cli import repro_pack as repro_pack_mod
 from ildottore.cli import run as run_mod
 from ildottore.cli.exit_codes import ExitCode
 from ildottore.cli.flags import DEFAULT_TEMPLATE
@@ -1957,10 +1958,36 @@ def replay(
         Path,
         typer.Option("--run-db", help="Run store; its findings are the evidence manifest."),
     ] = Path(".dottore/runs.sqlite"),
+    pack: Annotated[
+        Path | None,
+        typer.Option(
+            "--pack",
+            help="Write a reproduction pack per failing finding into this new or empty dir.",
+        ),
+    ] = None,
+    finding: Annotated[
+        list[str] | None,
+        typer.Option("--finding", help="With --pack, only the failing finding of this spec id."),
+    ] = None,
+    spec_path: Annotated[list[Path] | None, typer.Option("--spec-path")] = None,
 ) -> None:
-    """Re-read a run from stored evidence (reproducibility, no re-sending)."""
+    """Re-read a run from stored evidence (reproducibility, no re-sending).
 
-    from ildottore.store import TamperError
+    With --pack, also write what the target's owner needs to reproduce each failing finding: its
+    hash-verified evidence, a finding.json, a README.md and a SHA256SUMS.
+    """
+
+    from ildottore.store import SqliteRunStore, TamperError
+
+    if finding and pack is None:
+        typer.echo("error: --finding selects what --pack writes: pass --pack DIR", err=True)
+        raise typer.Exit(ExitCode.ERROR)
+    if pack is not None and not run_db.is_file():
+        missing = ValueError(
+            f"no run store at {run_db}: a pack needs the findings it records (pass --run-db)"
+        )
+        typer.echo(f"error: {_masked(missing)}", err=True)
+        raise typer.Exit(ExitCode.ERROR)
 
     try:
         with run_mod.lock_waits_noted():
@@ -1974,6 +2001,24 @@ def replay(
         # It names the --run-db path; written out like an error (`_masked`).
         typer.echo(f"warning: {visible_controls(warning)}", err=True)
     typer.echo(replay_mod.render_replay(result))
+    if pack is None:
+        return
+    registry, _ = wiring.load_registry(_spec_paths(spec_path))
+    specs = {spec.id: spec for spec in registry.list()}
+    try:
+        with SqliteRunStore(run_db) as store:
+            written = repro_pack_mod.write_packs(
+                result, store, evidence_root, pack, specs, only=finding or ()
+            )
+    except (OSError, ValueError) as exc:
+        typer.echo(f"error: {_masked(exc)}", err=True)
+        raise typer.Exit(ExitCode.ERROR) from exc
+    except sqlite3.Error as exc:
+        _store_failed(run_db, exc)
+    if not written:
+        typer.echo(f"pack: run {run_id} has no failing finding, nothing written")
+    for path in written:
+        typer.echo(f"pack: wrote {visible_controls(str(path))}")
 
 
 # --- diff (baseline / drift) ------------------------------------------------------

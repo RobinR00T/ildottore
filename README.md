@@ -54,7 +54,9 @@ mapping the code checks).
   outside the repository, under `~/.config/ildottore/targets/`, and run it by name
   (`dottore run -t <name> --scope <name>`); `examples/target.agent.yaml` and
   `examples/target.agent-rest.yaml` have placeholders only.
-- **Reports** in JSON, HTML, SARIF and JUnit; **`replay`** re-derives any run from evidence;
+- **Reports** in JSON, HTML, SARIF and JUnit; **`replay`** re-derives any run from evidence
+  and, with `--pack`, writes a checksummed reproduction pack per failing finding for the target's
+  owner (Scenario T in [`examples/`](examples/));
   **`diff`** gates a pipeline on regressions vs a baseline.
 - **Your labels feed the gate**: `dottore calibrate report.json labels.yaml --record
   labels.jsonl` keeps each verdict you give, and `run --fp-ledger labels.jsonl` holds for review

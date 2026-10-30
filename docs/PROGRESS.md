@@ -5,6 +5,18 @@ The carryover ledger. Every agent session updates this so context survives even 
 newest merge on top: a branch's entries land together when it merges, so the dates of
 neighbouring entries can interleave (an older branch merged later sits above a newer one).
 
+## State, 2026-10-30: a reproduction pack per failing finding (`feat/repro-pack`, u12 A-111)
+
+- **Why.** Handing a finding to the target's owner meant a report without the request to send
+  again, or the whole evidence tree.
+- **Built.** `replay --pack DIR [--finding ID]` (`cli/repro_pack.py`): per failing finding, the
+  verified attempt artifacts byte for byte, `finding.json`, `README.md`, `SHA256SUMS`. Stacked on
+  `feat/cwe-mapping`. Judging rules 7 re-pinned. ADR-0022.
+- **Verified.** `tests/cli/test_repro_pack.py` (8 tests against a mock run). Scenario T, output in
+  `examples/README.md`.
+- **Open.** OD-67 (a `confirmed` state in the run store, the spec file in the pack, passing
+  findings): the owner's call.
+
 ## State, 2026-10-30: a spec names its CWE, and each family says how to confirm a fail (`feat/cwe-mapping`, u02 A-110)
 
 - **Why.** A finding carried six framework labels and no CWE, the one an application team's

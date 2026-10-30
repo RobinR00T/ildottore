@@ -332,6 +332,14 @@ confidence, an outage). Its verdict stands, and a fail only a judge reported sti
 confirms a finding. `--estimate` prices the worst case, as if every judgement went to it. See
 the manual's "A cheap judge, and a second for what it cannot settle".
 
+### How do I hand a finding to the team that owns the target?
+
+`dottore replay RUN_ID --run-db .dottore/runs.sqlite --pack packs/` writes one directory per
+failing finding: the evidence of each attempt (byte for byte, named by its SHA-256), a
+`finding.json`, a `README.md` with the `dottore run` line that reproduces it and the request to
+send by hand, and a `SHA256SUMS`. It sends nothing, and it keeps the target's reply out of the
+README (it is in the attempt file). `--finding SPEC_ID` packs one. Scenario T in `examples/`.
+
 ### Which CWE does a finding map to? Why not CWE-1426?
 
 `dottore describe <ID>` prints it, and the SARIF rule carries it as `external/cwe/cwe-NNN`, the

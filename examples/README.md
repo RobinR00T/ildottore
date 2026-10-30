@@ -1993,3 +1993,82 @@ family" says what to read in the evidence.
 ```bash
 rm -rf reports/cwe.sarif reports/cwe-pack
 ```
+
+## Scenario T, a reproduction pack for the target's owner (`replay --pack`)
+
+A finding goes to the team that owns the target with what they need to see it again: the
+evidence of each attempt, what was sent, the verdict, and a checksum over all of it. `replay
+--pack` writes that from what the run stored, after checking it, and sends nothing (u12 A-111,
+ADR-0022).
+
+### Step 1, a run that keeps its evidence
+
+```bash
+dottore run -t examples/target.mock.yaml --scope examples/scope.mock.yaml \
+  --spec OUT-SQLI-001 --spec PI-DIRECT-001 --spec JB-ROLEPLAY-001 --runs 2 -q \
+  --evidence-root reports/repro-evidence --run-db reports/repro-runs.sqlite
+```
+
+The mock fails all three. The run id is the name of the one directory under
+`reports/repro-evidence` (`run-672e54690486` here; yours differs).
+
+### Step 2, pack one finding
+
+```bash
+dottore replay run-672e54690486 --evidence-root reports/repro-evidence \
+  --run-db reports/repro-runs.sqlite --pack reports/repro-pack --finding OUT-SQLI-001
+```
+
+It prints the replay as usual, then:
+
+```
+pack: wrote reports/repro-pack/OUT-SQLI-001__demo
+```
+
+The directory holds `README.md`, `finding.json`, `SHA256SUMS` and `attempts/` with the two
+attempts copied byte for byte. The owner checks it with a standard tool:
+
+```bash
+cd reports/repro-pack/OUT-SQLI-001__demo && shasum -a 256 -c SHA256SUMS
+```
+
+```
+README.md: OK
+attempts/5109c16c6061caecb73eb4d8e31b11cd7cb4eb52584978708a1010710a32212d.json: OK
+attempts/598428f63b0fa0c03ff1e9df3843d8f885cbb1b220a5a2c57c4173b6059f0636.json: OK
+finding.json: OK
+```
+
+The README opens with what was found and under what:
+
+```
+# OUT-SQLI-001::demo: reproduction pack
+
+* **Run:** `run-672e54690486`, Il Dottore 0.1.0, judging rules 7
+* **Target:** `demo`
+* **Status:** fail, severity high, 2 of 2 attempts failed (reproducibility 1.0)
+* **Spec:** `OUT-SQLI-001`, Unsafe SQL generation (SQL injection) (OWASP LLM05, CWE-89)
+```
+
+then the `dottore run` line that reproduces it, how to send the request by hand (a masked value
+reads `«REDACTED:<kind>:<hash>»`), and each attempt's verdict with the request sent. The reply
+is not in the README: it is text the target wrote, and it stays in the attempt file
+(`response.text`).
+
+### Step 3, what it refuses
+
+A pack never overwrites, and packs only what failed (exit 3 for both):
+
+```
+error: reports/repro-pack exists and is not an empty directory: a pack never overwrites
+error: no failing finding of SP-LEAK-001 in run 'run-672e54690486'
+```
+
+Without the run store (`--run-db`) it is refused too, and evidence edited after the run fails
+the replay's check, so no pack is written.
+
+### Clean up
+
+```bash
+rm -rf reports/repro-evidence reports/repro-runs.sqlite reports/repro-pack
+```
