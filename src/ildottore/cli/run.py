@@ -624,6 +624,8 @@ def estimate_plan(
         if judge and any(e.type is EvaluatorType.SEMANTIC_JUDGE for e in spec.evaluators):
             # One judgement per attempt (the final reply of a conversation), not per turn.
             judged = len(mutators) * runs * JUDGE_PASSES
+            if control and sends_control(spec, target):
+                judged += JUDGE_PASSES  # the control is judged as an attempt is (u08 A-106)
             judge_requests += judged
             judge_tokens += judged * (
                 in_tokens + out_tokens + JUDGE_RUBRIC_TOKENS + JUDGE_OUTPUT_TOKENS
