@@ -98,10 +98,19 @@ def _masked_finding(raw: dict[str, object], redactor: Redactor) -> dict[str, obj
     string by string."""
 
     attempts = raw.pop("attempts", None) or []
+    control = raw.pop("control", None)
     masked = redactor.redact(raw)
     if not isinstance(masked, dict) or not isinstance(attempts, list):  # pragma: no cover
         raise TypeError("redactor changed the shape of a finding dump")
     masked["attempts"] = [_masked_attempt(attempt, redactor) for attempt in attempts]
+    if isinstance(control, dict):
+        # A spec's control (u08 A-106) is an attempt too, masked as one, beside its outcome.
+        sent = control.pop("attempt", None)
+        shown = redactor.redact(control)
+        if not isinstance(shown, dict):  # pragma: no cover - redact preserves shape
+            raise TypeError("redactor changed the shape of a control dump")
+        shown["attempt"] = _masked_attempt(sent, redactor) if sent is not None else None
+        masked["control"] = shown
     return masked
 
 
@@ -195,6 +204,13 @@ def _restore_tool_fields(masked: object, finding: Finding, redactor: Redactor) -
         masked_attempt["attempt_id"] = attempt.attempt_id
         masked_attempt["spec_id"] = attempt.spec_id
         _restore_media_digests(masked_attempt, attempt.request.metadata)
+    control = masked.get("control")
+    if finding.control is not None and isinstance(control, dict):
+        control["outcome"] = finding.control.outcome.value
+        sent = finding.control.attempt
+        if sent is not None and isinstance(control.get("attempt"), dict):
+            control["attempt"]["attempt_id"] = sent.attempt_id
+            control["attempt"]["spec_id"] = sent.spec_id
     return masked
 
 

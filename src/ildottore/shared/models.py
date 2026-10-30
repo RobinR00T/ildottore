@@ -29,6 +29,7 @@ from pydantic import (
 from ildottore.shared.enums import (
     AttackOccurrence,
     Category,
+    ControlOutcome,
     EvaluatorLogic,
     EvaluatorType,
     InconclusiveReason,
@@ -195,6 +196,10 @@ class Attack(_SchemaMirror):
     carrier: str | None = None
     turns: list[str] | None = None
     media: list[JsonDict] | None = None
+    #: The same ask without the attack (u08 A-106): sent once, as one plain turn with the spec's
+    #: system prompt and no media, after the spec failed and ``run --control`` asked for it. A
+    #: target that fails it too does what the spec tests for without being attacked.
+    control: str | None = Field(default=None, min_length=1)
 
     def model_post_init(self, _context: object) -> None:
         # Schema anyOf: [user_prompt] | [carrier] | [turns]. `media` is an add-on carrier, not one
@@ -1163,6 +1168,19 @@ class RiskScore(_Frozen):
     confidence: Unit
 
 
+class ControlCheck(_Frozen):
+    """A failing spec's control and what it showed (u08 A-106, ADR-0018).
+
+    ``attempt`` is the control's send with its verdict, when one was made: it is not a trial of
+    the spec, so it is kept here and never in ``Finding.attempts``. ``reason`` says why nothing
+    was sent (``not_evaluable``) or why the verdict decided nothing (``inconclusive``).
+    """
+
+    outcome: ControlOutcome
+    attempt: Attempt | None = None
+    reason: str | None = None
+
+
 class Finding(_Frozen):
     """A scored, evidenced result for one spec against one target."""
 
@@ -1174,6 +1192,8 @@ class Finding(_Frozen):
     attempts: list[Attempt] = Field(default_factory=list)
     evidence: list[EvidenceRef] = Field(default_factory=list)
     reasoning: str | None = None
+    #: Set only by ``run --control`` on a failing spec (u08 A-106).
+    control: ControlCheck | None = None
 
 
 class TestRunSummary(_Frozen):

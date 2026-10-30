@@ -354,6 +354,15 @@ date. The holds print on stderr, under --quiet and --dry-run too. Read before an
 sent; a line that is not a label record stops the run (exit 3). A resume holds what its run
 held and refuses this flag.
 .TP
+.B --control
+A spec that fails and declares attack.control (the same ask without the attack) sends it once,
+after its trials, judged by the spec's own evaluators. The finding's control reads attributed
+(it passed: the fail follows the attack), not_attributed (it failed too: the fail is kept and
+never confirmed, so it needs review), inconclusive (no verdict, an error, or a fail the judge
+alone reported) or not_evaluable (no control, or a conversation). A pass sends none. Never a
+trial: not in N nor in a reproducibility; replay lists it apart. Priced by --estimate and
+--dry-run as if each such spec failed. A resume sends as its run did and refuses this flag.
+.TP
 .B --evidence-root \fIPATH\fR, --run-db \fIPATH\fR
 Evidence store root (default .dottore/evidence) and run store SQLite path (default
 \&.dottore/runs.sqlite). A store path that is a directory, a file that is not SQLite or a path

@@ -9,12 +9,14 @@ reproducible from disk alone (``docs/07`` determinism-replay).
 
 from __future__ import annotations
 
+from collections import Counter
 from pathlib import Path
 
 from ildottore.core.runner import SAMPLING_NOT_SENT
 from ildottore.redactor import visible_controls
 from ildottore.scoring.risk import reproducibility_from_attempts
-from ildottore.shared.enums import IDENTITY_SWEEP, VerdictStatus
+from ildottore.shared.control import control_outcome
+from ildottore.shared.enums import CONTROL, IDENTITY_SWEEP, VerdictStatus
 from ildottore.shared.models import Attempt
 from ildottore.shared.provider_filter import (
     blocked_by_provider_filter,
@@ -126,7 +128,15 @@ def render_replay(result: ReplayResult) -> str:
     # together. A report's reproducibility is per spec and takes the best variant, so the two
     # read differently on the same run (0.25 here, 1.0 in the report) and the bare word
     # "reproducibility" let them be compared as if they were one measure (review of PR #32).
-    history = len(result.attempts) - result.n
+    controls = result.controls()
+    if controls:
+        # A spec's control (u08 A-106): listed above under its mutation, never a trial.
+        shown = Counter(control_outcome(c.verdict).value for c in controls)
+        lines.append(
+            f"  controls ({len(controls)}, sent by run --control, never trials nor in N): "
+            + ", ".join(f"{count} {outcome}" for outcome, count in sorted(shown.items()))
+        )
+    history = sum(1 for a in result.attempts if a.mutation != CONTROL) - result.n
     if history:
         lines.append(
             f"  ({history} more artifact{' shares' if history == 1 else 's share'} an attempt "

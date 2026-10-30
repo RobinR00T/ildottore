@@ -5,6 +5,22 @@ The carryover ledger. Every agent session updates this so context survives even 
 newest merge on top: a branch's entries land together when it merges, so the dates of
 neighbouring entries can interleave (an older branch merged later sits above a newer one).
 
+## State, 2026-10-30: a control attributes a fail to its attack (`feat/control-check`, u08 A-106)
+
+- **Why.** A fail said the target did the forbidden thing, never whether the attack caused it: a
+  model that writes a phishing email when asked plainly failed the encoding jailbreak too, and
+  the report called it a confirmed vulnerability of the technique.
+- **Built.** `attack.control` (optional, linted) and `run --control`: a failing spec sends its
+  control once, judged by its own evaluators, kept in `Finding.control` (`shared.control`), never
+  a trial. `not_attributed` keeps the fail from being confirmed; a judge-alone fail on the control
+  reads `inconclusive`. Estimate, run context, resume, replay, masking, JSON schema and SARIF
+  follow. Six battery specs declare a control. Judging rules 7 re-pinned. ADR-0018.
+- **Verified.** `tests/shared/test_control.py`, `tests/cli/test_control.py` (attributed,
+  not attributed, masking and schema, none without the flag or for a pass, `not_evaluable`,
+  estimate and dry run, replay, a halted run resumed without a second control, the refusals,
+  the reserved mutation). Scenario P against the mock, output in `examples/README.md`.
+- **Open.** OD-62 (the default, a rate over N controls, more specs): the owner's call.
+
 ## State, 2026-10-28: `encode:qp` decodes to the payload's bytes (`fix/qp-roundtrip`, u05 A-99)
 
 - **Why.** Gating #147, the property test `test_byte_encodings_decode_with_the_standard_library`

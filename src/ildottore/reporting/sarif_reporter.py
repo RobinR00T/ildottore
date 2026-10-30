@@ -168,6 +168,9 @@ def _result(finding: Finding, rule_index: int, *, include_needs_review: bool) ->
             f"; {unsaid} of {sent} attempt(s) stopped by the provider's filter on a side it did "
             "not report: review them"
         )
+    if finding.control is not None and finding.control.outcome.value == "not_attributed":
+        # u08 A-106: the same ask without the attack failed too.
+        message += "; its control failed too: the target does this unattacked, review it"
     # Replies the adapter could not read (OD-21, u08 A-74): never the model resisting either.
     unreadable = len(unreadable_attempt_ids(finding.attempts))
     if unreadable:
@@ -219,6 +222,8 @@ def _result(finding: Finding, rule_index: int, *, include_needs_review: bool) ->
             **({"unreadable_reply": unreadable} if unreadable else {}),
             **({"operator_declaration_attempts": declared} if declared else {}),
             **({"evidence_withheld": withheld} if withheld else {}),
+            # What a failing spec's control showed (u08 A-106), when `run --control` sent one.
+            **({"control": finding.control.outcome.value} if finding.control else {}),
         },
     }
     return result

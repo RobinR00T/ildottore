@@ -25,6 +25,7 @@ from pydantic import ValidationError
 
 from ildottore import __version__
 from ildottore.shared.config_errors import quoted
+from ildottore.shared.control import control_check, split_control
 from ildottore.shared.digest import (
     spec_digests,
     spec_field_digests,
@@ -63,6 +64,7 @@ __all__ = [
     "recorded_version",
     "selection_record",
     "stored_adaptive",
+    "stored_control",
     "stored_review_holds",
     "stored_runs",
     "stored_sampling_defaults",
@@ -210,18 +212,23 @@ def load_resume_run(
             )
         )
 
-    findings = [
-        Finding(
-            spec_id=spec_id,
-            target_id=target.id,
-            status=VerdictStatus.INCONCLUSIVE,
-            risk=RESUME_PLACEHOLDER_RISK,
-            confirmed=False,
-            attempts=attempts,
-            evidence=refs_by_spec[spec_id],
+    # A spec's control (u08 A-106) is not one of its attempts: it goes back to `Finding.control`,
+    # where the runner keeps it, so no resume counts it as a trial or sends it as one.
+    findings = []
+    for spec_id, stored in sorted(by_spec.items()):
+        attempts, control = split_control(stored)
+        findings.append(
+            Finding(
+                spec_id=spec_id,
+                target_id=target.id,
+                status=VerdictStatus.INCONCLUSIVE,
+                risk=RESUME_PLACEHOLDER_RISK,
+                confirmed=False,
+                attempts=attempts,
+                evidence=refs_by_spec[spec_id],
+                control=control_check(control) if control is not None else None,
+            )
         )
-        for spec_id, attempts in sorted(by_spec.items())
-    ]
     run = TestRun(run_id=run_id, targets=[target], findings=findings, started_at=started_at)
     if adopt and run_db is not None:
         adopt_resumed(run_db, run)
@@ -422,6 +429,21 @@ def stored_review_holds(run_db: Path, run_id: str) -> dict[str, ReviewHold]:
         str(spec_id): ReviewHold(false_alarms=int(counts[0]), labelled=int(counts[1]))
         for spec_id, counts in stored.items()
     }
+
+
+def stored_control(run_db: Path, run_id: str) -> bool:
+    """Whether the halted campaign sent its failing specs' controls (``run --control``, A-106).
+
+    A run that recorded nothing (no ``--control``, or made before the field existed) sent none.
+    """
+
+    from ildottore.store.run_sqlite import SqliteRunStore
+
+    if not Path(run_db).exists():
+        return False
+    with SqliteRunStore(Path(run_db)) as store:
+        context = store.get_run_context(run_id)
+    return (context or {}).get("control") is True  # true or false: the store checked it
 
 
 def stored_adaptive(run_db: Path, run_id: str) -> bool | None:

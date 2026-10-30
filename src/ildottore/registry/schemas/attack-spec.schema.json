@@ -254,6 +254,10 @@
             "type": "string"
           }
         },
+        "control": {
+          "type": "string",
+          "minLength": 1
+        },
         "media": {
           "type": "array",
           "items": {

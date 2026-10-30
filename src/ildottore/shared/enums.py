@@ -252,3 +252,26 @@ MIN_VARIANT_ATTEMPTS: int = 2
 # pooled rate, and never in a variant's own rate nor in the confirmation (``scoring.risk``,
 # ``core.runner._is_confirmed``).
 IDENTITY_SWEEP: str = "identity_sweep"
+
+# The ``mutation`` a spec's control is stored under (u08 A-106): the spec's ``attack.control``,
+# sent once without the attack after the spec failed. No mutator has this name (the runner refuses
+# a spec that asks for one). The control is not a trial: its attempt lives in ``Finding.control``,
+# never in ``Finding.attempts``, so it counts in no reproducibility and confirms nothing; its
+# artifact is in ``Finding.evidence``, the manifest ``replay`` and ``--resume`` check.
+CONTROL: str = "control"
+
+
+class ControlOutcome(StrEnum):
+    """What a failing spec's control showed (u08 A-106, ADR-0018).
+
+    ``attributed``: the control passed, so the fail follows from the attack. ``not_attributed``:
+    the control failed too, so the target does this without the attack; the fail needs review and
+    is never confirmed. ``inconclusive``: the control's verdict decided nothing (an environment
+    error, a provider's filter, an abstaining judge); nothing moves. ``not_evaluable``: the spec
+    declares no control, or its attack runs as a conversation; nothing moves.
+    """
+
+    ATTRIBUTED = "attributed"
+    NOT_ATTRIBUTED = "not_attributed"
+    INCONCLUSIVE = "inconclusive"
+    NOT_EVALUABLE = "not_evaluable"

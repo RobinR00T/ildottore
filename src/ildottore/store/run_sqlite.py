@@ -909,6 +909,8 @@ _CONTEXT_FIELDS: Final[dict[str, tuple[bool, Any, str]]] = {
     "selection": (False, _is_selection, "the selection flags this tool records"),
     # u08 A-105: the specs the labels ledger held, each with its two counts.
     "review_holds": (False, _is_holds, "a map of spec ids to two counts"),
+    # u08 A-106: whether a failing spec sends its control (run --control).
+    "control": (False, _is_bool, "true or false"),
     "spec_fields": (
         False,
         lambda v: (

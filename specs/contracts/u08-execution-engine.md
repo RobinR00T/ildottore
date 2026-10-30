@@ -1437,6 +1437,31 @@ spec placeholders refused in an identity canary) and
   over five runs, a report recorded five times counting once, the refusals of `--record`, the
   cap, a symbolic link, and `--dry-run`).
 
+- **A-106 (added 2026-10-30): a control attributes a fail to its attack (ADR-0018, OD-62).**
+  `Attack.control` (u02, optional) is the same ask without the attack. `CampaignRunner` takes
+  `control` (u12's `run --control`); a spec whose trials fail and that declares a control sends
+  it once after them (`_control_check`), as one plain turn under the spec's system prompt and
+  sampling, attempt id `<spec>::control#0`, mutation `control` (reserved, as `identity_sweep`
+  is: a spec naming it as a mutation sends nothing), judged by the spec's own evaluators. Its
+  outcome (`shared.control`, pure): `attributed` (it passed), `not_attributed` (it failed),
+  `inconclusive` (no verdict, `inconclusive`, an error, or a fail `never_confirms` covers: the
+  judge alone), `not_evaluable` (no control, or the attack is a conversation). It is stored as
+  evidence and kept in `Finding.control`, never in `Finding.attempts`: reproducibility, N and the
+  confirmation read the trials only, and the readers of stored artifacts split it out
+  (`cli.resume.load_resume_run`, `store.replay.ReplayResult.effective_attempts`/`controls`). In
+  `_score_finding`, a `not_attributed` control keeps `_is_confirmed`'s fail from being confirmed
+  and its reasoning names it; status, risk and attempts are untouched. A pass sends none. The
+  estimate prices one request per spec that declares a control (`PlanEstimate.control_requests`,
+  `sends_control`); the run context records `control` (u10) and a resume sends as its run did,
+  keeps an answered control and refuses `--control`; the report masks the control's attempt as
+  any attempt (u11) and SARIF carries its outcome. **Costs, stated:** judging rules 7 re-pinned,
+  no rule of judgement changed. **Acceptance:** `tests/shared/test_control.py` (the outcomes,
+  the judge-alone fail, the reasons, the split, the lint refusals) and `tests/cli/test_control.py`
+  (attributed and confirmed, not attributed and unconfirmed, a report that validates and masks
+  the control's reply, none without the flag, `not_evaluable`, none for a pass, the estimate and
+  the dry run, `replay`, a resume of a halted run that sends no control twice, the refusal of
+  `--control` with `--resume`, the reserved mutation).
+
 ## §8 Out of scope / forbidden
 - MUST NOT import adapter/evaluator/scorer/store **concretes**: interfaces only; composition is
   u12. `lint-imports` enforces.
@@ -1587,3 +1612,11 @@ spec placeholders refused in an identity canary) and
   holds what its run held. Revisit (2) when one spec is scanned against targets that differ in
   what they expose. Reversal: the three constants of `shared.review_holds`, a run without
   `--fp-ledger`, or `review_holds` dropped from the runner. Owner: human.
+- **OD-62** (2026-10-30, A-106, ADR-0018; **open**): the control. Built as the smallest
+  reversible version: (1) opt-in (`run --control`), not the default; (2) one send per failing
+  spec, not N with a rate; (3) a `not_attributed` control keeps the fail from being confirmed and
+  never changes the verdict; (4) a control's fail the judge alone reported reads `inconclusive`,
+  so a judge that calls everything exploited cannot unconfirm what it never could confirm; (5)
+  six battery specs declare one. To decide: whether it becomes the default (one request more per
+  failing spec), whether a control is sent N times with a rate, and which further specs declare
+  one. Reversal: a run without `--control`. Owner: human.

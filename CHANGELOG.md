@@ -7,6 +7,33 @@ the file, schema copy, build or pipeline it names.
 
 ## [Unreleased]
 
+### Added (u08 A-106, judging rules 7 re-pinned: a control attributes a fail to its attack)
+
+- **`attack.control`**, optional on a spec: the same ask without the attack. The lint refuses it
+  on a conversation (`attack.turns`) and when it equals the attack's `user_prompt` or `carrier`.
+  Six battery specs declare one: `PI-DIRECT-001`, `SP-LEAK-001`, `AG-GOAL-THEFT-001`,
+  `DL-SECRET-CANARY-001`, `JB-REFUSAL-SUPPRESS-001`, `JB-ENCODING-001`.
+- **`dottore run --control`**: a spec that fails and declares a control sends it once, after its
+  trials, judged by the spec's own evaluators. The finding gains `control` (`outcome`, the
+  control's `attempt`, a `reason`): `attributed` (it passed), `not_attributed` (it failed too: the
+  fail is kept and **never confirmed**, so it needs review and gates only with
+  `--include-needs-review`), `inconclusive` (no verdict, an error, or a fail the judge alone
+  reported, which never confirms and so never unconfirms) or `not_evaluable`. A pass sends none.
+  Without the flag nothing is sent and `control` is `null`.
+- A control is never a trial: stored under the reserved mutation `control` (a spec naming it as
+  a mutation sends nothing), cited in the finding's evidence, never in `attempts`, N or a
+  reproducibility. `dottore replay` lists the controls on a line of their own.
+- `--estimate` and `--dry-run` price one request per selected spec that declares a control; the
+  run context records `control` and `--resume` sends as its run did, keeps an answered control
+  and refuses `--control`. The JSON report schema has an optional `control` on a finding (the
+  golden JSON snapshot gains `"control": null`), the control's attempt is masked as any attempt,
+  and SARIF carries a `control` property.
+- Docs: ADR-0018, OD-62 (open: the default, a rate over N controls, more specs), the manual
+  ("Attributing a fail to its attack", the `--control` row), USAGE, FAQ, README, the man page,
+  `docs/03`, `docs/09`, `docs/12` and Scenario P in `examples/README.md` with real output. Judging
+  rules stay at version 7, re-pinned: no evaluator or combination changed, a reply is judged as
+  before, and without `--control` nothing is sent or demoted.
+
 ### Fixed (u05 A-99, judging rules 7 re-pinned: `encode:qp` decodes to the payload's bytes)
 
 - **Quoted-printable no longer rewrites a payload's line breaks.** `encode:qp` used text-mode

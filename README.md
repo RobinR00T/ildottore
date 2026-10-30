@@ -59,6 +59,10 @@ mapping the code checks).
   a spec whose last labelled fails were more than 30% false alarms (5 at least, the last 50
   counted). The spec still runs and its fail is still reported; it just stops failing the
   pipeline until new labels bring the rate down (Scenario N in [`examples/`](examples/)).
+- **Attribute a fail to its attack**: `run --control` sends a failing spec's `attack.control`
+  (the same ask without the attack) once. If the target does the forbidden thing unattacked too,
+  the fail is kept and never confirmed: it needs review, since the technique did not cause it
+  (Scenario P in [`examples/`](examples/)).
 
 ## Quickstart
 

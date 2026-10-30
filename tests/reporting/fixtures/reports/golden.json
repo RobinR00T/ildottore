@@ -38,6 +38,7 @@
         }
       ],
       "confirmed": true,
+      "control": null,
       "evidence": [
         {
           "attempt_id": "a1",
@@ -97,6 +98,7 @@
         }
       ],
       "confirmed": false,
+      "control": null,
       "evidence": [
         {
           "attempt_id": "a1",
@@ -159,6 +161,7 @@
           }
         ],
         "confirmed": true,
+        "control": null,
         "evidence": [
           {
             "attempt_id": "a1",
@@ -218,6 +221,7 @@
           }
         ],
         "confirmed": false,
+        "control": null,
         "evidence": [
           {
             "attempt_id": "a1",

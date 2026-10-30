@@ -275,6 +275,8 @@ class RunOptions:
     #: ``--fp-ledger``: the labels ledger ``calibrate --record`` appends to; a spec whose recent
     #: labelled fails were mostly false positives is held for review (u08 A-105).
     fp_ledger: Path | None = None
+    #: ``--control``: a failing spec that declares ``attack.control`` sends it once (u08 A-106).
+    control: bool = False
     compare: bool = False
     outputs: dict[str, Path] = field(default_factory=dict)  # fmt -> path
     output_all_prefix: Path | None = None
@@ -467,6 +469,9 @@ class PlanEstimate:
     #: `--estimate --judge` used to print the same figure as without a judge (audit D-28).
     judge_requests: int = 0
     judge_tokens: int = 0
+    #: The controls ``--control`` may send (u08 A-106): one per spec that declares one and sends
+    #: it as one turn, priced as if every such spec failed. Included in ``requests``.
+    control_requests: int = 0
 
     @property
     def total_tokens(self) -> int:
@@ -542,6 +547,7 @@ def estimate_plan(
     fixtures_hold_scene: bool = False,
     identities: int = 0,
     sampling_defaults: Sampling | None = None,
+    control: bool = False,
 ) -> PlanEstimate:
     """Estimate the wire cost of a plan without sending: requests + rough token volume.
 
@@ -555,6 +561,8 @@ def estimate_plan(
     ``identities`` is how many scope identities a live run sends the attack as, once each, for
     every spec that :func:`~ildottore.core.runner.sweeps_identities` (fewer than two sends
     nothing, as the runner's sweep does); those sends were never priced.
+    ``control`` (``--control``, u08 A-106) adds one send per spec whose control the runner would
+    send, as if every such spec failed: the ceilings derived from this must not stop it.
     ``mutators_by_spec`` (from a resolved :class:`~ildottore.shared.models.TestPlan`) is
     authoritative when given; absent it, :func:`_effective_mutators` reproduces what the
     planner would choose. Tokens
@@ -569,6 +577,7 @@ def estimate_plan(
     total_out = 0
     judge_requests = 0
     judge_tokens = 0
+    control_requests = 0
     by_category: dict[str, int] = {}
     for spec in specs:
         if (
@@ -602,6 +611,9 @@ def estimate_plan(
         requests = len(mutators) * runs * n_turns * sends_per_turn
         if identities >= 2 and target is not None and sweeps_identities(spec, target):
             requests += identities  # one plain send per identity: no scene, no rounds
+        if control and sends_control(spec, target):
+            requests += 1  # one plain turn, should the spec fail
+            control_requests += 1
         in_tokens = max(1, len(prompt) // 4)
         # The cap the send goes out with, the one the ledger reserves (`reserve_tokens`).
         out_tokens = spec_sampling(spec, sampling_defaults).max_tokens or DEFAULT_COMPLETION_TOKENS
@@ -624,7 +636,20 @@ def estimate_plan(
         by_category=by_category,
         judge_requests=judge_requests,
         judge_tokens=judge_tokens,
+        control_requests=control_requests,
     )
+
+
+def sends_control(spec: AttackSpec, target: Target | None) -> bool:
+    """Whether a failing ``spec`` sends its control to ``target`` (u08 A-106).
+
+    The runner's rule: a declared control, an attack that is not a conversation, and a setup
+    that does not go out in band (a tool round is a conversation too).
+    """
+
+    if spec.attack.control is None or (spec.attack.turns and len(spec.attack.turns) >= 2):
+        return False
+    return target is None or not delivers_in_band(spec, target)
 
 
 #: Headroom over the estimate for the derived ceilings. The estimate is a gloss (prompt
@@ -735,6 +760,7 @@ def resolve_target_plans(
     budget_overrides: PlanBudgets | None = None,
     judge: bool = False,
     apply_sampling_defaults: bool = True,
+    control: bool = False,
 ) -> list[TargetPlan]:
     """Resolve, per target, exactly what the run would do - without sending anything.
 
@@ -816,6 +842,7 @@ def resolve_target_plans(
             fixtures_hold_scene=fixtures_hold_scene,
             identities=identities,
             sampling_defaults=sampling_defaults,
+            control=control,
         )
         notes = sampling_notes(
             target,
@@ -1167,6 +1194,7 @@ def _print_estimate(
     tokens_in = sum(p.estimate.input_tokens for p in plans)
     tokens_out = sum(p.estimate.output_tokens for p in plans)
     specs = sum(p.estimate.specs for p in plans)
+    controls = sum(p.estimate.control_requests for p in plans)
     if quiet:
         # One machine-friendly line, as `--dry-run -q` prints: a command whose only output is
         # its exit code cannot answer the question it exists for (it printed nothing).
@@ -1178,6 +1206,7 @@ def _print_estimate(
             f"target(s) at runs={runs}, ~{tokens_in + tokens_out + judge_tokens} tokens"
             + (f", +{judge_requests} judge request(s)" if judge_requests else "")
             + (f", +{probes} probe(s)" if probes else "")
+            + (f", {controls} of them control(s)" if controls else "")
             + (f", {already_done} request(s) already done" if already_done else "")
             + (f", {judge_already_done} judge request(s) kept" if judge_already_done else "")
         )
@@ -1200,6 +1229,12 @@ def _print_estimate(
                 f"  minus {judge_already_done} judge request(s) for the attempts the resumed "
                 f"run keeps (~{max(0, judge_requests - judge_already_done)} still to send)"
             )
+    if controls:
+        # Priced as if every spec with a control failed (u08 A-106): only a fail sends one.
+        print(
+            f"  of which up to {controls} control(s) (--control: one per failing spec that "
+            "declares attack.control)"
+        )
     print(
         f"  ~tokens: {tokens_in} in + {tokens_out} out "
         f"(~{tokens_in + tokens_out} total, rough gloss)"
@@ -1385,6 +1420,13 @@ def _print_dry_run_plan(
     if obfuscation is not None:
         print(f"  obfuscation: {obfuscation}")
     print(f"  would send: {requests} requests over {specs} specs at runs={runs}")
+    controls = sum(p.estimate.control_requests for p in plans)
+    if controls:
+        # Counted in the figure above as if every spec with a control failed (u08 A-106).
+        print(
+            f"  control: up to {controls} of them, one per failing spec that declares "
+            "attack.control (--control)"
+        )
     judge_requests = sum(p.estimate.judge_requests for p in plans)
     if judge_requests:
         print(
@@ -2419,6 +2461,8 @@ def _execute_run(
     # Whether the target files' `sampling_defaults` go out (OD-39, u12 A-66): always for a fresh
     # run; a resume continues as its run started (read in the resume block below).
     apply_sampling_defaults = True
+    # `--control` (u08 A-106); a resume keeps what its run started with (the block below).
+    control = opts.control
 
     def provisional_plans() -> list[TargetPlan]:
         # No fingerprint: it needs the probe pass, which SENDS (see the resume block below).
@@ -2437,6 +2481,7 @@ def _execute_run(
             ),
             judge=judge_target is not None,
             apply_sampling_defaults=apply_sampling_defaults,
+            control=control,
         )
 
     #: Whether a refusal of the -sV probe pass may not offer dropping -sV: a resume of a
@@ -2475,6 +2520,12 @@ def _execute_run(
             hardened=opts.hardened,
         )
         adaptive_campaign = resume_mod.stored_adaptive(run_db, opts.resume) is True
+        if opts.control:
+            raise ValueError(
+                "--control cannot be given with --resume: a resume sends controls as its run "
+                "started, which its run store records"
+            )
+        control = resume_mod.stored_control(run_db, opts.resume)
         # A run started before the block was applied (2026-10-09) recorded nothing and sent none
         # of it, so its resume sends none either: two halves on two samplings would be scored as
         # one campaign. stderr and never suppressed, as the --runs notice below (u12 A-66).
@@ -2710,6 +2761,7 @@ def _execute_run(
             fingerprints={},
             adaptive=adaptive,
             apply_sampling_defaults=apply_sampling_defaults,
+            control=control,
         )
         no_judge = _no_judge_warning(preview, routes, judge_target)
     if no_judge:
@@ -2893,6 +2945,7 @@ def _execute_run(
         ),
         judge=judge_target is not None,
         apply_sampling_defaults=apply_sampling_defaults,
+        control=control,
     )
 
     # A target with nothing left to run is refused, for the same reason an empty --spec
@@ -3023,6 +3076,7 @@ def _execute_run(
             resumed=opts.resume is not None,
             selection=selection,
             review_holds=review_holds,
+            control=control,
         )
         _record_scope(run_db, run_ids[target.id], scope_sha256, resumed=opts.resume is not None)
         _record_order(
@@ -3060,6 +3114,7 @@ def _execute_run(
             started_at=starts.get(target.id),
             apply_sampling_defaults=apply_sampling_defaults,
             review_holds=review_holds,
+            control=control,
         )
         results.append(result)
         _persist_run_spend(run_db, result)
@@ -3439,6 +3494,7 @@ def _run_one_target(
     started_at: str | None = None,
     apply_sampling_defaults: bool = True,
     review_holds: dict[str, ReviewHold] | None = None,
+    control: bool = False,
 ) -> CampaignResult:
     """Assemble a runner for one target and drive one campaign to completion.
 
@@ -3475,6 +3531,7 @@ def _run_one_target(
         spend_sink=lambda spend: _record_spend_quietly(run_db, campaign_run_id, spend),
         apply_sampling_defaults=apply_sampling_defaults,
         review_holds=review_holds,
+        control=control,
     )
     try:
         return interrupts.run_until_stopped(
@@ -3759,6 +3816,7 @@ def _persist_run_integrity(
     resumed: bool = False,
     selection: dict[str, object] | None = None,
     review_holds: dict[str, ReviewHold] | None = None,
+    control: bool = False,
 ) -> None:
     """Record WHAT this campaign is about to run, before it sends anything.
 
@@ -3838,6 +3896,8 @@ def _persist_run_integrity(
                     spec_id: [hold.false_alarms, hold.labelled]
                     for spec_id, hold in (review_holds or {}).items()
                 },
+                # Whether a failing spec sends its control (u08 A-106): a resume does the same.
+                "control": control,
             },
         )
 

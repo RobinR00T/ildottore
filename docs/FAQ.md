@@ -294,6 +294,16 @@ the window. To stop holding at once, run without `--fp-ledger` or start a new le
 no expiry by date (OD-61, decided as built): a hold that lapsed would gate again on the same
 false alarm nobody re-examined.
 
+### A jailbreak spec fails, but would the model have answered anyway?
+
+Run with `--control`. A failing spec that declares `attack.control` (the same ask without the
+jailbreak) sends it once. If the model does the forbidden thing unattacked too, the finding's
+`control` reads `not_attributed` and the fail is kept but never confirmed: it is a real problem of
+the model, not of the technique, and it needs review. If the control passes, `attributed`: the
+fail follows the attack. A control the judge alone failed reads `inconclusive` and moves nothing.
+Six battery specs declare a control; add one to your own spec with `attack.control`. See the
+manual's "Attributing a fail to its attack" and Scenario P in `examples/README.md`.
+
 ### I labelled a fail `inconclusive`. Does that count as a false alarm?
 
 Yes. `inconclusive` means you could not confirm the exploit from the evidence, and a fail you

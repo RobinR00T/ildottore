@@ -1299,6 +1299,15 @@ def run(
             "reported as needing review. A resume keeps the holds its run started with.",
         ),
     ] = None,
+    control: Annotated[
+        bool,
+        typer.Option(
+            "--control",
+            help="Send a failing spec's control once: the same ask without the attack "
+            "(attack.control). A target that fails it too does this unattacked, and the fail "
+            "is reported as needing review. A resume keeps what its run started with.",
+        ),
+    ] = False,
     compare: Annotated[bool, typer.Option("--compare", help="Model-comparison matrix.")] = False,
     hardened: Annotated[
         bool, typer.Option("--hardened", help="Replay hardened fixtures (clean-run smoke).")
@@ -1419,6 +1428,7 @@ def run(
         fail_on=fail_on,
         include_needs_review=include_needs_review,
         fp_ledger=fp_ledger,
+        control=control,
         compare=compare,
         outputs=outputs,
         output_all_prefix=o_all,

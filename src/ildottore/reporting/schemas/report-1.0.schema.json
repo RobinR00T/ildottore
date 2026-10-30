@@ -787,6 +787,44 @@
             "string",
             "null"
           ]
+        },
+        "control": {
+          "description": "What a failing spec's control showed (run --control): the same ask sent once without the attack. Absent or null when no control was asked for.",
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": true,
+          "required": [
+            "outcome"
+          ],
+          "properties": {
+            "outcome": {
+              "type": "string",
+              "enum": [
+                "attributed",
+                "not_attributed",
+                "inconclusive",
+                "not_evaluable"
+              ]
+            },
+            "attempt": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/attempt"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "reason": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
         }
       }
     }

@@ -689,6 +689,8 @@ def mock_adapter_factory(target: Target, spec: AttackSpec) -> TargetAdapter:
     scenario = MockScenario.from_fixture(
         spec.fixtures.vulnerable,
         capabilities=target.capabilities,
+        # A target the attack exploits answers the same ask without it securely (u08 A-106).
+        control=spec.fixtures.hardened,
     )
     return MockTarget(scenario, id=target.id)
 
@@ -2848,6 +2850,7 @@ def build_runner(
     spend_sink: Callable[[Spend], None] | None = None,
     apply_sampling_defaults: bool = True,
     review_holds: Mapping[str, ReviewHold] | None = None,
+    control: bool = False,
 ) -> BuiltRunner:
     """Assemble the whole middle tier into a :class:`CampaignRunner` (contract §5.2).
 
@@ -2965,6 +2968,7 @@ def build_runner(
             else None
         ),
         review_holds=review_holds,
+        control=control,
     )
     return BuiltRunner(
         runner=runner,

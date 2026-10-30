@@ -146,8 +146,11 @@ def _the_request(spec: AttackSpec) -> str:
     tail = (
         _as_text(last_turn.get("content")) if isinstance(last_turn, dict) else _as_text(last_turn)
     )
+    # The control (u08 A-106) is a request too: a refusal that quotes it must not fail it.
     return "\n".join(
-        part for part in (spec.attack.user_prompt or "", tail, _media_text(spec)) if part
+        part
+        for part in (spec.attack.user_prompt or "", tail, _media_text(spec), spec.attack.control)
+        if part
     )
 
 
@@ -172,7 +175,12 @@ def _media_text(spec: AttackSpec) -> str:
 def _everything_the_target_reads(spec: AttackSpec) -> str:
     """Every string the target sees: the request, the carrier, the turns, setup, documents."""
 
-    parts: list[str] = [spec.attack.user_prompt or "", spec.attack.carrier or "", _media_text(spec)]
+    parts: list[str] = [
+        spec.attack.user_prompt or "",
+        spec.attack.carrier or "",
+        _media_text(spec),
+        spec.attack.control or "",
+    ]
     for turn in spec.attack.turns or []:
         parts.append(_as_text(turn.get("content")) if isinstance(turn, dict) else _as_text(turn))
     setup = spec.setup
@@ -501,6 +509,36 @@ def _check_attack(spec: AttackSpec) -> list[LintError]:
                     )
                 )
     return errors
+
+
+def _check_control(spec: AttackSpec) -> list[LintError]:
+    """A control (u08 A-106) is one plain turn that differs from the attack.
+
+    The runner sends it as one turn, so a conversation's control would not be the conversation
+    without its attack; and a control equal to the request it stands beside would send the attack
+    again and call it the control.
+    """
+
+    control = spec.attack.control
+    if control is None:
+        return []
+    problem = None
+    if spec.attack.turns:
+        problem = (
+            "attack.control is sent as one plain turn, and this spec's attack is a conversation "
+            "(attack.turns); drop the control"
+        )
+    elif control.strip() in {
+        (spec.attack.user_prompt or "").strip(),
+        (spec.attack.carrier or "").strip(),
+    }:
+        problem = (
+            "attack.control is the attack's own request, so it would send the attack again; "
+            "write the same ask without the technique"
+        )
+    if problem is None:
+        return []
+    return [LintError(code=LintCode.SCHEMA, message=problem, spec_id=spec.id)]
 
 
 def _check_frameworks(spec: AttackSpec) -> list[LintError]:
@@ -1128,6 +1166,7 @@ def lint_packs(
         findings.extend(_check_iopc(spec))
         findings.extend(_check_aisvs(spec))
         findings.extend(_check_attack(spec))
+        findings.extend(_check_control(spec))
         findings.extend(_check_frameworks(spec))
         # The stubs compile the same patterns: a spec whose pattern does not compile is not
         # proved (its finding says so) instead of crashing the whole lint.
