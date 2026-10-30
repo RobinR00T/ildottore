@@ -7,6 +7,23 @@ the file, schema copy, build or pipeline it names.
 
 ## [Unreleased]
 
+### Added (u02 A-110, judging rules 7 re-pinned: a spec names its CWE, and each family says how to confirm a fail)
+
+- **`cwe:` on a spec**, optional: the MITRE CWE IDs of the weakness a fail of the spec shows in
+  the application. `shared.cwe` pins the name and MITRE's mapping usage of each entry from CWE
+  5.0 (2026-10-28); `dottore lint` refuses a `Discouraged` or `Prohibited` entry (CWE-1426,
+  CWE-1446, CWE-200, ...) and warns on one outside the table. Outside the spec digest.
+- 48 of the 79 battery specs declare one: CWE-1427 for prompt injection (16 specs), CWE-497,
+  CWE-201, CWE-862, CWE-89, CWE-79, CWE-78, CWE-94, CWE-915, CWE-918, CWE-770 and others; 31
+  name none on purpose (jailbreaks, content safety, autonomy, the MCP rug pull).
+- SARIF rules carry `external/cwe/cwe-NNN` tags; `framework_editions` (SARIF, JUnit) gains
+  `mitre_cwe: 5.0` (the golden snapshots gain that line); `dottore describe` prints a `cwe:` line
+  with MITRE's names; `new-spec` scaffolds the key.
+- Docs: ADR-0021, OD-66 (open), the manual ("Confirming a finding by hand, family by family",
+  the editions), `docs/03`, CONTRIBUTING, FAQ, README, `docs/12` and Scenario S in
+  `examples/README.md` with real output. Judging rules stay at version 7, re-pinned: the battery
+  files changed, no evaluator reads `cwe`.
+
 ### Added (u12 A-108 and u06 A-109, judging rules 7 re-pinned: the estimate in euros, and a judge that escalates)
 
 - **`pricing:` in a target file**: what the model costs the operator, in euros per million

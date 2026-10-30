@@ -21,7 +21,9 @@ mapping the code checks).
   ATLAS, agentic/OWASP-Agents-2026 abuse and the Nova IoPC taxonomy, plus the OWASP AISVS
   controls a failure is evidence against (`dottore coverage --framework aisvs`) and the MITRE
   ATT&CK Enterprise v20.0 techniques an agent is observed performing (`--framework attack`,
-  `--navigator-layer` for the ATT&CK Navigator, `-oN` on a run).
+  `--navigator-layer` for the ATT&CK Navigator, `-oN` on a run). 48 specs name the MITRE CWE
+  of the weakness a fail shows (CWE-1427 for prompt injection, CWE-89, CWE-862, ...), carried as
+  `external/cwe/cwe-NNN` SARIF tags (Scenario S in [`examples/`](examples/)).
   `dottore registry ls` lists them all.
 - **Fingerprint** a target's model + guardrails before attacking (`-sV`).
 - **Obfuscation and fuzzing** without editing a spec: `--obfuscate` wraps every attack in

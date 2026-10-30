@@ -5,6 +5,21 @@ The carryover ledger. Every agent session updates this so context survives even 
 newest merge on top: a branch's entries land together when it merges, so the dates of
 neighbouring entries can interleave (an older branch merged later sits above a newer one).
 
+## State, 2026-10-30: a spec names its CWE, and each family says how to confirm a fail (`feat/cwe-mapping`, u02 A-110)
+
+- **Why.** A finding carried six framework labels and no CWE, the one an application team's
+  tracker and GitHub code scanning group by; and nothing said what to read to confirm a fail by
+  hand.
+- **Built.** `AttackSpec.cwe`, `shared.cwe` (MITRE CWE 5.0 names and mapping usages, verified
+  against `cwec_v5.0.xml` on 2026-10-30), `_check_cwe` in the lint, SARIF tags, the editions,
+  `describe`, `new-spec`; 48 of 79 battery specs mapped; the manual's per-family table. Stacked
+  on `feat/judge-cost`. Judging rules 7 re-pinned. ADR-0021.
+- **Verified.** `tests/shared/test_cwe.py` (the table, the helpers, the tag's shape, the
+  battery's mapping spec by spec, the refusals, the warning, the schema, SARIF, the card, the
+  editions, the digest). Scenario S against the mock, output in `examples/README.md`.
+- **Open.** OD-66 (the jailbreaks under CWE-1427, CWE-862 or CWE-863 for tenant leaks, CWE-749
+  for destructive actions, a roll-up in the JSON report and the HTML): the owner's call.
+
 ## State, 2026-10-30: the estimate in euros, and a judge that escalates (`feat/judge-cost`, u12 A-108, u06 A-109)
 
 - **Why.** `--estimate` ended with "multiply by your provider's per-token rate", per model, by

@@ -15,6 +15,7 @@ mitre_attack:
     - id: T1700
       occurrence: observed
 nist_ai_rmf: "MEASURE 2.7 (security & resilience)"
+cwe: [CWE-1427]
 iopc:
   techniques: ["IOPC-T3.002"]
 # C10.4.2 (MCP clients screen tool responses) applies only where the tools are served over

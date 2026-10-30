@@ -273,6 +273,7 @@ def framework_editions() -> dict[str, str]:
 
     from ildottore.shared.aisvs import AISVS_VERSION
     from ildottore.shared.attack import ATTACK_VERSION
+    from ildottore.shared.cwe import CWE_VERSION
     from ildottore.shared.iopc import IOPC_TAXONOMY_VERSION
 
     return {
@@ -281,4 +282,5 @@ def framework_editions() -> dict[str, str]:
         "nova_iopc": IOPC_TAXONOMY_VERSION,
         "owasp_aisvs": AISVS_VERSION,
         "mitre_attack_enterprise": ATTACK_VERSION,
+        "mitre_cwe": CWE_VERSION,
     }

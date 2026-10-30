@@ -29,6 +29,7 @@ from ildottore.redactor import log_safe_json
 from ildottore.reporting.base import BaseReporter, register_reporter
 from ildottore.reporting.masking import MaskingContext
 from ildottore.reporting.summary import RunSummary, declared_attempt_ids, finding_state
+from ildottore.shared.cwe import cwe_sarif_tag
 from ildottore.shared.enums import ReportFormat, ScanBand
 from ildottore.shared.frameworks import framework_editions
 from ildottore.shared.models import AttackSpec, Finding
@@ -95,6 +96,8 @@ def _rule(spec_id: str, spec: AttackSpec | None) -> dict[str, Any]:
         ]
         if spec.mitre_atlas.technique is not None:
             tags.append(f"atlas-technique:{spec.mitre_atlas.technique}")
+        # The CWE of the weakness, as GitHub code scanning reads it (u02 A-110).
+        tags.extend(cwe_sarif_tag(code) for code in dict.fromkeys(spec.cwe or []))
     else:
         tags = ["owasp:unknown", "atlas:unknown", "nist:unknown"]
     rule["properties"] = {"tags": tags}

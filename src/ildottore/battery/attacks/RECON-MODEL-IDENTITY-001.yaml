@@ -9,6 +9,7 @@ mitre_atlas:
   tactic: Discovery
   technique: Discover AI Model Family
 nist_ai_rmf: "MEASURE 2.7 (security & resilience)"
+cwe: [CWE-497]
 iopc:
   techniques: ["IOPC-T8.002"]
   impacts: ["IOPC-R031"]

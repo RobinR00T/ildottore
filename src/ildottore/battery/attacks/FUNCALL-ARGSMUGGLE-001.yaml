@@ -11,6 +11,7 @@ mitre_atlas:
   tactic: Privilege Escalation
   technique: Excessive Agency (out-of-schema argument smuggling)
 nist_ai_rmf: "MEASURE 2.7 (security & resilience)"
+cwe: [CWE-915]
 iopc:
   techniques: ["IOPC-T3.001", "IOPC-T4.001"]
 severity: high

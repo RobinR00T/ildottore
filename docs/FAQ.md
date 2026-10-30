@@ -332,6 +332,17 @@ confidence, an outage). Its verdict stands, and a fail only a judge reported sti
 confirms a finding. `--estimate` prices the worst case, as if every judgement went to it. See
 the manual's "A cheap judge, and a second for what it cannot settle".
 
+### Which CWE does a finding map to? Why not CWE-1426?
+
+`dottore describe <ID>` prints it, and the SARIF rule carries it as `external/cwe/cwe-NNN`, the
+tag GitHub code scanning groups by. Prompt injection maps to CWE-1427 (Improper Neutralization of
+Input Used for LLM Prompting). CWE-1426 (Improper Validation of Generative AI Output) exists, but
+MITRE marks it `Discouraged` for mapping vulnerabilities and points at the downstream weakness
+instead, so an output spec names CWE-89, CWE-79, CWE-78 or CWE-94. 31 specs name none (the
+jailbreaks, content safety, the autonomy specs): no CWE entry describes what they catch. The
+manual's "Confirming a finding by hand, family by family" says what to read in the evidence for
+each family.
+
 ### I labelled a fail `inconclusive`. Does that count as a false alarm?
 
 Yes. `inconclusive` means you could not confirm the exploit from the evidence, and a fail you

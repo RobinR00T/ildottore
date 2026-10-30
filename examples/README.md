@@ -1924,3 +1924,72 @@ two ways.
 ```bash
 rm -f reports/agent.priced.yaml
 ```
+
+## Scenario S, the CWE a finding maps to
+
+48 of the 79 battery specs name the MITRE CWE of the weakness a fail shows in the application
+(u02 A-110, ADR-0021). The label decides nothing; it reaches the tracker and GitHub code scanning.
+
+### Step 1, read it on the card
+
+```bash
+dottore describe OUT-SQLI-001
+```
+
+```
+id:          OUT-SQLI-001
+name:        Unsafe SQL generation (SQL injection)
+category:    output_security
+owasp:       LLM05
+mitre_atlas: Impact / Insecure Output Handling
+nist_ai_rmf: MEASURE 2.7 (secure software output)
+cwe:         CWE-89 (Improper Neutralization of Special Elements used in an SQL Command)
+severity:    high
+...
+```
+
+A spec that names none (the jailbreaks, content safety) prints no `cwe:` line.
+
+### Step 2, carry it into SARIF
+
+```bash
+dottore run -t examples/target.mock.yaml --scope examples/scope.mock.yaml \
+  --spec PI-DIRECT-001 --spec OUT-SQLI-001 --spec JB-ROLEPLAY-001 --runs 1 -q -oS reports/cwe.sarif
+```
+
+The mock fails all three (exit 2). Each rule's CWE tags, and the editions the run declares:
+
+```
+JB-ROLEPLAY-001 []
+OUT-SQLI-001 ['external/cwe/cwe-089']
+PI-DIRECT-001 ['external/cwe/cwe-1427']
+{'mitre_atlas': '2026.09', 'mitre_attack_enterprise': '20.0', 'mitre_cwe': '5.0', 'nova_iopc': 'live-2026-09-19', 'owasp_aisvs': '1.0', 'owasp_llm_top10': '2025'}
+```
+
+The tag is CodeQL's shape (`cwe-089`, three digits at least), which GitHub code scanning groups
+alerts by.
+
+### Step 3, the lint refuses what MITRE says not to map
+
+A copy of `OUT-SQLI-001` in a loose directory, its `cwe:` changed to `[CWE-1426, CWE-123]`:
+
+```bash
+dottore lint reports/cwe-pack
+```
+
+```
+[ERROR] FRAMEWORK_CLAIM_CONTRADICTED (OUT-SQLI-001): cwe 'CWE-1426' is Discouraged for vulnerability mapping in MITRE CWE 5.0: name the weakness it points at instead (see shared/cwe.py)
+[WARN] UNKNOWN_FRAMEWORK_CODE (OUT-SQLI-001): cwe 'CWE-123' is not in the pinned MITRE CWE 5.0 table, so its mapping usage is not checked: confirm it is Allowed on cwe.mitre.org
+lint FAILED: 1 error(s), 1 warning(s) across 1 spec(s), 0 suite(s), 1 pack(s)
+```
+
+Exit 1: CWE-1426 is `Discouraged`, so an output finding names the downstream weakness
+(CWE-89 here). An entry outside the pinned table is only a warning, so a third-party pack still
+lints. Before raising any of these fails, the manual's "Confirming a finding by hand, family by
+family" says what to read in the evidence.
+
+### Clean up
+
+```bash
+rm -rf reports/cwe.sarif reports/cwe-pack
+```

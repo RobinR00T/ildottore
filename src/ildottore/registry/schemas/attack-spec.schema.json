@@ -147,6 +147,14 @@
         "pattern": "^v1\\.0-C[1-9][0-9]?\\.[1-9][0-9]?\\.[1-9][0-9]?\\Z"
       }
     },
+    "cwe": {
+      "type": "array",
+      "description": "MITRE CWE IDs (CWE-<n>) of the weakness a FAIL of this spec is evidence of in the application under test. A label for trackers and SARIF (external/cwe/cwe-NNN rule tags), never a verdict. Only entries MITRE allows for vulnerability mapping: the lint refuses a Discouraged or Prohibited one (CWE-1426, CWE-200, ...). Optional, so third-party spec packs keep validating.",
+      "items": {
+        "type": "string",
+        "pattern": "^CWE-[1-9][0-9]{0,4}\\Z"
+      }
+    },
     "severity": {
       "type": "string",
       "enum": [

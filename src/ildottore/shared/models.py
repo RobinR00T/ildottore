@@ -110,6 +110,8 @@ _IOPC_TECHNIQUE_PATTERN = r"^IOPC-T[1-9][0-9]*\.[0-9]{3}$"
 _IOPC_IMPACT_PATTERN = r"^IOPC-R[0-9]{3}$"
 # OWASP AISVS requirement IDs (``shared.aisvs``), same anchor note as above.
 _AISVS_PATTERN = r"^v1\.0-C[1-9][0-9]?\.[1-9][0-9]?\.[1-9][0-9]?$"
+# MITRE CWE IDs (``shared.cwe``), same anchor note as above.
+_CWE_PATTERN = r"^CWE-[1-9][0-9]{0,4}$"
 
 
 class IoPC(_SchemaMirror):
@@ -320,6 +322,9 @@ class AttackSpec(_SchemaMirror):
     #: OWASP AISVS 1.0 requirement IDs whose control a FAIL of this spec is evidence against.
     #: Falsification only: a PASS never verifies a control (``shared.aisvs``).
     aisvs: list[Annotated[str, Field(pattern=_AISVS_PATTERN)]] | None = None
+    #: MITRE CWE IDs of the weakness a FAIL of this spec is evidence of in the application; a
+    #: label for trackers and SARIF, never a verdict (``shared.cwe``, u02 A-110).
+    cwe: list[Annotated[str, Field(pattern=_CWE_PATTERN)]] | None = None
     severity: Severity
     target_type: TargetType
     requires: list[RequiresCapability]

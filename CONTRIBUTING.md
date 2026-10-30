@@ -57,6 +57,16 @@ topic. A passing spec never verifies a control, and nothing you write should say
 `src/ildottore/shared/aisvs.py` classifies as out of reach or untested; if you believe the
 classification is wrong, change it there, with the argument, and the pinned test with it.
 
+## Mapping a spec to MITRE CWE
+
+The optional `cwe:` list names the weakness a **failure** of the spec shows in the application,
+as an application team's tracker would file it: `cwe: [CWE-89]` for a reply that builds SQL from
+input, `CWE-1427` for prompt injection. Use only entries MITRE allows for vulnerability mapping:
+`dottore lint` refuses one MITRE marks `Discouraged` or `Prohibited` (CWE-1426, CWE-200, the
+AI/ML grouping CWE-1446) and warns on one `src/ildottore/shared/cwe.py` does not list, whose
+usage you then check on cwe.mitre.org. Leave the field out when no entry names the weakness (a
+jailbreak, a content-safety refusal): an invented CWE is worse than none.
+
 ## Mapping a spec to MITRE ATT&CK Enterprise
 
 ATT&CK names what an adversary does on an estate, so the optional `mitre_attack:` block lists
