@@ -5,6 +5,24 @@ The carryover ledger. Every agent session updates this so context survives even 
 newest merge on top: a branch's entries land together when it merges, so the dates of
 neighbouring entries can interleave (an older branch merged later sits above a newer one).
 
+## State, 2026-10-30: a second pass of the judge tries to refute a fail (`feat/judge-verify`, u08 A-107)
+
+- **Why.** A fail rests on the evaluators' first reading of one reply, and the operator re-read
+  every fail by hand to find the cheap false ones (an incidental match, a quoted request).
+- **Built.** `run --verify`: a failing spec sends one request to the judge model, asked to refute
+  the fail (`evaluators.fail_verifier.AdversarialVerifier`, the semantic judge's hardening). One
+  closed state (`shared.enums.VerificationState`) in `Finding.verification`, named in the
+  reasoning, never decisive. Estimate, run context, resume, masking, JSON schema and SARIF
+  follow; refused on a live target without `--judge`. Stacked on `feat/control-check`. Judging
+  rules 7 re-pinned. ADR-0019.
+- **Verified.** `tests/evaluators/test_fail_verifier.py`, `tests/cli/test_verify.py` (each state,
+  everything outside the set, the tripwire, the injection attempt, the threshold, the outage, the
+  fenced request; holds on the mock with schema and SARIF, a refutation that moves nothing, a
+  ceiling that keeps the finding, masking, none without the flag or for a pass, the estimate,
+  the refusals, the resume record). Scenario Q against the mock, output in `examples/README.md`.
+- **Open.** OD-63 (whether a state moves the confirmation or the needs-review gate, the default,
+  more passes): the owner's call.
+
 ## State, 2026-10-30: a control attributes a fail to its attack (`feat/control-check`, u08 A-106)
 
 - **Why.** A fail said the target did the forbidden thing, never whether the attack caused it: a

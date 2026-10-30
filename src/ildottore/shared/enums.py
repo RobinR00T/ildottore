@@ -275,3 +275,19 @@ class ControlOutcome(StrEnum):
     NOT_ATTRIBUTED = "not_attributed"
     INCONCLUSIVE = "inconclusive"
     NOT_EVALUABLE = "not_evaluable"
+
+
+class VerificationState(StrEnum):
+    """The closed state a second, adversarial pass gives a failing finding (u08 A-107, ADR-0019).
+
+    The judge model is asked to refute the fail. ``holds``: the exploit survived the attempt.
+    ``does_not_hold``: the pass refuted it (the reply refuses, quotes the request, is harmless).
+    ``inconclusive``: the evidence does not settle it, or the pass gave no usable answer (an
+    outage, free text, a state outside this set, a sign of injection, low confidence). The state
+    is reported beside the finding and moves nothing: the judge is the one evaluator a target can
+    prompt-inject, so it never confirms a finding and never unconfirms one (OD-63).
+    """
+
+    HOLDS = "holds"
+    DOES_NOT_HOLD = "does_not_hold"
+    INCONCLUSIVE = "inconclusive"

@@ -102,6 +102,8 @@ OUTPUT
                                            mostly false positives (calibrate --record; u08 A-105)
   --control                                a failing spec sends its attack.control once:
                                            attributed or not (u08 A-106)
+  --verify                                 the judge model tries to refute each fail once:
+                                           holds or not, reported only (u08 A-107)
   --compare                                model-comparison matrix (two or more targets)
   -v, -vv, -q, --no-color                  (-v also prints an internal error's traceback)
   --evidence-root <dir>  --run-db <path>  --spec-path <dir>

@@ -151,6 +151,12 @@ The judge implementation **must**:
    that pins seed 0 is defined and unused). The judge's requests are not stored in evidence
    (§5).
 
+`run --verify` (u08 A-107, ADR-0019) asks the same judge model, once per failing spec, to refute
+the fail, with items 1, 2, 3, 5 and 6 (one pass, temperature 0). Its closed state (`holds`,
+`does_not_hold`, `inconclusive`; anything else, an `observed_injection_attempt` against `holds`
+or a confidence under the spec's threshold is `inconclusive`) is reported in
+`Finding.verification` and decides nothing (OD-63).
+
 ## 5. Evidence per verdict
 
 **Design, not yet stored.** Every verdict should persist: evaluator type + config, inputs seen

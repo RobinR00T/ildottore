@@ -109,6 +109,7 @@ from ildottore.shared.enums import (
     EvaluatorType,
     InconclusiveReason,
     VerdictStatus,
+    VerificationState,
 )
 from ildottore.shared.error_text import error_text
 from ildottore.shared.media import MediaError, media_digests
@@ -132,6 +133,7 @@ from ildottore.shared.models import (
     TestRun,
     TestRunSummary,
     Verdict,
+    Verification,
 )
 from ildottore.shared.mutation_chain import (
     CHAIN_SEPARATOR,
@@ -143,6 +145,7 @@ from ildottore.shared.mutation_chain import (
 from ildottore.shared.protocols import (
     Evaluator,
     EvidenceStore,
+    FailVerifier,
     Mutator,
     RiskScorer,
     RunStore,
@@ -569,6 +572,7 @@ class CampaignRunner:
         sampling_asked: Sampling | None = None,
         review_holds: Mapping[str, ReviewHold] | None = None,
         control: bool = False,
+        verifier: FailVerifier | None = None,
     ) -> None:
         self._policy = policy
         self._mutators = mutators
@@ -643,6 +647,9 @@ class CampaignRunner:
         # ``run --control`` (u08 A-106, OD-62): a failing spec that declares ``attack.control``
         # sends it once; a control that fails too keeps the fail from being confirmed.
         self._control = control
+        # ``run --verify`` (u08 A-107, OD-63): the judge model tries to refute each failing
+        # finding once; its closed state is reported beside the finding and moves nothing.
+        self._verifier = verifier
 
     async def run(
         self,
@@ -890,7 +897,7 @@ class CampaignRunner:
                 if abort.is_set():
                     return None
                 try:
-                    return await self._run_spec(
+                    finding = await self._run_spec(
                         run_id=run_id,
                         target=target,
                         spec=spec,
@@ -902,6 +909,7 @@ class CampaignRunner:
                         abort=abort,
                         watch=watch,
                     )
+                    return await self._verified(spec, finding)
                 except BudgetExhausted:
                     raise
                 except Exception:
@@ -949,6 +957,34 @@ class CampaignRunner:
         if breach is not None:
             return findings, breach, "budget_exhausted"
         return findings, None, None
+
+    async def _verified(self, spec: AttackSpec, finding: Finding | None) -> Finding | None:
+        """``finding`` with the second, adversarial pass's state when it failed (u08 A-107).
+
+        One request to the judge model, metered on the campaign's ceilings: a ceiling that
+        refuses it leaves the state ``inconclusive`` and the finding as it was, never lost. A
+        finding a halted run reports from its prior attempts is not reviewed.
+        """
+
+        if self._verifier is None or finding is None or finding.status is not VerdictStatus.FAIL:
+            return finding
+        attempt = _attempt_to_verify(finding.attempts)
+        if attempt is None:
+            return finding
+        try:
+            verification = await self._verifier.verify(spec, attempt)
+        except BudgetExhausted as exc:
+            verification = Verification(
+                state=VerificationState.INCONCLUSIVE,
+                attempt_id=attempt.attempt_id,
+                reasoning=f"{_NOT_CONSULTED}{exc}",
+            )
+        return finding.model_copy(
+            update={
+                "verification": verification,
+                "reasoning": (finding.reasoning or "") + _verification_note(verification),
+            }
+        )
 
     def _record_probe(self, run_id: str, attempt: Attempt) -> None:
         """File the watch's benign check with the recognition probes, where the store has them.
@@ -3108,6 +3144,42 @@ def _finding_status(attempts: list[Attempt]) -> VerdictStatus:
         sweeps=[
             a.verdict for a in attempts if a.verdict is not None and a.mutation == IDENTITY_SWEEP
         ],
+    )
+
+
+def _attempt_to_verify(attempts: Sequence[Attempt]) -> Attempt | None:
+    """The failing attempt the second pass reads (u08 A-107).
+
+    A fail an evaluator other than the judge reported first, since that is the one a fail is
+    confirmed on; else the first fail with a reply. An identity sweep's trial only when nothing
+    else failed.
+    """
+
+    failed = [
+        a
+        for a in attempts
+        if a.verdict is not None and a.verdict.status is VerdictStatus.FAIL and a.response
+    ]
+    failed.sort(
+        key=lambda a: (
+            a.mutation == IDENTITY_SWEEP,
+            a.verdict is not None and never_confirms(a.verdict),
+        )
+    )
+    return failed[0] if failed else None
+
+
+def _verification_note(verification: Verification) -> str:
+    """What the second pass said, for the finding's reasoning (u08 A-107)."""
+
+    said = {
+        VerificationState.HOLDS: "the fail holds",
+        VerificationState.DOES_NOT_HOLD: "the fail does not hold",
+        VerificationState.INCONCLUSIVE: "it could not settle the fail",
+    }[verification.state]
+    return (
+        f"; a second, adversarial pass of the judge read {verification.attempt_id}: {said} "
+        "(reported, never decisive)"
     )
 
 

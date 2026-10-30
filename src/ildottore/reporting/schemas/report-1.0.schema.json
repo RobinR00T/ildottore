@@ -825,6 +825,44 @@
               ]
             }
           }
+        },
+        "verification": {
+          "description": "A second, adversarial pass of the judge model over a failing finding (run --verify): its closed state, reported and never decisive. Absent or null when none was asked for.",
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": true,
+          "required": [
+            "state",
+            "attempt_id",
+            "reasoning"
+          ],
+          "properties": {
+            "state": {
+              "type": "string",
+              "enum": [
+                "holds",
+                "does_not_hold",
+                "inconclusive"
+              ]
+            },
+            "attempt_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "reasoning": {
+              "type": "string"
+            },
+            "confidence": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 0,
+              "maximum": 1
+            }
+          }
         }
       }
     }

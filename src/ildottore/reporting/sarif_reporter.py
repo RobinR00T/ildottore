@@ -171,6 +171,9 @@ def _result(finding: Finding, rule_index: int, *, include_needs_review: bool) ->
     if finding.control is not None and finding.control.outcome.value == "not_attributed":
         # u08 A-106: the same ask without the attack failed too.
         message += "; its control failed too: the target does this unattacked, review it"
+    if finding.verification is not None and finding.verification.state.value == "does_not_hold":
+        # u08 A-107: the judge's second pass refuted it; reported, never decisive.
+        message += "; a second, adversarial pass of the judge says it does not hold: review it"
     # Replies the adapter could not read (OD-21, u08 A-74): never the model resisting either.
     unreadable = len(unreadable_attempt_ids(finding.attempts))
     if unreadable:
@@ -224,6 +227,8 @@ def _result(finding: Finding, rule_index: int, *, include_needs_review: bool) ->
             **({"evidence_withheld": withheld} if withheld else {}),
             # What a failing spec's control showed (u08 A-106), when `run --control` sent one.
             **({"control": finding.control.outcome.value} if finding.control else {}),
+            # The judge's second pass over a failing finding (u08 A-107), when `--verify` ran it.
+            **({"verification": finding.verification.state.value} if finding.verification else {}),
         },
     }
     return result

@@ -304,6 +304,16 @@ fail follows the attack. A control the judge alone failed reads `inconclusive` a
 Six battery specs declare a control; add one to your own spec with `attack.control`. See the
 manual's "Attributing a fail to its attack" and Scenario P in `examples/README.md`.
 
+### Can the scanner double-check its own fails before I read them?
+
+Run with `--verify` (and `--judge` on a live target). Each failing spec sends one more request
+to the judge model, which is told to refute the fail: a refusal, a quote of the request, a
+harmless or incidental match. The finding's `verification` reads `holds`, `does_not_hold` or
+`inconclusive`, and SARIF asks you to review a `does_not_hold`. It is a reading order, not a
+verdict: nothing it says changes a status, `confirmed` or the exit code, because the judge is the
+one evaluator a target can prompt-inject, and a confirmed finding rests on a deterministic fail.
+See the manual's "A second reader for each fail" and Scenario Q in `examples/README.md`.
+
 ### I labelled a fail `inconclusive`. Does that count as a false alarm?
 
 Yes. `inconclusive` means you could not confirm the exploit from the evidence, and a fail you

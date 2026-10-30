@@ -1461,6 +1461,33 @@ spec placeholders refused in an identity canary) and
   the control's reply, none without the flag, `not_evaluable`, none for a pass, the estimate and
   the dry run, `replay`, a resume of a halted run that sends no control twice, the refusal of
   `--control` with `--resume`, the reserved mutation).
+- **A-107 (added 2026-10-30): a second pass of the judge tries to refute a fail (ADR-0019, OD-63).**
+  `CampaignRunner` takes `verifier` (a `shared.protocols.FailVerifier`; u12's `run --verify`
+  builds `evaluators.fail_verifier.AdversarialVerifier` over the `--judge` model, or the offline
+  mock's scripted judge). A spec whose finding fails sends one request (`_verified`, after
+  `_run_spec`) over the attempt `_attempt_to_verify` picks: a fail an evaluator other than the
+  judge reported, else the first fail with a reply, an identity sweep's trial last. The reviewer
+  is asked to refute the fail, with the semantic judge's hardening (per-call delimiter and
+  tripwire, JSON only, temperature 0), and answers one closed state
+  (`shared.enums.VerificationState`): `holds`, `does_not_hold` or `inconclusive`. A state outside
+  the set, free text, an adapter error, the tripwire, an injection attempt with any answer but
+  `holds`, a confidence under the spec's threshold, or a `BudgetExhausted` (`not consulted: ...`)
+  is `inconclusive`; `SamplingRefused` and `CredentialTooShort` stop the run. The state is kept
+  in `Finding.verification` (state, attempt id, reasoning, confidence) and named in the
+  finding's reasoning; it moves no status, `confirmed`, risk or exit code. A pass, and a finding
+  a halted run reports from prior attempts, send none. The estimate prices one judge request per
+  spec when the plan has judge requests (`PlanEstimate.verify_requests`, `VERIFY_PASSES`); the
+  run context records `verify` (u10) and a resume reviews as its run did and refuses `--verify`;
+  a live target without `--judge` is refused; the report masks the reasoning and restores the
+  state and attempt id (u11); SARIF carries the state, and a `does_not_hold` asks for review in
+  the message. **Costs, stated:** judging rules 7 re-pinned, no rule of judgement changed.
+  **Acceptance:** `tests/evaluators/test_fail_verifier.py` (the three states and their
+  confidence, a state outside the set, free text, the tripwire, the injection attempt, the
+  threshold, an adapter error, a refused sampling, the fenced request at temperature 0) and
+  `tests/cli/test_verify.py` (`holds` on the vulnerable mock with a report that validates and a
+  SARIF property, a `does_not_hold` that moves nothing, a ceiling that keeps the finding, the
+  masked reasoning, none without the flag or for a pass, the estimate, the refusal on a live
+  target without `--judge`, a resume's record and its refusal of `--verify`).
 
 ## §8 Out of scope / forbidden
 - MUST NOT import adapter/evaluator/scorer/store **concretes**: interfaces only; composition is
@@ -1620,3 +1647,12 @@ spec placeholders refused in an identity canary) and
   six battery specs declare one. To decide: whether it becomes the default (one request more per
   failing spec), whether a control is sent N times with a rate, and which further specs declare
   one. Reversal: a run without `--control`. Owner: human.
+- **OD-63** (2026-10-30, A-107, ADR-0019; **open**): the second pass. Built as the smallest
+  reversible version: (1) opt-in (`run --verify`), not the default; (2) one judge request per
+  failing spec, not several with a vote; (3) the state is reported beside the finding and moves
+  nothing, since the judge is the one evaluator a target can prompt-inject and a confirmed
+  finding rests on a deterministic fail; (4) the evidence does not keep it, so `replay` does not
+  show it. To decide: whether a `does_not_hold` keeps a finding from being confirmed, or only
+  takes a fail the judge alone reported out of the `--include-needs-review` gate; whether it
+  becomes the default; whether more passes vote. Reversal: a run without `--verify`. Owner:
+  human.

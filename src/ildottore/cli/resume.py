@@ -69,6 +69,7 @@ __all__ = [
     "stored_runs",
     "stored_sampling_defaults",
     "stored_takes_sampling",
+    "stored_verify",
 ]
 
 #: The reconstructed findings need a ``risk``, and a prior partial run's score is not stored
@@ -444,6 +445,21 @@ def stored_control(run_db: Path, run_id: str) -> bool:
     with SqliteRunStore(Path(run_db)) as store:
         context = store.get_run_context(run_id)
     return (context or {}).get("control") is True  # true or false: the store checked it
+
+
+def stored_verify(run_db: Path, run_id: str) -> bool:
+    """Whether the halted campaign reviewed its failing findings (``run --verify``, A-107).
+
+    A run that recorded nothing (no ``--verify``, or made before the field existed) reviewed none.
+    """
+
+    from ildottore.store.run_sqlite import SqliteRunStore
+
+    if not Path(run_db).exists():
+        return False
+    with SqliteRunStore(Path(run_db)) as store:
+        context = store.get_run_context(run_id)
+    return (context or {}).get("verify") is True  # true or false: the store checked it
 
 
 def stored_adaptive(run_db: Path, run_id: str) -> bool | None:

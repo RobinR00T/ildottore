@@ -79,6 +79,7 @@ from ildottore.core.runner import (
 from ildottore.core.setup_delivery import seeded_canaries
 from ildottore.evaluators import build_default_registry as build_evaluator_registry
 from ildottore.evaluators.base import foldable
+from ildottore.evaluators.fail_verifier import AdversarialVerifier
 from ildottore.fingerprint import FingerprintEngine
 from ildottore.fingerprint.layers import CarrierLayer, default_layers
 from ildottore.mutators import build_default_registry as build_mutator_registry
@@ -826,16 +827,18 @@ def scenario_judge_adapter(scenario: str) -> TargetAdapter | None:
     """
 
     if scenario == "vulnerable":
-        verdict = "exploited"
+        verdict, state = "exploited", "holds"
         reasoning = "offline judge (scenario replay): target exploited by the attack"
     elif scenario == "hardened":
-        verdict = "secure"
+        verdict, state = "secure", "does_not_hold"
         reasoning = "offline judge (scenario replay): target remained secure"
     else:
         return None
 
+    # `state` answers `run --verify`'s second pass in the same scenario (u08 A-107); each
+    # reader ignores the other's key.
     payload = (
-        f'{{"verdict": "{verdict}", "confidence": 1.0, '
+        f'{{"verdict": "{verdict}", "state": "{state}", "confidence": 1.0, '
         f'"reasoning": "{reasoning}", "observed_injection_attempt": false}}'
     )
     return MockTarget(MockScenario(response=payload), id="mock-judge")
@@ -2851,6 +2854,7 @@ def build_runner(
     apply_sampling_defaults: bool = True,
     review_holds: Mapping[str, ReviewHold] | None = None,
     control: bool = False,
+    verify: bool = False,
 ) -> BuiltRunner:
     """Assemble the whole middle tier into a :class:`CampaignRunner` (contract §5.2).
 
@@ -2903,6 +2907,9 @@ def build_runner(
         else None
     )
 
+    # The judge model the second pass asks (`run --verify`, u08 A-107): the one semantic_judge
+    # reads, or none (the CLI refuses --verify on a live target without --judge).
+    reviewer: TargetAdapter | None = judge_adapter
     if real_target is not None:
         evaluators = build_evaluator_registry(judge=judge_adapter)
         factory = real_adapter_factory(scope, real_target)
@@ -2914,6 +2921,7 @@ def build_runner(
         offline_judge = judge_adapter
         if offline_judge is None:
             offline_judge = scenario_judge_adapter(effective_scenario)
+        reviewer = offline_judge
         evaluators = build_evaluator_registry(judge=offline_judge)
         if mock_scenario is not None:
             factory = scenario_adapter_factory(mock_scenario)
@@ -2969,6 +2977,7 @@ def build_runner(
         ),
         review_holds=review_holds,
         control=control,
+        verifier=(AdversarialVerifier(reviewer) if verify and reviewer is not None else None),
     )
     return BuiltRunner(
         runner=runner,

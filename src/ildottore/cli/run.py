@@ -277,6 +277,8 @@ class RunOptions:
     fp_ledger: Path | None = None
     #: ``--control``: a failing spec that declares ``attack.control`` sends it once (u08 A-106).
     control: bool = False
+    #: ``--verify``: the judge model tries to refute each failing finding once (u08 A-107).
+    verify: bool = False
     compare: bool = False
     outputs: dict[str, Path] = field(default_factory=dict)  # fmt -> path
     output_all_prefix: Path | None = None
@@ -472,6 +474,9 @@ class PlanEstimate:
     #: The controls ``--control`` may send (u08 A-106): one per spec that declares one and sends
     #: it as one turn, priced as if every such spec failed. Included in ``requests``.
     control_requests: int = 0
+    #: The second passes ``--verify`` may send to the judge model (u08 A-107): one per spec, as
+    #: if every spec failed. Included in ``judge_requests``.
+    verify_requests: int = 0
 
     @property
     def total_tokens(self) -> int:
@@ -533,6 +538,8 @@ def _effective_mutators(spec: AttackSpec) -> list[str]:
 #: passes, minimum 2), and the rough token gloss of one: the rubric and delimiters around the
 #: target's reply on the way in, a short JSON verdict on the way out.
 JUDGE_PASSES = 2
+#: Requests the second, adversarial pass sends per failing spec (``--verify``, u08 A-107).
+VERIFY_PASSES = 1
 JUDGE_RUBRIC_TOKENS = 400
 JUDGE_OUTPUT_TOKENS = 200
 
@@ -548,6 +555,7 @@ def estimate_plan(
     identities: int = 0,
     sampling_defaults: Sampling | None = None,
     control: bool = False,
+    verify: bool = False,
 ) -> PlanEstimate:
     """Estimate the wire cost of a plan without sending: requests + rough token volume.
 
@@ -563,6 +571,8 @@ def estimate_plan(
     nothing, as the runner's sweep does); those sends were never priced.
     ``control`` (``--control``, u08 A-106) adds one send per spec whose control the runner would
     send, as if every such spec failed: the ceilings derived from this must not stop it.
+    ``verify`` (``--verify``, u08 A-107) adds, with a judge, one request to the judge model per
+    spec, as if every spec failed: the second pass reads one attempt of each failing spec.
     ``mutators_by_spec`` (from a resolved :class:`~ildottore.shared.models.TestPlan`) is
     authoritative when given; absent it, :func:`_effective_mutators` reproduces what the
     planner would choose. Tokens
@@ -578,6 +588,7 @@ def estimate_plan(
     judge_requests = 0
     judge_tokens = 0
     control_requests = 0
+    verify_requests = 0
     by_category: dict[str, int] = {}
     for spec in specs:
         if (
@@ -621,6 +632,13 @@ def estimate_plan(
         total_in += requests * in_tokens
         total_out += requests * out_tokens
         by_category[spec.category.value] = by_category.get(spec.category.value, 0) + requests
+        if judge and verify:
+            # One second pass per failing spec, whatever its evaluators (u08 A-107).
+            judge_requests += VERIFY_PASSES
+            verify_requests += VERIFY_PASSES
+            judge_tokens += VERIFY_PASSES * (
+                2 * in_tokens + out_tokens + JUDGE_RUBRIC_TOKENS + JUDGE_OUTPUT_TOKENS
+            )
         if judge and any(e.type is EvaluatorType.SEMANTIC_JUDGE for e in spec.evaluators):
             # One judgement per attempt (the final reply of a conversation), not per turn.
             judged = len(mutators) * runs * JUDGE_PASSES
@@ -639,6 +657,7 @@ def estimate_plan(
         judge_requests=judge_requests,
         judge_tokens=judge_tokens,
         control_requests=control_requests,
+        verify_requests=verify_requests,
     )
 
 
@@ -763,6 +782,7 @@ def resolve_target_plans(
     judge: bool = False,
     apply_sampling_defaults: bool = True,
     control: bool = False,
+    verify: bool = False,
 ) -> list[TargetPlan]:
     """Resolve, per target, exactly what the run would do - without sending anything.
 
@@ -845,6 +865,7 @@ def resolve_target_plans(
             identities=identities,
             sampling_defaults=sampling_defaults,
             control=control,
+            verify=verify,
         )
         notes = sampling_notes(
             target,
@@ -1224,6 +1245,10 @@ def _print_estimate(
             f"  + {judge_requests} request(s) to the --judge model (~{judge_tokens} tokens), "
             "paced and debited from the same ceilings"
         )
+        verifies = sum(p.estimate.verify_requests for p in plans)
+        if verifies:
+            # Priced as if every spec failed (u08 A-107): only a fail is reviewed.
+            print(f"  of which up to {verifies} second pass(es) (--verify: one per failing spec)")
         if judge_already_done:
             # A resume judges only what it sends: the whole battery's judge was priced, so a
             # resume after a judged half promised 12 judge requests and sent 8.
@@ -1435,6 +1460,9 @@ def _print_dry_run_plan(
             f"  judge:   +{judge_requests} request(s) to the --judge model, paced and debited "
             "from the same ceilings"
         )
+        verifies = sum(p.estimate.verify_requests for p in plans)
+        if verifies:
+            print(f"  verify:  up to {verifies} of them, one per failing spec (--verify)")
     for note in judge_notes:
         print(f"  judge sampling: {visible_controls(note)}")
     if fingerprint_probes:
@@ -2465,6 +2493,8 @@ def _execute_run(
     apply_sampling_defaults = True
     # `--control` (u08 A-106); a resume keeps what its run started with (the block below).
     control = opts.control
+    # `--verify` (u08 A-107); likewise.
+    verify = opts.verify
 
     def provisional_plans() -> list[TargetPlan]:
         # No fingerprint: it needs the probe pass, which SENDS (see the resume block below).
@@ -2484,6 +2514,7 @@ def _execute_run(
             judge=judge_target is not None,
             apply_sampling_defaults=apply_sampling_defaults,
             control=control,
+            verify=verify,
         )
 
     #: Whether a refusal of the -sV probe pass may not offer dropping -sV: a resume of a
@@ -2528,6 +2559,12 @@ def _execute_run(
                 "started, which its run store records"
             )
         control = resume_mod.stored_control(run_db, opts.resume)
+        if opts.verify:
+            raise ValueError(
+                "--verify cannot be given with --resume: a resume reviews fails as its run "
+                "started, which its run store records"
+            )
+        verify = resume_mod.stored_verify(run_db, opts.resume)
         # A run started before the block was applied (2026-10-09) recorded nothing and sent none
         # of it, so its resume sends none either: two halves on two samplings would be scored as
         # one campaign. stderr and never suppressed, as the --runs notice below (u12 A-66).
@@ -2733,6 +2770,12 @@ def _execute_run(
                 f"ceiling of {opts.budget_requests}: the probe pass is traffic to the target "
                 f"like any other. {remedy}."
             )
+    if verify and judge_target is None and any_live:
+        # Before the resume is adopted and before any send (u08 A-107).
+        raise ValueError(
+            "--verify needs --judge on a live target: the second pass asks the judge model to "
+            "refute each fail"
+        )
     if resume_from is not None and not sends_nothing:
         # Adopted only here, past the last refusal before any traffic, so a refused resume
         # writes nothing; and the modes that send nothing write nothing either (u12 A-48).
@@ -2764,6 +2807,7 @@ def _execute_run(
             adaptive=adaptive,
             apply_sampling_defaults=apply_sampling_defaults,
             control=control,
+            verify=verify,
         )
         no_judge = _no_judge_warning(preview, routes, judge_target)
     if no_judge:
@@ -2948,6 +2992,7 @@ def _execute_run(
         judge=judge_target is not None,
         apply_sampling_defaults=apply_sampling_defaults,
         control=control,
+        verify=verify,
     )
 
     # A target with nothing left to run is refused, for the same reason an empty --spec
@@ -3079,6 +3124,7 @@ def _execute_run(
             selection=selection,
             review_holds=review_holds,
             control=control,
+            verify=verify,
         )
         _record_scope(run_db, run_ids[target.id], scope_sha256, resumed=opts.resume is not None)
         _record_order(
@@ -3117,6 +3163,7 @@ def _execute_run(
             apply_sampling_defaults=apply_sampling_defaults,
             review_holds=review_holds,
             control=control,
+            verify=verify,
         )
         results.append(result)
         _persist_run_spend(run_db, result)
@@ -3497,6 +3544,7 @@ def _run_one_target(
     apply_sampling_defaults: bool = True,
     review_holds: dict[str, ReviewHold] | None = None,
     control: bool = False,
+    verify: bool = False,
 ) -> CampaignResult:
     """Assemble a runner for one target and drive one campaign to completion.
 
@@ -3534,6 +3582,7 @@ def _run_one_target(
         apply_sampling_defaults=apply_sampling_defaults,
         review_holds=review_holds,
         control=control,
+        verify=verify,
     )
     try:
         return interrupts.run_until_stopped(
@@ -3819,6 +3868,7 @@ def _persist_run_integrity(
     selection: dict[str, object] | None = None,
     review_holds: dict[str, ReviewHold] | None = None,
     control: bool = False,
+    verify: bool = False,
 ) -> None:
     """Record WHAT this campaign is about to run, before it sends anything.
 
@@ -3900,6 +3950,8 @@ def _persist_run_integrity(
                 },
                 # Whether a failing spec sends its control (u08 A-106): a resume does the same.
                 "control": control,
+                # Whether a failing finding is reviewed (u08 A-107): a resume does the same.
+                "verify": verify,
             },
         )
 

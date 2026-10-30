@@ -118,6 +118,8 @@ dottore calibrate report.json labels.yaml --record labels.jsonl
 dottore run -t target.yaml --scope scope.yaml --fp-ledger labels.jsonl
 # Does each fail follow from the attack? A failing spec sends its attack.control once
 dottore run -t target.yaml --scope scope.yaml --control -oJ report.json
+# Which fails survive a reader told to refute them? One more judge request per failing spec
+dottore run -t target.yaml --scope scope.yaml --judge judge.yaml --verify -oJ report.json
 ```
 
 ## Flags that matter (`dottore run`)
@@ -152,6 +154,7 @@ dottore run -t target.yaml --scope scope.yaml --control -oJ report.json
 | `--include-needs-review` | also gate unconfirmed exploits (an unconfirmed `fail`, a fail only the judge reported among them); an `inconclusive` result never gates. Without the flag such a fail is at most a `warning` in the SARIF, whatever its band; with it, it gates, and keeps its band's level (`error` for critical or high) |
 | `--fp-ledger` | the labels ledger `calibrate --record` writes: a spec with more than 30% false positives among its last 50 labelled fails (5 at least) is held, and its fail needs review (it gates only with `--include-needs-review`). Read before any send, refused whole on a bad line (exit 3); a resume holds what its run held |
 | `--control` | a spec that fails and declares `attack.control` (the same ask without the attack) sends it once, judged by the spec's own evaluators; the finding's `control` reads `attributed`, `not_attributed` (the fail is kept, never confirmed), `inconclusive` (a fail the judge alone reported included) or `not_evaluable`. Never a trial: not in N nor in a reproducibility. Priced by `--estimate`; a resume sends as its run did and refuses the flag (u08 A-106, Scenario P) |
+| `--verify` | a spec that fails sends one more request to the judge model (`--judge`, or the offline mock's judge), asked to refute the fail; the finding's `verification` reads `holds`, `does_not_hold` or `inconclusive` (anything outside the set, an outage, a tripwire, an injection attempt, a low confidence). Reported, never decisive: no status, `confirmed` or exit code moves. Needs `--judge` on a live target; priced by `--estimate`; a resume reviews as its run did and refuses the flag (u08 A-107, Scenario Q) |
 | `--spec-path` | spec search path (default `specs/` in the working directory when there is one, refused when it holds no spec, else the built-in battery inside the installed package, said on stderr when a command reads it; `lint` never falls back) |
 | `--evidence-root` / `--run-db` | evidence store root (default `.dottore/evidence`) and run store (default `.dottore/runs.sqlite`). Checked before anything is sent, writing nothing in `--dry-run`/`--estimate`/`-sn`: a directory as the store, a file that is not SQLite, a root that is a regular file, or a path under one, is refused (exit 3), and a sending run opens both before its first request. Runs may share one store (a lock is waited for up to 30 s, said on stderr, and Ctrl-C stops the wait) |
 | `-v` | prints the resolved plan, then runs (`-vv`: the skipped and blocked ids too); like the root `dottore -v <command>`, it also prints an internal error's traceback |

@@ -211,6 +211,12 @@ def _restore_tool_fields(masked: object, finding: Finding, redactor: Redactor) -
         if sent is not None and isinstance(control.get("attempt"), dict):
             control["attempt"]["attempt_id"] = sent.attempt_id
             control["attempt"]["spec_id"] = sent.spec_id
+    review = masked.get("verification")
+    if finding.verification is not None and isinstance(review, dict):
+        # The judge's reasoning stays masked (it may quote the reply); the closed state and the
+        # attempt it read are the tool's (u08 A-107).
+        review["state"] = finding.verification.state.value
+        review["attempt_id"] = finding.verification.attempt_id
     return masked
 
 

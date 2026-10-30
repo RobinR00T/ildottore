@@ -38,6 +38,7 @@ from ildottore.shared.enums import (
     Severity,
     TargetType,
     VerdictStatus,
+    VerificationState,
 )
 from ildottore.shared.filter_stops import documented_stops, target_filter_stops
 
@@ -1181,6 +1182,20 @@ class ControlCheck(_Frozen):
     reason: str | None = None
 
 
+class Verification(_Frozen):
+    """A second, adversarial pass over a failing finding (u08 A-107, ADR-0019).
+
+    The judge model tried to refute the fail of ``attempt_id`` (the attempt it read) and gave a
+    closed ``state`` with its ``reasoning``. It is the judge's word, reported and never decisive:
+    the finding's status and confirmation are what they were.
+    """
+
+    state: VerificationState
+    attempt_id: str = Field(min_length=1)
+    reasoning: str
+    confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+
+
 class Finding(_Frozen):
     """A scored, evidenced result for one spec against one target."""
 
@@ -1194,6 +1209,8 @@ class Finding(_Frozen):
     reasoning: str | None = None
     #: Set only by ``run --control`` on a failing spec (u08 A-106).
     control: ControlCheck | None = None
+    #: Set only by ``run --verify`` on a failing spec (u08 A-107).
+    verification: Verification | None = None
 
 
 class TestRunSummary(_Frozen):

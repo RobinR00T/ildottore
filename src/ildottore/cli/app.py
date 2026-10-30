@@ -1308,6 +1308,15 @@ def run(
             "is reported as needing review. A resume keeps what its run started with.",
         ),
     ] = False,
+    verify: Annotated[
+        bool,
+        typer.Option(
+            "--verify",
+            help="Ask the judge model, once per failing spec, to refute the fail: holds, "
+            "does_not_hold or inconclusive, reported beside the finding and never decisive. "
+            "Needs --judge on a live target. A resume keeps what its run started with.",
+        ),
+    ] = False,
     compare: Annotated[bool, typer.Option("--compare", help="Model-comparison matrix.")] = False,
     hardened: Annotated[
         bool, typer.Option("--hardened", help="Replay hardened fixtures (clean-run smoke).")
@@ -1429,6 +1438,7 @@ def run(
         include_needs_review=include_needs_review,
         fp_ledger=fp_ledger,
         control=control,
+        verify=verify,
         compare=compare,
         outputs=outputs,
         output_all_prefix=o_all,

@@ -911,6 +911,7 @@ _CONTEXT_FIELDS: Final[dict[str, tuple[bool, Any, str]]] = {
     "review_holds": (False, _is_holds, "a map of spec ids to two counts"),
     # u08 A-106: whether a failing spec sends its control (run --control).
     "control": (False, _is_bool, "true or false"),
+    "verify": (False, _is_bool, "true or false"),
     "spec_fields": (
         False,
         lambda v: (

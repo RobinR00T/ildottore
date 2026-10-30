@@ -7,6 +7,29 @@ the file, schema copy, build or pipeline it names.
 
 ## [Unreleased]
 
+### Added (u08 A-107, judging rules 7 re-pinned: a second pass of the judge tries to refute a fail)
+
+- **`dottore run --verify`**: a spec that fails sends one more request to the judge model (the
+  `--judge` model, or the offline mock's scripted judge), asked to refute the fail, with the
+  semantic judge's hardening (per-call delimiter and tripwire, JSON only, temperature 0). It
+  reads the fail an evaluator other than the judge reported first. The finding gains
+  `verification` (`state`, `attempt_id`, `reasoning`, `confidence`): `holds`, `does_not_hold` or
+  `inconclusive`, the last for anything outside the set, an outage, the tripwire, an injection
+  attempt against `holds`, a confidence under the spec's threshold or a ceiling that refuses the
+  request. **Reported, never decisive:** no status, `confirmed`, risk or exit code moves. A pass
+  sends none. Without the flag nothing is sent and `verification` is `null`.
+- `--verify` on a live target without `--judge` is refused. `--estimate` and `--dry-run` price
+  one judge request per selected spec when the plan has judge requests; the run context records
+  `verify` and `--resume` reviews as its run did and refuses `--verify`. The JSON report schema
+  has an optional `verification` on a finding (the golden JSON snapshot gains
+  `"verification": null`), the reviewer's reasoning is masked, and SARIF carries a
+  `verification` property and asks for review of a `does_not_hold`.
+- Docs: ADR-0019, OD-63 (open: whether a state moves the confirmation or the needs-review gate,
+  the default, more passes), the manual ("A second reader for each fail", the `--verify` row),
+  USAGE, FAQ, README, the man page, `docs/04`, `docs/09`, `docs/12` and Scenario Q in
+  `examples/README.md` with real output. Judging rules stay at version 7, re-pinned: no
+  evaluator or combination changed, and without `--verify` nothing is sent.
+
 ### Added (u08 A-106, judging rules 7 re-pinned: a control attributes a fail to its attack)
 
 - **`attack.control`**, optional on a spec: the same ask without the attack. The lint refuses it
