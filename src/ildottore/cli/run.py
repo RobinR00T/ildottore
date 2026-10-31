@@ -103,6 +103,7 @@ from ildottore.shared.models import (
     Finding,
     ModelFingerprint,
     PlanBudgets,
+    Pricing,
     Sampling,
     Target,
     TestRun,
@@ -225,6 +226,8 @@ class RunOptions:
     targets: list[Path]
     scope: Path | None
     judge: Path | None = None
+    #: The judge model a ``--judge`` that cannot settle an attempt hands it to (u06 A-109).
+    judge_escalate: Path | None = None
     suite: str | None = None
     categories: list[str] = field(default_factory=list)
     spec_globs: list[str] = field(default_factory=list)
@@ -275,6 +278,10 @@ class RunOptions:
     #: ``--fp-ledger``: the labels ledger ``calibrate --record`` appends to; a spec whose recent
     #: labelled fails were mostly false positives is held for review (u08 A-105).
     fp_ledger: Path | None = None
+    #: ``--control``: a failing spec that declares ``attack.control`` sends it once (u08 A-106).
+    control: bool = False
+    #: ``--verify``: the judge model tries to refute each failing finding once (u08 A-107).
+    verify: bool = False
     compare: bool = False
     outputs: dict[str, Path] = field(default_factory=dict)  # fmt -> path
     output_all_prefix: Path | None = None
@@ -467,6 +474,21 @@ class PlanEstimate:
     #: `--estimate --judge` used to print the same figure as without a judge (audit D-28).
     judge_requests: int = 0
     judge_tokens: int = 0
+    #: The controls ``--control`` may send (u08 A-106): one per spec that declares one and sends
+    #: it as one turn, priced as if every such spec failed. Included in ``requests``.
+    control_requests: int = 0
+    #: The second passes ``--verify`` may send to the judge model (u08 A-107): one per spec, as
+    #: if every spec failed. Included in ``judge_requests``.
+    verify_requests: int = 0
+    #: The share of ``judge_tokens`` the judge writes (its JSON verdicts), so a priced judge is
+    #: charged its output rate on it and its input rate on the rest (u12 A-108).
+    judge_output_tokens: int = 0
+    #: The judgements ``--judge-escalate`` may hand the second judge model (u06 A-109): every
+    #: one, as if the first judge settled none. Included in ``judge_requests`` and
+    #: ``judge_tokens``, which the ceilings read, and priced at the second model's rates.
+    escalate_requests: int = 0
+    escalate_tokens: int = 0
+    escalate_output_tokens: int = 0
 
     @property
     def total_tokens(self) -> int:
@@ -528,6 +550,8 @@ def _effective_mutators(spec: AttackSpec) -> list[str]:
 #: passes, minimum 2), and the rough token gloss of one: the rubric and delimiters around the
 #: target's reply on the way in, a short JSON verdict on the way out.
 JUDGE_PASSES = 2
+#: Requests the second, adversarial pass sends per failing spec (``--verify``, u08 A-107).
+VERIFY_PASSES = 1
 JUDGE_RUBRIC_TOKENS = 400
 JUDGE_OUTPUT_TOKENS = 200
 
@@ -542,6 +566,9 @@ def estimate_plan(
     fixtures_hold_scene: bool = False,
     identities: int = 0,
     sampling_defaults: Sampling | None = None,
+    control: bool = False,
+    verify: bool = False,
+    escalate: bool = False,
 ) -> PlanEstimate:
     """Estimate the wire cost of a plan without sending: requests + rough token volume.
 
@@ -555,6 +582,10 @@ def estimate_plan(
     ``identities`` is how many scope identities a live run sends the attack as, once each, for
     every spec that :func:`~ildottore.core.runner.sweeps_identities` (fewer than two sends
     nothing, as the runner's sweep does); those sends were never priced.
+    ``control`` (``--control``, u08 A-106) adds one send per spec whose control the runner would
+    send, as if every such spec failed: the ceilings derived from this must not stop it.
+    ``verify`` (``--verify``, u08 A-107) adds, with a judge, one request to the judge model per
+    spec, as if every spec failed: the second pass reads one attempt of each failing spec.
     ``mutators_by_spec`` (from a resolved :class:`~ildottore.shared.models.TestPlan`) is
     authoritative when given; absent it, :func:`_effective_mutators` reproduces what the
     planner would choose. Tokens
@@ -569,6 +600,12 @@ def estimate_plan(
     total_out = 0
     judge_requests = 0
     judge_tokens = 0
+    judge_output_tokens = 0
+    escalate_requests = 0
+    escalate_tokens = 0
+    escalate_output_tokens = 0
+    control_requests = 0
+    verify_requests = 0
     by_category: dict[str, int] = {}
     for spec in specs:
         if (
@@ -602,6 +639,9 @@ def estimate_plan(
         requests = len(mutators) * runs * n_turns * sends_per_turn
         if identities >= 2 and target is not None and sweeps_identities(spec, target):
             requests += identities  # one plain send per identity: no scene, no rounds
+        if control and sends_control(spec, target):
+            requests += 1  # one plain turn, should the spec fail
+            control_requests += 1
         in_tokens = max(1, len(prompt) // 4)
         # The cap the send goes out with, the one the ledger reserves (`reserve_tokens`).
         out_tokens = spec_sampling(spec, sampling_defaults).max_tokens or DEFAULT_COMPLETION_TOKENS
@@ -609,22 +649,59 @@ def estimate_plan(
         total_in += requests * in_tokens
         total_out += requests * out_tokens
         by_category[spec.category.value] = by_category.get(spec.category.value, 0) + requests
+        if judge and verify:
+            # One second pass per failing spec, whatever its evaluators (u08 A-107).
+            judge_requests += VERIFY_PASSES
+            verify_requests += VERIFY_PASSES
+            judge_tokens += VERIFY_PASSES * (
+                2 * in_tokens + out_tokens + JUDGE_RUBRIC_TOKENS + JUDGE_OUTPUT_TOKENS
+            )
+            judge_output_tokens += VERIFY_PASSES * JUDGE_OUTPUT_TOKENS
         if judge and any(e.type is EvaluatorType.SEMANTIC_JUDGE for e in spec.evaluators):
             # One judgement per attempt (the final reply of a conversation), not per turn.
             judged = len(mutators) * runs * JUDGE_PASSES
+            if control and sends_control(spec, target):
+                judged += JUDGE_PASSES  # the control is judged as an attempt is (u08 A-106)
             judge_requests += judged
             judge_tokens += judged * (
                 in_tokens + out_tokens + JUDGE_RUBRIC_TOKENS + JUDGE_OUTPUT_TOKENS
             )
+            judge_output_tokens += judged * JUDGE_OUTPUT_TOKENS
+            if escalate:
+                # Priced as if the first judge settled nothing (u06 A-109): the ceilings derived
+                # from this must not stop a judgement the second model is handed.
+                escalate_requests += judged
+                escalate_tokens += judged * (
+                    in_tokens + out_tokens + JUDGE_RUBRIC_TOKENS + JUDGE_OUTPUT_TOKENS
+                )
+                escalate_output_tokens += judged * JUDGE_OUTPUT_TOKENS
     return PlanEstimate(
         specs=len(specs),
         requests=total_requests,
         input_tokens=total_in,
         output_tokens=total_out,
         by_category=by_category,
-        judge_requests=judge_requests,
-        judge_tokens=judge_tokens,
+        control_requests=control_requests,
+        verify_requests=verify_requests,
+        judge_output_tokens=judge_output_tokens,
+        judge_requests=judge_requests + escalate_requests,
+        judge_tokens=judge_tokens + escalate_tokens,
+        escalate_requests=escalate_requests,
+        escalate_tokens=escalate_tokens,
+        escalate_output_tokens=escalate_output_tokens,
     )
+
+
+def sends_control(spec: AttackSpec, target: Target | None) -> bool:
+    """Whether a failing ``spec`` sends its control to ``target`` (u08 A-106).
+
+    The runner's rule: a declared control, an attack that is not a conversation, and a setup
+    that does not go out in band (a tool round is a conversation too).
+    """
+
+    if spec.attack.control is None or (spec.attack.turns and len(spec.attack.turns) >= 2):
+        return False
+    return target is None or not delivers_in_band(spec, target)
 
 
 #: Headroom over the estimate for the derived ceilings. The estimate is a gloss (prompt
@@ -735,6 +812,9 @@ def resolve_target_plans(
     budget_overrides: PlanBudgets | None = None,
     judge: bool = False,
     apply_sampling_defaults: bool = True,
+    control: bool = False,
+    verify: bool = False,
+    escalate: bool = False,
 ) -> list[TargetPlan]:
     """Resolve, per target, exactly what the run would do - without sending anything.
 
@@ -816,6 +896,9 @@ def resolve_target_plans(
             fixtures_hold_scene=fixtures_hold_scene,
             identities=identities,
             sampling_defaults=sampling_defaults,
+            control=control,
+            verify=verify,
+            escalate=escalate,
         )
         notes = sampling_notes(
             target,
@@ -1154,6 +1237,8 @@ def _print_estimate(
     fingerprint_probes: int = 0,
     already_done: int = 0,
     judge_already_done: int = 0,
+    judge: Target | None = None,
+    judge_escalate: Target | None = None,
 ) -> None:
     """Print the pre-run estimate, per target and totalled (skipped under --quiet).
 
@@ -1167,6 +1252,8 @@ def _print_estimate(
     tokens_in = sum(p.estimate.input_tokens for p in plans)
     tokens_out = sum(p.estimate.output_tokens for p in plans)
     specs = sum(p.estimate.specs for p in plans)
+    controls = sum(p.estimate.control_requests for p in plans)
+    cost = _cost(plans, judge, judge_escalate)
     if quiet:
         # One machine-friendly line, as `--dry-run -q` prints: a command whose only output is
         # its exit code cannot answer the question it exists for (it printed nothing).
@@ -1178,8 +1265,14 @@ def _print_estimate(
             f"target(s) at runs={runs}, ~{tokens_in + tokens_out + judge_tokens} tokens"
             + (f", +{judge_requests} judge request(s)" if judge_requests else "")
             + (f", +{probes} probe(s)" if probes else "")
+            + (f", {controls} of them control(s)" if controls else "")
             + (f", {already_done} request(s) already done" if already_done else "")
             + (f", {judge_already_done} judge request(s) kept" if judge_already_done else "")
+            + (
+                f", {'~' if cost[1] else 'at least ~'}{euros(cost[0])} EUR"
+                if cost is not None
+                else ""
+            )
         )
         return
     print(
@@ -1187,12 +1280,24 @@ def _print_estimate(
         f"across {len(plans)} target(s) at runs={runs} (no sends made)"
     )
     judge_requests = sum(p.estimate.judge_requests for p in plans)
+    escalated = sum(p.estimate.escalate_requests for p in plans)
     if judge_requests:
         judge_tokens = sum(p.estimate.judge_tokens for p in plans)
         print(
-            f"  + {judge_requests} request(s) to the --judge model (~{judge_tokens} tokens), "
+            f"  + {judge_requests} request(s) to the "
+            f"{'judge models' if escalated else '--judge model'} (~{judge_tokens} tokens), "
             "paced and debited from the same ceilings"
         )
+        verifies = sum(p.estimate.verify_requests for p in plans)
+        if verifies:
+            # Priced as if every spec failed (u08 A-107): only a fail is reviewed.
+            print(f"  of which up to {verifies} second pass(es) (--verify: one per failing spec)")
+        if escalated:
+            # Priced as if the first judge settled nothing (u06 A-109).
+            print(
+                f"  of which up to {escalated} to the --judge-escalate model (only what the "
+                "--judge model cannot settle)"
+            )
         if judge_already_done:
             # A resume judges only what it sends: the whole battery's judge was priced, so a
             # resume after a judged half promised 12 judge requests and sent 8.
@@ -1200,10 +1305,29 @@ def _print_estimate(
                 f"  minus {judge_already_done} judge request(s) for the attempts the resumed "
                 f"run keeps (~{max(0, judge_requests - judge_already_done)} still to send)"
             )
+    if controls:
+        # Priced as if every spec with a control failed (u08 A-106): only a fail sends one.
+        print(
+            f"  of which up to {controls} control(s) (--control: one per failing spec that "
+            "declares attack.control)"
+        )
     print(
         f"  ~tokens: {tokens_in} in + {tokens_out} out "
         f"(~{tokens_in + tokens_out} total, rough gloss)"
     )
+    if cost is not None:
+        # In euros at the rates the target files declare (u12 A-108), on the same gloss: the
+        # scanner ships no prices, so a model with no `pricing:` makes the total a floor.
+        total, whole, lines = cost
+        print(
+            f"  ~cost: {'' if whole else 'at least '}{euros(total)} EUR at the rates the target "
+            "files declare (pricing:), on the same rough gloss"
+            + ("" if whole else ", a model that sends has none")
+            + ("; the -sV probes are not in it" if fingerprint_probes else "")
+            + ("; the whole plan, the resumed run's share included" if already_done else "")
+        )
+        for line in lines:
+            print(line)
     if already_done:
         # `--estimate --resume` priced the whole battery, when the point of the flag is to
         # price the work that is LEFT.
@@ -1237,7 +1361,79 @@ def _print_estimate(
             by_category[cat] = by_category.get(cat, 0) + n
     for cat, n in sorted(by_category.items(), key=lambda kv: (-kv[1], kv[0])):
         print(f"  {cat}: {n} requests")
-    print("  no per-model pricing known; multiply by your provider's per-token rate.")
+    if cost is None:
+        print(
+            "  no per-model pricing known; multiply by your provider's per-token rate, or "
+            "declare pricing: in the target file for a figure in EUR."
+        )
+
+
+def eur(input_tokens: int, output_tokens: int, pricing: Pricing) -> float:
+    """What ``input_tokens`` and ``output_tokens`` cost at ``pricing``, in euros (u12 A-108)."""
+
+    return (
+        input_tokens * pricing.input_eur_per_mtok + output_tokens * pricing.output_eur_per_mtok
+    ) / 1_000_000
+
+
+def euros(amount: float) -> str:
+    """``amount`` as the estimate prints it: cents, or four places under one (a cheap judge)."""
+
+    return f"{amount:.4f}" if 0 < amount < 0.01 else f"{amount:.2f}"
+
+
+def _priced(label: str, tokens_in: int, tokens_out: int, pricing: Pricing | None) -> str:
+    """One model's line of the estimate's cost, or the reason it has none."""
+
+    if pricing is None:
+        return f"    {label}: unpriced (no pricing: in its target file)"
+    return (
+        f"    {label}: {euros(eur(tokens_in, tokens_out, pricing))} EUR ({tokens_in} in + "
+        f"{tokens_out} out tokens at {pricing.input_eur_per_mtok:.2f} / "
+        f"{pricing.output_eur_per_mtok:.2f} EUR per million)"
+    )
+
+
+def _cost(
+    plans: list[TargetPlan], judge: Target | None, escalate: Target | None = None
+) -> tuple[float, bool, list[str]] | None:
+    """The estimate's cost in euros at the rates the target files declare (u12 A-108).
+
+    ``(total, whole, lines)``: ``whole`` is false when a model that sends has no ``pricing:``,
+    so the total is a floor. ``None`` when no model that sends declares a price, so an
+    estimate without one prints as it did before the field.
+    """
+
+    lines: list[str] = []
+    total = 0.0
+    whole = True
+    priced = False
+    for plan in plans:
+        est = plan.estimate
+        pricing = plan.target.pricing
+        lines.append(_priced(plan.target.id, est.input_tokens, est.output_tokens, pricing))
+        if pricing is None:
+            whole = False
+        else:
+            priced = True
+            total += eur(est.input_tokens, est.output_tokens, pricing)
+    up_out = sum(p.estimate.escalate_output_tokens for p in plans)
+    up_in = sum(p.estimate.escalate_tokens for p in plans) - up_out
+    judge_out = sum(p.estimate.judge_output_tokens for p in plans)
+    judge_in = sum(p.estimate.judge_tokens for p in plans) - judge_out - up_in - up_out
+    for label, model, tokens_in, tokens_out in (
+        ("--judge", judge, judge_in, judge_out),
+        ("--judge-escalate", escalate, up_in, up_out),
+    ):
+        if model is None or not tokens_in + tokens_out:
+            continue
+        lines.append(_priced(f"{label} {model.id}", tokens_in, tokens_out, model.pricing))
+        if model.pricing is None:
+            whole = False
+        else:
+            priced = True
+            total += eur(tokens_in, tokens_out, model.pricing)
+    return (total, whole, lines) if priced else None
 
 
 def _ceiling_lines(plans: list[TargetPlan]) -> list[str]:
@@ -1385,12 +1581,29 @@ def _print_dry_run_plan(
     if obfuscation is not None:
         print(f"  obfuscation: {obfuscation}")
     print(f"  would send: {requests} requests over {specs} specs at runs={runs}")
+    controls = sum(p.estimate.control_requests for p in plans)
+    if controls:
+        # Counted in the figure above as if every spec with a control failed (u08 A-106).
+        print(
+            f"  control: up to {controls} of them, one per failing spec that declares "
+            "attack.control (--control)"
+        )
     judge_requests = sum(p.estimate.judge_requests for p in plans)
+    escalated = sum(p.estimate.escalate_requests for p in plans)
     if judge_requests:
         print(
-            f"  judge:   +{judge_requests} request(s) to the --judge model, paced and debited "
+            f"  judge:   +{judge_requests} request(s) to the "
+            f"{'judge models' if escalated else '--judge model'}, paced and debited "
             "from the same ceilings"
         )
+        verifies = sum(p.estimate.verify_requests for p in plans)
+        if verifies:
+            print(f"  verify:  up to {verifies} of them, one per failing spec (--verify)")
+        if escalated:
+            print(
+                f"  escalate: up to {escalated} of them to the --judge-escalate model, only "
+                "what the --judge model cannot settle"
+            )
     for note in judge_notes:
         print(f"  judge sampling: {visible_controls(note)}")
     if fingerprint_probes:
@@ -1790,6 +2003,8 @@ def _check_outputs_spare_inputs(opts: RunOptions) -> None:
     named += [(f"a target file {path}", path) for path in opts.targets]
     if opts.judge is not None:
         named.append((f"the --judge file {opts.judge}", opts.judge))
+    if opts.judge_escalate is not None:
+        named.append((f"the --judge-escalate file {opts.judge_escalate}", opts.judge_escalate))
     named += [(f"{label} {path}", path) for label, path in opts.extra_inputs]
     if opts.fp_ledger is not None:
         named.append((f"the --fp-ledger file {opts.fp_ledger}", opts.fp_ledger))
@@ -2160,6 +2375,17 @@ def _execute_run(
         # `fleet --judge` generated), every semantic_judge verdict came back inconclusive
         # with the reason only in the JSON, and the run exited 0.
         to_authorize.append((opts.judge, judge_target))
+    judge_escalate_target = (
+        wiring.load_target(opts.judge_escalate) if opts.judge_escalate is not None else None
+    )
+    if judge_escalate_target is not None and opts.judge_escalate is not None:
+        if judge_target is None:
+            raise ValueError(
+                "--judge-escalate needs --judge: it is the model the --judge model hands an "
+                "attempt it cannot settle to"
+            )
+        # A second model we send prompts to: the same gate as the first (u06 A-109).
+        to_authorize.append((opts.judge_escalate, judge_escalate_target))
     # Each id cut at 300 characters, as the reason quotes it, and the scope's own ids listed up
     # to 20, each cut (clause A-51).
     refusals = [
@@ -2391,6 +2617,7 @@ def _execute_run(
         [real for _, _, (_, real) in routes if real is not None],
         judge=judge_target,
         specs=selected,
+        judge_escalate=judge_escalate_target,
     )
     if unset and (opts.discovery_only or opts.dry_run or opts.estimate):
         print(
@@ -2419,6 +2646,10 @@ def _execute_run(
     # Whether the target files' `sampling_defaults` go out (OD-39, u12 A-66): always for a fresh
     # run; a resume continues as its run started (read in the resume block below).
     apply_sampling_defaults = True
+    # `--control` (u08 A-106); a resume keeps what its run started with (the block below).
+    control = opts.control
+    # `--verify` (u08 A-107); likewise.
+    verify = opts.verify
 
     def provisional_plans() -> list[TargetPlan]:
         # No fingerprint: it needs the probe pass, which SENDS (see the resume block below).
@@ -2437,6 +2668,9 @@ def _execute_run(
             ),
             judge=judge_target is not None,
             apply_sampling_defaults=apply_sampling_defaults,
+            control=control,
+            verify=verify,
+            escalate=judge_escalate_target is not None,
         )
 
     #: Whether a refusal of the -sV probe pass may not offer dropping -sV: a resume of a
@@ -2468,6 +2702,7 @@ def _execute_run(
             mock_scenario=routes[0][2][0],
             runs=opts.runs if opts.runs_explicit else None,
             judge=judge_target,
+            judge_escalate=judge_escalate_target,
             adaptive=adaptive,
             allow_unverified=opts.resume_unverified,
             adopt=False,
@@ -2475,6 +2710,18 @@ def _execute_run(
             hardened=opts.hardened,
         )
         adaptive_campaign = resume_mod.stored_adaptive(run_db, opts.resume) is True
+        if opts.control:
+            raise ValueError(
+                "--control cannot be given with --resume: a resume sends controls as its run "
+                "started, which its run store records"
+            )
+        control = resume_mod.stored_control(run_db, opts.resume)
+        if opts.verify:
+            raise ValueError(
+                "--verify cannot be given with --resume: a resume reviews fails as its run "
+                "started, which its run store records"
+            )
+        verify = resume_mod.stored_verify(run_db, opts.resume)
         # A run started before the block was applied (2026-10-09) recorded nothing and sent none
         # of it, so its resume sends none either: two halves on two samplings would be scored as
         # one campaign. stderr and never suppressed, as the --runs notice below (u12 A-66).
@@ -2680,6 +2927,12 @@ def _execute_run(
                 f"ceiling of {opts.budget_requests}: the probe pass is traffic to the target "
                 f"like any other. {remedy}."
             )
+    if verify and judge_target is None and any_live:
+        # Before the resume is adopted and before any send (u08 A-107).
+        raise ValueError(
+            "--verify needs --judge on a live target: the second pass asks the judge model to "
+            "refute each fail"
+        )
     if resume_from is not None and not sends_nothing:
         # Adopted only here, past the last refusal before any traffic, so a refused resume
         # writes nothing; and the modes that send nothing write nothing either (u12 A-48).
@@ -2710,6 +2963,8 @@ def _execute_run(
             fingerprints={},
             adaptive=adaptive,
             apply_sampling_defaults=apply_sampling_defaults,
+            control=control,
+            verify=verify,
         )
         no_judge = _no_judge_warning(preview, routes, judge_target)
     if no_judge:
@@ -2893,6 +3148,9 @@ def _execute_run(
         ),
         judge=judge_target is not None,
         apply_sampling_defaults=apply_sampling_defaults,
+        control=control,
+        verify=verify,
+        escalate=judge_escalate_target is not None,
     )
 
     # A target with nothing left to run is refused, for the same reason an empty --spec
@@ -2948,6 +3206,8 @@ def _execute_run(
             fingerprint_probes=(fingerprint_probe_count() if opts.fingerprint_first else 0),
             already_done=_answered_requests(resume_from, selected, plans=plans, runs=opts.runs),
             judge_already_done=_judge_requests_kept(resume_from, selected),
+            judge=judge_target,
+            judge_escalate=judge_escalate_target,
         )
         return RunOutcome(
             exit_code=ExitCode.CLEAN, findings=[], results=[], dry_run=True, estimated=True
@@ -3023,6 +3283,9 @@ def _execute_run(
             resumed=opts.resume is not None,
             selection=selection,
             review_holds=review_holds,
+            control=control,
+            verify=verify,
+            judge_escalate=judge_escalate_target,
         )
         _record_scope(run_db, run_ids[target.id], scope_sha256, resumed=opts.resume is not None)
         _record_order(
@@ -3060,6 +3323,9 @@ def _execute_run(
             started_at=starts.get(target.id),
             apply_sampling_defaults=apply_sampling_defaults,
             review_holds=review_holds,
+            control=control,
+            verify=verify,
+            judge_escalate_target=judge_escalate_target,
         )
         results.append(result)
         _persist_run_spend(run_db, result)
@@ -3439,6 +3705,9 @@ def _run_one_target(
     started_at: str | None = None,
     apply_sampling_defaults: bool = True,
     review_holds: dict[str, ReviewHold] | None = None,
+    control: bool = False,
+    verify: bool = False,
+    judge_escalate_target: Target | None = None,
 ) -> CampaignResult:
     """Assemble a runner for one target and drive one campaign to completion.
 
@@ -3475,6 +3744,9 @@ def _run_one_target(
         spend_sink=lambda spend: _record_spend_quietly(run_db, campaign_run_id, spend),
         apply_sampling_defaults=apply_sampling_defaults,
         review_holds=review_holds,
+        control=control,
+        verify=verify,
+        judge_escalate_target=judge_escalate_target,
     )
     try:
         return interrupts.run_until_stopped(
@@ -3759,6 +4031,9 @@ def _persist_run_integrity(
     resumed: bool = False,
     selection: dict[str, object] | None = None,
     review_holds: dict[str, ReviewHold] | None = None,
+    control: bool = False,
+    verify: bool = False,
+    judge_escalate: Target | None = None,
 ) -> None:
     """Record WHAT this campaign is about to run, before it sends anything.
 
@@ -3798,6 +4073,11 @@ def _persist_run_integrity(
             context={
                 "target_digest": target_digest(target, mock_scenario=mock_scenario),
                 "judge_digest": target_digest(judge) if judge is not None else None,
+                # The model a judge that cannot settle an attempt hands it to (u06 A-109):
+                # a resume is refused under another one, as under another judge.
+                "judge_escalate_digest": (
+                    target_digest(judge_escalate) if judge_escalate is not None else None
+                ),
                 "adaptive": adaptive,
                 "runs": runs,
                 "sampling_defaults_applied": sampling_defaults_applied,
@@ -3838,6 +4118,10 @@ def _persist_run_integrity(
                     spec_id: [hold.false_alarms, hold.labelled]
                     for spec_id, hold in (review_holds or {}).items()
                 },
+                # Whether a failing spec sends its control (u08 A-106): a resume does the same.
+                "control": control,
+                # Whether a failing finding is reviewed (u08 A-107): a resume does the same.
+                "verify": verify,
             },
         )
 

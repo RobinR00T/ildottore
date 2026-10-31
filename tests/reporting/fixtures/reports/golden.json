@@ -38,6 +38,7 @@
         }
       ],
       "confirmed": true,
+      "control": null,
       "evidence": [
         {
           "attempt_id": "a1",
@@ -57,7 +58,8 @@
       },
       "spec_id": "PI-DEMO-001",
       "status": "fail",
-      "target_id": "t-a"
+      "target_id": "t-a",
+      "verification": null
     },
     {
       "attempts": [
@@ -97,6 +99,7 @@
         }
       ],
       "confirmed": false,
+      "control": null,
       "evidence": [
         {
           "attempt_id": "a1",
@@ -116,7 +119,8 @@
       },
       "spec_id": "DL-DEMO-002",
       "status": "pass",
-      "target_id": "t-b"
+      "target_id": "t-b",
+      "verification": null
     }
   ],
   "run": {
@@ -159,6 +163,7 @@
           }
         ],
         "confirmed": true,
+        "control": null,
         "evidence": [
           {
             "attempt_id": "a1",
@@ -178,7 +183,8 @@
         },
         "spec_id": "PI-DEMO-001",
         "status": "fail",
-        "target_id": "t-a"
+        "target_id": "t-a",
+        "verification": null
       },
       {
         "attempts": [
@@ -218,6 +224,7 @@
           }
         ],
         "confirmed": false,
+        "control": null,
         "evidence": [
           {
             "attempt_id": "a1",
@@ -237,7 +244,8 @@
         },
         "spec_id": "DL-DEMO-002",
         "status": "pass",
-        "target_id": "t-b"
+        "target_id": "t-b",
+        "verification": null
       }
     ],
     "finished_at": "2026-01-01T00:05:00Z",

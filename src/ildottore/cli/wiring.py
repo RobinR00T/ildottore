@@ -79,6 +79,7 @@ from ildottore.core.runner import (
 from ildottore.core.setup_delivery import seeded_canaries
 from ildottore.evaluators import build_default_registry as build_evaluator_registry
 from ildottore.evaluators.base import foldable
+from ildottore.evaluators.fail_verifier import AdversarialVerifier
 from ildottore.fingerprint import FingerprintEngine
 from ildottore.fingerprint.layers import CarrierLayer, default_layers
 from ildottore.mutators import build_default_registry as build_mutator_registry
@@ -140,6 +141,7 @@ from ildottore.shared.models import (
     ModelFingerprint,
     ModelRequest,
     ModelResponse,
+    Pricing,
     RestSpec,
     Sampling,
     SeededSetup,
@@ -689,6 +691,8 @@ def mock_adapter_factory(target: Target, spec: AttackSpec) -> TargetAdapter:
     scenario = MockScenario.from_fixture(
         spec.fixtures.vulnerable,
         capabilities=target.capabilities,
+        # A target the attack exploits answers the same ask without it securely (u08 A-106).
+        control=spec.fixtures.hardened,
     )
     return MockTarget(scenario, id=target.id)
 
@@ -824,16 +828,18 @@ def scenario_judge_adapter(scenario: str) -> TargetAdapter | None:
     """
 
     if scenario == "vulnerable":
-        verdict = "exploited"
+        verdict, state = "exploited", "holds"
         reasoning = "offline judge (scenario replay): target exploited by the attack"
     elif scenario == "hardened":
-        verdict = "secure"
+        verdict, state = "secure", "does_not_hold"
         reasoning = "offline judge (scenario replay): target remained secure"
     else:
         return None
 
+    # `state` answers `run --verify`'s second pass in the same scenario (u08 A-107); each
+    # reader ignores the other's key.
     payload = (
-        f'{{"verdict": "{verdict}", "confidence": 1.0, '
+        f'{{"verdict": "{verdict}", "state": "{state}", "confidence": 1.0, '
         f'"reasoning": "{reasoning}", "observed_injection_attempt": false}}'
     )
     return MockTarget(MockScenario(response=payload), id="mock-judge")
@@ -1200,6 +1206,7 @@ def unset_credentials(
     *,
     judge: Target | None = None,
     specs: list[AttackSpec] | None = None,
+    judge_escalate: Target | None = None,
 ) -> list[str]:
     """One phrase per credential a live run would read from a variable that is not set.
 
@@ -1238,6 +1245,8 @@ def unset_credentials(
                 )
     if judge is not None and request_url_for(judge) is not None:
         check(f"the --judge model {quoted(judge.id)}", judge.auth_ref)
+    if judge_escalate is not None and request_url_for(judge_escalate) is not None:
+        check(f"the --judge-escalate model {quoted(judge_escalate.id)}", judge_escalate.auth_ref)
     return problems
 
 
@@ -2122,6 +2131,8 @@ def _target_from(path: Path, raw: dict[str, Any]) -> Target:
                 f"{validation_problems(exc)}"
             ) from exc
 
+    pricing = _pricing(path, raw.get("pricing"))
+
     transport = raw.get("transport")
     _check_provider_and_transport(path, provider, transport)
     command_raw = raw.get("command")
@@ -2156,7 +2167,27 @@ def _target_from(path: Path, raw: dict[str, Any]) -> Target:
         rest=rest,
         mcp=mcp,
         filter_stops=_filter_stops(path, raw.get("filter_stops"), provider),
+        pricing=pricing,
     )
+
+
+def _pricing(path: Path, raw: object) -> Pricing | None:
+    """The file's ``pricing:``, euros per million tokens in and out (u12 A-108), or ``None``.
+
+    Field and reason only, as ``sampling_defaults`` is refused: a rate is no secret, but the
+    loaders never quote what was written.
+    """
+
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        raise ValueError(f"target file {path} 'pricing' must be a mapping")
+    try:
+        return Pricing.model_validate(raw)
+    except ValidationError as exc:
+        raise ValueError(
+            f"target file {path} 'pricing' failed validation: {validation_problems(exc)}"
+        ) from exc
 
 
 def _check_provider_and_transport(path: Path, provider: object, transport: object) -> None:
@@ -2848,6 +2879,9 @@ def build_runner(
     spend_sink: Callable[[Spend], None] | None = None,
     apply_sampling_defaults: bool = True,
     review_holds: Mapping[str, ReviewHold] | None = None,
+    control: bool = False,
+    verify: bool = False,
+    judge_escalate_target: Target | None = None,
 ) -> BuiltRunner:
     """Assemble the whole middle tier into a :class:`CampaignRunner` (contract §5.2).
 
@@ -2900,8 +2934,23 @@ def build_runner(
         else None
     )
 
+    # The judge model the second pass asks (`run --verify`, u08 A-107): the one semantic_judge
+    # reads, or none (the CLI refuses --verify on a live target without --judge).
+    reviewer: TargetAdapter | None = judge_adapter
+    # The judge model a first judge that cannot settle an attempt hands it to (`run
+    # --judge-escalate`, u06 A-109), metered on the same ceilings as the first.
+    escalate_to = (
+        build_judge_adapter(
+            scope,
+            judge_escalate_target,
+            meter=meter,
+            apply_sampling_defaults=apply_sampling_defaults,
+        )
+        if judge_escalate_target is not None and meter is not None
+        else None
+    )
     if real_target is not None:
-        evaluators = build_evaluator_registry(judge=judge_adapter)
+        evaluators = build_evaluator_registry(judge=judge_adapter, escalate_to=escalate_to)
         factory = real_adapter_factory(scope, real_target)
     else:
         # Resolve the effective offline scenario (mock_scenario wins; else the legacy
@@ -2911,7 +2960,8 @@ def build_runner(
         offline_judge = judge_adapter
         if offline_judge is None:
             offline_judge = scenario_judge_adapter(effective_scenario)
-        evaluators = build_evaluator_registry(judge=offline_judge)
+        reviewer = offline_judge
+        evaluators = build_evaluator_registry(judge=offline_judge, escalate_to=escalate_to)
         if mock_scenario is not None:
             factory = scenario_adapter_factory(mock_scenario)
         else:
@@ -2965,6 +3015,8 @@ def build_runner(
             else None
         ),
         review_holds=review_holds,
+        control=control,
+        verifier=(AdversarialVerifier(reviewer) if verify and reviewer is not None else None),
     )
     return BuiltRunner(
         runner=runner,

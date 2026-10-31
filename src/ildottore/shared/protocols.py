@@ -21,11 +21,13 @@ from ildottore.shared.models import (
     RiskScore,
     TestRun,
     Verdict,
+    Verification,
 )
 
 __all__ = [
     "Evaluator",
     "EvidenceStore",
+    "FailVerifier",
     "Mutator",
     "Reporter",
     "RiskScorer",
@@ -52,6 +54,13 @@ class Evaluator(Protocol):
     type: str
 
     async def evaluate(self, ctx: EvalContext) -> Verdict: ...
+
+
+@runtime_checkable
+class FailVerifier(Protocol):
+    """Tries to refute a failing finding from one of its attempts (u08 A-107, ``docs/04``)."""
+
+    async def verify(self, spec: AttackSpec, attempt: Attempt) -> Verification: ...
 
 
 @runtime_checkable

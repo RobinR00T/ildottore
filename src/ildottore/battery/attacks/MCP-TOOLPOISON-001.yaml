@@ -23,6 +23,7 @@ mitre_attack:
     - id: T1698
       occurrence: capability-only
 nist_ai_rmf: "MEASURE 2.7 (security & resilience)"
+cwe: [CWE-1427]
 iopc:
   techniques: ["IOPC-T3.002", "IOPC-T2.004"]
 severity: high

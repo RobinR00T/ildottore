@@ -2144,6 +2144,47 @@ again loses nothing and passes. A value is skipped with its option, and `--` end
 --suite owasp:llm` ran one suite. Pinned by `tests/cli/test_repeated_option_refused.py`, which
 walks the command tree.
 
+**A-108 (added 2026-10-30) The estimate in euros (ADR-0020, OD-64).** A target file may declare
+`pricing:` (`input_eur_per_mtok`, `output_eur_per_mtok`: euros per million tokens, finite, 0 to
+10,000, both required, no other key), loaded by `wiring._pricing` into `Target.pricing`
+(`shared.models.Pricing`, u00's optional field); a non-mapping or an invalid rate is refused when
+the file is loaded, naming the file and the field. `pricing` is cosmetic to the target digest
+(`shared.digest._TARGET_COSMETIC`) and dropped from a dump when unset. `--estimate` prints
+`~cost: X EUR at the rates the target files declare (pricing:)` and one line per model (each
+target, the `--judge` model, the `--judge-escalate` model) with its input and output tokens at
+its rates (`run.eur`, `run.euros`: four decimals under one cent); a model that sends without
+`pricing:` is `unpriced` and makes the total `at least`; with nothing priced the estimate reads as
+before and its last line says where to declare a rate; `-q` appends the figure. No rate ships
+with the tool. **Acceptance:** `tests/cli/test_judge_cost.py` (the rates loaded, five refusals,
+the digest and the dump, the arithmetic, the priced and unpriced estimate, `-q`, both judges
+priced apart, the floor).
+
+**A-109 (u06's clause; this unit's half, added 2026-10-30) `--judge-escalate`.** `run
+--judge-escalate FILE` loads a second judge model target, authorized by the scope and its
+credential checked as the judge's (`wiring.unset_credentials`); without `--judge` it is refused
+before anything is sent. `wiring.build_runner` builds its adapter with the judge's meter and
+hands it to the registry as `escalate_to`. `estimate_plan(..., escalate=True)` counts every
+judgement once more (`PlanEstimate.escalate_requests`, `escalate_tokens`,
+`escalate_output_tokens`, included in the judge totals); `--estimate` and `--dry-run` print `of
+which up to N to the --judge-escalate model`. The run context records `judge_escalate_digest`
+(u10's `_CONTEXT_FIELDS`), and `resume._assert_same_context` refuses a resume that offers another
+second judge, none where one was or one where none was. **Acceptance:**
+`tests/cli/test_judge_cost.py` (the refusal without `--judge`, the estimate and dry-run lines,
+the worst-case count, the run context and the resume refusal).
+
+**A-111 (added 2026-10-30) A reproduction pack per failing finding (ADR-0022, OD-67).** `dottore
+replay RUN_ID --pack DIR` writes, after `replay_checked`, one directory per failing finding the
+run store records (`cli/repro_pack.py`, `write_packs`): the finding's attempt artifacts copied byte
+for byte, `finding.json` (`PACK_FORMAT` 1), `README.md` (the `dottore run` line, each attempt's
+verdict and, for a fail, its request; never the reply) and `SHA256SUMS`. `--finding SPEC_ID`
+(repeatable, needs `--pack`) keeps those, each of which must have failed; `--spec-path` names the
+specs whose detail is attached when its digest matches the run's. Refused (exit 3): no run store
+at `--run-db`, a run it does not know, a `DIR` that is a file or a non-empty directory, a
+`--finding` that did not fail, evidence the manifest check refuses (nothing is written). Sends
+nothing. **Acceptance:** `tests/cli/test_repro_pack.py` (one pack per failing finding, the byte
+copies and their names, `SHA256SUMS`, `finding.json`, the README's reproduce line and no reply,
+the selection, the refusals, tampered evidence, a changed or missing spec, the fence).
+
 ## §8 Out of scope / forbidden
 - MUST NOT implement attack/mutation/evaluation/scoring/reporting/fingerprint logic (u05-u11,
   u13): only wire and call them. MUST NOT own `cli/lint.py` (u02) or edit any spec YAML.
@@ -2324,3 +2365,15 @@ walks the command tree.
   printed as the battery's path in the plan and the note, and used by the CI example. Not built in
   A-84: a new public spelling deserves its own decision. Alternatives: a `--builtin` flag; leave
   the default as the only way.
+- **OD-64** (2026-10-30, A-108, ADR-0020; **open**): the cost in euros. Built as the smallest
+  reversible version: (1) the operator declares each model's rates in its target file; no price
+  list ships with the tool; (2) the rates are not part of the target digest; (3) the figure is an
+  estimate before the send, the worst case for an escalating judge. To decide: whether a run
+  reports its measured spend from the replies' `usage` blocks, in the report and the run store;
+  whether a campaign ceiling may be set in euros. Reversal: drop `pricing:`. Owner: human.
+- **OD-67** (2026-10-30, A-111, ADR-0022; **open**): the reproduction pack. Built as the
+  smallest reversible version: a `replay` option, read-only, one directory per failing finding,
+  no reply in the README, no script that sends. To decide: whether the run store records a
+  finding's `confirmed` state so a pack (and `--finding`) can keep the confirmed ones only;
+  whether a pack carries the spec file itself; whether a pack of a passing finding (a fix
+  verified) is useful. Reversal: run `replay` without `--pack`. Owner: human.

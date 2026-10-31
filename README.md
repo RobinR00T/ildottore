@@ -21,7 +21,9 @@ mapping the code checks).
   ATLAS, agentic/OWASP-Agents-2026 abuse and the Nova IoPC taxonomy, plus the OWASP AISVS
   controls a failure is evidence against (`dottore coverage --framework aisvs`) and the MITRE
   ATT&CK Enterprise v20.0 techniques an agent is observed performing (`--framework attack`,
-  `--navigator-layer` for the ATT&CK Navigator, `-oN` on a run).
+  `--navigator-layer` for the ATT&CK Navigator, `-oN` on a run). 48 specs name the MITRE CWE
+  of the weakness a fail shows (CWE-1427 for prompt injection, CWE-89, CWE-862, ...), carried as
+  `external/cwe/cwe-NNN` SARIF tags (Scenario S in [`examples/`](examples/)).
   `dottore registry ls` lists them all.
 - **Fingerprint** a target's model + guardrails before attacking (`-sV`).
 - **Obfuscation and fuzzing** without editing a spec: `--obfuscate` wraps every attack in
@@ -52,13 +54,26 @@ mapping the code checks).
   outside the repository, under `~/.config/ildottore/targets/`, and run it by name
   (`dottore run -t <name> --scope <name>`); `examples/target.agent.yaml` and
   `examples/target.agent-rest.yaml` have placeholders only.
-- **Reports** in JSON, HTML, SARIF and JUnit; **`replay`** re-derives any run from evidence;
+- **Reports** in JSON, HTML, SARIF and JUnit; **`replay`** re-derives any run from evidence
+  and, with `--pack`, writes a checksummed reproduction pack per failing finding for the target's
+  owner (Scenario T in [`examples/`](examples/));
   **`diff`** gates a pipeline on regressions vs a baseline.
 - **Your labels feed the gate**: `dottore calibrate report.json labels.yaml --record
   labels.jsonl` keeps each verdict you give, and `run --fp-ledger labels.jsonl` holds for review
   a spec whose last labelled fails were more than 30% false alarms (5 at least, the last 50
   counted). The spec still runs and its fail is still reported; it just stops failing the
   pipeline until new labels bring the rate down (Scenario N in [`examples/`](examples/)).
+- **Attribute a fail to its attack**: `run --control` sends a failing spec's `attack.control`
+  (the same ask without the attack) once. If the target does the forbidden thing unattacked too,
+  the fail is kept and never confirmed: it needs review, since the technique did not cause it
+  (Scenario P in [`examples/`](examples/)).
+- **A second reader for each fail**: `run --verify` asks the judge model, once per failing spec,
+  to refute the fail. Its answer, `holds`, `does_not_hold` or `inconclusive`, is reported beside
+  the finding and moves nothing (Scenario Q in [`examples/`](examples/)).
+- **The estimate in euros, and a judge that escalates**: declare `pricing:` (euros per million
+  tokens) in a target file and `run --estimate` prices each model's share. `--judge-escalate`
+  adds a stronger judge asked only when the `--judge` model cannot settle an attempt, priced as
+  the worst case (Scenario R in [`examples/`](examples/)).
 
 ## Quickstart
 

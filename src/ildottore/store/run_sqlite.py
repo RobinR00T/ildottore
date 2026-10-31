@@ -867,6 +867,7 @@ _CONTEXT_FIELDS: Final[dict[str, tuple[bool, Any, str]]] = {
     # target, which no flag waives (u12 A-24), rather than calling the record corrupt.
     "target_digest": (True, _is_digest, "a sha256 digest this tool writes"),
     "judge_digest": (True, _is_digest, "null or a sha256 digest this tool writes"),
+    "judge_escalate_digest": (True, _is_digest, "null or a sha256 digest this tool writes"),
     "adaptive": (False, _is_bool, "true or false"),
     "sampling_defaults_applied": (True, _is_bool, "true or false"),
     "takes_sampling": (True, _is_bool, "true or false"),
@@ -909,6 +910,9 @@ _CONTEXT_FIELDS: Final[dict[str, tuple[bool, Any, str]]] = {
     "selection": (False, _is_selection, "the selection flags this tool records"),
     # u08 A-105: the specs the labels ledger held, each with its two counts.
     "review_holds": (False, _is_holds, "a map of spec ids to two counts"),
+    # u08 A-106: whether a failing spec sends its control (run --control).
+    "control": (False, _is_bool, "true or false"),
+    "verify": (False, _is_bool, "true or false"),
     "spec_fields": (
         False,
         lambda v: (

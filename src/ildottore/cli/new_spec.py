@@ -62,6 +62,7 @@ nist_ai_rmf: "TODO"
 #   techniques: []
 #   impacts: []
 # aisvs: []            # optional: OWASP AISVS IDs a FAIL is evidence against (CONTRIBUTING)
+# cwe: []              # optional: MITRE CWE IDs of the weakness a FAIL shows (CWE-1427, ...)
 # mitre_attack:        # optional: ATT&CK techniques the target is OBSERVED performing (docs/17)
 #   techniques:
 #     - id: T1699

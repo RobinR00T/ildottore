@@ -12,6 +12,7 @@ from pathlib import Path
 from ildottore.cli import wiring
 from ildottore.redactor import visible_controls
 from ildottore.registry import LintError, SpecNotFoundError
+from ildottore.shared.cwe import CWE_ENTRIES
 from ildottore.shared.models import AttackSpec
 
 __all__ = ["DescribeError", "describe_spec", "render_describe"]
@@ -41,6 +42,13 @@ def describe_spec(
         raise DescribeError(spec_id, errors) from exc
 
 
+def _cwe_label(code: str) -> str:
+    """``CWE-1427 (Improper Neutralization of ...)``, the name from the pinned table if known."""
+
+    entry = CWE_ENTRIES.get(code)
+    return f"{code} ({entry[0]})" if entry is not None else code
+
+
 def render_describe(spec: AttackSpec) -> str:
     """Render a human-readable card for one spec (no raw dangerous payloads)."""
 
@@ -52,6 +60,11 @@ def render_describe(spec: AttackSpec) -> str:
         f"mitre_atlas: {spec.mitre_atlas.tactic}"
         + (f" / {spec.mitre_atlas.technique}" if spec.mitre_atlas.technique else ""),
         f"nist_ai_rmf: {spec.nist_ai_rmf}",
+        *(
+            [f"cwe:         {', '.join(_cwe_label(c) for c in dict.fromkeys(spec.cwe))}"]
+            if spec.cwe
+            else []
+        ),
         f"severity:    {spec.severity.value}",
         f"target_type: {spec.target_type.value}",
         f"requires:    {', '.join(r.value for r in spec.requires) or '(none)'}",

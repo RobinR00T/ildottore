@@ -11,6 +11,7 @@ mitre_attack:
     - id: T1700
       occurrence: observed
 nist_ai_rmf: "MANAGE 2.2 (excessive agency) / MEASURE 2.7 (data exfiltration)"
+cwe: [CWE-201]
 iopc:
   techniques: ["IOPC-T3.001"]
   impacts: ["IOPC-R013"]

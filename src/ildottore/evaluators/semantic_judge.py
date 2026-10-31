@@ -128,12 +128,40 @@ class SemanticJudgeEvaluator(BaseEvaluator):
 
     type = EvaluatorType.SEMANTIC_JUDGE.value
 
-    def __init__(self, judge: TargetAdapter, *, passes: int = 2) -> None:
-        """``judge`` is the injected judge-model adapter; ``passes`` is the self-consistency N."""
+    def __init__(
+        self,
+        judge: TargetAdapter,
+        *,
+        passes: int = 2,
+        escalate_to: TargetAdapter | None = None,
+    ) -> None:
+        """``judge`` is the injected judge-model adapter; ``passes`` is the self-consistency N.
+
+        ``escalate_to`` (``run --judge-escalate``, u06 A-109) is a second judge model, asked the
+        same way only when ``judge`` cannot settle an attempt (any ``inconclusive``): a cheap
+        model reads every attempt, the expensive one only what the cheap one leaves open.
+        """
         self._judge = judge
         self._passes = max(2, passes)
+        self._escalate_to = escalate_to
 
     async def evaluate(self, ctx: EvalContext) -> Verdict:
+        first = await self._judge_with(self._judge, ctx)
+        if self._escalate_to is None or first.status is not VerdictStatus.INCONCLUSIVE:
+            return first
+        second = await self._judge_with(self._escalate_to, ctx)
+        return second.model_copy(
+            update={
+                "reasoning": (
+                    f"escalated to the second judge (the first could not settle the attempt: "
+                    f"{first.reasoning}); {second.reasoning}"
+                )
+            }
+        )
+
+    async def _judge_with(self, judge: TargetAdapter, ctx: EvalContext) -> Verdict:
+        """One hardened judgement of ``ctx`` by ``judge``: every pass, reconciled."""
+
         delimiter = _random_delimiter()
         tripwire = _random_tripwire()
         user_turn = _build_user_turn(ctx, delimiter, tripwire)
@@ -150,7 +178,7 @@ class SemanticJudgeEvaluator(BaseEvaluator):
                 sampling=Sampling(temperature=0.0 if pass_index == 0 else 0.5, top_p=1.0),
             )
             try:
-                response = await self._judge.send(request)
+                response = await judge.send(request)
             except (SamplingRefused, CredentialTooShort):
                 # A judge whose model refuses the request's sampling refuses every request the
                 # same way: read as an outage, it made every judged spec inconclusive and the run

@@ -433,6 +433,19 @@ characters (`ab` and the 16 variation selectors) is read exactly, where it read 
 failed every reply holding `ab`; it still fails a reply holding it as written
 (`tests/evaluators/test_secret_leakage_fold.py`, 3 cases failing on `65203f18`).
 
+**A-109 (added 2026-10-30) A judge that hands what it cannot settle to a second (ADR-0020,
+OD-65).** `SemanticJudgeEvaluator(judge, escalate_to=...)` (and `build_default_registry(...,
+escalate_to=...)`) asks `escalate_to`, with the same passes and hardening, only when `judge`
+returns `inconclusive` (a self-consistency disagreement, a confidence under the threshold, an
+adapter error, free text, a tripwire). The second judge's verdict stands, its own `inconclusive`
+included, and its reasoning starts `escalated to the second judge (the first could not settle
+the attempt: <the first's reasoning>)`. A settled `pass` or `fail` never reaches it; a judge-alone
+fail still never confirms (OD-19). Without `escalate_to` nothing changes. u12 wires the flag
+(`--judge-escalate`), the estimate and the resume. **Costs, stated:** judging rules 7 re-pinned,
+no rule of judgement changed. **Acceptance:** `tests/evaluators/test_judge_escalation.py` (a
+settled attempt never escalated, a disagreement, a low confidence and an outage escalated, the
+second judge's `inconclusive` kept with its reason, nothing without a second judge).
+
 ## §8 Out of scope / forbidden
 - MUST NOT call provider SDKs directly (only via `TargetAdapter`).
 - MUST NOT persist raw secrets/PII anywhere (redactor only).
@@ -489,3 +502,10 @@ failed every reply holding `ab`; it still fails a reply holding it as written
   check only, and always visible (the plan, every report, the run store, each verdict it
   changed, the target digest). Alternatives not taken: a sibling `not_destructive` list; a
   `transfer_to_*` exemption by shape; leaving the hand-off failing.
+- **OD-65** (2026-10-30, A-109, ADR-0020; **open**): the escalating judge. Built as the smallest
+  reversible version: (1) only an `inconclusive` escalates, never a settled `fail` or `pass`;
+  (2) the second judge's verdict stands, and a judge-alone fail still never confirms; (3) opt-in
+  (`--judge-escalate`, needs `--judge`); (4) `--verify` keeps using the `--judge` model. To
+  decide: whether a `fail` escalates too; whether `--verify` uses the second model when one is
+  given; whether its sampling notes are tracked as the first judge's. Reversal: a run without
+  `--judge-escalate`. Owner: human.

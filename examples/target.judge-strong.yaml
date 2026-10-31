@@ -1,0 +1,20 @@
+# target.judge-strong.yaml, a second, stronger judge for `--judge-escalate` (Scenario R).
+#
+# Asked only when the --judge model cannot settle an attempt (a disagreement between its two
+# passes, a confidence under the spec's threshold, an outage, free text): a cheap first judge,
+# an expensive second. A hosted OpenAI-compatible model, placeholders only: the host, the model
+# and the rates are not real. The scope authorizes it as it does the first judge.
+id: strong-judge
+type: model
+provider: openai
+endpoint: "https://llm.example.test/v1/chat/completions"
+model: "your-strongest-model"
+auth_ref: "env://STRONG_JUDGE_KEY"   # read at send time; never written here
+capabilities: { tools: false, rag: false }
+sampling_defaults: { max_tokens: 400 }
+# What the model costs you, in euros per million tokens: copy yours from your provider's price
+# list (these are placeholders). `--estimate` prices this judge's share at these rates. Not part
+# of the target digest: a new rate never refuses a resume or splits a comparison.
+pricing:
+  input_eur_per_mtok: 2.5
+  output_eur_per_mtok: 10
