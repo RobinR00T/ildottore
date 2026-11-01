@@ -14,6 +14,7 @@ mitre_attack:
     - id: T1059.006
       occurrence: observed
 nist_ai_rmf: "MANAGE 2.2 (excessive agency)"
+cwe: [CWE-94]
 iopc:
   techniques: ["IOPC-T4.002", "IOPC-T1.002"]
   impacts: ["IOPC-R013"]

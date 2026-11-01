@@ -29,6 +29,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from ildottore.shared.enums import CONTROL
 from ildottore.shared.models import (
     Capabilities,
     FixtureCase,
@@ -75,6 +76,10 @@ class MockScenario(BaseModel):
     logprobs: list[TokenLogprob] | None = None
     finish_reason: str | None = None
     capabilities: Capabilities = Field(default_factory=Capabilities)
+    #: What the emulated target answers a spec's control (u08 A-106): a target vulnerable to the
+    #: attack answers the plain ask securely. ``None`` answers it like any other request.
+    control_response: str | None = None
+    control_tool_calls: list[JsonDict] = Field(default_factory=list)
 
     def model_post_init(self, _context: object) -> None:
         if isinstance(self.response, list) and len(self.response) == 0:
@@ -88,8 +93,11 @@ class MockScenario(BaseModel):
         logprobs: list[TokenLogprob] | None = None,
         capabilities: Capabilities | None = None,
         finish_reason: str | None = None,
+        control: FixtureCase | None = None,
     ) -> MockScenario:
         """Build a scenario from a schema :class:`FixtureCase`.
+
+        ``control`` is the fixture the scenario answers a spec's control with (u08 A-106).
 
         ``FixtureCase`` carries no logprobs/capabilities (they are not in the
         author-facing schema), so the harness supplies them out-of-band when a
@@ -103,6 +111,8 @@ class MockScenario(BaseModel):
             logprobs=logprobs,
             capabilities=capabilities if capabilities is not None else Capabilities(),
             finish_reason=finish_reason,
+            control_response=control.response if control is not None else None,
+            control_tool_calls=list(control.tool_calls or []) if control is not None else [],
         )
 
     @classmethod
@@ -230,6 +240,14 @@ class MockTarget:
         """
 
         attempt = self._attempt_index(request)
+        scenario = self._scenario
+        if (request.metadata or {}).get(CONTROL) is True and scenario.control_response is not None:
+            # A spec's control (u08 A-106): the plain ask, answered as the scenario says.
+            return ModelResponse(
+                text=scenario.control_response,
+                tool_calls=[dict(call) for call in scenario.control_tool_calls],
+                finish_reason=scenario.finish_reason,
+            )
         response = self._build_response(attempt)
         history = request.messages or []
         if history and history[-1].get("role") == "tool":

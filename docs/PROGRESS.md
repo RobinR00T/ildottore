@@ -5,6 +5,88 @@ The carryover ledger. Every agent session updates this so context survives even 
 newest merge on top: a branch's entries land together when it merges, so the dates of
 neighbouring entries can interleave (an older branch merged later sits above a newer one).
 
+## State, 2026-10-30: a reproduction pack per failing finding (`feat/repro-pack`, u12 A-111)
+
+- **Why.** Handing a finding to the target's owner meant a report without the request to send
+  again, or the whole evidence tree.
+- **Built.** `replay --pack DIR [--finding ID]` (`cli/repro_pack.py`): per failing finding, the
+  verified attempt artifacts byte for byte, `finding.json`, `README.md`, `SHA256SUMS`. Stacked on
+  `feat/cwe-mapping`. Judging rules 7 re-pinned. ADR-0022.
+- **Verified.** `tests/cli/test_repro_pack.py` (8 tests against a mock run). Scenario T, output in
+  `examples/README.md`.
+- **Open.** OD-67 (a `confirmed` state in the run store, the spec file in the pack, passing
+  findings): the owner's call.
+
+## State, 2026-10-30: a spec names its CWE, and each family says how to confirm a fail (`feat/cwe-mapping`, u02 A-110)
+
+- **Why.** A finding carried six framework labels and no CWE, the one an application team's
+  tracker and GitHub code scanning group by; and nothing said what to read to confirm a fail by
+  hand.
+- **Built.** `AttackSpec.cwe`, `shared.cwe` (MITRE CWE 5.0 names and mapping usages, verified
+  against `cwec_v5.0.xml` on 2026-10-30), `_check_cwe` in the lint, SARIF tags, the editions,
+  `describe`, `new-spec`; 48 of 79 battery specs mapped; the manual's per-family table. Stacked
+  on `feat/judge-cost`. Judging rules 7 re-pinned. ADR-0021.
+- **Verified.** `tests/shared/test_cwe.py` (the table, the helpers, the tag's shape, the
+  battery's mapping spec by spec, the refusals, the warning, the schema, SARIF, the card, the
+  editions, the digest). Scenario S against the mock, output in `examples/README.md`.
+- **Open.** OD-66 (the jailbreaks under CWE-1427, CWE-862 or CWE-863 for tenant leaks, CWE-749
+  for destructive actions, a roll-up in the JSON report and the HTML): the owner's call.
+
+## State, 2026-10-30: the estimate in euros, and a judge that escalates (`feat/judge-cost`, u12 A-108, u06 A-109)
+
+- **Why.** `--estimate` ended with "multiply by your provider's per-token rate", per model, by
+  hand, the judge's share never told apart. And one judge model is either cheap and often
+  `inconclusive`, or strong and expensive on every attempt.
+- **Built.** `pricing:` in a target file (`shared.models.Pricing`, `Target.pricing`, cosmetic to
+  the digest) and a `~cost:` block in `--estimate`, one line per model, `unpriced` and `at least`
+  for a model without rates; no price list ships. `run --judge-escalate`: `SemanticJudgeEvaluator`
+  takes `escalate_to` and asks it only on an `inconclusive`; priced as the worst case, its digest
+  in the run context, a resume with another refused. Stacked on `feat/judge-verify`. Judging
+  rules 7 re-pinned. ADR-0020.
+- **Verified.** `tests/evaluators/test_judge_escalation.py` (settled never escalated, a
+  disagreement, a low confidence and an outage escalated, the second's `inconclusive` kept, none
+  without a second judge) and `tests/cli/test_judge_cost.py` (the rates and five refusals, the
+  digest and the dump, the arithmetic, the priced and unpriced estimate, `-q`, both judges priced
+  apart and the floor, the worst-case count, the refusal without `--judge`, the run context and
+  the resume refusal). Scenario R's `--estimate` and `--dry-run`, output in `examples/README.md`.
+- **Open.** OD-64 (the measured spend from the replies' `usage`, a ceiling in euros) and OD-65
+  (escalating a `fail` too, `--verify` on the second model): the owner's call. Not tracked for the
+  second judge: its sampling notes. No offline second judge, so no mock run shows an escalation.
+
+## State, 2026-10-30: a second pass of the judge tries to refute a fail (`feat/judge-verify`, u08 A-107)
+
+- **Why.** A fail rests on the evaluators' first reading of one reply, and the operator re-read
+  every fail by hand to find the cheap false ones (an incidental match, a quoted request).
+- **Built.** `run --verify`: a failing spec sends one request to the judge model, asked to refute
+  the fail (`evaluators.fail_verifier.AdversarialVerifier`, the semantic judge's hardening). One
+  closed state (`shared.enums.VerificationState`) in `Finding.verification`, named in the
+  reasoning, never decisive. Estimate, run context, resume, masking, JSON schema and SARIF
+  follow; refused on a live target without `--judge`. Stacked on `feat/control-check`. Judging
+  rules 7 re-pinned. ADR-0019.
+- **Verified.** `tests/evaluators/test_fail_verifier.py`, `tests/cli/test_verify.py` (each state,
+  everything outside the set, the tripwire, the injection attempt, the threshold, the outage, the
+  fenced request; holds on the mock with schema and SARIF, a refutation that moves nothing, a
+  ceiling that keeps the finding, masking, none without the flag or for a pass, the estimate,
+  the refusals, the resume record). Scenario Q against the mock, output in `examples/README.md`.
+- **Open.** OD-63 (whether a state moves the confirmation or the needs-review gate, the default,
+  more passes): the owner's call.
+
+## State, 2026-10-30: a control attributes a fail to its attack (`feat/control-check`, u08 A-106)
+
+- **Why.** A fail said the target did the forbidden thing, never whether the attack caused it: a
+  model that writes a phishing email when asked plainly failed the encoding jailbreak too, and
+  the report called it a confirmed vulnerability of the technique.
+- **Built.** `attack.control` (optional, linted) and `run --control`: a failing spec sends its
+  control once, judged by its own evaluators, kept in `Finding.control` (`shared.control`), never
+  a trial. `not_attributed` keeps the fail from being confirmed; a judge-alone fail on the control
+  reads `inconclusive`. Estimate, run context, resume, replay, masking, JSON schema and SARIF
+  follow. Six battery specs declare a control. Judging rules 7 re-pinned. ADR-0018.
+- **Verified.** `tests/shared/test_control.py`, `tests/cli/test_control.py` (attributed,
+  not attributed, masking and schema, none without the flag or for a pass, `not_evaluable`,
+  estimate and dry run, replay, a halted run resumed without a second control, the refusals,
+  the reserved mutation). Scenario P against the mock, output in `examples/README.md`.
+- **Open.** OD-62 (the default, a rate over N controls, more specs): the owner's call.
+
 ## State, 2026-10-28: `encode:qp` decodes to the payload's bytes (`fix/qp-roundtrip`, u05 A-99)
 
 - **Why.** Gating #147, the property test `test_byte_encodings_decode_with_the_standard_library`

@@ -11,6 +11,7 @@ mitre_atlas:
   tactic: Discovery
   technique: Excessive Agency (server-side request forgery through an allowed tool)
 nist_ai_rmf: "MEASURE 2.7 (security & resilience)"
+cwe: [CWE-918]
 iopc:
   techniques: ["IOPC-T3.001"]
 severity: high

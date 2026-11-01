@@ -174,6 +174,13 @@ else ~/.config/ildottore/targets; a name that is also a file here, or found nowh
 .TP
 .B --judge \fIPATH\fR
 Judge model target.yaml (LLM-as-judge for the semantic_judge evaluator on live scans).
+.TP
+.B --judge-escalate \fIPATH\fR
+A second judge model target.yaml, asked only when the --judge model cannot settle an attempt
+(any inconclusive: a disagreement between its passes, a low confidence, an outage). Its verdict
+stands; a fail only a judge reported still never confirms. Needs --judge. Priced by --estimate
+and --dry-run as if every judgement went to it. A resume with another second judge, or none
+where its run had one, is refused.
 .SS Selection
 .TP
 .B --suite \fITEXT\fR
@@ -269,8 +276,11 @@ limits and each read-only mount); the runtime is not called.
 .B --estimate
 Print a pre-run cost estimate (requests and tokens) and the ceilings each target runs under
 (requests, attempts, tokens, wall); send nothing. Output tokens are each
-send's max_tokens, the spec's own or the target file's sampling_defaults, or 512. Under -q it
-prints one line, as --dry-run -q does.
+send's max_tokens, the spec's own or the target file's sampling_defaults, or 512. When a target
+file (the --judge files included) declares pricing: (input_eur_per_mtok, output_eur_per_mtok:
+euros per million tokens, 0 to 10,000), it adds ~cost: in EUR and one line per model; a model
+that sends without rates is unpriced and the total a floor (at least). No price list ships.
+Under -q it prints one line, as --dry-run -q does.
 .TP
 .B --resume \fIRUN_ID\fR
 Finish a halted run; answered attempts are not re-sent, and those that ended in an
@@ -353,6 +363,24 @@ of 5 holds, 4 of 4 does not (under the minimum), 3 of 10 does not (30% is not mo
 date. The holds print on stderr, under --quiet and --dry-run too. Read before anything is
 sent; a line that is not a label record stops the run (exit 3). A resume holds what its run
 held and refuses this flag.
+.TP
+.B --control
+A spec that fails and declares attack.control (the same ask without the attack) sends it once,
+after its trials, judged by the spec's own evaluators. The finding's control reads attributed
+(it passed: the fail follows the attack), not_attributed (it failed too: the fail is kept and
+never confirmed, so it needs review), inconclusive (no verdict, an error, or a fail the judge
+alone reported) or not_evaluable (no control, or a conversation). A pass sends none. Never a
+trial: not in N nor in a reproducibility; replay lists it apart. Priced by --estimate and
+--dry-run as if each such spec failed. A resume sends as its run did and refuses this flag.
+.TP
+.B --verify
+A spec that fails sends one more request to the judge model (the --judge model, or the offline
+mock's judge), asked to refute the fail. The finding's verification reads holds, does_not_hold or
+inconclusive (a state outside the set, an outage, an emitted tripwire, an injection attempt
+against holds, a confidence under the spec's threshold, or a budget that refuses the request).
+Reported beside the finding, never decisive: no status, confirmation or exit code moves. A pass
+sends none. Needs --judge on a live target. Priced by --estimate and --dry-run as one judge
+request per spec. A resume reviews as its run did and refuses this flag.
 .TP
 .B --evidence-root \fIPATH\fR, --run-db \fIPATH\fR
 Evidence store root (default .dottore/evidence) and run store SQLite path (default
@@ -518,6 +546,17 @@ Evidence store root (default .dottore/evidence).
 .TP
 .B --run-db \fIPATH\fR
 Run store whose findings are the evidence manifest (default .dottore/runs.sqlite).
+.TP
+.B --pack \fIDIR\fR
+Write one reproduction pack per failing finding into DIR, which must not exist or be empty:
+the attempts' evidence copied byte for byte, finding.json, README.md and SHA256SUMS. Needs the
+run store; sends nothing.
+.TP
+.B --finding \fISPEC_ID\fR
+With --pack, only the failing finding of this spec (repeatable).
+.TP
+.B --spec-path \fIPATH\fR
+Specs whose name, OWASP code and CWE a pack names, when the digest matches the run's.
 .SS "schema export"
 .TP
 .B --name \fITEXT\fR

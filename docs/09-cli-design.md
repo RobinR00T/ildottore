@@ -41,6 +41,8 @@ dottore run [<target.yaml> ...] [-t <target.yaml>] --scope <scope.yaml> [options
 TARGET
   <target.yaml> ...                 positional target file(s); or -t/--target, repeatable
   --judge <target.yaml>             LLM-as-judge for semantic_judge (must be in the scope)
+  --judge-escalate <target.yaml>    a second judge, only for what --judge cannot settle
+                                    (needs --judge; u06 A-109)
 
 SCAN TYPE
   -sn                               discovery only: authorized endpoint + declared
@@ -87,7 +89,8 @@ SAFETY / SCOPE
   --scope scope.yaml                REQUIRED authorization record (default-deny)
   --dry-run                         resolve + validate, send nothing
   --estimate                        pre-run cost estimate (requests + tokens) and the
-                                    ceilings, send nothing (one line under -q)
+                                    ceilings, send nothing (one line under -q); in EUR
+                                    per model when a target file declares pricing: (A-108)
   --hardened                        replay the hardened fixtures (clean-run smoke)
 
 OUTPUT
@@ -100,6 +103,10 @@ OUTPUT
                                            band's level
   --fp-ledger <ledger>                     hold for review the specs whose labelled fails were
                                            mostly false positives (calibrate --record; u08 A-105)
+  --control                                a failing spec sends its attack.control once:
+                                           attributed or not (u08 A-106)
+  --verify                                 the judge model tries to refute each fail once:
+                                           holds or not, reported only (u08 A-107)
   --compare                                model-comparison matrix (two or more targets)
   -v, -vv, -q, --no-color                  (-v also prints an internal error's traceback)
   --evidence-root <dir>  --run-db <path>  --spec-path <dir>

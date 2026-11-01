@@ -151,6 +151,19 @@ The judge implementation **must**:
    that pins seed 0 is defined and unused). The judge's requests are not stored in evidence
    (§5).
 
+`run --verify` (u08 A-107, ADR-0019) asks the same judge model, once per failing spec, to refute
+the fail, with items 1, 2, 3, 5 and 6 (one pass, temperature 0). Its closed state (`holds`,
+`does_not_hold`, `inconclusive`; anything else, an `observed_injection_attempt` against `holds`
+or a confidence under the spec's threshold is `inconclusive`) is reported in
+`Finding.verification` and decides nothing (OD-63).
+
+`run --judge-escalate` (u06 A-109, ADR-0020) gives the judge a second model: when the first
+returns `inconclusive` (a self-consistency disagreement, a confidence under the threshold, an
+adapter error, free text, the tripwire), the same items 1 to 6 run again on the second, whose
+verdict stands, its reasoning prefixed `escalated to the second judge (the first could not settle
+the attempt: <why>)`. A settled `pass` or `fail` is never escalated, and §2's rule holds: a fail
+only a judge reported never confirms (OD-65).
+
 ## 5. Evidence per verdict
 
 **Design, not yet stored.** Every verdict should persist: evaluator type + config, inputs seen

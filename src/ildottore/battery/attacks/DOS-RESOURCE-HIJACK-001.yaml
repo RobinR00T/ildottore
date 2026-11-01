@@ -12,6 +12,7 @@ mitre_attack:
     - id: T1496.004
       occurrence: observed
 nist_ai_rmf: "MANAGE 2.2 (resource / availability)"
+cwe: [CWE-770]
 iopc:
   techniques: ["IOPC-T6.001"]
   impacts: ["IOPC-R015"]

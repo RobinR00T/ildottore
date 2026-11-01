@@ -7,6 +7,7 @@ mitre_atlas:
   tactic: Impact
   technique: Denial of ML Service
 nist_ai_rmf: "MANAGE 2.2 (resource / availability)"
+cwe: [CWE-770]
 iopc:
   techniques: ["IOPC-T6.001"]
 severity: medium

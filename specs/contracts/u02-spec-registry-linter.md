@@ -501,6 +501,23 @@ memberships are reproduced, under MITRE's terms of use. Checked by
 (every shipped ID current, declared once, restricted inside its tactics) and
 `tests/cli/test_coverage_cmd.py` (the axis's buckets pinned, A-26; `docs/17`).
 
+**A-110 (added 2026-10-30) A spec names its CWE (ADR-0021, OD-66).** `AttackSpec.cwe` (u00's
+optional field, the schema's `cwe` array, `CWE-<n>` with no leading zero) names the MITRE CWE of
+the weakness a FAIL of the spec is evidence of. `shared.cwe` pins, from MITRE's `cwec_v5.0.xml`
+(CWE 5.0, 2026-10-28), the name and mapping usage of every entry the battery names and of the
+entries an AI finding is most often mapped to by mistake (CWE-1426 `Discouraged`, CWE-1446
+`Prohibited`, CWE-200, CWE-20 and others). `_check_cwe` refuses a `Discouraged` or `Prohibited`
+entry (`FRAMEWORK_CLAIM_CONTRADICTED`, naming MITRE's usage) and warns on one outside the table
+(`UNKNOWN_FRAMEWORK_CODE`, a warning). `cwe` is outside the spec digest (`_COSMETIC_FIELDS`).
+SARIF rule tags carry `external/cwe/cwe-NNN` (zero-padded to three digits, CodeQL's shape),
+`framework_editions` gains `mitre_cwe`, `dottore describe` prints a `cwe:` line with MITRE's
+names, `new-spec` scaffolds the key. 48 of the 79 battery specs declare one. **Costs, stated:**
+judging rules 7 re-pinned (battery files), no rule of judgement changed. **Acceptance:**
+`tests/shared/test_cwe.py` (the table's usages, the helpers, the SARIF tag's shape, the
+battery's mapping spec by spec, the refusal of a Discouraged and a Prohibited entry, the warning
+for an unknown one, five malformed IDs refused by the schema, SARIF, the card and the editions,
+the digest).
+
 ## §8 Out of scope / forbidden
 - MUST NOT execute spec/plugin code or open any socket at load (parse + validate + register only).
 - MUST NOT author, mutate, or "fix" spec/suite/pack YAML (u13 owns content).
@@ -530,3 +547,12 @@ memberships are reproduced, under MITRE's terms of use. Checked by
   on and which §6's enum would gain. Reversing (a) moves the refusal in `cli/run.py`
   (`_execute_run`, the `uncompilable_patterns` step) into a per-spec inconclusive finding;
   reversing (b) is one `LintCode` value and the string in `registry/linter.py`.
+- **OD-66** (2026-10-30, A-110, ADR-0021; **open**): the CWE mapping. Built as the smallest
+  reversible version: (1) only entries MITRE allows for mapping, CWE-1427 for prompt injection,
+  never CWE-1426; (2) 31 specs left unmapped (jailbreaks, content safety, autonomy, the rug pull
+  and others: model behaviour or a control no CWE entry names); (3) cross-tenant leaks under
+  CWE-862 (Missing Authorization), since a black box cannot tell a missing check from a wrong one
+  (CWE-863); (4) SARIF tags, `describe` and the editions only, no roll-up in the JSON report or
+  the HTML. To decide: whether the jailbreaks map to CWE-1427; whether the destructive actions
+  without confirmation map to CWE-749; CWE-862 or CWE-863 for the tenant specs; a CWE roll-up
+  in the report. Reversal: delete the `cwe:` lines. Owner: human.

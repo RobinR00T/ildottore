@@ -15,7 +15,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from ildottore.shared.enums import VerdictStatus
+from ildottore.shared.enums import CONTROL, VerdictStatus
 from ildottore.shared.models import Attempt
 from ildottore.shared.provider_filter import (
     blocked_attempt_ids,
@@ -62,9 +62,16 @@ class ReplayResult:
         printed 10 attempts and a 0.60 rate for a spec the report scored 6 of 6. The artifacts are
         read in file-name order, their content hashes, so a rule of its own that kept the first at
         a tie counted another attempt than the report did (audit of the scoring, 2026-10-11).
+
+        A spec's control (u08 A-106) is not an attempt either: it is in :meth:`controls`.
         """
 
-        return tuple(one_per_attempt_id(self.attempts))
+        return tuple(one_per_attempt_id(a for a in self.attempts if a.mutation != CONTROL))
+
+    def controls(self) -> tuple[Attempt, ...]:
+        """The controls ``run --control`` sent (u08 A-106), one per spec, never a trial."""
+
+        return tuple(one_per_attempt_id(a for a in self.attempts if a.mutation == CONTROL))
 
     @property
     def n(self) -> int:

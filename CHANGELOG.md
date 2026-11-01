@@ -7,6 +7,110 @@ the file, schema copy, build or pipeline it names.
 
 ## [Unreleased]
 
+### Added (u12 A-111, judging rules 7 re-pinned: a reproduction pack per failing finding)
+
+- **`dottore replay RUN_ID --pack DIR`** writes, after the manifest check, one directory per
+  failing finding: its attempt artifacts copied byte for byte, `finding.json` (`pack_format` 1),
+  a `README.md` with the `dottore run` line that reproduces it, each attempt's verdict and the
+  requests sent (never the reply), and `SHA256SUMS`. `--finding SPEC_ID` keeps some;
+  `--spec-path` names the specs whose labels it attaches when the digest matches the run's.
+  Refuses no run store, a used directory, a finding that did not fail and tampered evidence.
+  Sends nothing.
+- Docs: ADR-0022, OD-67 (open), the manual (`replay`, §9), USAGE, the man page, FAQ, README,
+  `docs/12` and Scenario T in `examples/README.md` with real output.
+
+### Added (u02 A-110, judging rules 7 re-pinned: a spec names its CWE, and each family says how to confirm a fail)
+
+- **`cwe:` on a spec**, optional: the MITRE CWE IDs of the weakness a fail of the spec shows in
+  the application. `shared.cwe` pins the name and MITRE's mapping usage of each entry from CWE
+  5.0 (2026-10-28); `dottore lint` refuses a `Discouraged` or `Prohibited` entry (CWE-1426,
+  CWE-1446, CWE-200, ...) and warns on one outside the table. Outside the spec digest.
+- 48 of the 79 battery specs declare one: CWE-1427 for prompt injection (16 specs), CWE-497,
+  CWE-201, CWE-862, CWE-89, CWE-79, CWE-78, CWE-94, CWE-915, CWE-918, CWE-770 and others; 31
+  name none on purpose (jailbreaks, content safety, autonomy, the MCP rug pull).
+- SARIF rules carry `external/cwe/cwe-NNN` tags; `framework_editions` (SARIF, JUnit) gains
+  `mitre_cwe: 5.0` (the golden snapshots gain that line); `dottore describe` prints a `cwe:` line
+  with MITRE's names; `new-spec` scaffolds the key.
+- Docs: ADR-0021, OD-66 (open), the manual ("Confirming a finding by hand, family by family",
+  the editions), `docs/03`, CONTRIBUTING, FAQ, README, `docs/12` and Scenario S in
+  `examples/README.md` with real output. Judging rules stay at version 7, re-pinned: the battery
+  files changed, no evaluator reads `cwe`.
+
+### Added (u12 A-108 and u06 A-109, judging rules 7 re-pinned: the estimate in euros, and a judge that escalates)
+
+- **`pricing:` in a target file**: what the model costs the operator, in euros per million
+  tokens (`input_eur_per_mtok`, `output_eur_per_mtok`, both required, finite, 0 to 10,000, no
+  other key; refused when invalid, naming the file and the field). `run --estimate` prints
+  `~cost: X EUR` and one line per model (each target, the `--judge` model, the
+  `--judge-escalate` model) with its tokens at its rates; a model that sends without rates is
+  `unpriced` and makes the total `at least`; `-q` appends the figure. With nothing priced the
+  estimate reads as before, its last line saying where to declare a rate. No price list ships
+  with the tool. `pricing` is not part of the target digest.
+- **`dottore run --judge-escalate FILE`**: a second judge model, asked with the same passes and
+  hardening only when the `--judge` model returns `inconclusive` (a disagreement, a low
+  confidence, an outage, free text, a tripwire). Its verdict stands, its reasoning prefixed
+  `escalated to the second judge (...)`; a settled `pass` or `fail` never reaches it and a
+  judge-alone fail still never confirms. Needs `--judge`; authorized by the scope and its
+  credential checked; `--estimate` and `--dry-run` price the worst case (`of which up to N to
+  the --judge-escalate model`); the run context records its digest and a resume with another
+  second judge, none or a new one is refused.
+- Docs: ADR-0020, OD-64 and OD-65 (open), the manual (`pricing` in §4.2, the `--judge-escalate`
+  and `--estimate` rows, "A cheap judge, and a second for what it cannot settle"), USAGE, FAQ,
+  README, the man page, `docs/04`, `docs/09`, `docs/12`, `examples/target.judge-strong.yaml`
+  (authorized by `scope.agent.yaml`) and Scenario R in `examples/README.md` with real output.
+  Judging rules stay at version 7, re-pinned: no evaluator or combination changed, and without
+  `--judge-escalate` the judge reads as before.
+
+### Added (u08 A-107, judging rules 7 re-pinned: a second pass of the judge tries to refute a fail)
+
+- **`dottore run --verify`**: a spec that fails sends one more request to the judge model (the
+  `--judge` model, or the offline mock's scripted judge), asked to refute the fail, with the
+  semantic judge's hardening (per-call delimiter and tripwire, JSON only, temperature 0). It
+  reads the fail an evaluator other than the judge reported first. The finding gains
+  `verification` (`state`, `attempt_id`, `reasoning`, `confidence`): `holds`, `does_not_hold` or
+  `inconclusive`, the last for anything outside the set, an outage, the tripwire, an injection
+  attempt against `holds`, a confidence under the spec's threshold or a ceiling that refuses the
+  request. **Reported, never decisive:** no status, `confirmed`, risk or exit code moves. A pass
+  sends none. Without the flag nothing is sent and `verification` is `null`.
+- `--verify` on a live target without `--judge` is refused. `--estimate` and `--dry-run` price
+  one judge request per selected spec when the plan has judge requests; the run context records
+  `verify` and `--resume` reviews as its run did and refuses `--verify`. The JSON report schema
+  has an optional `verification` on a finding (the golden JSON snapshot gains
+  `"verification": null`), the reviewer's reasoning is masked, and SARIF carries a
+  `verification` property and asks for review of a `does_not_hold`.
+- Docs: ADR-0019, OD-63 (open: whether a state moves the confirmation or the needs-review gate,
+  the default, more passes), the manual ("A second reader for each fail", the `--verify` row),
+  USAGE, FAQ, README, the man page, `docs/04`, `docs/09`, `docs/12` and Scenario Q in
+  `examples/README.md` with real output. Judging rules stay at version 7, re-pinned: no
+  evaluator or combination changed, and without `--verify` nothing is sent.
+
+### Added (u08 A-106, judging rules 7 re-pinned: a control attributes a fail to its attack)
+
+- **`attack.control`**, optional on a spec: the same ask without the attack. The lint refuses it
+  on a conversation (`attack.turns`) and when it equals the attack's `user_prompt` or `carrier`.
+  Six battery specs declare one: `PI-DIRECT-001`, `SP-LEAK-001`, `AG-GOAL-THEFT-001`,
+  `DL-SECRET-CANARY-001`, `JB-REFUSAL-SUPPRESS-001`, `JB-ENCODING-001`.
+- **`dottore run --control`**: a spec that fails and declares a control sends it once, after its
+  trials, judged by the spec's own evaluators. The finding gains `control` (`outcome`, the
+  control's `attempt`, a `reason`): `attributed` (it passed), `not_attributed` (it failed too: the
+  fail is kept and **never confirmed**, so it needs review and gates only with
+  `--include-needs-review`), `inconclusive` (no verdict, an error, or a fail the judge alone
+  reported, which never confirms and so never unconfirms) or `not_evaluable`. A pass sends none.
+  Without the flag nothing is sent and `control` is `null`.
+- A control is never a trial: stored under the reserved mutation `control` (a spec naming it as
+  a mutation sends nothing), cited in the finding's evidence, never in `attempts`, N or a
+  reproducibility. `dottore replay` lists the controls on a line of their own.
+- `--estimate` and `--dry-run` price one request per selected spec that declares a control; the
+  run context records `control` and `--resume` sends as its run did, keeps an answered control
+  and refuses `--control`. The JSON report schema has an optional `control` on a finding (the
+  golden JSON snapshot gains `"control": null`), the control's attempt is masked as any attempt,
+  and SARIF carries a `control` property.
+- Docs: ADR-0018, OD-62 (open: the default, a rate over N controls, more specs), the manual
+  ("Attributing a fail to its attack", the `--control` row), USAGE, FAQ, README, the man page,
+  `docs/03`, `docs/09`, `docs/12` and Scenario P in `examples/README.md` with real output. Judging
+  rules stay at version 7, re-pinned: no evaluator or combination changed, a reply is judged as
+  before, and without `--control` nothing is sent or demoted.
+
 ### Fixed (u05 A-99, judging rules 7 re-pinned: `encode:qp` decodes to the payload's bytes)
 
 - **Quoted-printable no longer rewrites a payload's line breaks.** `encode:qp` used text-mode

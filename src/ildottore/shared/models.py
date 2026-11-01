@@ -29,6 +29,7 @@ from pydantic import (
 from ildottore.shared.enums import (
     AttackOccurrence,
     Category,
+    ControlOutcome,
     EvaluatorLogic,
     EvaluatorType,
     InconclusiveReason,
@@ -37,6 +38,7 @@ from ildottore.shared.enums import (
     Severity,
     TargetType,
     VerdictStatus,
+    VerificationState,
 )
 from ildottore.shared.filter_stops import documented_stops, target_filter_stops
 
@@ -108,6 +110,8 @@ _IOPC_TECHNIQUE_PATTERN = r"^IOPC-T[1-9][0-9]*\.[0-9]{3}$"
 _IOPC_IMPACT_PATTERN = r"^IOPC-R[0-9]{3}$"
 # OWASP AISVS requirement IDs (``shared.aisvs``), same anchor note as above.
 _AISVS_PATTERN = r"^v1\.0-C[1-9][0-9]?\.[1-9][0-9]?\.[1-9][0-9]?$"
+# MITRE CWE IDs (``shared.cwe``), same anchor note as above.
+_CWE_PATTERN = r"^CWE-[1-9][0-9]{0,4}$"
 
 
 class IoPC(_SchemaMirror):
@@ -195,6 +199,10 @@ class Attack(_SchemaMirror):
     carrier: str | None = None
     turns: list[str] | None = None
     media: list[JsonDict] | None = None
+    #: The same ask without the attack (u08 A-106): sent once, as one plain turn with the spec's
+    #: system prompt and no media, after the spec failed and ``run --control`` asked for it. A
+    #: target that fails it too does what the spec tests for without being attacked.
+    control: str | None = Field(default=None, min_length=1)
 
     def model_post_init(self, _context: object) -> None:
         # Schema anyOf: [user_prompt] | [carrier] | [turns]. `media` is an add-on carrier, not one
@@ -314,6 +322,9 @@ class AttackSpec(_SchemaMirror):
     #: OWASP AISVS 1.0 requirement IDs whose control a FAIL of this spec is evidence against.
     #: Falsification only: a PASS never verifies a control (``shared.aisvs``).
     aisvs: list[Annotated[str, Field(pattern=_AISVS_PATTERN)]] | None = None
+    #: MITRE CWE IDs of the weakness a FAIL of this spec is evidence of in the application; a
+    #: label for trackers and SARIF, never a verdict (``shared.cwe``, u02 A-110).
+    cwe: list[Annotated[str, Field(pattern=_CWE_PATTERN)]] | None = None
     severity: Severity
     target_type: TargetType
     requires: list[RequiresCapability]
@@ -875,6 +886,25 @@ class WebSocketSpec(_Frozen):
     guard: WebSocketGuard | None = None
 
 
+#: A list price per million tokens, in euros: what the operator pays, never a figure the scanner
+#: knows (u12 A-108). Finite and at most 10 000 EUR, so a typo cannot print an absurd estimate.
+EurPerMillion = Annotated[float, Field(ge=0.0, le=10_000.0, allow_inf_nan=False)]
+
+
+class Pricing(_Frozen):
+    """What a model costs the operator, per million tokens, in euros (u12 A-108, OD-64).
+
+    Declared in a target file (``pricing:``), the scanned target's or the ``--judge`` model's, so
+    ``--estimate`` prints a ceiling in euros beside the token gloss. The scanner ships no prices:
+    a list price changes, a contract rate differs, and a figure nobody declared is a figure made
+    up (``docs/12``, the estimate's own rule). Not part of the target digest: it changes what a
+    run costs, never what answers it.
+    """
+
+    input_eur_per_mtok: EurPerMillion
+    output_eur_per_mtok: EurPerMillion
+
+
 class Target(_Frozen):
     """A target under test (id + type + declared capabilities).
 
@@ -916,6 +946,9 @@ class Target(_Frozen):
     rest: RestSpec | None = None
     # A ``provider: mcp`` target's pinned catalogue (u04 A-101; ``None`` for every other provider).
     mcp: McpSpec | None = None
+    # What the model costs per million tokens, in euros (u12 A-108; ``None``: unpriced). Left out
+    # of a dump when ``None``, and out of the target digest always (``shared.digest``).
+    pricing: Pricing | None = None
     # The provider filter stops an ``openai`` or ``anthropic`` target's adapter reads, when its
     # file says (u04 A-79): ``[]`` for an endpoint that speaks the provider's API and has no such
     # filter behind it, so its stops on a reply with text or a tool call, and Azure's HTTP 400,
@@ -948,11 +981,16 @@ class Target(_Frozen):
     def _without_an_undeclared_filter(
         self, handler: SerializerFunctionWrapHandler
     ) -> dict[str, Any]:
-        """The dump as before A-79 when the file does not declare ``filter_stops``."""
+        """The dump as before A-79 and A-108 when the file declares no ``filter_stops``.
+
+        Nor ``pricing`` (u12 A-108): an unpriced target dumps as it did before the field.
+        """
 
         dumped: dict[str, Any] = handler(self)
         if dumped.get("filter_stops") is None:
             dumped.pop("filter_stops", None)
+        if dumped.get("pricing") is None:
+            dumped.pop("pricing", None)
         return dumped
 
 
@@ -1163,6 +1201,33 @@ class RiskScore(_Frozen):
     confidence: Unit
 
 
+class ControlCheck(_Frozen):
+    """A failing spec's control and what it showed (u08 A-106, ADR-0018).
+
+    ``attempt`` is the control's send with its verdict, when one was made: it is not a trial of
+    the spec, so it is kept here and never in ``Finding.attempts``. ``reason`` says why nothing
+    was sent (``not_evaluable``) or why the verdict decided nothing (``inconclusive``).
+    """
+
+    outcome: ControlOutcome
+    attempt: Attempt | None = None
+    reason: str | None = None
+
+
+class Verification(_Frozen):
+    """A second, adversarial pass over a failing finding (u08 A-107, ADR-0019).
+
+    The judge model tried to refute the fail of ``attempt_id`` (the attempt it read) and gave a
+    closed ``state`` with its ``reasoning``. It is the judge's word, reported and never decisive:
+    the finding's status and confirmation are what they were.
+    """
+
+    state: VerificationState
+    attempt_id: str = Field(min_length=1)
+    reasoning: str
+    confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+
+
 class Finding(_Frozen):
     """A scored, evidenced result for one spec against one target."""
 
@@ -1174,6 +1239,10 @@ class Finding(_Frozen):
     attempts: list[Attempt] = Field(default_factory=list)
     evidence: list[EvidenceRef] = Field(default_factory=list)
     reasoning: str | None = None
+    #: Set only by ``run --control`` on a failing spec (u08 A-106).
+    control: ControlCheck | None = None
+    #: Set only by ``run --verify`` on a failing spec (u08 A-107).
+    verification: Verification | None = None
 
 
 class TestRunSummary(_Frozen):

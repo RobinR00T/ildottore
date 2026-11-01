@@ -7,6 +7,7 @@ mitre_atlas:
   tactic: Execution
   technique: Excessive Agency (unauthorized tool use)
 nist_ai_rmf: "MANAGE 2.2 (excessive agency)"
+cwe: [CWE-862]
 iopc:
   techniques: ["IOPC-T3.001"]
 severity: high

@@ -25,3 +25,13 @@ targets:
     identities:
       - name: default
         auth_ref: "env://NONE"     # Ollama takes no credential
+  # The --judge-escalate model of target.judge-strong.yaml (Scenario R): a hosted placeholder,
+  # authorized as the first judge is.
+  - id: strong-judge                # must match target.judge-strong.yaml's id
+    base_url: "https://llm.example.test/v1/chat/completions"
+    endpoints:
+      - host: "llm.example.test:443"
+        path_prefixes: ["/v1/chat/completions"]
+    identities:
+      - name: default
+        auth_ref: "env://STRONG_JUDGE_KEY"

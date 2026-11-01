@@ -294,6 +294,63 @@ the window. To stop holding at once, run without `--fp-ledger` or start a new le
 no expiry by date (OD-61, decided as built): a hold that lapsed would gate again on the same
 false alarm nobody re-examined.
 
+### A jailbreak spec fails, but would the model have answered anyway?
+
+Run with `--control`. A failing spec that declares `attack.control` (the same ask without the
+jailbreak) sends it once. If the model does the forbidden thing unattacked too, the finding's
+`control` reads `not_attributed` and the fail is kept but never confirmed: it is a real problem of
+the model, not of the technique, and it needs review. If the control passes, `attributed`: the
+fail follows the attack. A control the judge alone failed reads `inconclusive` and moves nothing.
+Six battery specs declare a control; add one to your own spec with `attack.control`. See the
+manual's "Attributing a fail to its attack" and Scenario P in `examples/README.md`.
+
+### Can the scanner double-check its own fails before I read them?
+
+Run with `--verify` (and `--judge` on a live target). Each failing spec sends one more request
+to the judge model, which is told to refute the fail: a refusal, a quote of the request, a
+harmless or incidental match. The finding's `verification` reads `holds`, `does_not_hold` or
+`inconclusive`, and SARIF asks you to review a `does_not_hold`. It is a reading order, not a
+verdict: nothing it says changes a status, `confirmed` or the exit code, because the judge is the
+one evaluator a target can prompt-inject, and a confirmed finding rests on a deterministic fail.
+See the manual's "A second reader for each fail" and Scenario Q in `examples/README.md`.
+
+### How much will a run cost me, in euros?
+
+Declare what each model costs you in its target file, `pricing: { input_eur_per_mtok: 2.5,
+output_eur_per_mtok: 10 }` (euros per million tokens; the `--judge` files too), and run with
+`--estimate`: it prints `~cost: X EUR` and one line per model, on the same rough token gloss as
+the rest of the estimate. A model without rates is `unpriced` and the total is a floor (`at
+least`); write 0 for a model you host yourself. Il Dottore ships no price list: prices change
+and differ by contract, and a stale table would be a wrong number stated with authority. See the
+manual's `--estimate` row and Scenario R in `examples/README.md`.
+
+### My judge model is small and comes back inconclusive a lot. Do I need a bigger one everywhere?
+
+No. Keep the small one as `--judge` and add the bigger one as `--judge-escalate`: it is asked
+only for an attempt the small judge returns `inconclusive` (its two passes disagree, a low
+confidence, an outage). Its verdict stands, and a fail only a judge reported still never
+confirms a finding. `--estimate` prices the worst case, as if every judgement went to it. See
+the manual's "A cheap judge, and a second for what it cannot settle".
+
+### How do I hand a finding to the team that owns the target?
+
+`dottore replay RUN_ID --run-db .dottore/runs.sqlite --pack packs/` writes one directory per
+failing finding: the evidence of each attempt (byte for byte, named by its SHA-256), a
+`finding.json`, a `README.md` with the `dottore run` line that reproduces it and the request to
+send by hand, and a `SHA256SUMS`. It sends nothing, and it keeps the target's reply out of the
+README (it is in the attempt file). `--finding SPEC_ID` packs one. Scenario T in `examples/`.
+
+### Which CWE does a finding map to? Why not CWE-1426?
+
+`dottore describe <ID>` prints it, and the SARIF rule carries it as `external/cwe/cwe-NNN`, the
+tag GitHub code scanning groups by. Prompt injection maps to CWE-1427 (Improper Neutralization of
+Input Used for LLM Prompting). CWE-1426 (Improper Validation of Generative AI Output) exists, but
+MITRE marks it `Discouraged` for mapping vulnerabilities and points at the downstream weakness
+instead, so an output spec names CWE-89, CWE-79, CWE-78 or CWE-94. 31 specs name none (the
+jailbreaks, content safety, the autonomy specs): no CWE entry describes what they catch. The
+manual's "Confirming a finding by hand, family by family" says what to read in the evidence for
+each family.
+
 ### I labelled a fail `inconclusive`. Does that count as a false alarm?
 
 Yes. `inconclusive` means you could not confirm the exploit from the evidence, and a fail you

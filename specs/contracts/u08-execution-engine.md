@@ -1437,6 +1437,58 @@ spec placeholders refused in an identity canary) and
   over five runs, a report recorded five times counting once, the refusals of `--record`, the
   cap, a symbolic link, and `--dry-run`).
 
+- **A-106 (added 2026-10-30): a control attributes a fail to its attack (ADR-0018, OD-62).**
+  `Attack.control` (u02, optional) is the same ask without the attack. `CampaignRunner` takes
+  `control` (u12's `run --control`); a spec whose trials fail and that declares a control sends
+  it once after them (`_control_check`), as one plain turn under the spec's system prompt and
+  sampling, attempt id `<spec>::control#0`, mutation `control` (reserved, as `identity_sweep`
+  is: a spec naming it as a mutation sends nothing), judged by the spec's own evaluators. Its
+  outcome (`shared.control`, pure): `attributed` (it passed), `not_attributed` (it failed),
+  `inconclusive` (no verdict, `inconclusive`, an error, or a fail `never_confirms` covers: the
+  judge alone), `not_evaluable` (no control, or the attack is a conversation). It is stored as
+  evidence and kept in `Finding.control`, never in `Finding.attempts`: reproducibility, N and the
+  confirmation read the trials only, and the readers of stored artifacts split it out
+  (`cli.resume.load_resume_run`, `store.replay.ReplayResult.effective_attempts`/`controls`). In
+  `_score_finding`, a `not_attributed` control keeps `_is_confirmed`'s fail from being confirmed
+  and its reasoning names it; status, risk and attempts are untouched. A pass sends none. The
+  estimate prices one request per spec that declares a control (`PlanEstimate.control_requests`,
+  `sends_control`); the run context records `control` (u10) and a resume sends as its run did,
+  keeps an answered control and refuses `--control`; the report masks the control's attempt as
+  any attempt (u11) and SARIF carries its outcome. **Costs, stated:** judging rules 7 re-pinned,
+  no rule of judgement changed. **Acceptance:** `tests/shared/test_control.py` (the outcomes,
+  the judge-alone fail, the reasons, the split, the lint refusals) and `tests/cli/test_control.py`
+  (attributed and confirmed, not attributed and unconfirmed, a report that validates and masks
+  the control's reply, none without the flag, `not_evaluable`, none for a pass, the estimate and
+  the dry run, `replay`, a resume of a halted run that sends no control twice, the refusal of
+  `--control` with `--resume`, the reserved mutation).
+- **A-107 (added 2026-10-30): a second pass of the judge tries to refute a fail (ADR-0019, OD-63).**
+  `CampaignRunner` takes `verifier` (a `shared.protocols.FailVerifier`; u12's `run --verify`
+  builds `evaluators.fail_verifier.AdversarialVerifier` over the `--judge` model, or the offline
+  mock's scripted judge). A spec whose finding fails sends one request (`_verified`, after
+  `_run_spec`) over the attempt `_attempt_to_verify` picks: a fail an evaluator other than the
+  judge reported, else the first fail with a reply, an identity sweep's trial last. The reviewer
+  is asked to refute the fail, with the semantic judge's hardening (per-call delimiter and
+  tripwire, JSON only, temperature 0), and answers one closed state
+  (`shared.enums.VerificationState`): `holds`, `does_not_hold` or `inconclusive`. A state outside
+  the set, free text, an adapter error, the tripwire, an injection attempt with any answer but
+  `holds`, a confidence under the spec's threshold, or a `BudgetExhausted` (`not consulted: ...`)
+  is `inconclusive`; `SamplingRefused` and `CredentialTooShort` stop the run. The state is kept
+  in `Finding.verification` (state, attempt id, reasoning, confidence) and named in the
+  finding's reasoning; it moves no status, `confirmed`, risk or exit code. A pass, and a finding
+  a halted run reports from prior attempts, send none. The estimate prices one judge request per
+  spec when the plan has judge requests (`PlanEstimate.verify_requests`, `VERIFY_PASSES`); the
+  run context records `verify` (u10) and a resume reviews as its run did and refuses `--verify`;
+  a live target without `--judge` is refused; the report masks the reasoning and restores the
+  state and attempt id (u11); SARIF carries the state, and a `does_not_hold` asks for review in
+  the message. **Costs, stated:** judging rules 7 re-pinned, no rule of judgement changed.
+  **Acceptance:** `tests/evaluators/test_fail_verifier.py` (the three states and their
+  confidence, a state outside the set, free text, the tripwire, the injection attempt, the
+  threshold, an adapter error, a refused sampling, the fenced request at temperature 0) and
+  `tests/cli/test_verify.py` (`holds` on the vulnerable mock with a report that validates and a
+  SARIF property, a `does_not_hold` that moves nothing, a ceiling that keeps the finding, the
+  masked reasoning, none without the flag or for a pass, the estimate, the refusal on a live
+  target without `--judge`, a resume's record and its refusal of `--verify`).
+
 ## §8 Out of scope / forbidden
 - MUST NOT import adapter/evaluator/scorer/store **concretes**: interfaces only; composition is
   u12. `lint-imports` enforces.
@@ -1587,3 +1639,20 @@ spec placeholders refused in an identity canary) and
   holds what its run held. Revisit (2) when one spec is scanned against targets that differ in
   what they expose. Reversal: the three constants of `shared.review_holds`, a run without
   `--fp-ledger`, or `review_holds` dropped from the runner. Owner: human.
+- **OD-62** (2026-10-30, A-106, ADR-0018; **open**): the control. Built as the smallest
+  reversible version: (1) opt-in (`run --control`), not the default; (2) one send per failing
+  spec, not N with a rate; (3) a `not_attributed` control keeps the fail from being confirmed and
+  never changes the verdict; (4) a control's fail the judge alone reported reads `inconclusive`,
+  so a judge that calls everything exploited cannot unconfirm what it never could confirm; (5)
+  six battery specs declare one. To decide: whether it becomes the default (one request more per
+  failing spec), whether a control is sent N times with a rate, and which further specs declare
+  one. Reversal: a run without `--control`. Owner: human.
+- **OD-63** (2026-10-30, A-107, ADR-0019; **open**): the second pass. Built as the smallest
+  reversible version: (1) opt-in (`run --verify`), not the default; (2) one judge request per
+  failing spec, not several with a vote; (3) the state is reported beside the finding and moves
+  nothing, since the judge is the one evaluator a target can prompt-inject and a confirmed
+  finding rests on a deterministic fail; (4) the evidence does not keep it, so `replay` does not
+  show it. To decide: whether a `does_not_hold` keeps a finding from being confirmed, or only
+  takes a fail the judge alone reported out of the `--include-needs-review` gate; whether it
+  becomes the default; whether more passes vote. Reversal: a run without `--verify`. Owner:
+  human.

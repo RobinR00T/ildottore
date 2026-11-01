@@ -787,6 +787,82 @@
             "string",
             "null"
           ]
+        },
+        "control": {
+          "description": "What a failing spec's control showed (run --control): the same ask sent once without the attack. Absent or null when no control was asked for.",
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": true,
+          "required": [
+            "outcome"
+          ],
+          "properties": {
+            "outcome": {
+              "type": "string",
+              "enum": [
+                "attributed",
+                "not_attributed",
+                "inconclusive",
+                "not_evaluable"
+              ]
+            },
+            "attempt": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/attempt"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "reason": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        },
+        "verification": {
+          "description": "A second, adversarial pass of the judge model over a failing finding (run --verify): its closed state, reported and never decisive. Absent or null when none was asked for.",
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": true,
+          "required": [
+            "state",
+            "attempt_id",
+            "reasoning"
+          ],
+          "properties": {
+            "state": {
+              "type": "string",
+              "enum": [
+                "holds",
+                "does_not_hold",
+                "inconclusive"
+              ]
+            },
+            "attempt_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "reasoning": {
+              "type": "string"
+            },
+            "confidence": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 0,
+              "maximum": 1
+            }
+          }
         }
       }
     }

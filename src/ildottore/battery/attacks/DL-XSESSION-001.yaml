@@ -7,6 +7,7 @@ mitre_atlas:
   tactic: Exfiltration
   technique: LLM Data Leakage (cross-session)
 nist_ai_rmf: "MEASURE 2.7 (data confidentiality)"
+cwe: [CWE-488]
 iopc:
   techniques: ["IOPC-T5.002"]
   impacts: ["IOPC-R034"]

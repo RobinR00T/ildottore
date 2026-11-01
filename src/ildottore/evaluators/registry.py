@@ -135,14 +135,23 @@ class EvaluatorRegistry:
 
 
 def build_default_registry(
-    *, judge: TargetAdapter | None = None, discover: bool = True
+    *,
+    judge: TargetAdapter | None = None,
+    discover: bool = True,
+    escalate_to: TargetAdapter | None = None,
 ) -> EvaluatorRegistry:
-    """Build a registry with the built-ins, the judge (if injected), and (optionally) plugins."""
+    """Build a registry with the built-ins, the judge (if injected), and (optionally) plugins.
+
+    ``escalate_to`` is the judge model a ``judge`` that cannot settle an attempt hands it to
+    (``run --judge-escalate``, u06 A-109); without ``judge`` it is unused.
+    """
     registry = EvaluatorRegistry()
     for cls in _BUILTINS:
         registry.register(cls(), origin="builtin")
     if judge is not None:
-        registry.register(SemanticJudgeEvaluator(judge), origin="builtin(judge)")
+        registry.register(
+            SemanticJudgeEvaluator(judge, escalate_to=escalate_to), origin="builtin(judge)"
+        )
     if discover:
         registry.discover_plugins()
     return registry
