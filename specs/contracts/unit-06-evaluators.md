@@ -473,12 +473,16 @@ second judge's `inconclusive` kept with its reason, nothing without a second jud
   a judge. The alternative not taken: C, a relevance precondition in both regex evaluators, a
   heuristic over 30 specs whose own wrong abstentions (a short genuine refusal reads like a
   non-answer) would need a new `InconclusiveReason`.
-- **OD-45** (numbered 2026-10-12; open, owner to decide): a judge whose self-consistency passes
+- **OD-45** (numbered 2026-10-12; decided 2026-11-01): a judge whose self-consistency passes
   disagree. As built (§2 item 4) the judge returns `inconclusive` with no reason and the runner
   drops it, so the deterministic evaluators decide the attempt; `docs/02 §4` says the attempt
   stays `inconclusive`. OD-19 left it out (ADR-0010). Recommended: keep the attempt
   `inconclusive` with a reason of its own, as a judge outage already is, at the cost of more
   inconclusive results from a noisy judge (`00-INDEX.md`).
+  **Decided 2026-11-01 under the owner's delegation (best practice), revisable: the recommended
+  option, not built yet; it lands in its own change with the other decided-to-build items (OD-45,
+  OD-46, OD-47, OD-49, OD-51), and until then the built behaviour stands. The attempt will read
+  `inconclusive` with a reason of its own (`judge_disagreed`).**
 - **OD-15** (shared with u01) whether `secret_shape`'s entropy threshold is global or
   per-key-type. **Status (`00-INDEX.md`):** `secret_shape` has landed with per-key-type entropy
   thresholds; the redactor still uses its own global one (`redactor.py`), so the reuse half of
@@ -502,10 +506,11 @@ second judge's `inconclusive` kept with its reason, nothing without a second jud
   check only, and always visible (the plan, every report, the run store, each verdict it
   changed, the target digest). Alternatives not taken: a sibling `not_destructive` list; a
   `transfer_to_*` exemption by shape; leaving the hand-off failing.
-- **OD-65** (2026-10-30, A-109, ADR-0020; **open**): the escalating judge. Built as the smallest
+- **OD-65** (2026-10-30, A-109, ADR-0020; **decided 2026-11-01, as built**): the escalating judge. Built as the smallest
   reversible version: (1) only an `inconclusive` escalates, never a settled `fail` or `pass`;
   (2) the second judge's verdict stands, and a judge-alone fail still never confirms; (3) opt-in
   (`--judge-escalate`, needs `--judge`); (4) `--verify` keeps using the `--judge` model. To
   decide: whether a `fail` escalates too; whether `--verify` uses the second model when one is
   given; whether its sampling notes are tracked as the first judge's. Reversal: a run without
   `--judge-escalate`. Owner: human.
+  **Decided 2026-11-01 by the owner ("do it all"), as built.**

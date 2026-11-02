@@ -12,7 +12,9 @@ Deliberately small, and permissive-licensed with one recorded exception (below):
   2026-10-07 at `>=14.0`, `>=15.0` since 2026-10-16 for its `proxy` argument), plus `anyio`,
   which `httpx` already pulls in and which `pyproject.toml` lists only to set a security floor
   (`>=4.14.2`). The floors are tested by the `floors` CI job (u12 A-84): every direct dependency
-  installed at the version after its `>=`, the suite run on Python 3.11.
+  installed at the version after its `>=`, the suite run on Python 3.11 under the `floors`
+  Hypothesis profile (no per-example deadline: that runner is slower, and a deadline there only
+  measured it; `tests/conftest.py`, 2026-11-01).
 
 No heavyweight or native-extension dependency is pulled for the core. The multimodal image renderer
 is **pure stdlib** (`zlib` + a bitmap font, no Pillow), on purpose, so a scan has no imaging

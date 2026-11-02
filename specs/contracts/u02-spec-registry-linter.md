@@ -547,7 +547,7 @@ the digest).
   on and which §6's enum would gain. Reversing (a) moves the refusal in `cli/run.py`
   (`_execute_run`, the `uncompilable_patterns` step) into a per-spec inconclusive finding;
   reversing (b) is one `LintCode` value and the string in `registry/linter.py`.
-- **OD-66** (2026-10-30, A-110, ADR-0021; **open**): the CWE mapping. Built as the smallest
+- **OD-66** (2026-10-30, A-110, ADR-0021; **decided 2026-11-01, as built**): the CWE mapping. Built as the smallest
   reversible version: (1) only entries MITRE allows for mapping, CWE-1427 for prompt injection,
   never CWE-1426; (2) 31 specs left unmapped (jailbreaks, content safety, autonomy, the rug pull
   and others: model behaviour or a control no CWE entry names); (3) cross-tenant leaks under
@@ -556,3 +556,4 @@ the digest).
   the HTML. To decide: whether the jailbreaks map to CWE-1427; whether the destructive actions
   without confirmation map to CWE-749; CWE-862 or CWE-863 for the tenant specs; a CWE roll-up
   in the report. Reversal: delete the `cwe:` lines. Owner: human.
+  **Decided 2026-11-01 by the owner ("do it all"), as built.**

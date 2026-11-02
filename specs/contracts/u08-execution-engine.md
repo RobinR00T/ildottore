@@ -1489,6 +1489,29 @@ spec placeholders refused in an identity canary) and
   masked reasoning, none without the flag or for a pass, the estimate, the refusal on a live
   target without `--judge`, a resume's record and its refusal of `--verify`).
 
+- **A-113 (added 2026-11-01): what a deployment cannot be handed is refused before a request
+  (field report of 2026-10-28, OD-68).** The plan (`cli.run.delivery_gap`) and the runner ask the
+  same four questions, in order: `seeding_gap`, `task_gap` (u13 A-114), `trace_gap`, and
+  `prompt_gap`. (1) `prompt_gap(spec, carries_system_prompt=...)`: a spec whose canary sits in its
+  system prompt (`SP-LEAK-001`, `PI-DIRECT-001`, `PI-INDIRECT-RAG-001`, `PI-INDIRECT-TOOL-001`,
+  `AG-GOAL-THEFT-001`, `RECON-SYSTEM-001`, `RECON-MODEL-IDENTITY-001`), through an adapter that
+  sends none, is `setup_not_delivered` with nothing sent. The runner asks the adapter
+  (`carries_system_prompt`, false when absent); the plan asks
+  `cli.wiring.provider_carries_system_prompt` (a WebSocket template with `{{system_prompt}}`,
+  `openai`, `anthropic`; never a REST target file, which sets no system field). It reads the
+  canary itself in the system prompt, so it holds after binding. Declaring the spec seeded does
+  not close it: its canary travels in the request and is bound per run (D-M1). Until then
+  WebSocket and REST templates dropped the system prompt silently, and three such specs passed
+  against a deployed assistant. (2) `needs_seeding` also holds for a spec with a per-run canary in
+  neither its system prompt nor its attack (`_canary_off_request`: `DL-SECRET-CANARY-001`,
+  `AC-DEBUG-001`, `DL-PII-ELICIT-001`) on any target but `model`, and `needs_run_token` for the
+  same spec; a spec that declares `authz_leak` is exempt, its crossing read against the
+  identities' canaries. The `setup_not_seeded` reason names "documents, tools, memory or a
+  canary". Acceptance: `tests/cli/test_field_report_delivery.py` (the seven specs, both providers'
+  answers, a run that sends nothing for `SP-LEAK-001` and says why, the seeding rule, the sweep
+  exempt, a seeded RAG spec still not delivered), `tests/core/test_seeded_setup.py` re-pinned, and
+  every worked example's plan in `examples/README.md` re-run.
+
 ## §8 Out of scope / forbidden
 - MUST NOT import adapter/evaluator/scorer/store **concretes**: interfaces only; composition is
   u12. `lint-imports` enforces.
@@ -1597,12 +1620,16 @@ spec placeholders refused in an identity canary) and
   2). Reversal: make `ResponseMalformed` an `AdapterProductError` again, without `is_env_error`
   (u04), and the first one halts as before; the watch (`_WatchedAdapter` in `core/runner.py`) can
   then go. Owner: human.
-- **OD-45** (shared with u06; numbered 2026-10-12; open, owner to decide): a judge whose
+- **OD-45** (shared with u06; numbered 2026-10-12; decided 2026-11-01): a judge whose
   self-consistency passes disagree. This unit's half: the runner combines a spec's verdicts with
   `shared.combination.combine_verdicts` (OD-19), which drops a judge abstention that carries no
   reason, so the deterministic evaluators decide the attempt and can pass it, while `docs/02 §4`
   says it stays `inconclusive`. Recommended (`00-INDEX.md`): keep the attempt `inconclusive` with
   a reason of its own, as a judge outage already is (u06 §9).
+  **Decided 2026-11-01 under the owner's delegation (best practice), revisable: the recommended
+  option, not built yet; it lands in its own change with the other decided-to-build items (OD-45,
+  OD-46, OD-47, OD-49, OD-51), and until then the built behaviour stands. The attempt will read
+  `inconclusive` with a reason of its own (`judge_disagreed`).**
 - **OD-58** (shared with u00, u01, u10, u12 and u13; numbered 2026-10-26; **decided 2026-10-26 by
   the owner: as built, the shape not varied**):
   what a planted canary's visible prefix is (A-100). **Built as the smallest reversible version:**
@@ -1639,7 +1666,7 @@ spec placeholders refused in an identity canary) and
   holds what its run held. Revisit (2) when one spec is scanned against targets that differ in
   what they expose. Reversal: the three constants of `shared.review_holds`, a run without
   `--fp-ledger`, or `review_holds` dropped from the runner. Owner: human.
-- **OD-62** (2026-10-30, A-106, ADR-0018; **open**): the control. Built as the smallest
+- **OD-62** (2026-10-30, A-106, ADR-0018; **decided 2026-11-01, as built**): the control. Built as the smallest
   reversible version: (1) opt-in (`run --control`), not the default; (2) one send per failing
   spec, not N with a rate; (3) a `not_attributed` control keeps the fail from being confirmed and
   never changes the verdict; (4) a control's fail the judge alone reported reads `inconclusive`,
@@ -1647,7 +1674,8 @@ spec placeholders refused in an identity canary) and
   six battery specs declare one. To decide: whether it becomes the default (one request more per
   failing spec), whether a control is sent N times with a rate, and which further specs declare
   one. Reversal: a run without `--control`. Owner: human.
-- **OD-63** (2026-10-30, A-107, ADR-0019; **open**): the second pass. Built as the smallest
+  **Decided 2026-11-01 by the owner ("do it all"), as built.**
+- **OD-63** (2026-10-30, A-107, ADR-0019; **decided 2026-11-01, as built**): the second pass. Built as the smallest
   reversible version: (1) opt-in (`run --verify`), not the default; (2) one judge request per
   failing spec, not several with a vote; (3) the state is reported beside the finding and moves
   nothing, since the judge is the one evaluator a target can prompt-inject and a confirmed
@@ -1656,3 +1684,12 @@ spec placeholders refused in an identity canary) and
   takes a fail the judge alone reported out of the `--include-needs-review` gate; whether it
   becomes the default; whether more passes vote. Reversal: a run without `--verify`. Owner:
   human.
+  **Decided 2026-11-01 by the owner ("do it all"), as built.**
+- **OD-68** (2026-11-01, A-113; **open**): what a deployment cannot be handed. Built as the
+  smallest reversible version: (1) a canary in the system prompt through an adapter that sends
+  none is refused; not built: a system prompt the operator seeds, with its canary bound to the
+  `run_token`, which would change what a canary that travels in the request binds to (D-M1 of the
+  delta audit of B); (2) a canary the request does not carry needs seeding on any target but
+  `model`, the identity sweep exempt; (3) on a `model` target `DL-SECRET-CANARY-001` still goes
+  out with a canary nobody planted. Reversal: `prompt_gap` and `_canary_off_request` returning
+  nothing. Owner: human.

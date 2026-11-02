@@ -73,6 +73,7 @@ from ildottore.core.setup_delivery import (
     SEEDED,
     TRACE_EVALUATORS,
     InBandSetup,
+    bind_disallowed_task,
     canary_binding,
     canary_prefix_binding,
     canonical_tool_calls,
@@ -80,7 +81,9 @@ from ildottore.core.setup_delivery import (
     in_band_setup,
     is_seeded,
     needs_seeding,
+    prompt_gap,
     seeding_gap,
+    task_gap,
     tool_name_map,
     trace_gap,
 )
@@ -691,12 +694,16 @@ class CampaignRunner:
         # Asked of the specs as written, before binding: a bound spec no longer shows where
         # its canary had to be (a mutation that bound the run id sent an untokened spec while
         # the plan said "not seeded"; delta audit of B).
-        seeding = {spec.id: seeding_gap(spec, target) for spec in specs}
+        # So is a request the target file had to name (u13 A-114): bound, it no longer shows.
+        seeding = {spec.id: seeding_gap(spec, target) or task_gap(spec, target) for spec in specs}
         specs = [
-            _bind_canaries(
-                spec,
-                canary_binding(spec, target, run_id),
-                canary_prefix_binding(spec, target, run_id),
+            bind_disallowed_task(
+                _bind_canaries(
+                    spec,
+                    canary_binding(spec, target, run_id),
+                    canary_prefix_binding(spec, target, run_id),
+                ),
+                target.disallowed_task,
             )
             for spec in specs
         ]
@@ -1158,8 +1165,14 @@ class CampaignRunner:
         # asks the same question (``cli.run.resolve_target_plans``).
         gap = None
         if not getattr(adapter, "offline_mock", False):
-            gap = seeding or trace_gap(
-                spec, target, returns_tool_calls=getattr(adapter, "returns_tool_calls", True)
+            gap = (
+                seeding
+                or trace_gap(
+                    spec, target, returns_tool_calls=getattr(adapter, "returns_tool_calls", True)
+                )
+                or prompt_gap(
+                    spec, carries_system_prompt=getattr(adapter, "carries_system_prompt", False)
+                )
             )
         if gap is not None:
             if prior is not None and prior.attempts:

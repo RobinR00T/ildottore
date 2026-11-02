@@ -949,6 +949,10 @@ class Target(_Frozen):
     # What the model costs per million tokens, in euros (u12 A-108; ``None``: unpriced). Left out
     # of a dump when ``None``, and out of the target digest always (``shared.digest``).
     pricing: Pricing | None = None
+    # The request this target's policy forbids, which the operator writes and four specs send in
+    # place of a harmful ask (``{{disallowed_task}}``, u13 A-114): the battery ships none. Left
+    # out of a dump when ``None``; in the target digest when set (it is part of what is sent).
+    disallowed_task: Annotated[str, Field(min_length=1, max_length=500)] | None = None
     # The provider filter stops an ``openai`` or ``anthropic`` target's adapter reads, when its
     # file says (u04 A-79): ``[]`` for an endpoint that speaks the provider's API and has no such
     # filter behind it, so its stops on a reply with text or a tool call, and Azure's HTTP 400,
@@ -983,7 +987,8 @@ class Target(_Frozen):
     ) -> dict[str, Any]:
         """The dump as before A-79 and A-108 when the file declares no ``filter_stops``.
 
-        Nor ``pricing`` (u12 A-108): an unpriced target dumps as it did before the field.
+        Nor ``pricing`` (u12 A-108): an unpriced target dumps as it did before the field, nor
+        ``disallowed_task`` (u13 A-114) when the file names none.
         """
 
         dumped: dict[str, Any] = handler(self)
@@ -991,6 +996,8 @@ class Target(_Frozen):
             dumped.pop("filter_stops", None)
         if dumped.get("pricing") is None:
             dumped.pop("pricing", None)
+        if dumped.get("disallowed_task") is None:
+            dumped.pop("disallowed_task", None)
         return dumped
 
 

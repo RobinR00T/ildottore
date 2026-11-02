@@ -1397,13 +1397,14 @@ and after the window, the plan's window line and its absence, `fingerprint` refu
   `allowed_signers` file, or sigstore) in `policy/scope.py`, a `run` option naming the signature
   and the trusted-keys file, the bullet in `NON-GOALS.md` and the "verifies no signature" of
   `docs/MANUAL.md` §4.1 removed.
-- **OD-55** a scope's validity window (A-97). **Open, owner to decide; built as the smallest
+- **OD-55** a scope's validity window (A-97). **Decided 2026-11-01, as built; built as the smallest
   reversible version.** Which day it is: UTC (built: one answer wherever the tool runs and
   whatever zone the operator's machine is set to), the operator's local day, or a zone the scope
   names. And a run that outlives its window: each later attempt is `blocked_by_policy` (built:
   the record no longer authorizes the send, and the engine asks before every attempt), or the run
   finishes what it started on a valid day. Reversal: `policy.scope.utc_today`, or
   `PolicyEngine.check` passing the run's first day to `authorize_target`.
+  **Decided 2026-11-01 by the owner ("do it all"), as built.**
 - **OD-15** redactor entropy threshold for unknown-shape secrets: global vs per-key-type.
   **Resolved (`00-INDEX.md`): an interim global threshold, documented, then the reuse of u06's
   `secret_shape` policy once it lands.** Status: `secret_shape` has landed with per-key-type
@@ -1444,11 +1445,16 @@ and after the window, the plan's window line and its absence, `fingerprint` refu
   refused there too, and so is a judge spelled as a target only up to case, which worked. The
   alternative not taken: refuse only where the `--out` directory's file system folds case, found
   by probing it.
-- **OD-46** (shared with u12; numbered 2026-10-12; open, owner to decide): a CLI flag that loads a
+- **OD-46** (shared with u12; numbered 2026-10-12; decided 2026-11-01): a CLI flag that loads a
   policy pack. This unit's half: `policy.packs.load_pack` loads and validates a pack and no command
   calls it, so the 8 specs that declare `requires_policy` never send from `dottore`. Recommended
   (`00-INDEX.md`): one `run` option that loads a pack through that loader, printed in the plan and
   recorded with the run, landing with OD-11's `--allow-pii-elicitation` (u12 §9).
+  **Decided 2026-11-01 under the owner's delegation (best practice), revisable: the recommended
+  option, not built yet; it lands in its own change with the other decided-to-build items (OD-45,
+  OD-46, OD-47, OD-49, OD-51), and until then the built behaviour stands. One `run` option will
+  load a pack through `load_pack`, printed in the plan and recorded with the run, together with
+  OD-11's `--allow-pii-elicitation`.**
 - **OD-52** (numbered 2026-10-17, A-86 item 1) what an alternative of a masked token shows.
   **Decided 2026-10-17 under the owner's delegation (best practice), revisable, built (A-86): the
   token's masks up to four, as A-77 wrote them; past four, one `«REDACTED:fragment»` for each

@@ -15,7 +15,8 @@
 #
 # Mapped to LLM06 (Excessive Agency), as MCP-TOOLPOISON-001 is, not to LLM03 (Supply Chain): the
 # battery's coverage lists LLM03 as out of reach for a black-box scanner, and remapping it would
-# move the OWASP coverage figure from 8/10 to 9/10. That is the owner's call (OD-59).
+# move the OWASP coverage figure from 8/10 to 9/10 on one spec. Decided as built (OD-59,
+# 2026-10-27).
 id: MCP-RUGPULL-001
 spec_version: "1.0"
 name: MCP rug pull (an advertised definition differs from the one pinned after review)

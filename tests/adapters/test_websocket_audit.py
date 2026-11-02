@@ -409,6 +409,90 @@ async def test_a_lost_conversation_is_not_retried_and_is_debited_once() -> None:
     assert server.log.connections == 0
 
 
+async def test_a_later_turn_that_fails_keeps_its_cause_and_is_not_retried() -> None:
+    # A server that answers turn 0 and closes on turn 1, the shape of a live deployment's
+    # multi-turn run: the retry of turn 1 could only be refused as lost, and the evidence kept
+    # `WebSocketLost` instead of the close (field report of 2026-10-28).
+    queries = {"n": 0}
+
+    async def on_query(connection: ServerConnection, _message: dict[str, Any]) -> None:
+        queries["n"] += 1
+        if queries["n"] == 1:
+            await send_json(connection, {"type": "delta", "delta": {"text": "hello"}})
+            await send_json(connection, {"type": "done"})
+        else:
+            await connection.close(1011, "busy")
+
+    def turn(index: int) -> ModelRequest:
+        return ModelRequest(
+            messages=[{"role": "user", "content": f"t{index}"}],
+            metadata={"conversation": "c", "turn_index": index, "turns_total": 3},
+        )
+
+    with _query_server(on_query) as server:
+        adapter = _adapter(server)
+        ledger = BudgetLedger(max_requests=100)
+        first = await execute_attempt(
+            adapter,
+            turn(0),
+            attempt_id="a@t0",
+            spec_id="S",
+            mutation="identity",
+            sampling=None,
+            ledger=ledger,
+            retry=_POLICY,
+            sleep=_noop,
+        )
+        second = await execute_attempt(
+            adapter,
+            turn(1),
+            attempt_id="a@t1",
+            spec_id="S",
+            mutation="identity",
+            sampling=None,
+            ledger=ledger,
+            retry=_POLICY,
+            sleep=_noop,
+        )
+    assert first.env_error is False and first.attempt.response is not None
+    assert second.env_error is True and second.retries == 0
+    assert len(second.errors) == 1
+    assert second.errors[0].startswith("WebSocketClosed") and "busy" in second.errors[0]
+    assert second.errors[0].endswith(NOT_RETRYABLE_MARK)
+    assert ledger.spend().requests == 2 and queries["n"] == 2
+
+
+async def test_a_first_turn_that_fails_is_still_retried_on_a_new_connection() -> None:
+    queries = {"n": 0}
+
+    async def on_query(connection: ServerConnection, _message: dict[str, Any]) -> None:
+        queries["n"] += 1
+        if queries["n"] == 1:
+            await connection.close(1011, "busy")
+            return
+        await send_json(connection, {"type": "delta", "delta": {"text": "hello"}})
+        await send_json(connection, {"type": "done"})
+
+    request = ModelRequest(
+        messages=[{"role": "user", "content": "t0"}],
+        metadata={"conversation": "c", "turn_index": 0, "turns_total": 2},
+    )
+    with _query_server(on_query) as server:
+        result = await execute_attempt(
+            _adapter(server),
+            request,
+            attempt_id="a@t0",
+            spec_id="S",
+            mutation="identity",
+            sampling=None,
+            ledger=BudgetLedger(max_requests=100),
+            retry=_POLICY,
+            sleep=_noop,
+        )
+    assert result.env_error is False and result.retries == 1
+    assert result.attempt.response is not None and result.attempt.response.text == "hello"
+
+
 # --- F8, F9, F11: the loader refuses what would fail or leak after the dial ----------------
 
 

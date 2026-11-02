@@ -126,7 +126,7 @@ def test_the_worked_example_dry_run_prints_the_guard() -> None:
     )
     assert (
         "  guard:   auth failure stops the run, 120s cooldown; token tenant checked, at least 30s "
-        "of life; 15s between queries, at most 20/hour (across processes); this plan's 125 "
+        "of life; 15s between queries, at most 20/hour (across processes); this plan's 90 "
         "requests pass the hourly cap: the run stops there, resume it later; closes on 3 tool "
         "name(s); 200000 bytes per turn"
     ) in result.output

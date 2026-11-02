@@ -138,6 +138,7 @@ __all__ = [
     "WebSocketTooMany",
     "WebSocketTurnTimeout",
     "WebSocketUndecodable",
+    "carries_system_prompt",
     "placeholders",
     "render",
 ]
@@ -273,6 +274,19 @@ def placeholders(value: object) -> set[str]:
         for item in value:
             found.update(placeholders(item))
     return found
+
+
+def _template_placeholders(spec: WebSocketSpec) -> set[str]:
+    """The placeholders of every template ``spec`` sends (handshake, message, session, headers)."""
+
+    handshake = spec.handshake.send if spec.handshake is not None else {}
+    return placeholders([handshake, spec.message.send, spec.session.start, spec.headers])
+
+
+def carries_system_prompt(spec: WebSocketSpec) -> bool:
+    """True when one of ``spec``'s templates writes ``{{system_prompt}}`` (u08 A-113)."""
+
+    return SYSTEM_PROMPT in _template_placeholders(spec)
 
 
 def render(value: Any, values: Mapping[str, object]) -> Any:
@@ -467,15 +481,13 @@ class WebSocketAdapter:
     def carries_system_prompt(self) -> bool:
         """True when a template carries ``{{system_prompt}}``, where a memory seed goes."""
 
-        return SYSTEM_PROMPT in self._placeholders()
+        return carries_system_prompt(self.spec)
 
     def capabilities(self) -> Capabilities:
         return self.declared
 
     def _placeholders(self) -> set[str]:
-        spec = self.spec
-        handshake = spec.handshake.send if spec.handshake is not None else {}
-        return placeholders([handshake, spec.message.send, spec.session.start, spec.headers])
+        return _template_placeholders(self.spec)
 
     # --- the gate ------------------------------------------------------------------------
 
@@ -526,8 +538,13 @@ class WebSocketAdapter:
         try:
             async with conversation.lock:
                 response = await self._turn(conversation, request, whole=last_turn)
-        except BaseException:
+        except BaseException as exc:
             await self._drop(key)
+            if turn_index > 0 and isinstance(exc, AdapterEnvError):
+                # The connection, and the earlier turns' context with it, is gone: a retry of
+                # this turn could only be refused as lost, and the evidence kept that instead of
+                # this cause (37 such errors in a live multi-turn run, field report of 2026-10-28).
+                exc.retryable = False
             raise
         if last_turn:
             await self._drop(key)

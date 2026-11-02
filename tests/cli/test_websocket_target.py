@@ -249,9 +249,11 @@ def test_the_worked_example_dry_run_prints_this_plan() -> None:
     assert (
         "target:  ws-assistant-staging (chatbot) authorized at wss://assistant.example.test/ws/chat"
     ) in result.output
-    assert "battery: quick, 10 specs selected" in result.output
-    assert "not seeded: 1 spec(s) on ws-assistant-staging" in result.output
-    assert "would send: 125 requests over 10 specs at runs=5" in result.output
+    assert "battery: quick, 7 specs selected" in result.output
+    # The RAG spec and DL-SECRET-CANARY-001 need their scene seeded; PI-DIRECT-001 and SP-LEAK-001
+    # a {{system_prompt}} the template does not send (u08 A-113).
+    assert "not seeded: 4 spec(s) on ws-assistant-staging" in result.output
+    assert "would send: 90 requests over 7 specs at runs=5" in result.output
 
 
 # --- a real campaign over the socket -------------------------------------------------------

@@ -378,9 +378,11 @@ def test_the_no_judge_warning_counts_what_will_run() -> None:
     )
     text = " ".join(result.output.split())
     # 33 of 33 since 2026-10-11: OD-16 gave MCP-TOOLPOISON-001, the one spec without a judge, a
-    # judge, and OD-44 keeps that spec off a chat model, which this target is.
-    assert "33 of the 33 specs that will run on local-llama use semantic_judge" in text
-    assert "33 specs selected" in text
+    # judge, and OD-44 keeps that spec off a chat model, which this target is. 28 of 28 since
+    # u08 A-113 and u13 A-114: two specs wait for a seeded canary and three for a
+    # disallowed_task this example does not name, and they are not seeded rather than run.
+    assert "28 of the 28 specs that will run on local-llama use semantic_judge" in text
+    assert "28 specs selected" in text
 
 
 # --- token accounting details (pre-commit audit of the leftovers) ------------------------

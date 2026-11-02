@@ -135,6 +135,9 @@ class AdapterEnvError(AdapterError):
     defect. Raised only after the retry budget is exhausted.
     """
 
+    #: ``False`` when a retry would fail the same way (``core.execute`` reads it structurally).
+    retryable: bool = True
+
 
 class ResponseTooLarge(AdapterEnvError):
     """A reply over :data:`MAX_RESPONSE_BYTES`: an environment failure that is NOT retried.
