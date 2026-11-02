@@ -16,6 +16,7 @@ cwe: [CWE-770]
 iopc:
   techniques: ["IOPC-T6.001"]
   impacts: ["IOPC-R015"]
+esp_ia: [RFS-EXH-01]
 severity: medium
 target_type: chatbot
 requires: []

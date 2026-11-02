@@ -46,13 +46,22 @@ from ildottore.shared.models import AttackSpec
 
 __all__ = [
     "battery_coverage",
+    "load_specs",
     "render_coverage",
     "render_coverage_json",
     "write_navigator_layer",
 ]
 
 #: Axis keys accepted by ``--framework`` (``all`` keeps every axis).
-FRAMEWORK_KEYS: tuple[str, ...] = ("all", "owasp", "atlas", "iopc", "aisvs", "attack")
+FRAMEWORK_KEYS: tuple[str, ...] = (
+    "all",
+    "owasp",
+    "atlas",
+    "iopc",
+    "aisvs",
+    "esp_ia",
+    "attack",
+)
 
 
 def _attack_technique_lines(coverage: BatteryCoverage, framework: str) -> list[str]:
@@ -97,7 +106,7 @@ def battery_coverage(
     (one load, so the registry's notes print once and the figure and the layer agree).
     """
 
-    specs, load_errors = _load_specs(spec_paths, suite=suite, default_spec_path=default_spec_path)
+    specs, load_errors = load_specs(spec_paths, suite=suite, default_spec_path=default_spec_path)
     if navigator_layer is not None:
         write_navigator_layer(navigator_layer, specs, unloaded=len(load_errors))
     return replace(
@@ -123,7 +132,7 @@ def write_navigator_layer(path: Path, specs: Iterable[AttackSpec], *, unloaded: 
     )
 
 
-def _load_specs(
+def load_specs(
     spec_paths: list[Path], *, suite: str | None, default_spec_path: bool
 ) -> tuple[list[AttackSpec], list[LintError]]:
     """The registry's specs, optionally narrowed to a suite, and the files that failed to load.

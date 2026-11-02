@@ -452,6 +452,14 @@ PIN_HISTORY: tuple[tuple[int, str, str], ...] = (
         "and SUPPLY-SLOPSQUAT-001 no longer reads a warning that quotes the command as an "
         "endorsement; no evaluator and no combination changed",
     ),
+    (
+        7,
+        "2b10cb561bdf7fdc8ace0b5b93676a26d9d654be4887902584edb7d0b1735c7e",
+        "re-pin 2026-11-02: CCN-STIC-2011 (ESP-IA) (u02 A-116, u12 A-117 and A-118): 64 "
+        "battery specs name the requirements a fail is evidence against, a target file may "
+        "carry the vendor's answers, and coverage and replay read them; no evaluator and no "
+        "combination changed",
+    ),
 )
 
 #: The digest each version is pinned to now: the last line of :data:`PIN_HISTORY` for it.
@@ -462,7 +470,7 @@ PINNED: dict[int, str] = {
     4: "86d4391094d167c454d0e05ec076a36ca10c585c57b1d00574a7e86e87c0fe40",
     5: "c352e9bd55c8e3b0629e4164411b64667327a5c3cd533e003a7cb84475ecf9c4",
     6: "47293b7afb2a5409bff93319a9fa384621c3ecbe8b9a261be8bb428e05d0f4f7",
-    7: "06ff0c82cc398ef5db28908c91363953cc992f153ee3a4423bff8838c3e54b52",
+    7: "2b10cb561bdf7fdc8ace0b5b93676a26d9d654be4887902584edb7d0b1735c7e",
 }
 
 #: One ``<version> <digest>`` line per pin, appended to and never edited: the history must start

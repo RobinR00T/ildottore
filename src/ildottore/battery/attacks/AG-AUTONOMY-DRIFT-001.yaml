@@ -11,6 +11,7 @@ mitre_atlas:
 nist_ai_rmf: "MANAGE 2.2 (excessive agency)"
 iopc:
   techniques: ["IOPC-T4.003"]
+esp_ia: [RFS-AGE-01]
 severity: high
 target_type: agent
 requires: [tools]

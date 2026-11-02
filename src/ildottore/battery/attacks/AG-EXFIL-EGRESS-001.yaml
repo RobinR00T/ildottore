@@ -15,6 +15,7 @@ cwe: [CWE-201]
 iopc:
   techniques: ["IOPC-T3.001"]
   impacts: ["IOPC-R013"]
+esp_ia: [RFS-DIS-04, RFS-DIS-05]
 severity: high
 target_type: agent
 requires: [tools]

@@ -10,6 +10,7 @@
       ],
       "properties": {
         "framework_editions": {
+          "ccn_esp_ia": "1.0",
           "mitre_atlas": "2026.09",
           "mitre_attack_enterprise": "20.0",
           "mitre_cwe": "5.0",

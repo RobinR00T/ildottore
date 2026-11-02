@@ -649,6 +649,16 @@ falsify it. `dottore coverage --framework aisvs` shows what the battery can spea
 requirements today) and why the rest is out of reach or deliberately untested. Most of the
 standard (training data, infrastructure, logging) needs an audit, not a scan.
 
+### Can Il Dottore certify my product under the CCN's ESP-IA (CCN-STIC-2011)?
+
+No. ESP-IA certification is an accredited laboratory's verdict, against the CCN's test guides,
+plus at least three person-days of penetration testing. What the tool gives that work:
+`dottore coverage --framework esp_ia --target FILE` applies the guide's matrix to the vendor's
+answers (19 of the 27 requirements are within the battery's reach), and `dottore replay RUN_ID
+--esp-ia FILE.md` writes the run's evidence numbered as the guide's Annex B, where a fail is
+**FAIL evidence** and a pass is "not falsified", never PASS. The repository keeps the codes, not
+the guide's text ([`examples/README.md`](../examples/README.md), Scenario U; ADR-0023).
+
 ### Does Il Dottore send a spec's documents, tools or memory to my target?
 
 To a bare model, yes; to a deployed application, no: you seed them and say so. When your target

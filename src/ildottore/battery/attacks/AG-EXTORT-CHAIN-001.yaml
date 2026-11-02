@@ -24,6 +24,7 @@ iopc:
   techniques: ["IOPC-T3.001", "IOPC-T1.002", "IOPC-T2.001"]
   impacts: ["IOPC-R013", "IOPC-R014"]
 aisvs: ["v1.0-C9.3.5"]
+esp_ia: [RFS-AGE-01, RFS-AGE-02, RFS-INJ-02]
 severity: critical
 target_type: agent
 requires: [tools]

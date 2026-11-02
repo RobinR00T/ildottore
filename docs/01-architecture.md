@@ -72,19 +72,26 @@ shared       dependency-free models, protocols, enums (imported by everyone)
 # src/ildottore/shared/protocols.py: the runtime Protocol seams (all @runtime_checkable).
 # The Pydantic models they take and return live in src/ildottore/shared/models.py.
 
+
 class TargetAdapter(Protocol):
     id: str
+
     async def send(self, request: ModelRequest) -> ModelResponse: ...
-    def capabilities(self) -> Capabilities: ...     # tools, rag, memory, streaming, seed,
-                                                     #   logprobs, multi_identity, multimodal,
-                                                     #   audio (nine flags, all declared)
+    def capabilities(self) -> Capabilities:
+        ...  # tools, rag, memory, streaming, seed,
+        #   logprobs, multi_identity, multimodal,
+        #   audio (nine flags, all declared)
+
     # ModelResponse carries token logprobs when capabilities.logprobs is true (used by
     # logprob_membership + confidence side-channels). A target may expose >1 auth identity
     # (multi_identity) so cross-tenant/authz specs can compare A vs B: see scope, §6.
 
+
 class Evaluator(Protocol):
-    type: str                                        # "regex_absence", "semantic_judge", ...
+    type: str  # "regex_absence", "semantic_judge", ...
+
     async def evaluate(self, ctx: EvalContext) -> Verdict: ...
+
     #   Verdict = {status: pass|fail|inconclusive, confidence: float, reasoning: str,
     #              matched: list[str], evaluator_type: str,
     #              inconclusive_reason: capability_unavailable|blocked_by_policy|
@@ -99,23 +106,31 @@ class Evaluator(Protocol):
     #   (ADR-0012, OD-21): the adapter could not read the reply as the provider's
     #   (shared.unreadable). The runner sets the four, no evaluator does.
 
+
 class Mutator(Protocol):
     name: str
-    def mutate(self, text: str, seed: str) -> str: ...   # deterministic, intent-preserving
+
+    def mutate(self, text: str, seed: str) -> str: ...  # deterministic, intent-preserving
+
 
 class RiskScorer(Protocol):
-    def score(self, spec: AttackSpec, verdicts: list[Verdict],
-              attempts: list[Attempt]) -> RiskScore: ...
+    def score(
+        self, spec: AttackSpec, verdicts: list[Verdict], attempts: list[Attempt]
+    ) -> RiskScore: ...
+
 
 class EvidenceStore(Protocol):
     def put(self, run_id: str, attempt: Attempt) -> EvidenceRef: ...
+
 
 class RunStore(Protocol):
     def save_run(self, run: TestRun) -> None: ...
     def save_finding(self, f: Finding) -> None: ...
 
+
 class Reporter(Protocol):
-    format: str                                      # "json", "html", "sarif", "junit"
+    format: str  # "json", "html", "sarif", "junit"
+
     def render(self, run: TestRun, findings: list[Finding]) -> bytes: ...
 ```
 

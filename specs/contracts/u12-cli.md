@@ -2185,6 +2185,43 @@ nothing. **Acceptance:** `tests/cli/test_repro_pack.py` (one pack per failing fi
 copies and their names, `SHA256SUMS`, `finding.json`, the README's reproduce line and no reply,
 the selection, the refusals, tampered evidence, a changed or missing spec, the fence).
 
+**A-117 (added 2026-11-02) What ESP-IA applies to a target (ADR-0023, OD-71).** A target file
+may carry the vendor's answers to the CCN-STIC-2011 characterization questions, `esp_ia:
+answers:` (u00's optional `Target.esp_ia`, an `EspIaProfile`): every question `C01` to `C21`
+answered with a YAML boolean, `C16a` exactly when `C16` is yes, in the guide's order once
+loaded; a key that is not a question is refused before its value is read and counted, never
+named. Outside the target digest (`_TARGET_COSMETIC`) and left out of a dump when absent.
+`dottore coverage --framework esp_ia --target FILE` (a profile name too) applies the matrix
+(`shared.esp_ia.applicable_rules`): the answers given yes, the rules met, the threats and
+policies, the requirements that apply, and for each requirement the specs that declare it,
+split into those that would run and those blocked, with the reason the plan of `dottore run`
+gives (`build_plan`'s `capability_unavailable`, then `delivery_gap` for a live target; an offline
+mock holds its scene). The text form groups the blocked specs by reason and prints each reason
+once; `--json` carries every reason in full. Every form says that the rules' conditions between
+elements are read as met, and that a pass is not a PASS. `--target` without `--framework
+esp_ia`, or a target with no answers, is refused (exit 3). Sends nothing. **Acceptance:**
+`tests/cli/test_esp_ia_cmd.py` (the answers outside the digest, seven refused answer sets with no
+operator key quoted, the agent example's 13 rules and 16 requirements, its blocked specs by
+reason, the JSON form, an offline mock blocking nothing, the two refusals).
+
+**A-118 (added 2026-11-02) An ESP-IA evidence draft from a run (ADR-0023, OD-71).** `dottore
+replay RUN_ID --esp-ia FILE.md [--target FILE]`, after the manifest check, writes a Markdown
+draft numbered as the guide's Annex B is: section 1 (the run, the tool, the judging rules and
+their digest, the target and its digest), 2.4 and 2.5 (the applicable requirements and threats,
+when `--target` gives the answers; otherwise a line saying how), 4 (one row per requirement,
+the applicable ones or all 27: **FAIL evidence**, not falsified, inconclusive, no test in this
+run, out of reach or deliberately not tested with the reason; the verdict left to the
+laboratory), 7 (a test case `PR_<SPEC-ID>` per finding of a mapped spec whose digest matches the
+run's: requirements, objective, scenario, procedure, expected and obtained results with the
+evidence hashes, conclusion; the CCN guide, the evaluator and the architecture elements left to
+fill in), 8 and 9 (left to the laboratory). It never writes PASS. Refused: an existing file, a
+`--target` without `--esp-ia`, no run store, a target file whose digest (with the run's mock
+route) differs from the run's, a target with no answers. A spec changed since the run is named
+and counts for no requirement. Sends nothing. **Acceptance:** `tests/cli/test_esp_ia_cmd.py` (a
+failing run's FAIL evidence by requirement and its test case, an unmapped spec with none, a
+passing run never a PASS, the answers narrowing the draft, another target's answers refused and
+no file written, an existing file and a lone `--target` refused).
+
 ## §8 Out of scope / forbidden
 - MUST NOT implement attack/mutation/evaluation/scoring/reporting/fingerprint logic (u05-u11,
   u13): only wire and call them. MUST NOT own `cli/lint.py` (u02) or edit any spec YAML.
@@ -2394,3 +2431,12 @@ the selection, the refusals, tampered evidence, a changed or missing spec, the f
   whether a pack carries the spec file itself; whether a pack of a passing finding (a fix
   verified) is useful. Reversal: run `replay` without `--pack`. Owner: human.
   **Decided 2026-11-01 by the owner ("do it all"), as built.**
+- **OD-71** (2026-11-02, A-117 and A-118, ADR-0023): the ESP-IA views. Built as the smallest
+  reversible version: the answers in the target file (built), outside the target digest
+  (built); the rules' conditions between elements read as met and said so (built); the draft in
+  English, numbered as Annex B, with the fields a run cannot know left to the laboratory (built);
+  "not falsified" for a pass, never PASS (built). To decide: a Spanish draft (the guide's own
+  language, and what a Spanish laboratory files); the architecture elements in the target file,
+  so each rule's condition is checked instead of assumed; whether the draft carries the
+  reproduction packs of its failing test cases; whether `dottore run --report` gains an ESP-IA
+  section. Reversal: drop `--target` from `coverage` and `--esp-ia` from `replay`. Owner: human.

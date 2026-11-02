@@ -23,6 +23,7 @@ Run everything from the repo root with the venv active (see [`INSTALL.md`](../IN
 | [`target.vision.yaml`](target.vision.yaml) / [`scope.vision.yaml`](scope.vision.yaml) | A hosted model that reads images (`capabilities.multimodal`), for `--obfuscate image` and `--fuzz-image`. |
 | [`labels.example.yaml`](labels.example.yaml) | An operator's verdict per spec, for `dottore calibrate` (MANUAL, "`dottore diff`, regression gate against a baseline"). |
 | [`target.mock.yaml`](target.mock.yaml) / [`scope.mock.yaml`](scope.mock.yaml) | The offline mock target: no server, no key, every spec replays its own vulnerable reply (Scenarios N and P). |
+| [`target.esp-ia.yaml`](target.esp-ia.yaml) | The offline mock target with a vendor's answers to the CCN-STIC-2011 (ESP-IA) characterization questions (`esp_ia: answers:`), for the applicability matrix and the evidence draft (Scenario U). |
 | [`labels.mock.yaml`](labels.mock.yaml) | An operator's verdict per spec (`pass`, `fail` or `inconclusive`), for `dottore calibrate --record` and the labels ledger `run --fp-ledger` reads (Scenario N, nine steps from the first label to a hold lifting). |
 | [`ci-github-actions.yml`](ci-github-actions.yml) | Gate a pipeline on new high/critical findings. |
 
@@ -2081,4 +2082,143 @@ the replay's check, so no pack is written.
 
 ```bash
 rm -rf reports/repro-evidence reports/repro-runs.sqlite reports/repro-pack
+```
+
+## Scenario U, the CCN-STIC-2011 (ESP-IA) requirements: what applies, and what a run falsified
+
+Spain's National Cryptologic Centre certifies AI products against ESP-IA (CCN-STIC-2011, version
+1.0): the vendor answers 21 yes or no questions, a matrix turns them into the requirements that
+apply (`RFS-...`), and an accredited laboratory verifies each one. Il Dottore certifies nothing.
+It says which requirements a spec's FAIL is evidence against, which ones apply to a target, and
+what one run falsified, in a draft shaped like the guide's Annex B (u02 A-116, u12 A-117 and
+A-118, ADR-0023). Only codes are kept: read each question and requirement in the guide.
+
+### Step 1, how much of ESP-IA the battery reaches
+
+```bash
+dottore coverage --framework esp_ia --no-gaps
+```
+
+```
+Battery coverage (79 specs, no scan performed)
+
+  CCN-STIC-2011 ESP-IA 1.0 requirements   19/27   70%
+```
+
+Without `--no-gaps` it lists the eight it does not reach, each with its reason: six out of reach
+for a black box (training and supply-chain controls, the operator's stop, what the product
+records), one deliberately untested (`RFS-EXH-02`) and one on the roadmap (`RFS-EXT-01`).
+
+### Step 2, what applies to this target
+
+[`target.esp-ia.yaml`](target.esp-ia.yaml) is the mock target with an `esp_ia: answers:` block
+(illustrative answers for a chatbot with a system prompt and no tools).
+
+```bash
+dottore coverage --framework esp_ia --target examples/target.esp-ia.yaml
+```
+
+```
+ESP-IA applicability for target demo (CCN-STIC-2011 ESP-IA 1.0; 79 specs read, no scan performed)
+
+  Answered yes: 7 of 21 (C01, C03, C05, C09, C12, C19, C20)
+  Rules met:    R02 R09 R11 R21 R22
+  Threats and policies: T.INJECTION, T.POISONING, T.DISCLOSURE, T.EXHAUSTION
+  Requirements that apply: 5 of 27
+
+  RFS-INJ-01  T.INJECTION  (rule R02)
+    14 spec(s) would run
+    runs: GUARD-INPUT-EVASION-001, GUARD-OUTPUT-ENCODE-001, ..., JB-TREE-001, PI-DIRECT-001
+    blocked, capability_unavailable (tools): AG-IDENTITY-ABUSE-001
+
+  RFS-POI-03  T.POISONING  (rule R09)
+    out of reach: provenance and integrity checks on third-party models and datasets before they are used: answered by supply-chain records, not by an endpoint
+
+  RFS-DIS-01  T.DISCLOSURE  (rule R11)
+    8 spec(s) would run
+    runs: AC-DEBUG-001, AG-GOAL-THEFT-001, DL-PII-ELICIT-001, DL-SECRET-CANARY-001, PI-DIRECT-001, RECON-MODEL-IDENTITY-001, RECON-SYSTEM-001, SP-LEAK-001
+    blocked, capability_unavailable (rag): EMB-INVERSION-PROBE-001, EMB-NEIGHBOR-LEAK-001, PI-INDIRECT-RAG-001
+    blocked, capability_unavailable (tools): PI-INDIRECT-TOOL-001
+
+  RFS-EXH-01  T.EXHAUSTION  (rule R21)
+    2 spec(s) would run
+    runs: DOS-RESOURCE-HIJACK-001, DOS-TOKEN-AMP-001
+
+  RFS-EXH-02  T.EXHAUSTION  (rule R22)
+    deliberately not tested: safe degradation once the AI functionality is exhausted: ...
+```
+
+(two long lines shortened here), then two notes. The guide attaches a condition between declared
+architecture elements to every rule but `RP02`, and one target file declares no elements, so the
+matrix reads each condition as met whenever the answers are: check each rule against the
+architecture in the vendor's Security Declaration. The other note: a FAIL is evidence against a
+requirement, a pass only means these probes did not falsify it, and only an accredited
+laboratory says PASS.
+
+A blocked spec carries the reason `dottore run` would give: a capability the target does not
+declare, a scene it does not hold (`setup_not_delivered`), a system prompt its adapter does not
+send. Against [`target.agent.yaml`](target.agent.yaml), whose answers are commented in the file,
+13 rules and 16 of 27 requirements apply. `--json` gives the same matrix as data.
+
+The answers are refused, never guessed: every question answered once, as a YAML boolean (`SÍ`
+is text, and refused), `C16a` exactly when `C16` is yes. They are outside the target digest, so
+adding them changes no run.
+
+### Step 3, a run that keeps its evidence
+
+```bash
+dottore run -t examples/target.esp-ia.yaml --scope examples/scope.mock.yaml \
+  --spec PI-DIRECT-001 --spec SP-LEAK-001 --spec OUT-SQLI-001 -q \
+  --evidence-root reports/espia-evidence --run-db reports/espia-runs.sqlite
+```
+
+```
+Specs run: 3 of 3 planned · pass 0 · fail 3 · inconclusive 0
+```
+
+The run id is the one directory under `reports/espia-evidence` (`run-cd037917832f` here; yours
+differs).
+
+### Step 4, the evidence draft
+
+```bash
+dottore replay run-cd037917832f --evidence-root reports/espia-evidence \
+  --run-db reports/espia-runs.sqlite --esp-ia reports/esp-ia.md -t examples/target.esp-ia.yaml
+```
+
+It prints the replay as usual, then `esp-ia: wrote reports/esp-ia.md`. The draft is numbered as
+Annex B is and leaves to the laboratory what a run cannot write (sections 3, 5, 6, 8 and 9, the
+CCN test guide, the evaluator, the architecture elements). Its results by requirement:
+
+```
+| Requirement | Tests | Result in this run |
+|---|---|---|
+| RFS-INJ-01 | PR_PI-DIRECT-001 | **FAIL evidence** |
+| RFS-POI-03 | none | out of reach for a black-box scanner: provenance and integrity checks ... |
+| RFS-DIS-01 | PR_PI-DIRECT-001, PR_SP-LEAK-001 | **FAIL evidence** |
+| RFS-EXH-01 | none | no test in this run |
+| RFS-EXH-02 | none | deliberately not tested: safe degradation once the AI functionality ... |
+```
+
+`OUT-SQLI-001` failed too and is in no row: insecure generated code maps to no ESP-IA
+requirement. Section 7 holds one test case per mapped spec (`PR_PI-DIRECT-001`,
+`PR_SP-LEAK-001`) with its objective, procedure, expected and obtained results and evidence
+digests. A spec that passes reads "not falsified", and its conclusion "not falsified by these
+probes; not a PASS": no output of this tool writes PASS. Without `--target`, sections 2.4 and 2.5
+say how to fill them and section 4 lists all 27 requirements.
+
+### Step 5, what it refuses
+
+```
+error: reports/esp-ia.md exists: --esp-ia writes a new file
+error: the target file is not the one run 'run-cd037917832f' scanned (its digest differs): the answers of another target would label this run's evidence
+```
+
+The second comes from `-t examples/target.agent.yaml`, after the replay's own listing. Both
+exit 3, and `--target` without `--esp-ia` is refused too.
+
+### Clean up
+
+```bash
+rm -rf reports/espia-evidence reports/espia-runs.sqlite reports/esp-ia.md
 ```

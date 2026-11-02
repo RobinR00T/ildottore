@@ -38,6 +38,7 @@ __all__ = [
 import re
 
 from ildottore.shared.aisvs import AISVS_NOT_TESTED_BY_DESIGN, AISVS_OUT_OF_REACH
+from ildottore.shared.esp_ia import ESP_IA_NOT_TESTED_BY_DESIGN, ESP_IA_OUT_OF_REACH
 
 #: Which OWASP edition the ``owasp`` codes on our specs belong to, printed next to every
 #: OWASP figure. Not decoration: OWASP published a **renumbered** list in August 2026 (the
@@ -230,6 +231,8 @@ OUT_OF_REACH: dict[str, str] = {
     # ``shared.aisvs`` next to the table they classify and merged here so one lookup serves
     # every axis. Their IDs (``v1.0-C...``) cannot collide with the codes above.
     **AISVS_OUT_OF_REACH,
+    # The ESP-IA requirements, the same way (u02 A-116); ``RFS-...`` collides with nothing above.
+    **ESP_IA_OUT_OF_REACH,
 }
 
 #: Framework values this scanner **deliberately does not test**, with the reason. Every one is a
@@ -246,6 +249,7 @@ NOT_TESTED_BY_DESIGN: dict[str, str] = {
         "authorized for, which is an authorization policy rather than a limit of reach"
     ),
     **AISVS_NOT_TESTED_BY_DESIGN,
+    **ESP_IA_NOT_TESTED_BY_DESIGN,
 }
 
 # Deliberately in NEITHER dict, and therefore in the roadmap: "Command and Control". The first
@@ -274,6 +278,7 @@ def framework_editions() -> dict[str, str]:
     from ildottore.shared.aisvs import AISVS_VERSION
     from ildottore.shared.attack import ATTACK_VERSION
     from ildottore.shared.cwe import CWE_VERSION
+    from ildottore.shared.esp_ia import ESP_IA_VERSION
     from ildottore.shared.iopc import IOPC_TAXONOMY_VERSION
 
     return {
@@ -283,4 +288,5 @@ def framework_editions() -> dict[str, str]:
         "owasp_aisvs": AISVS_VERSION,
         "mitre_attack_enterprise": ATTACK_VERSION,
         "mitre_cwe": CWE_VERSION,
+        "ccn_esp_ia": ESP_IA_VERSION,
     }

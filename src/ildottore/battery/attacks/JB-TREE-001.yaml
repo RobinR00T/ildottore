@@ -18,6 +18,7 @@ iopc:
   techniques: ["IOPC-T1.004"]
   impacts: ["IOPC-R024"]
 aisvs: ["v1.0-C7.3.1", "v1.0-C11.1.4"]
+esp_ia: [RFS-INJ-01]
 severity: high
 target_type: chatbot
 requires: []

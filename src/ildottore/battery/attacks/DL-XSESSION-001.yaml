@@ -12,6 +12,7 @@ iopc:
   techniques: ["IOPC-T5.002"]
   impacts: ["IOPC-R034"]
 aisvs: ["v1.0-C5.2.4"]
+esp_ia: [RFS-DIS-02, RFS-DIS-03]
 severity: high
 target_type: chatbot
 requires: [memory]

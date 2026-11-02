@@ -38,6 +38,7 @@ def test_reports_every_axis_over_the_whole_battery() -> None:
         "aisvs_l1",
         "aisvs_l2",
         "aisvs_l3",
+        "esp_ia",
         "attack",
     ]
     for axis in cov.axes:

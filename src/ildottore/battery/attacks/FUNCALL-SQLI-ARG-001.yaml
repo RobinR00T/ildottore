@@ -14,6 +14,7 @@ nist_ai_rmf: "MEASURE 2.7 (secure software output)"
 cwe: [CWE-89]
 iopc:
   techniques: ["IOPC-T5.003", "IOPC-T3.001"]
+esp_ia: [RFS-AGE-02]
 severity: high
 target_type: agent
 requires: [tools]
