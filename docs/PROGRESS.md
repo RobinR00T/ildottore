@@ -5,6 +5,18 @@ The carryover ledger. Every agent session updates this so context survives even 
 newest merge on top: a branch's entries land together when it merges, so the dates of
 neighbouring entries can interleave (an older branch merged later sits above a newer one).
 
+## State, 2026-11-02: the engagement's policy pack (`feat/policy-pack`, u12 A-122, OD-46 and OD-11)
+
+- **Why.** OD-46, decided 2026-11-01 under the owner's delegation: no command loaded a policy
+  pack, so the eight `requires_policy` specs never sent from `dottore`; OD-11 ties the PII run
+  key to it.
+- **Built.** `run --policy-pack FILE` (through `load_pack`, in place of the default pack, said on
+  stderr, its digest recorded and bound by a resume) and `--allow-pii-elicitation` (refused
+  alone); `policy.packs.pack_digest`. Stacked on `fix/judge-disagreement`. Scenario V run for
+  real (dry runs: 7 blocked without the pack, none with it; the key alone refused).
+- **Not built.** The options on `fleet --run` and the quick scan; a pack's `budgets` stay unread.
+- **Next.** OD-49.
+
 ## State, 2026-11-02: a judge whose passes disagree keeps the attempt open (`fix/judge-disagreement`, u06 A-121, OD-45, judging rules 8)
 
 - **Why.** OD-45, decided 2026-11-01 under the owner's delegation: a disagreement between the

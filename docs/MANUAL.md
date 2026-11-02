@@ -164,8 +164,8 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   a WebSocket text frame that is not UTF-8, the raw bytes of half a character included
   (inconclusive and not retried, §4.2).
 - **Bounded operator files.** A scope, target, fleet or labels file is read up to 1 MiB, the
-  limit of a spec file (so are a policy pack and the signature pack, which the CLI does not take
-  from the command line). A larger regular file is refused before any of it is read; anything
+  limit of a spec file (so are a `--policy-pack` and the signature pack, which the CLI does not
+  take from the command line). A larger regular file is refused before any of it is read; anything
   else, such as a pipe (`--scope <(cat scope.yaml)`) or a device, is read up to one byte past
   the limit and refused if that byte comes. The error names the file and the sizes, written
   with thousands separators (`file is 1,073,741,824 bytes, over the 1,048,576-byte cap`), and
@@ -195,16 +195,21 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   targets are mock endpoints that the allowlist blocks; every dangerous payload is flagged
   `test_only`.
 - **Policy-gated capabilities.** Every spec carries a `test_only` flag and a list of
-  `requires_policy` capabilities. A run applies a **policy pack**; the CLI always builds its
-  own default pack, which allows the categories present but enables **no** capabilities, and
-  `dottore run` has no option to supply a different pack. So the 8 specs that declare
-  `requires_policy` (the 7 of the `agentic-extortion` suite, which need
-  `offensive_simulation`, and `DL-PII-ELICIT-001`, which needs `layer_b_pii`) never send from
-  the CLI: on a target that declares the capability they need they are `blocked_by_policy`
-  with **zero** sends (otherwise the capability filter skips them first). They cannot be
-  enabled from the command line today. A pack loader exists in the code
-  (`policy.packs.load_pack`) but no command calls it. Whether the CLI should accept a policy
-  pack is an open decision (OD-46).
+  `requires_policy` capabilities. A run applies a **policy pack**. Without `--policy-pack` the
+  CLI builds its own default pack, which allows the categories present but enables **no**
+  capabilities, so the 8 specs that declare `requires_policy` (the 7 of the `agentic-extortion`
+  suite, which need `offensive_simulation`, and `DL-PII-ELICIT-001`, which needs `layer_b_pii`)
+  do not send: on a target that declares the capability they need they are `blocked_by_policy`
+  with **zero** sends (otherwise the capability filter skips them first).
+  `run --policy-pack FILE` loads the engagement's pack in place of the default one (u12 A-122,
+  OD-46): its `allow_categories` and `allow_specs` decide what may run (default-deny: a
+  category it does not list is blocked), `deny` wins over both, `enabled_capabilities` opens
+  `requires_policy`, and `enable_layer_b` and `allow_pii_elicitation` are the layer-B and PII
+  keys. Its `budgets` are not read (the budget flags are). Before planning, the run prints
+  `policy pack: <name> (<file>, sha256 <12 hex>): ...` on stderr with what the pack enables, and
+  records the pack's digest; a resume under another pack, or the default one where the run had
+  a pack, is refused. A pack that cannot be read or validated is refused before anything is
+  planned (exit 3). Example: `examples/policy-pack.example.yaml`.
 - **`test_only` marks a spec; it does not switch it off.** A marked spec runs. What the gate
   refuses is an **unmarked** spec in a flagged family (`jailbreak`, `data_leakage`,
   `agent_tool_abuse`, `availability_cost`, `safety_content`): the one `dottore lint` reports as
@@ -215,10 +220,10 @@ Il Dottore is a defensive tool and is built to be safe to point at production:
   which specs are offensive simulations. `--spec-path` is a trust decision; lint what you load.
 - **PII elicitation needs two more keys.** `DL-PII-ELICIT-001` runs only when the policy pack sets
   `allow_pii_elicitation` **and** the run's safety flag of the same name is on (DL4), on top of the
-  `layer_b_pii` capability. The CLI sets neither the pack nor the run key today, so the spec cannot
-  be enabled from the command line at all. That is the decided default (OD-11, 2026-10-11): when an
-  opt-in comes, it is both keys from the CLI in one change, a flag loading the engagement's pack and
-  `--allow-pii-elicitation`, never the run flag alone. The gate recognises the spec by its
+  `layer_b_pii` capability. Both come from the CLI (OD-11, u12 A-122): the pack through
+  `--policy-pack`, the run key through `--allow-pii-elicitation`, which without `--policy-pack`
+  is refused, since alone it would enable nothing. The run records the key, and a resume with
+  it set the other way is refused. The gate recognises the spec by its
   `pii-elicitation` tag regardless of case and of `-` or `_` (`pii_elicitation`, `PII-Elicitation`;
   not `pii elicitation`) or by the `layer_b_pii` capability alone.
 - **Redact-at-rest.** Secrets and PII are masked in logs, evidence and reports. Every
@@ -1668,6 +1673,8 @@ $ echo $?
 | `--fp-ledger LEDGER` | the labels ledger `dottore calibrate --record` writes: a spec with more than 30% false positives among its last 50 labelled fails (5 at least) is held, and its fail is reported, scored and never confirmed, so it needs review and gates only with `--include-needs-review`. The holds print on stderr, under `--quiet` too. Read before anything is sent: a line that is not a label record stops the run (exit 3). A resume holds what its run held and refuses the flag. See "Holding a spec that raises false alarms" below (u08 A-105, OD-61, decided as built) |
 | `--control` | a failing spec that declares `attack.control` sends it once and records what it showed in the finding's `control` (see "Attributing a fail to its attack" below; u08 A-106, ADR-0018) |
 | `--judge-escalate PATH` | a second judge model `target.yaml`, asked only when the `--judge` model cannot settle an attempt (any `inconclusive`): a cheap first judge, an expensive second. Needs `--judge` (refused before anything is sent without it); authorized by the scope and its credential checked as the judge's (see "A cheap judge, and a second for what it cannot settle" below; u06 A-109, ADR-0020) |
+| `--policy-pack PATH` | the engagement's policy pack (YAML), in place of the default one: the categories and specs it enables, what it denies, the capabilities `requires_policy` names. Printed on stderr before planning and recorded with the run; a resume under another pack is refused (u12 A-122, OD-46; see "Policy-gated capabilities") |
+| `--allow-pii-elicitation` | the run's PII key (DL4): `DL-PII-ELICIT-001` runs only when the pack also sets `allow_pii_elicitation`. Needs `--policy-pack` (refused alone, OD-11); recorded, and bound by a resume |
 | `--verify` | the judge model tries to refute each fail once and the finding's `verification` says what it found, never decisive (see "A second reader for each fail" below; u08 A-107, ADR-0019) |
 | `--evidence-root PATH` | evidence store root (default `.dottore/evidence`). Checked before anything is sent: a root that is a regular file, or lies under one, is refused in every mode (`cannot write evidence under <root>: it is not a directory`, exit 3), and a sending run creates `<root>/<run-id>/attempts` (and `probes` with `-sV`) for each target and writes and removes a temporary file there before its first request. Until 2026-10-12 such a root was found by the first attempt's write, after its batch was paid for |
 | `--run-db PATH` | run store SQLite path (default `.dottore/runs.sqlite`). A directory, a file that is not SQLite, or a path under a regular file is refused in every mode before anything is sent (`cannot open the run store at <path>: <reason>`, exit 3; the dry run and the estimate write nothing), and a sending run opens it before its first request (with `-sV`, before the probes). Several runs may share one store, a new one included: a statement waits up to 30 s for a lock another process holds, in tries of 0.1 s that Ctrl-C and SIGTERM stop at once, and after a second says so on stderr, once per run (`note: waiting for the run store at <path>: another process holds its lock (up to 30 s; Ctrl-C stops the wait)`); a lock held longer fails the run with `the run store at <path> stayed locked by another process for 30 s` (exit 3), named wherever it is met, mid-run included. Until 2026-10-12 runs started together on a new store could die with a traceback and exit 1 (1 and 2 of 18 runs in two measurements, 5 of 6 in the audit that found it), and a wait held Ctrl-C for up to 30 s |
@@ -3809,7 +3816,7 @@ not checked. See [`06-extensibility-suites.md`](06-extensibility-suites.md),
 | `Cut by the provider's output filter: N attempt(s) in S spec(s) came back cut or replaced` | The deployment's output filter (Azure OpenAI's `content_filter`, Anthropic's `refusal` after some output; through a `RestTemplate` built in Python, Gemini's `SAFETY` or `RECITATION` and a Bedrock guardrail with its trace) cut or replaced what the model wrote for those attacks (§9). Read the attempts' replies and the spec: the model may have been exploited and the filter hid it. To test the model behind the filter, scan a deployment configured to annotate rather than block, with its owner's authorization. Before 2026-10-11 those replies passed the spec. |
 | `Stopped by the provider's filter on a side it did not report` | The bracket names the stop reason. `guardrail_intervened`: a Bedrock guardrail (through a `RestTemplate` built in Python) answered without its trace, so the scan cannot tell a blocked prompt from a blocked reply (§9); send the trace with the requests (`guardrailConfig` with `"trace": "enabled"` in the template's `static_body`) to learn the side. `content_filtered`: Bedrock does not document a side. `refusal`: an Anthropic refusal with no text and no usage, which says nothing of whether any output came first. |
 | `every one of the N attempt(s) was answered by the provider's filter (...), so no reply the model wrote whole was evaluated` (exit 3) | The deployment's filter refused, cut or stopped every attack prompt of the run (or some of them, and the rest got no reply that could be read), and none failed: the run measured the filter, not the model (§9, "A run the provider's filter answered every time"). The state is `filtered`. Point the run at a deployment or a filter level that lets the attack prompts through to measure the model; the attempts are in the reports. When some attempts got no reply at all, the line ends with what to check for them (the adapter's advice for a reply it could not read, the endpoint for a transport failure). If the endpoint speaks the provider's API and has no OpenAI, Azure or Anthropic filter behind it (a gateway that maps its own moderation to `content_filter` in front of a model it hosts), `filter_stops: []` in its target file (§4.2) makes its 400s ordinary and its replies with text or a tool call the model's; its replies with neither on the provider's word stay the filter's, so a run of only those stays `filtered`. Never declare it for a gateway in front of Azure, which relays Azure's filter. `dottore replay` of such a run prints `run: filtered: ...`. |
-| A policy-gated spec never runs (`blocked_by_policy`) | The spec declares a `requires_policy` capability and the CLI's pack enables none. `dottore run` cannot load another pack today, so these 8 specs (the `agentic-extortion` suite and `DL-PII-ELICIT-001`) do not run from the CLI at all. Selected alone they end in `nothing would be sent` (exit 3), whose message says so: "A spec blocked by policy needs a policy pack that enables it, and the CLI cannot load one today (OD-46, decided and not built yet), so it cannot run from `dottore`." |
+| A policy-gated spec never runs (`blocked_by_policy`) | The spec declares a `requires_policy` capability and the run's pack enables none: without `--policy-pack` the CLI's default pack enables no capability, so the 8 specs that declare one (the `agentic-extortion` suite and `DL-PII-ELICIT-001`) do not send. Pass the engagement's pack with `--policy-pack` (its categories and `enabled_capabilities`), and for `DL-PII-ELICIT-001` `--allow-pii-elicitation` too. Selected alone they end in `nothing would be sent` (exit 3), whose message says so. |
 | `connection refused` to `localhost:11434` | Ollama not running (`ollama serve`) or model not pulled. |
 | `warning: -sV on <target>: N of 18 probe(s) got no usable reply (...)` | Some fingerprint probes got a reply the adapters refuse (over 4 MiB, an undecodable encoding, nested more than 100 levels deep, not JSON or not the provider's shape (`ResponseMalformed`, since OD-21); from a WebSocket target, a frame refused as §4.2 says or a 1007 or 1009 close the server starts), or the provider's input filter refused the benign guardrail probe or a carrier probe (`ProviderFilterBlock`). The run went on with a fingerprint built from the other replies, so the mutator order rests on less evidence; the exchanges are in the `probes/` directory the line names. A target that does not answer at all stops the run at its first probe instead (exit 3, with the HTTP status or the connection error). |
 | `aborted on UnreadableReplies: the target's first 5 replies in this run could not be read ...` (exit 3) | Every reply so far was one the adapter cannot read as the provider's: an HTML page, a body that is not JSON, JSON without `choices` (OpenAI) or a `content` array (Anthropic), nothing at a REST template's `text_path`. The endpoint is usually wrong (it serves a portal or a proxy's page), or the `provider` does not match what it serves; the line says what to check for that provider. Check it against one `curl` of the endpoint; each stored attempt keeps an excerpt of what came back under `request.metadata.unreadable_reply`. A run of fewer than 5 attempts says `every one of the N attempt(s) got a reply that could not be read as the provider's` and is `unreachable` instead. A resume sends those attempts again. |

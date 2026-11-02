@@ -21,6 +21,7 @@ Run everything from the repo root with the venv active (see [`INSTALL.md`](../IN
 | [`target.agent.yaml`](target.agent.yaml) / [`scope.agent.yaml`](scope.agent.yaml) | A deployed AI agent over a WebSocket, with its `guard`: tenant-checked JWT, stop at the first auth failure, pacing across processes, tools that close the connection. Its scope also authorizes the local `--judge` (Scenario K, a first live scan in order). |
 | [`target.agent-rest.yaml`](target.agent-rest.yaml) / [`scope.agent-rest.yaml`](scope.agent-rest.yaml) | The same guard for an agent over plain HTTP (`rest.guard`), with a `window`: the days and hours the engagement allows, in an IANA zone. |
 | [`target.vision.yaml`](target.vision.yaml) / [`scope.vision.yaml`](scope.vision.yaml) | A hosted model that reads images (`capabilities.multimodal`), for `--obfuscate image` and `--fuzz-image`. |
+| [`policy-pack.example.yaml`](policy-pack.example.yaml) | An engagement's policy pack for `run --policy-pack`: the categories it authorizes and `offensive_simulation`, which turns on the seven `agentic-extortion` specs (Scenario V). |
 | [`labels.example.yaml`](labels.example.yaml) | An operator's verdict per spec, for `dottore calibrate` (MANUAL, "`dottore diff`, regression gate against a baseline"). |
 | [`target.mock.yaml`](target.mock.yaml) / [`scope.mock.yaml`](scope.mock.yaml) | The offline mock target: no server, no key, every spec replays its own vulnerable reply (Scenarios N and P). |
 | [`target.esp-ia.yaml`](target.esp-ia.yaml) | The offline mock target with a vendor's answers to the CCN-STIC-2011 (ESP-IA) characterization questions (`esp_ia: answers:`), for the applicability matrix and the evidence draft (Scenario U). |
@@ -728,8 +729,9 @@ Real output, the lines that matter (stderr left out):
 ```
 
 Each line is a decision, not an error. `skipped`: declare under `capabilities` only what the
-deployment has; `multi_identity` also needs a second identity in the scope. `blocked`: the CLI
-cannot load a policy pack that enables these specs today. `setup_not_delivered` for a canary in
+deployment has; `multi_identity` also needs a second identity in the scope. `blocked`: the default
+policy pack enables no `requires_policy` capability; an engagement that authorizes them passes
+its own pack (Scenario V). `setup_not_delivered` for a canary in
 the system prompt: this template sends none, so add `system: "{{system_prompt}}"` to the `query`
 frame if the server reads one, or accept that the four go unrun, never that they pass (u08
 A-113). `setup_not_seeded`: next step.
@@ -2222,3 +2224,68 @@ exit 3, and `--target` without `--esp-ia` is refused too.
 ```bash
 rm -rf reports/espia-evidence reports/espia-runs.sqlite reports/esp-ia.md
 ```
+
+## Scenario V, an engagement's policy pack (`run --policy-pack`)
+
+Eight specs declare a `requires_policy` capability, and the default policy pack enables none:
+the seven of `agentic-extortion` (`offensive_simulation`) and `DL-PII-ELICIT-001`
+(`layer_b_pii`). An engagement whose written authorization covers them passes its own pack
+(u12 A-122, OD-46). Every output below was copied from a real dry run on 2026-11-02 against the
+agent of Scenario I (placeholders only, nothing sent; the `ASSISTANT_AGENT_JWT` warning left
+out).
+
+### Step 1, without a pack
+
+```bash
+dottore run --dry-run --suite agentic-extortion --runs 1 -vv \
+  -t examples/target.agent.yaml --scope examples/scope.agent.yaml
+```
+
+```
+error: nothing would be sent: every selected spec is unrunnable on agent-staging (0 skipped for capabilities, 7 blocked by policy). Widen the selection or declare the capability on the target. A spec blocked by policy needs a --policy-pack that enables it (its category or id, and every capability its requires_policy names; a PII-elicitation spec also --allow-pii-elicitation).
+```
+
+Exit 3.
+
+### Step 2, with the engagement's pack
+
+[`policy-pack.example.yaml`](policy-pack.example.yaml) lists the seven security categories and
+`enabled_capabilities: [offensive_simulation]`. It replaces the default pack, so a category it
+does not list is blocked: write what the authorization covers.
+
+```bash
+dottore run --dry-run --suite agentic-extortion --runs 1 -vv \
+  -t examples/target.agent.yaml --scope examples/scope.agent.yaml \
+  --policy-pack examples/policy-pack.example.yaml
+```
+
+The lines that matter:
+
+```
+policy pack: example-engagement-2026-11 (examples/policy-pack.example.yaml, sha256 ce1bda6ef51f): 7 categor(ies) and 0 spec(s) enabled, 0 denied; capabilities: offensive_simulation; layer B: off; PII elicitation: pack no, run no (both needed, DL4)
+dry-run: plan resolved, sent nothing.
+  battery: agentic-extortion, 1 specs selected
+    jailbreak: 1
+  not seeded: 6 spec(s) on agent-staging, their scene is not in the deployment as seeded_setup declares it, or their tool trace cannot be read through this adapter (-vv says which)
+    - AG-EXTORT-CHAIN-001: setup_not_seeded: this spec needs documents, tools, memory or a canary in the deployment, and the target file does not declare them seeded (seeded_setup.specs)
+  would send: 6 requests over 1 specs at runs=1
+```
+
+No spec is blocked any more. `JB-OFFENSIVE-RANSOM-CODEGEN-001` would send; the six agent specs
+now meet the next gate, the scene in the deployment (Scenario K, step 3), which `-vv` lists one
+by one (five lines left out above). The `policy pack:` line goes to stderr before planning, and
+the run records the pack's digest: a `--resume` under another pack, or without one, is refused.
+
+### Step 3, the PII key alone
+
+```bash
+dottore run --dry-run --suite agentic-extortion --runs 1 \
+  -t examples/target.agent.yaml --scope examples/scope.agent.yaml --allow-pii-elicitation
+```
+
+```
+error: --allow-pii-elicitation needs --policy-pack: it is the run's key, and the engagement's pack must set allow_pii_elicitation too (DL4)
+```
+
+Exit 3. `DL-PII-ELICIT-001` needs both keys (OD-11): `allow_pii_elicitation: true` and
+`layer_b_pii` in the pack, and the flag on the run.

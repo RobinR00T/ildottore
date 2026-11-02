@@ -181,6 +181,16 @@ A second judge model target.yaml, asked only when the --judge model cannot settl
 stands; a fail only a judge reported still never confirms. Needs --judge. Priced by --estimate
 and --dry-run as if every judgement went to it. A resume with another second judge, or none
 where its run had one, is refused.
+.TP
+.B --policy-pack \fIPATH\fR
+The engagement's policy pack (YAML), in place of the default one, which enables every selected
+category and no capability: its allow_categories and allow_specs decide what may run, deny wins,
+enabled_capabilities opens a spec's requires_policy (offensive_simulation, layer_b_pii). Printed
+on stderr before planning and recorded with the run; a resume under another pack is refused.
+.TP
+.B --allow-pii-elicitation
+The run's PII key (DL4): DL-PII-ELICIT-001 runs only when the pack also sets
+allow_pii_elicitation. Needs --policy-pack; recorded, and bound by a resume.
 .SS Selection
 .TP
 .B --suite \fITEXT\fR

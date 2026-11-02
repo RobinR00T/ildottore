@@ -7,6 +7,21 @@ the file, schema copy, build or pipeline it names.
 
 ## [Unreleased]
 
+### Added (the engagement's policy pack: u12 A-122, OD-46 and OD-11, judging rules 8 re-pinned)
+
+- **`run --policy-pack FILE`.** The CLI loaded no policy pack, so the eight specs that declare
+  `requires_policy` (the seven of `agentic-extortion`, `DL-PII-ELICIT-001`) never sent from
+  `dottore`. The option loads the engagement's pack in place of the default one (default-deny:
+  a category it does not list is blocked), prints what it enables on stderr before planning
+  (`policy pack: <name> (<file>, sha256 ...): ...`) and records its digest with the run; a resume
+  under another pack, or without one where the run had one, is refused. A pack that cannot be
+  read is refused before planning (exit 3). `examples/policy-pack.example.yaml` and Scenario V.
+- **`--allow-pii-elicitation`**, the run's PII key (DL4): `DL-PII-ELICIT-001` runs only with it
+  and a pack that sets `allow_pii_elicitation` and `layer_b_pii`. Refused without
+  `--policy-pack`, recorded, bound by a resume.
+- The refusal of a selection that sends nothing names `--policy-pack` where it said the CLI
+  could not load a pack. Without the new options nothing changes.
+
 ### Changed (breaking for a run halted under judging rules 7 and for a CI gate: rules 8, u06 A-121, OD-45)
 
 - **A judge whose passes disagree keeps the attempt `inconclusive`.** The semantic judge asks its

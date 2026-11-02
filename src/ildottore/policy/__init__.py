@@ -27,6 +27,7 @@ from ildottore.policy.packs import (
     authorize_target,
     enabled_specs,
     load_pack,
+    pack_digest,
 )
 from ildottore.policy.scope import (
     Endpoint,
@@ -65,6 +66,7 @@ __all__ = [
     "load_pack",
     "load_scope",
     "load_scope_with_digest",
+    "pack_digest",
     "scope_hash",
     "utc_today",
 ]

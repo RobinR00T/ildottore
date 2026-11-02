@@ -1163,6 +1163,25 @@ def run(
             "Needs --judge.",
         ),
     ] = None,
+    policy_pack: Annotated[
+        Path | None,
+        typer.Option(
+            "--policy-pack",
+            help="The engagement's policy pack (YAML): the categories and specs it enables, and "
+            "the capabilities requires_policy names (offensive_simulation, layer_b_pii). "
+            "Replaces the default pack, which enables every selected category and no "
+            "capability. Printed and recorded with the run.",
+            readable=False,
+        ),
+    ] = None,
+    allow_pii_elicitation: Annotated[
+        bool,
+        typer.Option(
+            "--allow-pii-elicitation",
+            help="The run's key for PII elicitation (DL4): DL-PII-ELICIT-001 runs only when the "
+            "--policy-pack also sets allow_pii_elicitation. Needs --policy-pack.",
+        ),
+    ] = False,
     scope: Annotated[
         Path | None,
         typer.Option(
@@ -1423,6 +1442,8 @@ def run(
         scope=scope,
         judge=judge,
         judge_escalate=judge_escalate,
+        policy_pack=policy_pack,
+        allow_pii_elicitation=allow_pii_elicitation,
         suite=suite,
         categories=[c.strip() for c in categories.split(",")] if categories else [],
         spec_globs=list(spec_glob or []),

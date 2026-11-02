@@ -63,9 +63,10 @@ evidence and reports (S6, DL2); it is import-cheap and dependency-free so every 
 ## §5 Implementation plan (each step its own commit, green before next)
 1. `errors.py` + `config.py`: typed config model (Pydantic v2), env/vault sourcing,
    `--unsafe-render` and `--allow-pii-elicitation` flag surface. (As built: the typed `SafetyFlags`
-   carry both values, default off; neither is a CLI flag, so the DL4 run key cannot be turned on
-   from `dottore`. OD-11, decided 2026-10-11: the run flag is added only together with a flag that
-   loads a policy pack, never alone, since alone it would enable nothing.)
+   carry both values, default off. OD-11, decided 2026-10-11: the run flag is added only together
+   with a flag that loads a policy pack, never alone, since alone it would enable nothing; built so
+   on 2026-11-02, `run --policy-pack` and `--allow-pii-elicitation` (u12 A-122). `--unsafe-render`
+   is not a CLI flag.)
 2. `redactor.py`: pattern registry (key prefixes `sk-`/`ghp_`/`AKIA`/`xoxb-`/JWT/PEM + PII:
    email/phone/card/IBAN/national-id/IP), masking with type-tag, structural walk over dict/list.
    (Since A-78 the documented key formats of 11 providers, every hex run of 32 digits or more and
@@ -1454,7 +1455,8 @@ and after the window, the plan's window line and its absence, `fingerprint` refu
   option, not built yet; it lands in its own change with the other decided-to-build items (OD-45,
   OD-46, OD-47, OD-49, OD-51), and until then the built behaviour stands. One `run` option will
   load a pack through `load_pack`, printed in the plan and recorded with the run, together with
-  OD-11's `--allow-pii-elicitation`.**
+  OD-11's `--allow-pii-elicitation`.** **Built 2026-11-02 (u12 A-122), as decided: this unit gains
+  `policy.packs.pack_digest`, the digest a run records; `load_pack` and the gate are unchanged.**
 - **OD-52** (numbered 2026-10-17, A-86 item 1) what an alternative of a masked token shows.
   **Decided 2026-10-17 under the owner's delegation (best practice), revisable, built (A-86): the
   token's masks up to four, as A-77 wrote them; past four, one `«REDACTED:fragment»` for each

@@ -158,8 +158,9 @@ T1-only or T2-only suite exists. Several of these techniques ship as specs in ot
 - **Agentic malicious-use / autonomous extortion (JadePuffer-class, `docs/13`)**: indirect-
   injection-driven kill-chain (recon→exfil→destroy→ransom), destructive tool use without
   confirmation, offensive-toolkit codegen (refusal). Policy-gated OFF; mocked tools, no
-  functional payloads. Suite: `agentic-extortion` (7 specs). The CLI cannot enable the gated
-  ones (no policy-pack flag), so from `dottore` none of the seven ever sends. Which inconclusive
+  functional payloads. Suite: `agentic-extortion` (7 specs). They send only under a
+  `--policy-pack` that enables `offensive_simulation` (u12 A-122); without one none of the seven
+  sends. Which inconclusive
   each one gets depends on the target, because the capability filter runs before the policy
   gate: six of them require `tools`, so on a target that does not declare it they are skipped as
   `inconclusive: capability_unavailable` and never reach the gate; on a target that declares

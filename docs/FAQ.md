@@ -703,18 +703,22 @@ that decodes it may land outside the prefix.
 ### Why is a spec `blocked_by_policy`, and how do I turn it on?
 
 Eight specs declare a `requires_policy` capability: the seven of the `agentic-extortion` suite
-(`offensive_simulation`) and `DL-PII-ELICIT-001` (`layer_b_pii`). The CLI always applies its own
-default policy pack, which enables no capability, and `dottore run` has no option to load a
-different pack. So today these eight cannot be enabled from the command line and never send:
-a target that lacks the capability they need skips them, and one that has it reports them
-`blocked_by_policy` with zero sends. Selected on their own (`--suite agentic-extortion`), they
-end in `error: nothing would be sent` (exit 3), and the message says why: "Widen the selection
-or declare the capability on the target. A spec blocked by policy needs a policy pack that
-enables it, and the CLI cannot load one today (OD-46, decided and not built yet), so it cannot
-run from `dottore`." OD-46 was decided on 2026-11-01: one `run` option will load a pack, and it is
-not built yet. For `DL-PII-ELICIT-001` the opt-in is decided (OD-11): the
-pack that enables it and a per-run `--allow-pii-elicitation` flag come together, never the flag
-alone; until then it stays off.
+(`offensive_simulation`) and `DL-PII-ELICIT-001` (`layer_b_pii`). Without `--policy-pack` the
+CLI applies its own default pack, which enables no capability: a target that lacks the
+capability they need skips them, and one that has it reports them `blocked_by_policy` with zero
+sends. Selected on their own (`--suite agentic-extortion`), they end in `error: nothing would
+be sent` (exit 3), whose message names the way out: "A spec blocked by policy needs a
+--policy-pack that enables it (its category or id, and every capability its requires_policy
+names; a PII-elicitation spec also --allow-pii-elicitation)."
+
+To turn them on, write the engagement's pack (`examples/policy-pack.example.yaml`: the
+categories, `enabled_capabilities: [offensive_simulation]`) and pass `run --policy-pack FILE`.
+The pack replaces the default one, so list every category the engagement covers; the run prints
+what it enables before planning and records it, and a resume under another pack is refused
+(u12 A-122, OD-46, Scenario V). `DL-PII-ELICIT-001` needs two keys more (DL4, OD-11):
+`allow_pii_elicitation: true` and `layer_b_pii` in the pack, and `--allow-pii-elicitation` on the
+run, which alone is refused. Enable them only when the target's owner has authorized it in
+writing.
 
 ### Where does evidence live, and is it safe to keep?
 

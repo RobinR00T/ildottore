@@ -148,8 +148,8 @@ Confidence  = evaluator/judge certainty (0-1)                                   
 ## 3. Severity banding (for reports & SARIF)
 
 Map `RiskScore` to a band. The cutoffs are tunable in code (`scoring/banding.BandPolicy`); a
-policy pack has no band fields and the CLI loads no pack, so the defaults below always apply
-today.
+policy pack has no band fields (`run --policy-pack` reads its categories, specs, deny list and
+capabilities only), so the defaults below always apply today.
 
 | Band | RiskScore | SARIF level |
 |---|---|---|
