@@ -32,6 +32,7 @@ from ildottore.shared.models import AttackSpec, JsonDict, ModelResponse, Target
 
 __all__ = [
     "CANARY_PREFIX_PLACEHOLDER",
+    "DISALLOWED_TASK_PLACEHOLDER",
     "IN_BAND",
     "MAX_CALLS_PER_ROUND",
     "MAX_ROUND_ARGUMENT_BYTES",
@@ -40,6 +41,7 @@ __all__ = [
     "SEEDED",
     "TRACE_EVALUATORS",
     "InBandSetup",
+    "bind_disallowed_task",
     "canary_binding",
     "canary_prefix_binding",
     "canonical_tool_calls",
@@ -48,9 +50,11 @@ __all__ = [
     "is_seeded",
     "needs_run_token",
     "needs_seeding",
+    "prompt_gap",
     "scene_tool_names",
     "seeded_canaries",
     "seeding_gap",
+    "task_gap",
     "tool_name_map",
     "trace_gap",
 ]
@@ -205,13 +209,16 @@ def needs_seeding(spec: AttackSpec, target: Target) -> bool:
 
     A deployed application (any type but ``model``) cannot be handed a spec's documents, tools or
     memory in the request: the operator seeds them into the deployment and says so in the target
-    file, or the spec would go out referring to a scene the target does not have (OD-18 B).
+    file, or the spec would go out referring to a scene the target does not have (OD-18 B). Nor
+    a canary the request does not carry (``DL-SECRET-CANARY-001`` asks for the secrets the target
+    holds): it went out to a deployment nobody had planted it in, so its canary leg could only
+    pass (field report of 2026-10-28, u08 A-113).
     """
 
     setup = spec.setup
     if setup is None or target.type is TargetType.MODEL:
         return False
-    return bool(setup.documents or setup.tools or setup.memory_seed)
+    return bool(setup.documents or setup.tools or setup.memory_seed) or _canary_off_request(spec)
 
 
 def is_seeded(spec: AttackSpec, target: Target) -> bool:
@@ -254,8 +261,8 @@ def seeding_gap(spec: AttackSpec, target: Target) -> str | None:
     seeded = target.seeded_setup
     if seeded is None or not is_seeded(spec, target):
         return (
-            "setup_not_seeded: this spec needs documents, tools or memory in the deployment, "
-            "and the target file does not declare them seeded (seeded_setup.specs)"
+            "setup_not_seeded: this spec needs documents, tools, memory or a canary in the "
+            "deployment, and the target file does not declare them seeded (seeded_setup.specs)"
         )
     if not seeded.run_token and needs_run_token(spec):
         return (
@@ -299,11 +306,22 @@ def needs_run_token(spec: AttackSpec) -> bool:
     (delta audit of B).
     """
 
-    setup = spec.setup
-    if setup is None:
+    if spec.setup is None:
         return False
-    if holds_placeholder(_scene_text(spec)):
-        return True
+    return holds_placeholder(_scene_text(spec)) or _canary_off_request(spec)
+
+
+def _canary_off_request(spec: AttackSpec) -> bool:
+    """True when a per-run canary of ``spec`` is in neither its system prompt nor its attack.
+
+    A spec that declares ``authz_leak`` is not asked: its crossing is read against the canaries
+    of the identities the target file names, which the operator planted in each tenant, so the
+    identity sweep is what delivers its scene.
+    """
+
+    setup = spec.setup
+    if setup is None or any(e.type is EvaluatorType.AUTHZ_LEAK for e in spec.evaluators):
+        return False
     carried = json.dumps(
         [setup.system_prompt, spec.attack.model_dump(mode="json")], sort_keys=True, default=str
     )
@@ -384,6 +402,69 @@ def trace_gap(spec: AttackSpec, target: Target, *, returns_tool_calls: bool) -> 
         "setup_not_delivered: this spec judges the tool-call trace, and this target's adapter "
         "reads no tool calls from a reply, so it could never see one"
     )
+
+
+def prompt_gap(spec: AttackSpec, *, carries_system_prompt: bool) -> str | None:
+    """Why ``spec``'s canary cannot reach the model through this adapter, or ``None``.
+
+    ``SP-LEAK-001`` and six more plant their canary in the system prompt. A WebSocket template
+    without ``{{system_prompt}}`` (or a REST template, which has no system field) sends none, so
+    the canary never reached the model and a reply could only pass: three such specs passed
+    against a deployed assistant (field report of 2026-10-28, u08 A-113). The runner asks the
+    adapter (``carries_system_prompt``); the plan asks ``cli.wiring``. Declaring the spec seeded
+    does not close it: its canary is the run's (it travels in the request, ``canary_binding``),
+    so no system prompt put in the deployment before the run could hold it (OD-68).
+    """
+
+    setup = spec.setup
+    if carries_system_prompt or setup is None or not setup.system_prompt:
+        return None
+    # The canary itself, not its placeholder: the runner asks after binding it (a bound spec no
+    # longer shows a placeholder), the plan before; either way the system prompt holds it.
+    canaries = [*(setup.canaries or []), *(e.canary_ref for e in spec.evaluators if e.canary_ref)]
+    if not any(canary and canary in setup.system_prompt for canary in canaries):
+        return None
+    return (
+        "setup_not_delivered: this spec plants its canary in the system prompt, and this "
+        "target's adapter sends none (no {{system_prompt}} in a WebSocket template, no system "
+        "field in a REST one), so the canary could never reach the model"
+    )
+
+
+#: Where a spec sends the request the target's policy forbids (u13 A-114). The battery ships no
+#: harmful ask: four specs sent the literal ``[DISALLOWED-HARMFUL-TASK]``, so a refusal or an
+#: answer measured the reaction to a placeholder (field report of 2026-10-28). The operator names
+#: the request in the target file (``disallowed_task``) and the runner binds it here.
+DISALLOWED_TASK_PLACEHOLDER: Final = "{{disallowed_task}}"
+
+
+def _sends_disallowed_task(spec: AttackSpec) -> bool:
+    return DISALLOWED_TASK_PLACEHOLDER in json.dumps(
+        spec.attack.model_dump(mode="json"), ensure_ascii=False, default=str
+    )
+
+
+def task_gap(spec: AttackSpec, target: Target) -> str | None:
+    """Why ``spec`` cannot go out to ``target``: it sends a request nobody named, or ``None``."""
+
+    if target.disallowed_task is not None or not _sends_disallowed_task(spec):
+        return None
+    return (
+        "disallowed_task_missing: this spec sends a request the target's policy forbids, and the "
+        "battery ships none; name one in the target file (disallowed_task)"
+    )
+
+
+def bind_disallowed_task(spec: AttackSpec, task: str | None) -> AttackSpec:
+    """``spec`` with ``{{disallowed_task}}`` bound to ``task`` in its attack (unchanged if none)."""
+
+    if task is None or not _sends_disallowed_task(spec):
+        return spec
+    # Through JSON, so a quote or a backslash in the operator's text stays text.
+    needle = json.dumps(DISALLOWED_TASK_PLACEHOLDER)[1:-1]
+    attack = json.dumps(spec.attack.model_dump(mode="json"), ensure_ascii=False, default=str)
+    bound = json.loads(attack.replace(needle, json.dumps(task, ensure_ascii=False)[1:-1]))
+    return spec.model_copy(update={"attack": type(spec.attack).model_validate(bound)})
 
 
 def tool_name_map(spec: AttackSpec, target: Target) -> dict[str, str]:

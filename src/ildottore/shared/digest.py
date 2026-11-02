@@ -118,7 +118,7 @@ def _target_payload(target: Target, mock_scenario: str | None) -> dict[str, Any]
     payload = {k: v for k, v in dumped.items() if k not in _TARGET_COSMETIC}
     # Absent, it is left out, so a run stored before the field existed still resumes; present,
     # it is part of what answers (which specs the deployment holds the scene for).
-    for optional in ("seeded_setup", "websocket", "rest", "mcp", "isolation"):
+    for optional in ("seeded_setup", "websocket", "rest", "mcp", "isolation", "disallowed_task"):
         if payload.get(optional) is None:
             payload.pop(optional, None)
     # A stdio MCP server's container (u04 A-104): its image, mounts and working directory are

@@ -30,6 +30,10 @@ websocket:
     one_query_in_flight: true        # the only policy (OD-35): one query at a time per connection
   message:                           # one query; {{prompt}} is the attack text of the turn
     send: { type: "query", text: "{{prompt}}" }
+    # If the server reads a system prompt, write it here, for instance
+    #   send: { type: "query", text: "{{prompt}}", system: "{{system_prompt}}" }
+    # Without it, SP-LEAK-001, PI-DIRECT-001 and five more specs that plant their canary in the
+    # system prompt are not sent (setup_not_delivered): the canary could never reach the model.
   response:                          # how the streamed reply is read
     text_path: "delta.text"          # each fragment of the answer (dotted JSON path)
     final_path: "type"               # the turn ends on the frame where this path...

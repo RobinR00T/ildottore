@@ -7,6 +7,61 @@ the file, schema copy, build or pipeline it names.
 
 ## [Unreleased]
 
+### Fixed (the field report of 2026-10-28: u04 A-112, u08 A-113, u13 A-114 and A-115, judging rules 7 re-pinned; breaking for a deployment's plan: specs that went out undeliverable are refused)
+
+A live run against a deployed assistant over a WebSocket showed four things the battery could not
+deliver, and one oracle that misread a warning. Each is now refused before a request, bound to
+what the operator names, or read correctly.
+
+- **A canary in a system prompt the adapter does not send** (u08 A-113). Seven specs plant their
+  canary in the system prompt (`SP-LEAK-001`, `PI-DIRECT-001` and five more). A WebSocket
+  template without `{{system_prompt}}`, or any REST target, dropped it silently, so the model
+  never saw the canary and a reply could only pass: three passed against the deployed assistant.
+  They are now `setup_not_delivered`, in the plan and the run alike. Add `{{system_prompt}}` to
+  the template if your server reads one; seeding the spec does not deliver it (OD-68).
+- **A canary nobody planted** (u08 A-113). `DL-SECRET-CANARY-001`, `AC-DEBUG-001` and
+  `DL-PII-ELICIT-001` ask for what the deployment holds, with a canary carried by neither the
+  system prompt nor the attack. On any target but `model` they now need seeding
+  (`seeded_setup.specs` and a `run_token`, as a document does). The identity sweep is exempt.
+- **A placeholder sent as the harmful request** (u13 A-114). `GUARD-INPUT-EVASION-001`,
+  `GUARD-OUTPUT-ENCODE-001`, `MM-IMG-HARMFUL-001` and `SAFETY-HARMFUL-001` sent the literal
+  `[DISALLOWED-HARMFUL-TASK]`. They now send the target file's new `disallowed_task` (1 to 500
+  characters, no `{{`/`}}`, part of the target digest), and are refused without one
+  (`disallowed_task_missing`, OD-69).
+- **`WebSocketLost` in place of the cause** (u04 A-112). A later turn of a multi-turn spec that
+  failed was retried on a new connection with no context, and recorded as `WebSocketLost` (37
+  times in one run). It is now recorded once, with its own cause; a first turn is still retried.
+- **`SUPPLY-SLOPSQUAT-001` failed a warning** (u13 A-115). "Do not run `pip install
+  turbotoml-async`" read as an endorsement. The command now counts only in a sentence or line with
+  no earlier negation; three warnings must pass and three endorsements must still fail.
+- What a plan shows moved with them: `--quick` against the WebSocket and agent examples selects 7
+  specs and would send 90 requests (was 10 and 125), against the local example 9 and 115; the
+  local example's full plan selects 28 specs and 495 requests (was 33 and 545).
+  `examples/README.md` carries every changed plan, re-run; `examples/target.agent.yaml` names a
+  `disallowed_task`.
+
+### Changed (open decisions closed on 2026-11-01)
+
+- **As built**, by the owner ("do it all"): OD-23, OD-54, OD-55, OD-56, OD-57, OD-62, OD-63,
+  OD-64, OD-65, OD-66 and OD-67.
+- **Decided under the owner's delegation, revisable, not built yet** (one change of their own,
+  after this one): OD-45 (a judge whose passes disagree leaves the attempt `inconclusive` with a
+  reason), OD-46 (a `run` option that loads a policy pack, with `--allow-pii-elicitation`), OD-47
+  (`leetspeak` leaves `JB-ENCODING-001`), OD-49 (a constraints file for the PR jobs and a scheduled
+  newest run) and OD-51 (`--spec-path builtin`).
+- New and open, built as the smallest reversible version: OD-68 (what a deployment cannot be
+  handed) and OD-69 (the operator's `disallowed_task`).
+
+### Fixed (small)
+
+- `--fp-ledger` with `--resume` is refused next to `--control` and `--verify`, before the resume
+  line that promised attempts "will not be re-sent".
+- The `floors` CI job runs Hypothesis under a `floors` profile with no per-example deadline
+  (`tests/conftest.py`): the deadline there measured the runner, not the code.
+- The man pages: `.TH` dated 2026-11-01, the empty paragraph after `.SH EXAMPLES` removed (mandoc
+  warnings).
+- `MCP-RUGPULL-001`'s comment records OD-59 as decided.
+
 ### Added (u12 A-111, judging rules 7 re-pinned: a reproduction pack per failing finding)
 
 - **`dottore replay RUN_ID --pack DIR`** writes, after the manifest check, one directory per

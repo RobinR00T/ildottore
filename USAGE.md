@@ -135,7 +135,7 @@ dottore run --estimate -t target.yaml --scope scope.yaml --judge cheap.yaml --ju
 | `--judge-escalate` | a second judge model `target.yaml`, asked only when the `--judge` model cannot settle an attempt (any `inconclusive`); its verdict stands, a judge-alone fail still never confirms. Needs `--judge`; priced by `--estimate` as the worst case; a resume with another second judge is refused (u06 A-109, Scenario R) |
 | `--suite` | `owasp:llm` (alias of `owasp-llm-top10`, as is `baseline`); also `quick`, `multi-turn`, `access-control`, `agentic-owasp2026`, `obfuscation-enhancers`, `embeddings`, `agentic-extortion` (alias `agentic`), `mcp`, `responsible-ai`, `guardrail-evasion`, `multimodal`, `structured-output`, `nova-iopc`. `mitre:atlas`, `nist:ai`, `eu:ai-act`, `dora` and `iso:42001` are still accepted as aliases but point at no registered suite and exit 3 |
 | `--quick` | the T0 battery: selects `--suite quick` (18 specs) at `-T0`. Conflicts with an explicit `--suite` |
-| `--deep` | timing `-T2` over whatever the other flags select (with no selection flag, the whole registry minus what the target cannot run): it selects no larger suite (on the example target, the same 33 specs, at 2.0 req/s instead of 5.0). By itself it tailors nothing: mutator ordering needs a fingerprint, so its adaptive part only takes effect with `-sV` (or `-A`), as `run --help` says |
+| `--deep` | timing `-T2` over whatever the other flags select (with no selection flag, the whole registry minus what the target cannot run): it selects no larger suite (on the example target, the same 28 specs, at 2.0 req/s instead of 5.0). By itself it tailors nothing: mutator ordering needs a fingerprint, so its adaptive part only takes effect with `-sV` (or `-A`), as `run --help` says |
 | `-p/--categories` | `pi`, `jailbreak`, `leakage`, `tool`, `rag`, `output`, `dos`, `safety`, `bias` (long forms accepted) |
 | `--spec` / `--exclude` | run/skip specific spec ids or globs (e.g. `PI-*`); repeatable |
 | `--top-tests N` | keep the N highest-signal specs |
@@ -391,9 +391,14 @@ dottore run --spec <ID> --runs 5 -t target.yaml --scope scope.yaml --judge judge
 
 - **Judge:** without `--judge`, `semantic_judge` abstains. The judge is a target, so the scope
   authorizes it too; use a model other than the one under test.
-- **`setup_not_seeded`:** a spec that needs documents, tools or memory runs only when you seeded
-  its scene into the deployment and listed it under `seeded_setup.specs`. Declare nothing you did
-  not seed.
+- **`setup_not_seeded`:** a spec that needs documents, tools, memory or a canary in the
+  deployment runs only when you seeded its scene and listed it under `seeded_setup.specs` (with a
+  `run_token` for a canary). Declare nothing you did not seed.
+- **`setup_not_delivered`** on `SP-LEAK-001`, `PI-DIRECT-001` and the like: their canary sits in
+  the system prompt and your template sends none. Add `{{system_prompt}}` to the WebSocket frame
+  your server reads it from; otherwise they do not run, which is right: they could only pass.
+- **`disallowed_task_missing`:** four specs send the request your policy forbids, which the
+  battery does not ship. Name one in the target file: `disallowed_task: "<request>"`.
 - **`capability_unavailable`:** declare under `capabilities` only what the deployment has.
 - **Pacing:** one scan at a time per deployment. The `guard:` paces the processes of one machine,
   not other people or tools.

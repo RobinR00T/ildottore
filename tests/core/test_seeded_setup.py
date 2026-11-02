@@ -112,7 +112,9 @@ def test_only_a_deployed_application_with_a_scene_needs_seeding() -> None:
     assert needs_seeding(_spec("PI-INDIRECT-RAG-001"), _target(kind=TargetType.RAG))
     assert needs_seeding(_spec("DL-XSESSION-001"), _target(kind=TargetType.CHATBOT))
     assert not needs_seeding(tool_spec, _target(kind=TargetType.MODEL))  # option A's
-    assert not needs_seeding(_spec("AC-DEBUG-001"), _target())  # no scene at all
+    assert not needs_seeding(_spec("JB-ROLEPLAY-001"), _target())  # no scene at all
+    # A canary the request does not carry is planted in the deployment (u08 A-113).
+    assert needs_seeding(_spec("AC-DEBUG-001"), _target())
 
 
 def test_a_spec_is_seeded_by_its_id_or_a_glob() -> None:
@@ -149,7 +151,7 @@ async def test_a_seeded_spec_goes_out_plain_and_tagged(fixtures) -> None:
 
 async def test_a_spec_without_a_scene_is_never_gated(fixtures) -> None:
     adapter = Recording()
-    result = await _run("AC-DEBUG-001", adapter, _target(), fixtures)
+    result = await _run("OUT-SQLI-001", adapter, _target(), fixtures)
     assert len(adapter.requests) == 1
     assert "setup_delivery" not in (result.findings[0].attempts[0].request.metadata or {})
 
@@ -308,11 +310,13 @@ def test_a_wrong_declaration_is_refused(tmp_path: Path, body: str, kind: str, me
 def test_the_estimate_counts_only_what_will_be_sent() -> None:
     from ildottore.cli.run import estimate_plan
 
-    tool_spec, plain = _spec("PI-INDIRECT-TOOL-001"), _spec("AC-DEBUG-001")
+    tool_spec, plain = _spec("PI-INDIRECT-TOOL-001"), _spec("OUT-SQLI-001")
     one = {tool_spec.id: ["identity"], plain.id: ["identity"]}
     specs = [tool_spec, plain]
 
     def requests(target: Target, **kwargs: Any) -> int:
+        # An adapter that sends the system prompt, where the tool spec plants its canary.
+        target = target.model_copy(update={"provider": "openai"})
         return estimate_plan(specs, 5, mutators_by_spec=one, target=target, **kwargs).requests
 
     assert requests(_target()) == 5  # the tool spec is not seeded: it sends nothing
@@ -884,14 +888,22 @@ def test_the_plan_does_not_count_a_trace_spec_through_rest(tmp_path: Path) -> No
         "AG-TOOL-UNAUTH-001",
         "--spec",
         "PI-INDIRECT-TOOL-001",
+        "--spec",
+        "OUT-SQLI-001",
         "-t",
         str(target),
         "--scope",
         str(_REPO / "examples" / "scope.app.yaml"),
     )
     assert result.exit_code == 0, result.output
-    assert "- AG-TOOL-UNAUTH-001: setup_not_delivered" in result.output
-    assert "would send: 15 requests over 1 specs" in result.output
+    assert "- AG-TOOL-UNAUTH-001: setup_not_delivered: this spec judges the tool-call" in (
+        result.output
+    )
+    # Its canary sits in the system prompt, which a REST template sends nowhere (u08 A-113).
+    assert "- PI-INDIRECT-TOOL-001: setup_not_delivered: this spec plants its canary" in (
+        result.output
+    )
+    assert "would send: 5 requests over 1 specs" in result.output
 
 
 def test_a_gated_prior_is_not_counted_as_exercised() -> None:

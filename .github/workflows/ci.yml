@@ -173,7 +173,8 @@ jobs:
       - name: Installed versions
         run: python -m pip freeze
       - name: Full test suite at the floors
-        run: pytest -q
+        # No Hypothesis deadline here (tests/conftest.py): on this runner it timed the machine.
+        run: pytest -q --hypothesis-profile=floors
 
   # ---- The wheel and the sdist (u12 A-84) --------------------------------------------------
   # tests/test_packaging.py builds both with hatchling (the build backend pyproject.toml names),

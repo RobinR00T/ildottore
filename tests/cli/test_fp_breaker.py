@@ -186,6 +186,9 @@ def test_the_run_records_its_holds_and_a_resume_keeps_them(tmp_path: Path) -> No
     refused = _run(tmp_path, "--resume", run_id, "--fp-ledger", str(ledger))
     assert refused.exit_code == int(ExitCode.ERROR)
     assert "--fp-ledger cannot be given with --resume" in refused.output
+    # Refused with the other flags a resume refuses: the resume's own `resume: ... will not be
+    # re-sent` line used to follow the error, for a run that sent nothing.
+    assert "will not be re-sent" not in refused.output
 
 
 def test_a_run_without_a_ledger_records_no_holds(tmp_path: Path) -> None:

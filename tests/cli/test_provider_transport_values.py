@@ -81,7 +81,9 @@ def _run(tmp_path: Path, target: str, port: int, *extra: str, commands: str = ""
             "--scope",
             str(_scope(tmp_path, port, commands=commands)),
             "--spec",
-            "PI-DIRECT-001",
+            # Not PI-DIRECT-001: its canary sits in the system prompt, which a REST target file
+            # sends nowhere, so the plan refuses it before a request (u08 A-113).
+            "SUPPLY-SLOPSQUAT-001",
             "--runs",
             "1",
             "--rate",

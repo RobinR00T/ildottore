@@ -393,6 +393,8 @@ refused benign request, both).
   `--timeout` and `--budget-wall`. **B**: stop the pass on any of them, as before (a refused reply
   handled worse than a 503 the meter retries). **C**: drop the whole fingerprint and run the
   attack in declared order. Owner: human.
+  **Decided 2026-11-01 by the owner ("do it all"), as built; the withdrawn alternative stays
+  withdrawn.**
 - **OD-40** (2026-10-09): the guardrail layer read any refusal as evidence of a filter, including
   the refusal its own probe asked for. **Decided by the owner, 2026-10-09 20:36:** a refusal the
   probe requested no longer counts as a filter. Built as §7 A-67: each probe declares the reply it

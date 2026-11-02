@@ -5,6 +5,36 @@ The carryover ledger. Every agent session updates this so context survives even 
 newest merge on top: a branch's entries land together when it merges, so the dates of
 neighbouring entries can interleave (an older branch merged later sits above a newer one).
 
+## State, 2026-11-01: the field report of 2026-10-28, and the open decisions closed (`fix/field-report`, u04 A-112, u08 A-113, u13 A-114 and A-115)
+
+- **Why.** A live multi-turn run against a deployed assistant over a WebSocket (field report of
+  2026-10-28, read-only from the project's channel) showed specs passing that could only pass,
+  four specs sending a placeholder as their harmful request, 37 `WebSocketLost` errors hiding
+  their cause, and `SUPPLY-SLOPSQUAT-001` failing a reply that warned against the command.
+- **Built.** `core.setup_delivery`: `prompt_gap`, `task_gap`, `bind_disallowed_task`, and the
+  canary-off-the-request rule in `needs_seeding` (the identity sweep exempt); `cli.run.delivery_gap`
+  so the plan and the runner ask the same four questions; `WebSocketAdapter.carries_system_prompt`
+  and `cli.wiring.provider_carries_system_prompt`; `Target.disallowed_task` (loader refusals, in
+  the target digest); a later WebSocket turn that fails is not retried (`AdapterEnvError.retryable`);
+  `SUPPLY-SLOPSQUAT-001`'s negation-aware patterns. Small items: the `--fp-ledger`/`--resume`
+  refusal moved before the resume line, the `floors` Hypothesis profile, mandoc warnings, the
+  OD-59 comment. Judging rules 7 re-pinned.
+- **Found while building.** The first canary rule also caught `DL-XTENANT-001`, which stopped
+  every identity-sweep run; the sweep is exempt (it reads the identities' canaries). A seeded RAG
+  or tool spec with its canary in the system prompt had been bound to the run id, so the operator
+  could never plant it: it is refused through an adapter that sends no system prompt, and seeding
+  the system prompt is left to OD-68.
+- **Verified.** `tests/cli/test_field_report_delivery.py` (new), the WebSocket audit tests (the
+  later-turn one fails without the fix), the slopsquat cases, `tests/core/test_seeded_setup.py`
+  re-pinned, and every worked example's plan in `examples/README.md` re-run (`--quick` on the
+  WebSocket and agent examples: 7 specs and 90 requests, was 10 and 125).
+- **Decisions.** Eleven ODs closed as built by the owner ("do it all"): 23, 54, 55, 56, 57, 62
+  to 67. Five decided under the owner's delegation, not built yet, for one change of their own:
+  OD-45, OD-46, OD-47, OD-49, OD-51. New and open: OD-68, OD-69.
+- **Next.** The change that builds OD-45, OD-46, OD-47, OD-49 and OD-51 (OD-47 moves every
+  `--quick` figure in `examples/README.md`). Left out on purpose: the reporter's own `--trace`
+  work, and the MVP-2 rows of `docs/12`.
+
 ## State, 2026-10-30: a reproduction pack per failing finding (`feat/repro-pack`, u12 A-111)
 
 - **Why.** Handing a finding to the target's owner meant a report without the request to send

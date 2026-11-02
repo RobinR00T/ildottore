@@ -60,7 +60,7 @@ naming an unknown mutation is a linter error (u02), never a silent skip.
   links an image cannot draw (`UNDRAWABLE`). The CLI (u12) adds them to spec copies before the
   plan (`--obfuscate`, `--fuzz`), records the flags in the selection a resume compares, and
   previews them (`registry mutators`, `mutate`). Sources: docs/REFERENCES.md, "Obfuscation and
-  fuzzing". OD-57 open.
+  fuzzing". OD-57 decided as built (2026-11-01).
 
 ## §4 Known constraints: KEEP / DECIDE
 - KEEP: every strategy is a **pure function** of `(text, seed, params)`; no I/O, no global state,
@@ -122,12 +122,17 @@ extend the schema.
   new OD to index.
 - Whether `unicode_confusable`/`zero_width_inject` density defaults live in mutator code or move to
   a shared `frameworks/`-style table (**propose:** in-module tables for MVP‑1).
-- **OD-47** (shared with u13; numbered 2026-10-12; open, owner to decide): `leetspeak` rewrites
+- **OD-47** (shared with u13; numbered 2026-10-12; decided 2026-11-01): `leetspeak` rewrites
   `JB-ENCODING-001`'s Base64 payload, so that variant tests nothing, and `rot13` carries no decode
   cue (F9, 2026-10-03 audit). This unit's half: `leetspeak` substitutes characters in whatever it
   is given, an encoded payload included. Recommended (`00-INDEX.md`): drop `leetspeak` from that
   spec's `mutations` and decide `rot13`'s cue apart, changing no mutator.
-- **OD-57** (numbered 2026-10-26, u05 A-99; open, owner to decide): a pass under a carrier the
+  **Decided 2026-11-01 under the owner's delegation (best practice), revisable: the recommended
+  option, not built yet; it lands in its own change with the other decided-to-build items (OD-45,
+  OD-46, OD-47, OD-49, OD-51), and until then the built behaviour stands. `leetspeak` leaves
+  `JB-ENCODING-001`'s `mutations`; `rot13` keeps no cue (its comprehension question is OD-57's,
+  decided as built); no mutator changes.**
+- **OD-57** (numbered 2026-10-26, u05 A-99; decided 2026-11-01): a pass under a carrier the
   model could not read (a cipher it cannot decode, an image it cannot see) is not resistance,
   and the run cannot tell the two apart today. Built: nothing reads comprehension for the added
   carriers; the docs say to read the replies. Recommended: a comprehension check per carrier
@@ -135,3 +140,5 @@ extend the schema.
   a pass under a carrier the model did not read reported `inconclusive: carrier_not_read`;
   alternatives: the fingerprint's carrier layer extended to the families (more probes per
   fingerprint), or leave it to the operator.
+  **Decided 2026-11-01 by the owner ("do it all"), as built; the comprehension check per carrier
+  stays in the `docs/12` backlog.**

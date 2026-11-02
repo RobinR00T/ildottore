@@ -20,11 +20,12 @@ from __future__ import annotations
 import os
 import re
 import time
+import unicodedata
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Final, cast
 from urllib.parse import SplitResult, unquote, urlsplit
 
 from pydantic import ConfigDict, StrictStr, ValidationError, create_model
@@ -59,6 +60,7 @@ from ildottore.adapters.websocket import (
     TOKEN,
     placeholders,
 )
+from ildottore.adapters.websocket import carries_system_prompt as ws_carries_system_prompt
 from ildottore.cli import interrupts
 from ildottore.config import SafetyFlags
 from ildottore.core.budgets import BudgetExhausted, BudgetLedger, Spend
@@ -2132,6 +2134,7 @@ def _target_from(path: Path, raw: dict[str, Any]) -> Target:
             ) from exc
 
     pricing = _pricing(path, raw.get("pricing"))
+    disallowed_task = _disallowed_task(path, raw.get("disallowed_task"))
 
     transport = raw.get("transport")
     _check_provider_and_transport(path, provider, transport)
@@ -2168,7 +2171,47 @@ def _target_from(path: Path, raw: dict[str, Any]) -> Target:
         mcp=mcp,
         filter_stops=_filter_stops(path, raw.get("filter_stops"), provider),
         pricing=pricing,
+        disallowed_task=disallowed_task,
     )
+
+
+#: The longest ``disallowed_task`` a target file may name: a request, not a document.
+MAX_DISALLOWED_TASK_CHARS: Final = 500
+
+
+def _disallowed_task(path: Path, raw: object) -> str | None:
+    """The file's ``disallowed_task`` (u13 A-114), stripped, or ``None``.
+
+    The request the deployment's policy forbids, which ``GUARD-INPUT-EVASION-001`` and three
+    more send where they used to send the literal ``[DISALLOWED-HARMFUL-TASK]`` (field report of
+    2026-10-28). Never quoted back: the loaders quote nothing an operator wrote.
+    """
+
+    if raw is None:
+        return None
+    if not isinstance(raw, str):
+        raise ValueError(f"target file {path} 'disallowed_task' must be text, one request")
+    text = raw.strip()
+    if not text:
+        raise ValueError(
+            f"target file {path} 'disallowed_task' is empty; name a request or drop it"
+        )
+    if len(text) > MAX_DISALLOWED_TASK_CHARS:
+        raise ValueError(
+            f"target file {path} 'disallowed_task' is {len(text)} characters; at most "
+            f"{MAX_DISALLOWED_TASK_CHARS}, one request"
+        )
+    if "{{" in text or "}}" in text:
+        raise ValueError(
+            f"target file {path} 'disallowed_task' holds a placeholder brace ({{{{ or }}}}), "
+            "which the spec it is bound into would read as one"
+        )
+    if any(unicodedata.category(c) in ("Cc", "Cf") for c in text):
+        raise ValueError(
+            f"target file {path} 'disallowed_task' holds a control or format character; write "
+            "the request as plain text on one line"
+        )
+    return text
 
 
 def _pricing(path: Path, raw: object) -> Pricing | None:
@@ -2251,6 +2294,20 @@ def provider_returns_tool_calls(target: Target) -> bool:
         return (
             target.websocket is not None and target.websocket.response.tool_calls_path is not None
         )
+    return provider in ("openai", "anthropic")
+
+
+def provider_carries_system_prompt(target: Target) -> bool:
+    """True when the adapter ``target`` routes to sends a request's system prompt.
+
+    The OpenAI and Anthropic adapters do; a WebSocket template does only where it writes
+    ``{{system_prompt}}``; a REST target file declares no system field and the MCP adapter sends
+    no prompt at all (u08 A-113). The runner asks the adapter itself (``carries_system_prompt``).
+    """
+
+    provider = (target.provider or "").strip().lower()
+    if provider == "websocket":
+        return target.websocket is not None and ws_carries_system_prompt(target.websocket)
     return provider in ("openai", "anthropic")
 
 

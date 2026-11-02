@@ -279,12 +279,22 @@ def test_the_estimate_counts_every_tool_round_an_in_band_spec_may_play() -> None
 
     from ildottore.cli.run import estimate_plan
 
-    tool_spec, plain = _spec("PI-INDIRECT-TOOL-001"), _spec("AC-DEBUG-001")
+    # OUT-SQLI-001 asks for nothing in the deployment. AC-DEBUG-001 did until u08 A-113, and
+    # its canary now needs seeding on every target but a model, so it sent nothing on an agent.
+    tool_spec, plain = _spec("PI-INDIRECT-TOOL-001"), _spec("OUT-SQLI-001")
     one = {tool_spec.id: ["identity"], plain.id: ["identity"]}
+    # A live target names its provider; with none, the plan read it as one whose adapter sends
+    # no system prompt (u08 A-113) and planned the tool spec as undeliverable.
+    live = {"provider": "openai"}
     bare = estimate_plan([tool_spec, plain], 5, mutators_by_spec=one)
-    model = estimate_plan([tool_spec, plain], 5, mutators_by_spec=one, target=_target())
+    model = estimate_plan(
+        [tool_spec, plain], 5, mutators_by_spec=one, target=_target().model_copy(update=live)
+    )
     agent = estimate_plan(
-        [tool_spec, plain], 5, mutators_by_spec=one, target=_target(TargetType.AGENT)
+        [tool_spec, plain],
+        5,
+        mutators_by_spec=one,
+        target=_target(TargetType.AGENT).model_copy(update=live),
     )
     assert bare.requests == 10
     assert agent.requests == 5  # the tool spec is not seeded there, so it sends nothing

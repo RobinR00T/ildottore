@@ -27,11 +27,22 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from hypothesis import settings
 
 from ildottore import redactor as redactor_mod
 from ildottore.adapters.mock import MockScenario, MockTarget
 from ildottore.shared.models import Capabilities
 from ildottore.shared.package_data import BATTERY
+
+# --------------------------------------------------------------------------------------------
+# Hypothesis profiles
+# --------------------------------------------------------------------------------------------
+
+# The CI floors job runs on a shared runner at the oldest dependency versions, where a property
+# test's 200 ms deadline is a measure of the runner, not of the code: it failed that job four
+# times in two days on three different tests, each passing on a rerun (27 and 28 October 2026).
+# `pytest --hypothesis-profile=floors` keeps every example and drops the deadline alone.
+settings.register_profile("floors", deadline=None)
 
 # --------------------------------------------------------------------------------------------
 # Path discovery

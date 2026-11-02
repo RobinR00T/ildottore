@@ -2261,6 +2261,8 @@ the selection, the refusals, tampered evidence, a changed or missing spec, the f
   every probe was refused); before, exit 3 before any attack. A probe that gets no answer at
   all still exits 3 with its cause. Options, and why isolating every environment failure was
   withdrawn: u09 §9 and `00-INDEX.md`.
+  **Decided 2026-11-01 by the owner ("do it all"), as built; the withdrawn alternative stays
+  withdrawn.**
 - **OD-29** (decided 2026-10-07 by the owner: option 1, refuse both; built, A-50): whether a target
   file's `capabilities` refuses a key it does not know and a value that is not a mapping but reads
   as false, as `sampling_defaults` does. Built: both refused before anything is sent, and in
@@ -2339,12 +2341,17 @@ the selection, the refusals, tampered evidence, a changed or missing spec, the f
 - **OD-33** (shared with u01, A-56; decided 2026-10-07 by the conductor, confirmed by the owner).
   This unit's half: `dottore fleet` refuses two ids that differ only by case on every file
   system, so it never writes one `target-<id>.yaml` over another (u01 §9).
-- **OD-46** (shared with u01; numbered 2026-10-12; open, owner to decide): a flag that loads a
+- **OD-46** (shared with u01; numbered 2026-10-12; decided 2026-11-01): a flag that loads a
   policy pack. No command calls `policy.packs.load_pack`, so the 8 specs that declare
   `requires_policy` never send from `dottore`, and OD-11 ties `--allow-pii-elicitation` to this
   flag. Recommended: one `run` option that loads a pack through that loader, printed in the plan
   and recorded with the run, landing with OD-11's flag (`00-INDEX.md`, `docs/12`).
-- **OD-49** (shared with u14; numbered 2026-10-16, A-84; open, owner to decide): pin the
+  **Decided 2026-11-01 under the owner's delegation (best practice), revisable: the recommended
+  option, not built yet; it lands in its own change with the other decided-to-build items (OD-45,
+  OD-46, OD-47, OD-49, OD-51), and until then the built behaviour stands. One `run` option will
+  load a pack through `load_pack`, printed in the plan and recorded with the run, together with
+  OD-11's `--allow-pii-elicitation`.**
+- **OD-49** (shared with u14; numbered 2026-10-16, A-84; decided 2026-11-01): pin the
   dependency set the PR jobs install, and move the newest-release run to a schedule. Every job
   installs the newest release of every dependency (no lock file), so a release breaks the next PR
   whatever it changes: the train broke twice on typer 0.27.3 the day it came out. A-84 adds the
@@ -2356,7 +2363,11 @@ the selection, the refusals, tampered evidence, a changed or missing spec, the f
   operator sees until the scheduled run, a day at most. Alternatives: keep as is (a PR can fail
   for a release that is not in it); a lock file with hashes (`pip-compile --generate-hashes`),
   stronger supply-chain evidence for one more tool (`SUPPLY-CHAIN.md` notes no lock file).
-- **OD-51** (numbered 2026-10-16, A-84; open, owner to decide): a name for the built-in battery on
+  **Decided 2026-11-01 under the owner's delegation (best practice), revisable: the recommended
+  option, not built yet; it lands in its own change with the other decided-to-build items (OD-45,
+  OD-46, OD-47, OD-49, OD-51), and until then the built behaviour stands. A constraints file for
+  the PR jobs, bumped by Dependabot, and a scheduled run with none.**
+- **OD-51** (numbered 2026-10-16, A-84; decided 2026-11-01): a name for the built-in battery on
   the command line, `--spec-path builtin`. With no `--spec-path` a command reads `specs/` when the
   working directory has one, and the battery otherwise, so a pipeline run from a repository that
   keeps a `specs/` of its own (OpenAPI files, say) cannot ask for the battery by name: it is
@@ -2365,15 +2376,21 @@ the selection, the refusals, tampered evidence, a changed or missing spec, the f
   printed as the battery's path in the plan and the note, and used by the CI example. Not built in
   A-84: a new public spelling deserves its own decision. Alternatives: a `--builtin` flag; leave
   the default as the only way.
-- **OD-64** (2026-10-30, A-108, ADR-0020; **open**): the cost in euros. Built as the smallest
+  **Decided 2026-11-01 under the owner's delegation (best practice), revisable: the recommended
+  option, not built yet; it lands in its own change with the other decided-to-build items (OD-45,
+  OD-46, OD-47, OD-49, OD-51), and until then the built behaviour stands. A reserved `builtin`
+  value of `--spec-path`, printed as the path it resolves to.**
+- **OD-64** (2026-10-30, A-108, ADR-0020; **decided 2026-11-01, as built**): the cost in euros. Built as the smallest
   reversible version: (1) the operator declares each model's rates in its target file; no price
   list ships with the tool; (2) the rates are not part of the target digest; (3) the figure is an
   estimate before the send, the worst case for an escalating judge. To decide: whether a run
   reports its measured spend from the replies' `usage` blocks, in the report and the run store;
   whether a campaign ceiling may be set in euros. Reversal: drop `pricing:`. Owner: human.
-- **OD-67** (2026-10-30, A-111, ADR-0022; **open**): the reproduction pack. Built as the
+  **Decided 2026-11-01 by the owner ("do it all"), as built.**
+- **OD-67** (2026-10-30, A-111, ADR-0022; **decided 2026-11-01, as built**): the reproduction pack. Built as the
   smallest reversible version: a `replay` option, read-only, one directory per failing finding,
   no reply in the README, no script that sends. To decide: whether the run store records a
   finding's `confirmed` state so a pack (and `--finding`) can keep the confirmed ones only;
   whether a pack carries the spec file itself; whether a pack of a passing finding (a fix
   verified) is useful. Reversal: run `replay` without `--pack`. Owner: human.
+  **Decided 2026-11-01 by the owner ("do it all"), as built.**

@@ -68,8 +68,10 @@ from ildottore.core.setup_delivery import (
     MAX_TOOL_ROUNDS,
     delivers_in_band,
     in_band_setup,
+    prompt_gap,
     seeded_canaries,
     seeding_gap,
+    task_gap,
     trace_gap,
 )
 from ildottore.fingerprint import failed_probes
@@ -216,6 +218,23 @@ def _spec_files_on_disk(spec_paths: list[Path], names: list[str]) -> tuple[str, 
         if not Path(name).is_absolute()
         and ".." not in Path(name).parts
         and any(os.path.lexists(root / name) for root in roots)
+    )
+
+
+def delivery_gap(spec: AttackSpec, target: Target) -> str | None:
+    """Why ``spec`` cannot go out to ``target`` as the runner would send it, or ``None``.
+
+    The plan's copy of the runner's questions (``core.runner``, which asks the adapter): the
+    scene is not seeded (``seeding_gap``), the request the policy forbids is not named
+    (``task_gap``, u13 A-114), the trace cannot be read (``trace_gap``), or the canary sits in a
+    system prompt the adapter does not send (``prompt_gap``, u08 A-113).
+    """
+
+    return (
+        seeding_gap(spec, target)
+        or task_gap(spec, target)
+        or trace_gap(spec, target, returns_tool_calls=wiring.provider_returns_tool_calls(target))
+        or prompt_gap(spec, carries_system_prompt=wiring.provider_carries_system_prompt(target))
     )
 
 
@@ -611,14 +630,7 @@ def estimate_plan(
         if (
             target is not None
             and not fixtures_hold_scene
-            and (
-                seeding_gap(spec, target)
-                or trace_gap(
-                    spec,
-                    target,
-                    returns_tool_calls=wiring.provider_returns_tool_calls(target),
-                )
-            )
+            and delivery_gap(spec, target) is not None
         ):
             continue  # setup_not_seeded: the runner sends nothing for it (OD-18 B)
         mutators = (mutators_by_spec or {}).get(spec.id) or _effective_mutators(spec)
@@ -864,19 +876,13 @@ def resolve_target_plans(
             if apply_sampling_defaults and not loaded.uses_mock
             else None
         )
-        # The runner's own questions (``setup_delivery.seeding_gap`` and ``trace_gap``): not
-        # declared, a per-run canary with no run_token, two scene tools under one deployment
-        # name, or a trace spec through an adapter that reads no tool calls.
-        calls_visible = wiring.provider_returns_tool_calls(target)
+        # The runner's own questions (``delivery_gap``): not declared, a per-run canary with no
+        # run_token, two scene tools under one deployment name, a trace spec through an adapter
+        # that reads no tool calls, or a canary in a system prompt the adapter does not send.
         not_seeded = [
             (spec.id, gap)
             for spec in runnable
-            if not fixtures_hold_scene
-            and (
-                gap := seeding_gap(spec, target)
-                or trace_gap(spec, target, returns_tool_calls=calls_visible)
-            )
-            is not None
+            if not fixtures_hold_scene and (gap := delivery_gap(spec, target)) is not None
         ]
         unseeded = {spec_id for spec_id, _ in not_seeded}
         runnable = [spec for spec in runnable if spec.id not in unseeded]
@@ -2722,6 +2728,13 @@ def _execute_run(
                 "started, which its run store records"
             )
         verify = resume_mod.stored_verify(run_db, opts.resume)
+        if opts.fp_ledger is not None:
+            # Here, with the other flags a resume refuses, before its `resume:` line is printed:
+            # read later, the refusal came after that line (u08 A-105 follow-up).
+            raise ValueError(
+                "--fp-ledger cannot be given with --resume: a resume keeps the review holds "
+                "its run started with"
+            )
         # A run started before the block was applied (2026-10-09) recorded nothing and sent none
         # of it, so its resume sends none either: two halves on two samplings would be scored as
         # one campaign. stderr and never suppressed, as the --runs notice below (u12 A-66).
@@ -3170,12 +3183,14 @@ def _execute_run(
             "nothing would be sent: every selected spec is unrunnable on "
             f"{'; '.join(barren)}. Widen the selection or declare the capability on the "
             "target. A spec blocked by policy needs a policy pack that enables it, and the CLI "
-            "cannot load one today (open decision), so it cannot run from `dottore`."
+            "cannot load one today (OD-46, decided and not built yet), so it cannot run from "
+            "`dottore`."
             + (
                 " A spec counted as not seeded runs once what `--dry-run -vv` names for it is "
                 "fixed: its id in seeded_setup.specs, a seeded_setup.run_token, its own "
-                "deployment name for each of its scene tools in seeded_setup.tools, or an "
-                "adapter that returns tool calls."
+                "deployment name for each of its scene tools in seeded_setup.tools, an adapter "
+                "that returns tool calls, a {{system_prompt}} in the WebSocket template, or a "
+                "disallowed_task in the target file."
                 if any(p.not_seeded for p in plans if not p.selected)
                 else ""
             )
@@ -3775,12 +3790,7 @@ def _review_holds(
     campaign is never gated under two ledgers, and refuses the flag rather than ignore it.
     """
 
-    if opts.resume is not None:
-        if opts.fp_ledger is not None:
-            raise ValueError(
-                "--fp-ledger cannot be given with --resume: a resume keeps the review holds "
-                "its run started with"
-            )
+    if opts.resume is not None:  # `--fp-ledger` with it is refused before (``execute_run``)
         held = resume_mod.stored_review_holds(run_db, opts.resume)
     elif opts.fp_ledger is not None:
         held = labels_ledger.load_review_holds(opts.fp_ledger)

@@ -719,6 +719,20 @@ reads as U+FFFD, since httpx decodes the stream as text.
   the digest, the dry-run line, a run with no runtime). The argv was run against Docker 29.4.0 on
   2026-10-27 (with a mount, a workdir and lowered limits: accepted, the container removed).
 
+- **A-112 (added 2026-11-01): a later turn that fails is not retried (field report of
+  2026-10-28).** When a turn of a held conversation other than the first raises an
+  `AdapterEnvError`, `WebSocketAdapter.send` drops the connection, and the earlier turns' context
+  with it, and sets the error's `retryable` to false (`AdapterEnvError.retryable`, a class default
+  of true, so mypy reads the instance assignment). A retry of that turn could only open a new
+  connection with no context and be refused as `WebSocketLost`, and the evidence kept that in
+  place of the cause: a live multi-turn run recorded 37 of them. A first turn is still retried on
+  a new connection. Acceptance: `tests/adapters/test_websocket_audit.py` (a server that closes
+  1011 on turn 1: one error, its own cause, `[not retryable]`, two requests debited; it fails
+  without the change; a first turn that fails is retried and answered).
+  `carries_system_prompt(spec)` (module function, exported) reads whether a WebSocket template
+  writes `{{system_prompt}}`; the adapter's property of the same name and the plan
+  (`cli.wiring.provider_carries_system_prompt`) both use it (u08 A-113).
+
 ## §8 Out of scope / forbidden
 - MUST NOT import or call vendor SDKs (`openai`, `anthropic` packages): httpx only (ADR-0002).
 - MUST NOT use LiteLLM as the core abstraction (optional wrapped adapter is MVP-2+, not here).
@@ -900,7 +914,7 @@ reads as U+FFFD, since httpx decodes the stream as text.
   `_websocket_problem`, `_WEBSOCKET_BY_HAND`, `_WEBSOCKET_JUDGE_BY_HAND` and the `judge_doc`
   argument of `_documents` in `cli/fleet.py`, their use in `materialize_fleet`, and
   `tests/cli/test_fleet_websocket.py`.
-- **OD-54** (2026-10-24, A-96; **open, owner to decide; built as the smallest reversible version**):
+- **OD-54** (2026-10-24, A-96; **decided 2026-11-01, as built**):
   what a tool from `guard.stop_on_tools` does to the run. Built: the connection is closed and the
   run stops (`AgentToolStop` aborts the campaign, exit 3, naming the tool), and the attempt is not
   scored or stored. Why: the list names tools that write to the tenant, and every later spec could
@@ -910,7 +924,8 @@ reads as U+FFFD, since httpx decodes the stream as text.
   `_check_tools` raise in `adapters/websocket.py`. Also built and part of the same decision: a close
   or a silence before the handshake reply counts as an authentication failure (cooldown, the
   credential not refused), where it could be an outage.
-- **OD-56** (2026-10-26, A-98; **open, owner to decide; built as the smallest reversible version**):
+  **Decided 2026-11-01 by the owner ("do it all"), as built.**
+- **OD-56** (2026-10-26, A-98; **decided 2026-11-01, as built**):
   five choices of the window, the HTTP guard and profiles. (a) Outside the window the run stops
   (exit 3) and is resumed by hand; not taken: sleep until it opens, which keeps a process waiting
   for days and sends traffic nobody is watching. (b) An overnight window (`22:00`-`06:00`) belongs
@@ -921,6 +936,7 @@ reads as U+FFFD, since httpx decodes the stream as text.
   is refused rather than resolved either way. Reversal: `_check_window` in `adapters/agent_guard.py`,
   `RestAdapter._before_attempt` and `_handle_final_response`, and `resolve_profile` in
   `cli/wiring.py`.
+  **Decided 2026-11-01 by the owner ("do it all"), as built.**
 
 - **OD-59** (2026-10-27, A-101, ADR-0015; **decided by the owner on 2026-10-27 ("do it all"), as
   built**): four choices of the MCP pins, all four kept as built. (a) Pins live in the target file and are compared in
