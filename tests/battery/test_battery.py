@@ -457,6 +457,7 @@ def test_coverage_numerators_are_subsets_of_their_denominators(
     from ildottore.reporting.summary import build_battery_coverage
     from ildottore.shared.aisvs import aisvs_universe
     from ildottore.shared.attack import attack_tactic_universe
+    from ildottore.shared.esp_ia import ESP_IA_REQUIREMENTS
     from ildottore.shared.frameworks import ATLAS_TACTIC_UNIVERSE, OWASP_LLM_UNIVERSE
     from ildottore.shared.iopc import IOPC_IMPACT_UNIVERSE, IOPC_TECHNIQUE_UNIVERSE
 
@@ -468,6 +469,7 @@ def test_coverage_numerators_are_subsets_of_their_denominators(
         "aisvs_l1": aisvs_universe(1),
         "aisvs_l2": aisvs_universe(2),
         "aisvs_l3": aisvs_universe(3),
+        "esp_ia": ESP_IA_REQUIREMENTS,
         "attack": attack_tactic_universe(),
     }
     coverage = build_battery_coverage(list(specs_by_id.values()))

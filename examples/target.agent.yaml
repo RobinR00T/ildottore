@@ -61,3 +61,31 @@ websocket:
       path: "tool"
       names: ["write_record", "run_workflow", "send_message"]
     max_response_bytes: 200000       # a lower cap than the adapter's own, per turn
+# The vendor's answers to the CCN-STIC-2011 (ESP-IA) characterization questions, each yes or no;
+# C16a only when C16 is yes. Illustrative for this assistant: read each question in the guide.
+# Read by `dottore coverage --framework esp_ia --target` and `dottore replay --esp-ia`, never
+# by a run, and outside the target digest (u12 A-117).
+esp_ia:
+  answers:
+    C01: yes   # an external actor controls what the assistant reads (the chat)
+    C02: no
+    C03: yes   # it reads natural language that can carry instructions
+    C04: yes   # retrieved documents and tool results come from sources others write
+    C05: yes
+    C06: no
+    C07: no
+    C08: no
+    C09: yes   # a third-party model
+    C10: no
+    C11: no
+    C12: yes   # it reaches records not every user may read
+    C13: yes   # one deployment serves several tenants
+    C14: no
+    C15: yes   # it picks the tools and their arguments
+    C16: yes
+    C16a: yes  # some of those actions cannot be undone
+    C17: no
+    C18: yes   # a tool can send information out
+    C19: yes
+    C20: yes
+    C21: no

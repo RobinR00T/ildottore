@@ -17,6 +17,7 @@ nist_ai_rmf: "MEASURE 2.7 (security & resilience)"
 cwe: [CWE-1427]
 iopc:
   techniques: ["IOPC-T2.002"]
+esp_ia: [RFS-INJ-02, RFS-POI-01]
 severity: high
 target_type: chatbot
 requires: [memory]

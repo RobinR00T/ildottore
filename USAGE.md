@@ -101,13 +101,15 @@ dottore fleet fleet.yaml --run
 
 # Inspect / author specs
 dottore registry ls [--category .. --owasp .. --suite .. --tag ..]
-dottore coverage [--framework owasp|atlas|iopc|aisvs|attack] [--suite ..] [--json] [--navigator-layer battery.json]   # what the battery tests, nothing sent
+dottore coverage [--framework owasp|atlas|iopc|aisvs|esp_ia|attack] [--suite ..] [--json] [--navigator-layer battery.json]   # what the battery tests, nothing sent
+dottore coverage --framework esp_ia --target target.yaml   # the CCN ESP-IA requirements that apply to it, and the specs that would run
 dottore describe PI-DIRECT-001
 dottore lint mine/           # exit 0 clean, 1 a spec fails lint, 3 a path that holds nothing
 dottore new-spec --id PI-XYZ-001 --family prompt_injection
 dottore schema export --name report   # the JSON report's schema (also suite, pack, test-plan, attack-spec)
 dottore replay <run-id> --evidence-root .dottore/evidence --run-db .dottore/runs.sqlite   # reproduce a past run, checked against the run store
 dottore replay <run-id> --run-db .dottore/runs.sqlite --pack packs/   # one reproduction pack per failing finding, for the target's owner (sends nothing)
+dottore replay <run-id> --run-db .dottore/runs.sqlite --esp-ia esp-ia.md -t target.yaml   # the evidence by CCN ESP-IA requirement, shaped like Annex B (never a PASS)
 
 # Regression gate: compare a run against a stored baseline (CI-gateable)
 dottore diff baseline.json current.json

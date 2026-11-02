@@ -5,6 +5,23 @@ The carryover ledger. Every agent session updates this so context survives even 
 newest merge on top: a branch's entries land together when it merges, so the dates of
 neighbouring entries can interleave (an older branch merged later sits above a newer one).
 
+## State, 2026-11-02: CCN-STIC-2011 (ESP-IA): requirements, applicability, evidence draft (`feat/esp-ia`, u02 A-116, u12 A-117 and A-118)
+
+- **Why.** ESP-IA 1.0 (CCN-STIC-2011, October 2026) is how a product with AI functionality is
+  certified in Spain, and a finding carried no label it reads.
+- **Built.** `shared/esp_ia.py` (the codes of Tables 1 to 4, no text: questions, 24 rules, 27
+  requirements, what is out of reach); `esp_ia:` on 64 specs, the lint through
+  `_classified_claims` (shared with AISVS); `esp_ia: answers:` on a target file, outside its
+  digest; `coverage --framework esp_ia [--target FILE]`; `replay --esp-ia FILE.md [--target]`
+  (`cli/esp_ia.py`). Stacked on `fix/field-report` (`3af8dd33`). Judging rules 7 re-pinned.
+  ADR-0023.
+- **Verified.** `tests/shared/test_esp_ia.py` (the mapping pinned per requirement, the matrix
+  rule by rule, the lint), `tests/cli/test_esp_ia_cmd.py` (the matrix on the examples, the
+  refusals, drafts from a vulnerable and a hardened mock run). Scenario U, output in
+  `examples/README.md`.
+- **Open.** OD-70 (a model-extraction spec for `RFS-EXT-01`) and OD-71 (a Spanish draft; the
+  architecture elements each rule's condition joins): the owner's call.
+
 ## State, 2026-11-01: the field report of 2026-10-28, and the open decisions closed (`fix/field-report`, u04 A-112, u08 A-113, u13 A-114 and A-115)
 
 - **Why.** A live multi-turn run against a deployed assistant over a WebSocket (field report of

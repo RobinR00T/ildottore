@@ -12,6 +12,7 @@ nist_ai_rmf: "MANAGE 2.2 (excessive agency)"
 cwe: [CWE-1427]
 iopc:
   techniques: ["IOPC-T4.003", "IOPC-T9.001"]
+esp_ia: [RFS-AGE-01, RFS-POI-01]
 severity: critical
 target_type: agent
 requires: [tools]

@@ -16,6 +16,7 @@ iopc:
   techniques: ["IOPC-T5.002"]
   impacts: ["IOPC-R032"]
 aisvs: ["v1.0-C9.5.4"]
+esp_ia: [RFS-AGE-01, RFS-DIS-05]
 severity: high
 target_type: agent
 requires: [tools]

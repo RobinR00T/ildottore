@@ -21,6 +21,7 @@ iopc:
   techniques: ["IOPC-T1.002"]
   impacts: ["IOPC-R028", "IOPC-R026"]
 aisvs: ["v1.0-C2.1.3", "v1.0-C2.2.3"]
+esp_ia: [RFS-INJ-02]
 severity: high
 target_type: model
 requires: [multimodal]

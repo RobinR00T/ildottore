@@ -7,6 +7,33 @@ the file, schema copy, build or pipeline it names.
 
 ## [Unreleased]
 
+### Added (CCN-STIC-2011, ESP-IA: u02 A-116, u12 A-117 and A-118, judging rules 7 re-pinned)
+
+Spain's National Cryptologic Centre published ESP-IA 1.0 (CCN-STIC-2011, October 2026), the
+methodology an accredited laboratory follows to certify a product with AI functionality. Il
+Dottore now reads it the way it reads OWASP AISVS: a fail is evidence against a requirement, a
+pass never meets one (ADR-0023).
+
+- **A spec names the ESP-IA requirements a fail is evidence against** (u02 A-116): an optional
+  `esp_ia:` list (`RFS-INJ-01`, ...), outside the spec digest. 64 of the 79 battery specs are
+  mapped; the content-safety, bias and insecure-generated-code specs are not, since ESP-IA has
+  no threat for them. `dottore lint` refuses a code the guide does not hold and one classified out
+  of reach or deliberately untested. `dottore coverage --framework esp_ia` reports 19 of 27,
+  `describe` prints the line, SARIF and JUnit carry `ccn_esp_ia: 1.0`. Only the codes are in the
+  repository: the CCN forbids reproducing the guide.
+- **Which requirements apply to a target** (u12 A-117): a target file may carry the vendor's
+  answers (`esp_ia: answers:`, booleans, outside the target digest), and `dottore coverage
+  --framework esp_ia --target FILE` applies the guide's matrix: the rules met, the requirements
+  that apply, and per requirement the specs that would run and those blocked, with the reason
+  `dottore run` would give. Against `examples/target.esp-ia.yaml`, 5 of 27 apply.
+- **An evidence draft shaped like Annex B** (u12 A-118): `dottore replay RUN_ID --esp-ia FILE.md
+  [--target FILE]` writes the run's results by requirement and one test case per mapped spec,
+  **FAIL evidence** or "not falsified", never PASS, leaving to the laboratory what a run cannot
+  know. It refuses the answers of a target the run did not scan, and never overwrites.
+- `examples/target.esp-ia.yaml` and Scenario U in `examples/README.md`; the answers commented in
+  `examples/target.agent.yaml` (13 rules, 16 of 27 requirements). Open: OD-70 (a model-extraction
+  spec for `RFS-EXT-01`), OD-71 (a Spanish draft, the architecture elements).
+
 ### Fixed (the field report of 2026-10-28: u04 A-112, u08 A-113, u13 A-114 and A-115, judging rules 7 re-pinned; breaking for a deployment's plan: specs that went out undeliverable are refused)
 
 A live run against a deployed assistant over a WebSocket showed four things the battery could not

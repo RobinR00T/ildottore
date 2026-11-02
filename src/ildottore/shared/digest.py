@@ -55,14 +55,18 @@ DIGEST_PREFIX: Final = "sha256:v2:"
 #: field the run never reads (measured 2026-10-03). If the run report ever rolls findings up by
 #: AISVS ID, it moves inside.
 #: `cwe` is outside for the same reason (u02 A-110): a label SARIF reads from the spec as loaded,
-#: which no attempt, verdict or score depends on.
-_COSMETIC_FIELDS: Final = frozenset({"name", "description", "preconditions", "aisvs", "cwe"})
+#: which no attempt, verdict or score depends on. So is `esp_ia` (u02 A-116): coverage and the
+#: Annex B document read it from the spec as loaded, and no attempt depends on it either.
+_COSMETIC_FIELDS: Final = frozenset(
+    {"name", "description", "preconditions", "aisvs", "cwe", "esp_ia"}
+)
 
 #: Target fields outside the digest: they say nothing about what is on the other end of the
 #: wire. Everything else is in, including `endpoint`, `model`, `provider` and `capabilities`.
 #: `pricing` (u12 A-108) changes what a run costs, not what answers it: a resume after a new
-#: rate is the same target.
-_TARGET_COSMETIC: Final = frozenset({"name", "description", "tags", "pricing"})
+#: rate is the same target. `esp_ia` (u12 A-117) is the vendor's answers to the ESP-IA questions,
+#: which decide what a report covers and nothing that is sent.
+_TARGET_COSMETIC: Final = frozenset({"name", "description", "tags", "pricing", "esp_ia"})
 
 
 #: Hex digits of a field digest (:func:`spec_field_digests`): it names the field a refusal

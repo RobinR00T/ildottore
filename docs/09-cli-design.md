@@ -120,7 +120,8 @@ OTHER COMMANDS
   dottore fleet <fleet.yaml> --out <dir> [--run] [--judge ..] [--runs N] [-p ..]
                 [--spec-path ..] [--evidence-root ..] [--run-db ..] [-oJ/-oH/-oS/-oX/-oN/-oA ..]
   dottore -v <command> ...                  any command, with an internal error's traceback
-  dottore coverage [--framework all|owasp|atlas|iopc|aisvs] [--suite ..] [--gaps] [--json]
+  dottore coverage [--framework all|owasp|atlas|iopc|aisvs|esp_ia|attack] [--suite ..] [--gaps] [--json]
+                   [--target FILE]          with esp_ia: what the CCN ESP-IA matrix applies to it
   dottore registry ls [--category ..] [--owasp ..] [--tag ..] [--suite ..]
   dottore registry mutators                 every mutator, its parameters, the presets
   dottore mutate <mutation> <text> [--spec-id ID] [--out DIR]
@@ -130,6 +131,7 @@ OTHER COMMANDS
   dottore new-spec --family <f> --id <ID>   scaffold a spec + empty fixtures
   dottore render-media <spec-id> --out <dir>
   dottore replay <run-id>                   re-read a run from stored evidence; sends nothing
+                [--pack DIR] [--esp-ia FILE.md [-t TARGET]]   reproduction packs; an ESP-IA draft
   dottore diff <baseline.json> <current.json>
   dottore calibrate <report.json> <labels.yaml> [--record <ledger>]
   dottore schema export [--name ..]

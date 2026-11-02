@@ -20,6 +20,7 @@ from pydantic import (
     ConfigDict,
     Field,
     SerializerFunctionWrapHandler,
+    StrictBool,
     ValidationInfo,
     field_validator,
     model_serializer,
@@ -40,6 +41,7 @@ from ildottore.shared.enums import (
     VerdictStatus,
     VerificationState,
 )
+from ildottore.shared.esp_ia import ESP_IA_QUESTIONS
 from ildottore.shared.filter_stops import documented_stops, target_filter_stops
 
 # --- shared field constraints (schema §properties) ---------------------------------
@@ -112,6 +114,8 @@ _IOPC_IMPACT_PATTERN = r"^IOPC-R[0-9]{3}$"
 _AISVS_PATTERN = r"^v1\.0-C[1-9][0-9]?\.[1-9][0-9]?\.[1-9][0-9]?$"
 # MITRE CWE IDs (``shared.cwe``), same anchor note as above.
 _CWE_PATTERN = r"^CWE-[1-9][0-9]{0,4}$"
+# CCN-STIC-2011 (ESP-IA) requirement codes (``shared.esp_ia``), same anchor note as above.
+_ESP_IA_PATTERN = r"^RFS-[A-Z]{3}-0[1-9]$"
 
 
 class IoPC(_SchemaMirror):
@@ -325,6 +329,9 @@ class AttackSpec(_SchemaMirror):
     #: MITRE CWE IDs of the weakness a FAIL of this spec is evidence of in the application; a
     #: label for trackers and SARIF, never a verdict (``shared.cwe``, u02 A-110).
     cwe: list[Annotated[str, Field(pattern=_CWE_PATTERN)]] | None = None
+    #: CCN-STIC-2011 (ESP-IA) 1.0 requirement codes a FAIL of this spec is evidence against.
+    #: Falsification only: a PASS never says a requirement is met (``shared.esp_ia``, A-116).
+    esp_ia: list[Annotated[str, Field(pattern=_ESP_IA_PATTERN)]] | None = None
     severity: Severity
     target_type: TargetType
     requires: list[RequiresCapability]
@@ -905,6 +912,49 @@ class Pricing(_Frozen):
     output_eur_per_mtok: EurPerMillion
 
 
+class EspIaProfile(_Frozen):
+    """A target's answers to the CCN-STIC-2011 (ESP-IA) characterization questions (u12 A-117).
+
+    The vendor answers each question yes or no (``C01`` to ``C21``, and ``C16a`` exactly when
+    ``C16`` is yes), and the guide's applicability matrix turns the answers into the requirements
+    an evaluation covers (``shared.esp_ia``). Read by ``dottore coverage --target`` and the
+    Annex B document, by nothing that sends: outside the target digest. Refusals name the
+    questions, never a key the operator wrote.
+    """
+
+    answers: dict[str, StrictBool]
+
+    @field_validator("answers", mode="before")
+    @classmethod
+    def _only_the_guides_questions(cls, value: object) -> object:
+        """A key that is not a question is refused before its value is read, so no error names
+        it (a value's own error would carry its key)."""
+
+        if isinstance(value, dict):
+            stray = len(set(value) - set(ESP_IA_QUESTIONS))
+            if stray:
+                raise ValueError(
+                    f"{stray} key(s) are not questions of the guide (C01 to C21, and C16a)"
+                )
+        return value
+
+    @field_validator("answers")
+    @classmethod
+    def _every_question_once(cls, value: dict[str, bool]) -> dict[str, bool]:
+        """Every question answered, C16a exactly when C16 is yes, in the guide's order."""
+
+        unanswered = [q for q in ESP_IA_QUESTIONS if q != "C16a" and q not in value]
+        if unanswered:
+            raise ValueError(
+                f"unanswered: {', '.join(unanswered)}; every question is answered yes or no"
+            )
+        if value["C16"] and "C16a" not in value:
+            raise ValueError("C16 is yes, so C16a must be answered")
+        if not value["C16"] and "C16a" in value:
+            raise ValueError("C16a is answered only when C16 is yes")
+        return {q: value[q] for q in ESP_IA_QUESTIONS if q in value}
+
+
 class Target(_Frozen):
     """A target under test (id + type + declared capabilities).
 
@@ -953,6 +1003,9 @@ class Target(_Frozen):
     # place of a harmful ask (``{{disallowed_task}}``, u13 A-114): the battery ships none. Left
     # out of a dump when ``None``; in the target digest when set (it is part of what is sent).
     disallowed_task: Annotated[str, Field(min_length=1, max_length=500)] | None = None
+    # The vendor's ESP-IA answers (u12 A-117; ``None``: none given). Left out of a dump when
+    # ``None``, and out of the target digest always: no request depends on them.
+    esp_ia: EspIaProfile | None = None
     # The provider filter stops an ``openai`` or ``anthropic`` target's adapter reads, when its
     # file says (u04 A-79): ``[]`` for an endpoint that speaks the provider's API and has no such
     # filter behind it, so its stops on a reply with text or a tool call, and Azure's HTTP 400,
@@ -988,7 +1041,7 @@ class Target(_Frozen):
         """The dump as before A-79 and A-108 when the file declares no ``filter_stops``.
 
         Nor ``pricing`` (u12 A-108): an unpriced target dumps as it did before the field, nor
-        ``disallowed_task`` (u13 A-114) when the file names none.
+        ``disallowed_task`` (u13 A-114) or ``esp_ia`` (u12 A-117) when the file names none.
         """
 
         dumped: dict[str, Any] = handler(self)
@@ -998,6 +1051,8 @@ class Target(_Frozen):
             dumped.pop("pricing", None)
         if dumped.get("disallowed_task") is None:
             dumped.pop("disallowed_task", None)
+        if dumped.get("esp_ia") is None:
+            dumped.pop("esp_ia", None)
         return dumped
 
 

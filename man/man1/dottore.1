@@ -481,7 +481,13 @@ Probe the deterministic mock instead of the live endpoint: nothing is sent.
 .SS "coverage [\fIPATHS\fR...]"
 .TP
 .B --framework \fITEXT\fR
-all (default), owasp, atlas, iopc or aisvs; any other value is refused (exit 3).
+all (default), owasp, atlas, iopc, aisvs, esp_ia or attack; any other value is refused (exit 3).
+.TP
+.B -t, --target \fIFILE\fR
+With --framework esp_ia: apply the CCN-STIC-2011 applicability matrix to the esp_ia answers in
+this target file (or profile), and list for each requirement that applies the specs that would
+run against it and those blocked, with the plan's reason. Refused without --framework esp_ia or
+without answers (exit 3). Sends nothing.
 .TP
 .B --suite \fITEXT\fR
 Measure one suite (id or alias) instead of the whole battery.
@@ -557,6 +563,16 @@ With --pack, only the failing finding of this spec (repeatable).
 .TP
 .B --spec-path \fIPATH\fR
 Specs whose name, OWASP code and CWE a pack names, when the digest matches the run's.
+.TP
+.B --esp-ia \fIFILE\fR
+Write a Markdown draft of the run's evidence by CCN-STIC-2011 (ESP-IA) requirement, numbered as
+the guide's Annex B: results by requirement (FAIL evidence, not falsified, inconclusive, no
+test; never PASS) and a test case per mapped spec. FILE must not exist; needs the run store;
+sends nothing.
+.TP
+.B -t, --target \fIFILE\fR
+With --esp-ia: the run's target file, whose esp_ia answers select the requirements that apply.
+Refused when its digest differs from the run's, or without --esp-ia (exit 3).
 .SS "schema export"
 .TP
 .B --name \fITEXT\fR

@@ -38,6 +38,12 @@ from ildottore.shared.attack import (
     tactic_name,
 )
 from ildottore.shared.enums import SETUP_NOT_REACHED, AttackOccurrence, VerdictStatus
+from ildottore.shared.esp_ia import (
+    ESP_IA_NOT_TESTED_BY_DESIGN,
+    ESP_IA_OUT_OF_REACH,
+    ESP_IA_REQUIREMENTS,
+    ESP_IA_VERSION,
+)
 from ildottore.shared.frameworks import (
     ATLAS_MATRIX_RELEASE,
     ATLAS_OUT_OF_MATRIX,
@@ -843,6 +849,7 @@ def build_battery_coverage(specs: Iterable[AttackSpec]) -> BatteryCoverage:
     tech: set[str] = set()
     impact: set[str] = set()
     aisvs: set[str] = set()
+    esp_ia: set[str] = set()
     attack: set[str] = set()
     # technique id -> (occurrence, spec ids); observed wins over capability-only.
     declared: dict[str, tuple[str, set[str]]] = {}
@@ -880,6 +887,14 @@ def build_battery_coverage(specs: Iterable[AttackSpec]) -> BatteryCoverage:
                 off.append((spec.id, "aisvs (contradicts its classification)", code))
             else:
                 aisvs.add(code)
+        for code in spec.esp_ia or []:
+            if code not in ESP_IA_REQUIREMENTS:
+                off.append((spec.id, "esp_ia", code))
+            elif code in ESP_IA_OUT_OF_REACH or code in ESP_IA_NOT_TESTED_BY_DESIGN:
+                # The AISVS case above, for the same reason (u02 A-116).
+                off.append((spec.id, "esp_ia (contradicts its classification)", code))
+            else:
+                esp_ia.add(code)
 
     return BatteryCoverage(
         specs=len(spec_list),
@@ -917,6 +932,16 @@ def build_battery_coverage(specs: Iterable[AttackSpec]) -> BatteryCoverage:
                     AISVS_TITLES,
                 )
                 for level in AISVS_LEVELS
+            ),
+            # The requirement's title is the threat or policy it derives from: the guide's own
+            # wording is not reproduced (``shared.esp_ia``). Every requirement is in the
+            # denominator, whatever a target's answers make applicable (u02 A-116).
+            _axis(
+                "esp_ia",
+                f"CCN-STIC-2011 ESP-IA {ESP_IA_VERSION} requirements",
+                tuple(ESP_IA_REQUIREMENTS),
+                esp_ia,
+                ESP_IA_REQUIREMENTS,
             ),
             _axis(
                 "attack",

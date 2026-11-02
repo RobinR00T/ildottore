@@ -67,6 +67,17 @@ AI/ML grouping CWE-1446) and warns on one `src/ildottore/shared/cwe.py` does not
 usage you then check on cwe.mitre.org. Leave the field out when no entry names the weakness (a
 jailbreak, a content-safety refusal): an invented CWE is worse than none.
 
+## Mapping a spec to CCN-STIC-2011 (ESP-IA)
+
+The optional `esp_ia:` list names the requirements of Spain's ESP-IA methodology (`RFS-INJ-01`,
+`RFS-DIS-01`, ...) a **failure** of the spec is evidence against, read the AISVS way: a pass
+never meets a requirement, only an accredited laboratory says PASS. Write codes only: the CCN
+forbids reproducing the guide, so no question or requirement text goes in a spec, a comment or a
+test. `dottore lint` refuses a code the guide does not contain and one
+`src/ildottore/shared/esp_ia.py` classifies as out of reach or deliberately untested. Content
+safety, bias and insecure generated code have no ESP-IA threat: leave the field out there
+(ADR-0023).
+
 ## Mapping a spec to MITRE ATT&CK Enterprise
 
 ATT&CK names what an adversary does on an estate, so the optional `mitre_attack:` block lists

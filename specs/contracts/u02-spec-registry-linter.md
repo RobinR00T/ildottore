@@ -518,6 +518,29 @@ battery's mapping spec by spec, the refusal of a Discouraged and a Prohibited en
 for an unknown one, five malformed IDs refused by the schema, SARIF, the card and the editions,
 the digest).
 
+**A-116 (added 2026-11-02) A spec names the ESP-IA requirements a fail is evidence against
+(ADR-0023, OD-70).** `AttackSpec.esp_ia` (u00's optional field, the schema's `esp_ia` array,
+`RFS-<XXX>-0<n>`) names the CCN-STIC-2011 (ESP-IA) 1.0 Functional Security Requirements a FAIL of
+the spec is evidence against; falsification only, a PASS never says one is met. `shared.esp_ia`
+pins the codes of version 1.0 (Tables 1 to 4, transcribed 2026-11-02), never the guide's text,
+which the CCN forbids reproducing: the 22 questions, the 24 rules with the questions each joins,
+the 27 requirements with their threat or policy, six classified out of reach and one deliberately
+untested, each with this project's own reason. `_check_esp_ia` refuses a code outside the table
+(`UNKNOWN_FRAMEWORK_CODE`) and a claim on a classified one (`FRAMEWORK_CLAIM_CONTRADICTED`),
+through `_classified_claims`, which the AISVS check now shares with unchanged messages. `esp_ia`
+is outside the spec digest (`_COSMETIC_FIELDS`). `dottore coverage --framework esp_ia` counts it
+(axis `esp_ia`, 27 in the denominator, the classified ones listed with their reasons), the off-
+universe list reports a code it did not count, `framework_editions` gains `ccn_esp_ia`, `dottore
+describe` prints an `esp_ia:` line with each requirement's threat or policy, `new-spec` scaffolds
+the key. 64 of the 79 battery specs declare one, 19 of 27 requirements covered. **Costs,
+stated:** judging rules 7 re-pinned (battery files), no rule of judgement changed.
+**Acceptance:** `tests/shared/test_esp_ia.py` (27 requirements from nine threats and two
+policies, the matrix naming each requirement once and only known questions, the classification
+disjoint and inside the table, six answer sets read by the matrix, the battery's mapping
+requirement by requirement, the axis at 19 of 27 with one roadmap gap, the refusal of an unknown
+and of two classified codes, four malformed codes refused by the schema, the card and the
+editions, the digest), `tests/cli/test_coverage_cmd.py` (the axis in order).
+
 ## §8 Out of scope / forbidden
 - MUST NOT execute spec/plugin code or open any socket at load (parse + validate + register only).
 - MUST NOT author, mutate, or "fix" spec/suite/pack YAML (u13 owns content).
@@ -557,3 +580,14 @@ the digest).
   without confirmation map to CWE-749; CWE-862 or CWE-863 for the tenant specs; a CWE roll-up
   in the report. Reversal: delete the `cwe:` lines. Owner: human.
   **Decided 2026-11-01 by the owner ("do it all"), as built.**
+- **OD-70** (2026-11-02, A-116, ADR-0023): the ESP-IA mapping. Built as the smallest reversible
+  version: (1) falsification only, as AISVS; (2) every jailbreak under `RFS-INJ-01`, since the
+  guide's injection threat is content read with enough authority to condition the answer, and
+  the input-guardrail evasions under `RFS-EVA-01` too; (3) 15 specs unmapped (content safety and
+  bias, for which ESP-IA has no threat; insecure generated code; slopsquatting; the two MCP
+  catalogue specs); (4) six requirements out of reach and `RFS-EXH-02` deliberately untested;
+  (5) `RFS-EXT-01` left as roadmap. To decide: whether the MCP catalogue specs belong under
+  `RFS-INJ-02` or `RFS-AGE-02`; whether `OUT-*` belongs under `RFS-AGE-02` when the generated
+  code is executed by a tool; whether `DL-MEMORIZE-DIVERGENCE-001` says enough for
+  `RFS-MEM-01`; a model-extraction spec for `RFS-EXT-01`; a re-diff when the CCN issues a version
+  after 1.0. Reversal: delete the `esp_ia:` lines. Owner: human.

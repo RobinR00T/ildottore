@@ -133,7 +133,8 @@ and
 .B type
 are required; the rest are needed only for a live scan. The file holds these keys (id, type,
 name, provider, endpoint, model, auth_ref, capabilities, sampling_defaults, transport, command,
-seeded_setup, websocket, rest, mcp, filter_stops and mock_scenario) and no others: any other key, or
+isolation, seeded_setup, websocket, rest, mcp, filter_stops, pricing, disallowed_task, esp_ia and
+mock_scenario) and no others: any other key, or
 a name, provider, endpoint, model, auth_ref or transport that is not text, is refused before
 anything is sent, naming the file and the key. Quote a model id YAML reads as a number, a date or
 a boolean.
@@ -225,6 +226,17 @@ per target and the block stays a top-level key (OD-60, decided by the owner on 2
 built). The scope authorizes the command run inside by its commands list, as without the block.
 .B sampling_defaults
 values are finite numbers: .nan and .inf are refused.
+.PP
+.B esp_ia
+holds the vendor's answers to the CCN-STIC-2011 (ESP-IA) characterization questions, read by
+dottore coverage --framework esp_ia --target and dottore replay --esp-ia and never by a run:
+.nf
+esp_ia:
+  answers: { C01: yes, C02: no, ..., C16: yes, C16a: no, ..., C21: no }
+.fi
+Every question C01 to C21 is answered with a YAML boolean, and C16a exactly when C16 is yes; text
+such as SÍ, a missing question or a key that is not one is refused, naming no key you wrote. Not
+part of the target digest.
 .PP
 A
 .B type

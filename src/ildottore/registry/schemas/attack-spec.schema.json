@@ -155,6 +155,14 @@
         "pattern": "^CWE-[1-9][0-9]{0,4}\\Z"
       }
     },
+    "esp_ia": {
+      "type": "array",
+      "description": "CCN-STIC-2011 (ESP-IA) 1.0 Functional Security Requirement codes (RFS-<XXX>-0<n>) a FAIL of this spec is evidence against. Falsification only: a PASS never says a requirement is met, which only an accredited laboratory applying the CCN's criteria can say. Codes only; the CCN forbids reproducing the guide's text. Optional, so third-party spec packs keep validating.",
+      "items": {
+        "type": "string",
+        "pattern": "^RFS-[A-Z]{3}-0[1-9]\\Z"
+      }
+    },
     "severity": {
       "type": "string",
       "enum": [

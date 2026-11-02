@@ -23,7 +23,11 @@ mapping the code checks).
   ATT&CK Enterprise v20.0 techniques an agent is observed performing (`--framework attack`,
   `--navigator-layer` for the ATT&CK Navigator, `-oN` on a run). 48 specs name the MITRE CWE
   of the weakness a fail shows (CWE-1427 for prompt injection, CWE-89, CWE-862, ...), carried as
-  `external/cwe/cwe-NNN` SARIF tags (Scenario S in [`examples/`](examples/)).
+  `external/cwe/cwe-NNN` SARIF tags (Scenario S in [`examples/`](examples/)). 64 specs name the
+  requirements of Spain's CCN-STIC-2011 (ESP-IA) a fail is evidence against: `dottore coverage
+  --framework esp_ia --target FILE` applies the guide's matrix to a vendor's answers, and
+  `dottore replay --esp-ia` writes the run's evidence shaped like the guide's Annex B, never a
+  PASS (Scenario U).
   `dottore registry ls` lists them all.
 - **Fingerprint** a target's model + guardrails before attacking (`-sV`).
 - **Obfuscation and fuzzing** without editing a spec: `--obfuscate` wraps every attack in

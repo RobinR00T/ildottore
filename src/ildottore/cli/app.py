@@ -37,6 +37,7 @@ from ildottore.cli import calibrate as calibrate_mod
 from ildottore.cli import coverage as coverage_mod
 from ildottore.cli import describe as describe_mod
 from ildottore.cli import diff as diff_mod
+from ildottore.cli import esp_ia as esp_ia_mod
 from ildottore.cli import fingerprint as fingerprint_mod
 from ildottore.cli import fleet as fleet_mod
 from ildottore.cli import mutate as mutate_mod
@@ -64,9 +65,10 @@ from ildottore.redactor import (
 )
 from ildottore.reporting import report_schema
 from ildottore.shared.judging_rules import JUDGING_RULES_VERSION
+from ildottore.shared.models import AttackSpec
 from ildottore.shared.package_data import moved_note
 from ildottore.shared.schema_export import export_schemas
-from ildottore.store.replay import TamperError
+from ildottore.store.replay import ReplayResult, TamperError
 
 #: Where a command records how verbose it was asked to be, for the guard below (``ctx.meta`` is
 #: shared by a command's context and its parents').
@@ -1731,7 +1733,8 @@ def fingerprint(
 def coverage(
     paths: Annotated[list[Path] | None, typer.Argument(help="Spec paths to measure.")] = None,
     framework: Annotated[
-        str, typer.Option("--framework", help="all | owasp | atlas | iopc | aisvs | attack.")
+        str,
+        typer.Option("--framework", help="all | owasp | atlas | iopc | aisvs | esp_ia | attack."),
     ] = "all",
     suite: Annotated[
         str | None, typer.Option("--suite", help="Narrow to one suite (id or alias).")
@@ -1747,11 +1750,21 @@ def coverage(
             help="Also write the battery as an ATT&CK Navigator layer (JSON) to this path.",
         ),
     ] = None,
+    target: Annotated[
+        Path | None,
+        typer.Option(
+            "--target",
+            "-t",
+            help="With --framework esp_ia: the ESP-IA requirements that apply to this target "
+            "(its esp_ia answers) and the specs that would run against it.",
+        ),
+    ] = None,
 ) -> None:
     """What the battery TESTS, per framework, without running a scan.
 
-    Reads the spec registry only: no target, no credential, nothing sent. Answers the
-    question asked before a run (and before a purchase): "covered, of what?".
+    Reads the spec registry only: no credential, nothing sent. Answers the question asked
+    before a run (and before a purchase): "covered, of what?". With --target and --framework
+    esp_ia it reads that target file too, to apply the CCN-STIC-2011 applicability matrix.
     """
 
     if framework not in coverage_mod.FRAMEWORK_KEYS:
@@ -1760,6 +1773,9 @@ def coverage(
             err=True,
         )
         raise typer.Exit(ExitCode.ERROR)
+    if target is not None:
+        _esp_ia_applicability(target, framework, paths, suite, as_json=as_json)
+        raise typer.Exit(ExitCode.CLEAN)
     try:
         result = coverage_mod.battery_coverage(
             _spec_paths(paths),
@@ -1775,6 +1791,27 @@ def coverage(
     else:
         typer.echo(coverage_mod.render_coverage(result, framework=framework, show_gaps=gaps))
     raise typer.Exit(ExitCode.CLEAN)
+
+
+def _esp_ia_applicability(
+    target: Path, framework: str, paths: list[Path] | None, suite: str | None, *, as_json: bool
+) -> None:
+    """``coverage --framework esp_ia --target FILE`` (u12 A-117): the matrix over its answers."""
+
+    if framework != "esp_ia":
+        typer.echo("error: --target reads ESP-IA answers: pass --framework esp_ia", err=True)
+        raise typer.Exit(ExitCode.ERROR)
+    try:
+        loaded = wiring.read_target_file(wiring.resolve_profile(target, "target"))
+        specs, _ = coverage_mod.load_specs(
+            _spec_paths(paths), suite=suite, default_spec_path=not paths
+        )
+        result = esp_ia_mod.applicability(loaded.target, specs, uses_mock=loaded.uses_mock)
+    except (OSError, ValueError) as exc:
+        typer.echo(f"error: {_masked(exc)}", err=True)
+        raise typer.Exit(ExitCode.ERROR) from exc
+    render = esp_ia_mod.render_applicability_json if as_json else esp_ia_mod.render_applicability
+    typer.echo(render(result))
 
 
 # --- lint (mounted from u02) -----------------------------------------------------
@@ -1970,11 +2007,29 @@ def replay(
         typer.Option("--finding", help="With --pack, only the failing finding of this spec id."),
     ] = None,
     spec_path: Annotated[list[Path] | None, typer.Option("--spec-path")] = None,
+    esp_ia: Annotated[
+        Path | None,
+        typer.Option(
+            "--esp-ia",
+            help="Write an ESP-IA evidence draft (Markdown, shaped like CCN-STIC-2011 Annex B) "
+            "to this new file.",
+        ),
+    ] = None,
+    target: Annotated[
+        Path | None,
+        typer.Option(
+            "--target",
+            "-t",
+            help="With --esp-ia: the run's target file, whose esp_ia answers select the "
+            "requirements that apply.",
+        ),
+    ] = None,
 ) -> None:
     """Re-read a run from stored evidence (reproducibility, no re-sending).
 
     With --pack, also write what the target's owner needs to reproduce each failing finding: its
-    hash-verified evidence, a finding.json, a README.md and a SHA256SUMS.
+    hash-verified evidence, a finding.json, a README.md and a SHA256SUMS. With --esp-ia, a
+    draft of the evidence by ESP-IA requirement, for an evaluating laboratory.
     """
 
     from ildottore.store import SqliteRunStore, TamperError
@@ -1982,9 +2037,18 @@ def replay(
     if finding and pack is None:
         typer.echo("error: --finding selects what --pack writes: pass --pack DIR", err=True)
         raise typer.Exit(ExitCode.ERROR)
-    if pack is not None and not run_db.is_file():
+    if target is not None and esp_ia is None:
+        typer.echo("error: --target selects what --esp-ia applies: pass --esp-ia FILE", err=True)
+        raise typer.Exit(ExitCode.ERROR)
+    if esp_ia is not None and esp_ia.exists():
+        typer.echo(
+            f"error: {visible_controls(str(esp_ia))} exists: --esp-ia writes a new file", err=True
+        )
+        raise typer.Exit(ExitCode.ERROR)
+    if (pack is not None or esp_ia is not None) and not run_db.is_file():
+        needs = "a pack" if pack is not None else "an ESP-IA draft"
         missing = ValueError(
-            f"no run store at {run_db}: a pack needs the findings it records (pass --run-db)"
+            f"no run store at {run_db}: {needs} needs the findings it records (pass --run-db)"
         )
         typer.echo(f"error: {_masked(missing)}", err=True)
         raise typer.Exit(ExitCode.ERROR)
@@ -2001,10 +2065,14 @@ def replay(
         # It names the --run-db path; written out like an error (`_masked`).
         typer.echo(f"warning: {visible_controls(warning)}", err=True)
     typer.echo(replay_mod.render_replay(result))
-    if pack is None:
+    if pack is None and esp_ia is None:
         return
     registry, _ = wiring.load_registry(_spec_paths(spec_path))
     specs = {spec.id: spec for spec in registry.list()}
+    if esp_ia is not None:
+        _esp_ia_draft(result, run_db, specs, esp_ia, target)
+    if pack is None:
+        return
     try:
         with SqliteRunStore(run_db) as store:
             written = repro_pack_mod.write_packs(
@@ -2019,6 +2087,36 @@ def replay(
         typer.echo(f"pack: run {run_id} has no failing finding, nothing written")
     for path in written:
         typer.echo(f"pack: wrote {visible_controls(str(path))}")
+
+
+def _esp_ia_draft(
+    result: ReplayResult,
+    run_db: Path,
+    specs: dict[str, AttackSpec],
+    out: Path,
+    target: Path | None,
+) -> None:
+    """``replay --esp-ia FILE`` (u12 A-118): the run's evidence by ESP-IA requirement."""
+
+    from ildottore.store import SqliteRunStore
+
+    try:
+        loaded = (
+            None
+            if target is None
+            else wiring.read_target_file(wiring.resolve_profile(target, "target")).target
+        )
+        with SqliteRunStore(run_db) as store:
+            document = esp_ia_mod.evidence_document(result, store, specs, target=loaded)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        with out.open("x", encoding="utf-8") as handle:
+            handle.write(document)
+    except (OSError, ValueError) as exc:
+        typer.echo(f"error: {_masked(exc)}", err=True)
+        raise typer.Exit(ExitCode.ERROR) from exc
+    except sqlite3.Error as exc:
+        _store_failed(run_db, exc)
+    typer.echo(f"esp-ia: wrote {visible_controls(str(out))}")
 
 
 # --- diff (baseline / drift) ------------------------------------------------------

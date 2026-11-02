@@ -1,0 +1,36 @@
+# target.esp-ia.yaml, the offline mock target with a vendor's ESP-IA answers (Scenario U).
+#
+# The same target as target.mock.yaml to every digest: `esp_ia` is read by
+# `dottore coverage --framework esp_ia --target` and `dottore replay --esp-ia`, never by a run.
+# Each answer is a YAML boolean; C16a is answered only when C16 is yes. The answers here are
+# illustrative for a chatbot with a system prompt and no tools: read each question in
+# CCN-STIC-2011 (ESP-IA) and answer for your product.
+id: demo
+type: chatbot
+mock_scenario: vulnerable
+capabilities:
+  tools: false
+  rag: false
+esp_ia:
+  answers:
+    C01: yes   # an external actor writes what the chatbot reads
+    C02: no
+    C03: yes   # it reads natural language that can carry instructions
+    C04: no
+    C05: yes   # anyone can ask again and again
+    C06: no
+    C07: no
+    C08: no
+    C09: yes   # a third-party model
+    C10: no
+    C11: no
+    C12: yes   # its system prompt holds what users may not read
+    C13: no
+    C14: no
+    C15: no
+    C16: no
+    C17: no
+    C18: no
+    C19: yes
+    C20: yes
+    C21: no

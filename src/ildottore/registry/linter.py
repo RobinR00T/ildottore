@@ -49,6 +49,12 @@ from ildottore.shared.enums import (
     EvaluatorLogic,
     RequiresCapability,
 )
+from ildottore.shared.esp_ia import (
+    ESP_IA_NOT_TESTED_BY_DESIGN,
+    ESP_IA_OUT_OF_REACH,
+    ESP_IA_VERSION,
+    unknown_esp_ia_codes,
+)
 from ildottore.shared.frameworks import (
     ATLAS_MATRIX_RELEASE,
     NIST_FUNCTIONS,
@@ -414,24 +420,72 @@ def _check_aisvs(spec: AttackSpec) -> list[LintError]:
     """
     if not spec.aisvs:
         return []
+    return _classified_claims(
+        spec,
+        field="aisvs ID",
+        codes=spec.aisvs,
+        unknown=unknown_aisvs_codes(spec.aisvs),
+        table=f"OWASP AISVS {AISVS_VERSION}",
+        what="an ID the standard does not contain",
+        out_of_reach=AISVS_OUT_OF_REACH,
+        by_design=AISVS_NOT_TESTED_BY_DESIGN,
+        module="shared/aisvs.py",
+    )
+
+
+def _check_esp_ia(spec: AttackSpec) -> list[LintError]:
+    """Every declared ESP-IA requirement must exist and must not be one classified out of reach
+    or deliberately untested (u02 A-116). The AISVS rule, for the same two reasons: a code the
+    guide does not contain matches nothing, and a claim on an unreachable requirement contradicts
+    the classification in ``shared.esp_ia``.
+    """
+    if not spec.esp_ia:
+        return []
+    return _classified_claims(
+        spec,
+        field="esp_ia requirement",
+        codes=spec.esp_ia,
+        unknown=unknown_esp_ia_codes(spec.esp_ia),
+        table=f"CCN-STIC-2011 ESP-IA {ESP_IA_VERSION}",
+        what="a code the guide does not contain",
+        out_of_reach=ESP_IA_OUT_OF_REACH,
+        by_design=ESP_IA_NOT_TESTED_BY_DESIGN,
+        module="shared/esp_ia.py",
+    )
+
+
+def _classified_claims(
+    spec: AttackSpec,
+    *,
+    field: str,
+    codes: list[str],
+    unknown: list[str],
+    table: str,
+    what: str,
+    out_of_reach: Mapping[str, str],
+    by_design: Mapping[str, str],
+    module: str,
+) -> list[LintError]:
+    """The two refusals a framework of controls shares: a code outside the pinned table, and a
+    claim on a code the classification puts out of reach or deliberately untested."""
     errors = [
         LintError(
             code=LintCode.UNKNOWN_FRAMEWORK_CODE,
             message=(
-                f"aisvs ID {code!r} is not in the pinned OWASP AISVS {AISVS_VERSION} table; an "
-                f"ID the standard does not contain matches nothing and silently shrinks coverage"
+                f"{field} {code!r} is not in the pinned {table} table; {what} matches nothing "
+                f"and silently shrinks coverage"
             ),
             spec_id=spec.id,
         )
-        for code in unknown_aisvs_codes(spec.aisvs)
+        for code in unknown
     ]
-    for code in dict.fromkeys(spec.aisvs):
+    for code in dict.fromkeys(codes):
         # Two different claims, so two messages: out of reach is physics (no reply shows it),
         # not-tested-by-design is a decision (reachable in principle, deliberately untested).
-        if (reason := AISVS_OUT_OF_REACH.get(code)) is not None:
+        if (reason := out_of_reach.get(code)) is not None:
             verdict = "is classified out of reach for a black-box scanner"
             remedy = "this spec claims more than a black box can show"
-        elif (reason := AISVS_NOT_TESTED_BY_DESIGN.get(code)) is not None:
+        elif (reason := by_design.get(code)) is not None:
             verdict = "is classified as deliberately not tested"
             remedy = "this spec contradicts a scope decision"
         else:
@@ -440,8 +494,8 @@ def _check_aisvs(spec: AttackSpec) -> list[LintError]:
             LintError(
                 code=LintCode.FRAMEWORK_CLAIM_CONTRADICTED,
                 message=(
-                    f"aisvs ID {code!r} {verdict} ({reason[:80]}...). Either {remedy}, or the "
-                    f"classification in shared/aisvs.py is wrong: fix one"
+                    f"{field} {code!r} {verdict} ({reason[:80]}...). Either {remedy}, or the "
+                    f"classification in {module} is wrong: fix one"
                 ),
                 spec_id=spec.id,
             )
@@ -1204,6 +1258,7 @@ def lint_packs(
         findings.extend(_check_oracle_markers(spec))
         findings.extend(_check_iopc(spec))
         findings.extend(_check_aisvs(spec))
+        findings.extend(_check_esp_ia(spec))
         findings.extend(_check_cwe(spec))
         findings.extend(_check_attack(spec))
         findings.extend(_check_control(spec))

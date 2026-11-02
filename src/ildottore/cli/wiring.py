@@ -138,6 +138,7 @@ from ildottore.shared.models import (
     AttackSpec,
     Attempt,
     Capabilities,
+    EspIaProfile,
     IsolationSpec,
     McpSpec,
     ModelFingerprint,
@@ -2172,7 +2173,23 @@ def _target_from(path: Path, raw: dict[str, Any]) -> Target:
         filter_stops=_filter_stops(path, raw.get("filter_stops"), provider),
         pricing=pricing,
         disallowed_task=disallowed_task,
+        esp_ia=_esp_ia_profile(path, raw.get("esp_ia")),
     )
+
+
+def _esp_ia_profile(path: Path, raw: object) -> EspIaProfile | None:
+    """The file's ESP-IA answers (u12 A-117), or ``None``: a mapping with one key, ``answers``."""
+
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        raise ValueError(f"target file {path} 'esp_ia' must be a mapping with 'answers'")
+    try:
+        return EspIaProfile.model_validate(raw)
+    except ValidationError as exc:
+        raise ValueError(
+            f"target file {path} 'esp_ia' failed validation: {validation_problems(exc)}"
+        ) from exc
 
 
 #: The longest ``disallowed_task`` a target file may name: a request, not a document.

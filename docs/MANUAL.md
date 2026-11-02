@@ -610,9 +610,15 @@ sent the literal `[DISALLOWED-HARMFUL-TASK]`, so a refusal measured the reaction
 to 500 characters, with no `{{` or `}}` and no control or format character; anything else is
 refused when the file is loaded, naming the field and never the value. It is part of the target
 digest: a run with another request is another campaign, and its resume is refused.
+`esp_ia` (since 2026-11-02, u12 A-117, ADR-0023) holds the vendor's answers to the
+characterization questions of CCN-STIC-2011 (ESP-IA), under `answers:`: every question `C01` to
+`C21` once, each a YAML boolean (`yes`/`no`, `true`/`false`; `SÍ` is text and refused), and `C16a`
+exactly when `C16` is yes. Only `dottore coverage --framework esp_ia --target` and `dottore replay
+--esp-ia` read it; no run does, and it is outside the target digest. A refusal names the rule
+broken, never a key the operator wrote (`examples/target.esp-ia.yaml`, Scenario U).
 The file holds these keys and no others: `id`, `type`, `name`, `provider`, `endpoint`, `model`,
 `auth_ref`, `capabilities`, `sampling_defaults`, `transport`, `command`, `seeded_setup`,
-`websocket`, `rest`, `mcp`, `filter_stops`, `pricing`, `disallowed_task` and `mock_scenario` (below; `rest.guard` and
+`websocket`, `rest`, `mcp`, `filter_stops`, `pricing`, `disallowed_task`, `esp_ia` and `mock_scenario` (below; `rest.guard` and
 `mcp.pins` have their own sections). Any other key is refused before anything is
 sent (exit 3), and so is a `name`, `provider`, `endpoint`, `model`, `auth_ref` or `transport` that
 is not text, on one line that names the file and the key, never the value:
@@ -2272,6 +2278,27 @@ says the spec changed or was not found. Refused (exit 3): no run store at `--run
 does not know, a used `DIR`, a `--finding` that did not fail, and evidence the manifest check
 refuses, in which case nothing is written (u12 A-111, ADR-0022; Scenario T in `examples/`).
 
+#### An ESP-IA evidence draft (`--esp-ia`)
+
+```
+dottore replay RUN_ID --run-db PATH --esp-ia FILE.md [--target TARGET.yaml] [--spec-path PATH]
+```
+
+Writes, after the checks above, a Markdown draft numbered as Annex B of CCN-STIC-2011 (the
+laboratory's Evaluation Technical Report), and not one: section 1, the run, the tool, the judging
+rules and the target digest; 2.4 and 2.5, the requirements, threats and policies that apply,
+when `--target` gives the vendor's answers (without it they say how to fill them, and section 4
+lists all 27); 4, one row per requirement: **FAIL evidence**, not falsified, inconclusive, no test
+in this run, out of reach (with the reason) or deliberately not tested; 7, one test case
+`PR_<SPEC>` per mapped spec, with its objective, procedure, expected and obtained results and
+evidence digests, the fields a run cannot know (the CCN test guide, the evaluator, the
+architecture elements) left for the laboratory; 8 and 9 left to the laboratory. No output writes
+PASS: the verdict needs the CCN's test guides and a penetration test this tool does not run. A
+spec changed since the run counts for no requirement. Refused (exit 3): an existing `FILE.md`
+(never overwritten), no run store, `--target` without `--esp-ia`, and a target file that is not
+the one the run scanned (its digest, with the run's mock route), whose answers would label
+another target's evidence. Nothing is sent (u12 A-118, ADR-0023; Scenario U in `examples/`).
+
 ### `dottore diff`, regression gate against a baseline
 
 ```
@@ -2580,6 +2607,8 @@ to paste into a document.
 dottore coverage                      # every axis, with the gaps named
 dottore coverage --framework iopc     # one framework
 dottore coverage --framework aisvs    # OWASP AISVS, one line per level
+dottore coverage --framework esp_ia   # CCN-STIC-2011 (ESP-IA) requirements
+dottore coverage --framework esp_ia --target target.yaml   # which requirements apply to it, and what would run
 dottore coverage --framework attack   # MITRE ATT&CK Enterprise tactics, with the techniques behind them
 dottore coverage --navigator-layer battery.json   # also write the battery as an ATT&CK Navigator layer
 dottore coverage --suite nova-iopc    # what a single suite covers
@@ -2602,6 +2631,7 @@ Battery coverage (79 specs, no scan performed)
   OWASP AISVS 1.0, level 1                   5/51    9%
   OWASP AISVS 1.0, level 2                  12/95   12%
   OWASP AISVS 1.0, level 3                   0/45    0%
+  CCN-STIC-2011 ESP-IA 1.0 requirements     19/27   70%
   MITRE ATT&CK Enterprise tactics (v20.0)    8/15   53%
 
   Out of reach for a black-box runtime scanner, OWASP LLM Top 10 (2025):
@@ -2653,6 +2683,24 @@ them: re-running the same battery after a model change and comparing the runs wi
 diff` (C3.2, C11.1.2; `diff` compares verdicts per spec id and does not check that both runs used
 the same spec content, so pin the battery version beside the runs), or using a campaign's stored
 probes as test traffic for the operator's logging and alerting (C12.1, C12.2).
+
+**ESP-IA, read the same way, and per target.** CCN-STIC-2011 (ESP-IA 1.0, Spain's National
+Cryptologic Centre) derives from a vendor's 21 yes or no answers the threats, policies and
+requirements (`RFS-...`) an accredited laboratory then verifies, PASS or FAIL against the CCN's
+test guides. A spec's `esp_ia` list means what `aisvs` means: a **failure** is evidence against
+those requirements, a pass only that these probes did not falsify them. The battery reaches 19 of
+27; the gaps name six out of reach for a black box (training and supply-chain controls, the
+operator's ability to stop an action, what the product records), `RFS-EXH-02` deliberately
+untested (degradation once exhausted, which the safety charter forbids reaching) and
+`RFS-EXT-01` on the roadmap. `--target FILE` reads the target file's `esp_ia: answers:` and
+prints the rules met, the threats and policies, the requirements that apply and, for each, the
+specs that would run and those blocked, each with the reason `dottore run`'s plan would give
+(`capability_unavailable (tools)`, `setup_not_delivered`, ...); an offline mock target holds its
+scene, as the plan reads it. The guide attaches to every rule but `RP02` a condition between
+declared architecture elements; one target file declares none, so each condition reads as met
+whenever the answers are, and the output says so. With `--json`, the same as data. Only codes are
+in the repository: the CCN forbids reproducing the guide (u02 A-116, u12 A-117, ADR-0023;
+Scenario U in `examples/`).
 
 **ATT&CK Enterprise counts tactics from observed techniques only.** A spec's `mitre_attack`
 block (docs/17) lists techniques with an `occurrence`: `observed` when the technique's behaviour is
@@ -3580,8 +3628,9 @@ target's owner (§5, `dottore replay`).
   `live-2026-09-19`, `attack` is `20.0` with its `domain`); the SARIF run carries
   `framework_editions` in its `properties`; and every JUnit test suite carries
   `edition.owasp_llm_top10`, `edition.mitre_atlas`, `edition.nova_iopc`, `edition.owasp_aisvs`
-  (AISVS `1.0`), `edition.mitre_attack_enterprise` (`20.0`) and `edition.mitre_cwe` (`5.0`, since
-  2026-10-30) properties. A SARIF rule whose spec declares `cwe:` carries one
+  (AISVS `1.0`), `edition.mitre_attack_enterprise` (`20.0`), `edition.mitre_cwe` (`5.0`, since
+  2026-10-30) and `edition.ccn_esp_ia` (`1.0`, since 2026-11-02) properties; SARIF's
+  `framework_editions` carries `ccn_esp_ia` too. A SARIF rule whose spec declares `cwe:` carries one
   `external/cwe/cwe-NNN` tag per entry (CodeQL's shape, which GitHub code scanning reads). The JSON
   `summary.coverage.attack` block (since 2026-10-24, optional in `report-1.0`) carries the tactic
   names exercised, the technique IDs the exercised specs declare, and the figure; the HTML and

@@ -13,6 +13,7 @@ from ildottore.cli import wiring
 from ildottore.redactor import visible_controls
 from ildottore.registry import LintError, SpecNotFoundError
 from ildottore.shared.cwe import CWE_ENTRIES
+from ildottore.shared.esp_ia import ESP_IA_REQUIREMENTS
 from ildottore.shared.models import AttackSpec
 
 __all__ = ["DescribeError", "describe_spec", "render_describe"]
@@ -63,6 +64,19 @@ def render_describe(spec: AttackSpec) -> str:
         *(
             [f"cwe:         {', '.join(_cwe_label(c) for c in dict.fromkeys(spec.cwe))}"]
             if spec.cwe
+            else []
+        ),
+        # The threat or policy each requirement derives from; the guide's text is not ours to
+        # print (``shared.esp_ia``).
+        *(
+            [
+                "esp_ia:      "
+                + ", ".join(
+                    f"{c} ({ESP_IA_REQUIREMENTS[c]})" if c in ESP_IA_REQUIREMENTS else c
+                    for c in dict.fromkeys(spec.esp_ia)
+                )
+            ]
+            if spec.esp_ia
             else []
         ),
         f"severity:    {spec.severity.value}",
