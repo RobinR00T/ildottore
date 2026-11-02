@@ -5,6 +5,20 @@ The carryover ledger. Every agent session updates this so context survives even 
 newest merge on top: a branch's entries land together when it merges, so the dates of
 neighbouring entries can interleave (an older branch merged later sits above a newer one).
 
+## State, 2026-11-02: the PR jobs install a pinned set (`ci/constraints`, u14 A-123, OD-49)
+
+- **Why.** OD-49, decided 2026-11-01 under the owner's delegation: every CI job installed the
+  newest releases, so a release broke whichever PR ran next.
+- **Built.** `ci-constraints-requirements.txt` (51 packages, CPython 3.11 on Linux, resolved on
+  2026-11-02 by `scripts/ci_constraints.py`) for the `static`, `validate` and `package` jobs;
+  Dependabot bumps it. `audit.yml`'s `full-sweep` every night with no constraints.
+  `tests/test_ci_constraints.py`. Stacked on `feat/policy-pack`.
+- **Not verified here.** That Dependabot opens PRs against the file and that the nightly sweep
+  runs: both need GitHub. To check after merge: the first Monday's Dependabot PR touches the
+  file, and the Actions tab shows `full-sweep` on the 03:00 UTC run.
+- **Next.** The decided-to-build items of 2026-11-01 are all built (OD-45, OD-46, OD-47, OD-49,
+  OD-51); the five branches wait for signature and review.
+
 ## State, 2026-11-02: the engagement's policy pack (`feat/policy-pack`, u12 A-122, OD-46 and OD-11)
 
 - **Why.** OD-46, decided 2026-11-01 under the owner's delegation: no command loaded a policy
@@ -15,7 +29,7 @@ neighbouring entries can interleave (an older branch merged later sits above a n
   alone); `policy.packs.pack_digest`. Stacked on `fix/judge-disagreement`. Scenario V run for
   real (dry runs: 7 blocked without the pack, none with it; the key alone refused).
 - **Not built.** The options on `fleet --run` and the quick scan; a pack's `budgets` stay unread.
-- **Next.** OD-49.
+- **Next.** OD-49 (built next, above).
 
 ## State, 2026-11-02: a judge whose passes disagree keeps the attempt open (`fix/judge-disagreement`, u06 A-121, OD-45, judging rules 8)
 

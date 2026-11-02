@@ -5,10 +5,13 @@
 # failing step, so the pipeline is fail-closed: a later gate never runs green over an earlier
 # red (contract §4 KEEP). No live API keys: adapters are exercised only via cassettes, and the
 # autouse no-live-socket guard in tests/conftest.py fails any test that opens a real socket.
-# Both install the NEWEST release of every dependency (no lock file). `floors` installs the
-# LOWEST versions pyproject.toml allows and runs the suite, so a floor that no longer works is
-# caught; `package` builds the wheel and the sdist with hatchling and runs the installed wheel
-# from outside the checkout (u12 A-84).
+# Both install the set pinned in ci-constraints-requirements.txt (OD-49, u14 A-123): every
+# package, direct and transitive, at one version, so a release that lands mid-week cannot break a
+# PR that did not touch it. Dependabot bumps the pins; audit.yml's nightly `full-sweep` installs
+# the NEWEST releases with no constraints, so a break in one is reported the day it lands.
+# `floors` installs the LOWEST versions pyproject.toml allows and runs the suite, so a floor that
+# no longer works is caught; `package` builds the wheel and the sdist with hatchling and runs the
+# installed wheel from outside the checkout (u12 A-84).
 #
 # Thresholds (coverage ≥85% in aggregate, OD-13; evaluator P/R, golden accuracy, judge
 # flips) are docs/07 §3 and MUST NOT be relaxed to go green - a red gate is escalated to its
@@ -22,7 +25,8 @@ on:
   pull_request:
   workflow_dispatch:
   schedule:
-    # Weekly full run (Mondays 06:00 UTC) - catches dependency/toolchain drift on the merge gate.
+    # Weekly full run (Mondays 06:00 UTC), at the pinned set like a PR. Drift in new releases is
+    # audit.yml's nightly full-sweep.
     - cron: "0 6 * * 1"
 
 permissions:
@@ -46,8 +50,8 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
-      - name: Install (editable + dev)
-        run: python -m pip install -e ".[dev]"
+      - name: Install (editable + dev, at the pinned set)
+        run: python -m pip install -c ci-constraints-requirements.txt -e ".[dev]"
       - name: Ruff lint
         run: ruff check src tests
       - name: Ruff format check
@@ -68,8 +72,8 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
-      - name: Install (editable + dev)
-        run: python -m pip install -e ".[dev]"
+      - name: Install (editable + dev, at the pinned set)
+        run: python -m pip install -c ci-constraints-requirements.txt -e ".[dev]"
 
       # ---- Gate 1 - spec lint: schema + static checks (layers 1-2) -------------------------
       # The shipped spec pack must lint clean end-to-end (u02 §7 / u14 §7). The built-in battery
@@ -191,8 +195,8 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
-      - name: Install (editable + dev) and the build backend
-        run: python -m pip install -e ".[dev]" hatchling
+      - name: Install (editable + dev) and the build backend, at the pinned set
+        run: python -m pip install -c ci-constraints-requirements.txt -e ".[dev]" hatchling
       - name: Build, install and run the wheel; build the sdist and a wheel from it
         env:
           DOTTORE_REQUIRE_HATCHLING: "1"

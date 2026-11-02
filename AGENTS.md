@@ -157,9 +157,15 @@ Full method: `docs/00-ai-build-playbook.md`.
     self-scan, which is what `.github/workflows/ci.yml` runs (CI splits the tests into ordered
     gates by directory; `make` runs them in one coverage pass), then bandit and pip-audit, which
     CI does not run and the `[dev]` extra does not install (`pip install bandit pip-audit`).
-    `.github/workflows/audit.yml` re-runs parts of it on a schedule (nightly regression and
-    self-scan, a weekly static, test and coverage sweep). `make fix` autofixes format+lint. Do
+    `.github/workflows/audit.yml` re-runs it every night at the newest releases (regression,
+    self-scan, and a static, test and coverage sweep). `make fix` autofixes format+lint. Do
     not hand-run a subset.
+  - **CI's PR jobs install a pinned set** (`pip install -c ci-constraints-requirements.txt -e
+    ".[dev]"`, OD-49): to reproduce a CI failure locally, install with the same `-c`. After a
+    change to `pyproject.toml`'s dependencies, regenerate it (`python
+    scripts/ci_constraints.py > ci-constraints-requirements.txt`, needs PyPI);
+    `tests/test_ci_constraints.py` fails while a direct dependency is missing from it or pinned
+    outside its specifier.
   - Individually: `ruff check . && ruff format --check . && mypy src` · `pytest -q` (coverage
     gate ≥85% aggregate, OD-13) · `dottore lint src/ildottore/battery`
     · `lint-imports` · `python -m tests.selfscan.run`
