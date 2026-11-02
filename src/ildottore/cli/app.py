@@ -728,7 +728,11 @@ def _spec_paths(spec: list[Path] | None) -> list[Path]:
     """
 
     if spec:
-        return list(spec)
+        if wiring.BUILTIN_SPEC_PATH in spec:
+            # Named, not guessed: the path it reads is said, as the fallback's is (OD-51).
+            battery = visible_controls(str(wiring.PACKAGED_SPEC_PATH))
+            _echo_err(f"note: the spec path builtin names the built-in battery: {battery}")
+        return [wiring.PACKAGED_SPEC_PATH if p == wiring.BUILTIN_SPEC_PATH else p for p in spec]
     paths = wiring.default_spec_paths()
     if paths == [wiring.PACKAGED_SPEC_PATH]:
         here = (

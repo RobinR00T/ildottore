@@ -7,6 +7,16 @@ the file, schema copy, build or pipeline it names.
 
 ## [Unreleased]
 
+### Added (the built-in battery by name: u12 A-119, OD-51, judging rules 7 re-pinned)
+
+- **`--spec-path builtin`** (and `dottore coverage builtin`) reads the built-in battery whatever
+  the working directory holds, and says the path on stderr (`note: the spec path builtin names
+  the built-in battery: <path>`). A pipeline in a repository with a `specs/` of its own (OpenAPI
+  files, say) was refused, or had to pass the battery's installed path. A default `specs/` that
+  holds no spec is still refused, and the refusal now names `--spec-path builtin`. A directory
+  named `builtin` is read by any other spelling of its path (its absolute path, `builtin/.`).
+  `examples/ci-github-actions.yml` says when a pinned commit carries it.
+
 ### Added (CCN-STIC-2011, ESP-IA: u02 A-116, u12 A-117 and A-118, judging rules 7 re-pinned)
 
 Spain's National Cryptologic Centre published ESP-IA 1.0 (CCN-STIC-2011, October 2026), the

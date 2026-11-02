@@ -228,3 +228,54 @@ def test_a_default_spec_path_that_is_not_there_says_how_to_pass_one(
     assert result.exit_code == 3, result.output
     assert "error: a spec path gives nothing to " in result.output
     assert "path not found: nope" in result.output
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["registry", "ls", "--spec-path", "builtin"],
+        ["describe", "PI-DIRECT-001", "--spec-path", "builtin"],
+        ["coverage", "builtin", "--no-gaps"],
+    ],
+    ids=["registry", "describe", "coverage"],
+)
+def test_builtin_names_the_battery_where_a_specs_of_the_project_s_own_is_the_default(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, args: list[str]
+) -> None:
+    """OD-51 (u12 A-119): a repository with a `specs/` of its own (OpenAPI files, say) was refused
+    the battery by name; `builtin` names it, says the path it reads, and the default refusal
+    points at it."""
+
+    (tmp_path / "specs").mkdir()
+    (tmp_path / "specs" / "openapi.json").write_text("{}", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    default = [a for a in args if a != "builtin" and a != "--spec-path"]
+    result = runner.invoke(app, default)
+    assert result.exit_code == 3, result.output
+    named = "dottore coverage builtin" if args[0] == "coverage" else "--spec-path builtin"
+    assert f"(it is the default; {named} reads the built-in battery)" in result.output
+
+    result = runner.invoke(app, args)
+    assert result.exit_code == 0, result.output
+    assert f"note: the spec path builtin names the built-in battery: {BATTERY}" in result.output
+
+
+def test_run_reads_the_battery_by_name_and_a_directory_named_builtin_by_any_other_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(
+        app,
+        [
+            *("run", "-t", str(write_target(tmp_path)), "--scope", str(write_scope(tmp_path))),
+            *("--dry-run", "--spec", "PI-DIRECT-001", "--spec-path", "builtin"),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert "1 specs selected" in result.output
+
+    # A directory of that name: its absolute path reads it, not the battery.
+    (tmp_path / "builtin").mkdir()
+    result = runner.invoke(app, ["registry", "ls", "--spec-path", str(tmp_path / "builtin")])
+    assert result.exit_code == 3, result.output
+    assert "names the built-in battery" not in result.output

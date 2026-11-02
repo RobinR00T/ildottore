@@ -5,6 +5,16 @@ The carryover ledger. Every agent session updates this so context survives even 
 newest merge on top: a branch's entries land together when it merges, so the dates of
 neighbouring entries can interleave (an older branch merged later sits above a newer one).
 
+## State, 2026-11-02: the built-in battery by name (`feat/spec-path-builtin`, u12 A-119, OD-51)
+
+- **Why.** OD-51, decided 2026-11-01 under the owner's delegation: a pipeline in a repository
+  with a `specs/` of its own could not ask for the battery by name.
+- **Built.** `wiring.BUILTIN_SPEC_PATH`, resolved in `cli/app.py:_spec_paths` (every reading
+  command but `lint`), its stderr note, and the hint in the refusal of a default `specs/` that
+  holds no spec. Stacked on `feat/esp-ia`. Judging rules 7 re-pinned.
+- **Verified.** `tests/cli/test_spec_paths_that_hold_nothing.py` (4 new cases).
+- **Next.** The other decided-not-built items: OD-47, OD-45, OD-46, OD-49.
+
 ## State, 2026-11-02: CCN-STIC-2011 (ESP-IA): requirements, applicability, evidence draft (`feat/esp-ia`, u02 A-116, u12 A-117 and A-118)
 
 - **Why.** ESP-IA 1.0 (CCN-STIC-2011, October 2026) is how a product with AI functionality is
