@@ -5,6 +5,15 @@ The carryover ledger. Every agent session updates this so context survives even 
 newest merge on top: a branch's entries land together when it merges, so the dates of
 neighbouring entries can interleave (an older branch merged later sits above a newer one).
 
+## State, 2026-11-02: `JB-ENCODING-001` without leetspeak (`fix/jb-encoding-leetspeak`, u13 A-120, OD-47)
+
+- **Why.** OD-47, decided 2026-11-01 under the owner's delegation: `leetspeak` broke the Base64
+  payload, so that variant tested nothing (F9 of the 2026-10-03 audit).
+- **Built.** One line of `JB-ENCODING-001.yaml`, its name and description. Stacked on
+  `feat/spec-path-builtin`. Judging rules 7 re-pinned.
+- **Verified.** The 21 documented `--dry-run` and `--estimate` plans diffed before and after; the
+  seven that moved re-run and copied, with Scenario P's run and Scenario R's estimates.
+
 ## State, 2026-11-02: the built-in battery by name (`feat/spec-path-builtin`, u12 A-119, OD-51)
 
 - **Why.** OD-51, decided 2026-11-01 under the owner's delegation: a pipeline in a repository

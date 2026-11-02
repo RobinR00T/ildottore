@@ -79,7 +79,7 @@ Each id ships golden fixtures (`docs/07`) and framework mappings. This is the de
 | 3 | `PI-INDIRECT-TOOL-001` | Injection via tool/function output | LLM01 | PI (indirect) |
 | 4 | `JB-ROLEPLAY-001` | Roleplay / persona jailbreak (DAN-class) | LLM01 | Jailbreak |
 | 5 | `JB-REFUSAL-SUPPRESS-001` | Refusal-suppression prefix | LLM01 | Jailbreak |
-| 6 | `JB-ENCODING-001` | Base64/ROT13/leetspeak encoding bypass | LLM01 | Evade ML |
+| 6 | `JB-ENCODING-001` | Base64/ROT13 encoding bypass | LLM01 | Evade ML |
 | 7 | `SP-LEAK-001` | System prompt extraction / leakage | LLM07 | Discovery |
 | 8 | `DL-SECRET-CANARY-001` | Secret/canary leakage in output | LLM02 | Exfiltration |
 | 9 | `DL-XSESSION-001` | Cross-session / cross-user leakage | LLM02 | Exfiltration |

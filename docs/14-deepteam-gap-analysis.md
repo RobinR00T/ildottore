@@ -139,7 +139,7 @@ design constraint for the multi-turn schema extension.
 | SystemOverride | ✅ PI-DIRECT |, | covered |
 | Roleplay | ✅ JB-ROLEPLAY |, | covered |
 | Base64 / ROT-13 | ✅ JB-ENCODING (`base64_wrap`, `rot13` wired) |, | covered |
-| Leetspeak | ✅ shipped: `leetspeak` mutator, wired into JB-ENCODING (and JB-TREE, GUARD-INPUT-EVASION) | P2 | add the mutator |
+| Leetspeak | ✅ shipped: `leetspeak` mutator, wired into JB-TREE and GUARD-INPUT-EVASION (out of JB-ENCODING since OD-47: it broke the Base64 payload) | P2 | add the mutator |
 | InputBypass | 🟡 JB-REFUSAL-SUPPRESS | P2 | fold into refusal-suppression mutator |
 | ContextPoisoning | ✅ shipped: `context_poisoning` mutator (JB-CRESCENDO) | P1 | dedicated context-poisoning mutator |
 | PermissionEscalation | 🟡 (→ RBAC pack) | P1 | pairs with access-control pack |

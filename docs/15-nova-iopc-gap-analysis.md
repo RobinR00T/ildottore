@@ -112,7 +112,7 @@ The ones that named a distinct behavior we did not test became specs.
 | R013 | Malicious workflow automation | AG-EXTORT-CHAIN-001, AG-PERSIST-BEACON-001 | partial |
 | R014 | LLM-enabled offensive tooling | JB-OFFENSIVE-RANSOM-CODEGEN-001 | partial |
 | R015 | Model resource hijacking (LLMjacking) | DOS-RESOURCE-HIJACK-001 | OK (2026-09-22; the credential-theft route stays out of scope, the scope-abuse route is covered) |
-| R022 | Encoding & obfuscation | JB-ENCODING-001 (base64_wrap / rot13 / leetspeak mutators) | OK |
+| R022 | Encoding & obfuscation | JB-ENCODING-001 (base64_wrap / rot13 mutators; leetspeak left out, OD-47) | OK |
 | R023 | Unicode & homoglyph manipulation | **GUARD-UNICODE-EVASION-001** | GAP-CLOSED |
 | R024 | Multi-step prompt chaining | JB-CRESCENDO/LINEAR/SEQUENTIAL-001 | OK |
 | R025 | Roleplay & fictional framing | JB-ROLEPLAY-001 | OK |
