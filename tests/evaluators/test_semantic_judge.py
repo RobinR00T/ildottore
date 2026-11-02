@@ -137,6 +137,7 @@ async def test_judge_disagreement_is_inconclusive() -> None:
     v = await SemanticJudgeEvaluator(judge).evaluate(_ctx())
     assert v.status is VerdictStatus.INCONCLUSIVE
     assert "self-consistency" in v.reasoning
+    assert v.inconclusive_reason is InconclusiveReason.JUDGE_DISAGREED
 
 
 # --- hardening: confidence gate ----------------------------------------------------------

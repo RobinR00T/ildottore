@@ -7,6 +7,20 @@ the file, schema copy, build or pipeline it names.
 
 ## [Unreleased]
 
+### Changed (breaking for a run halted under judging rules 7 and for a CI gate: rules 8, u06 A-121, OD-45)
+
+- **A judge whose passes disagree keeps the attempt `inconclusive`.** The semantic judge asks its
+  model twice; when the two verdicts differed it returned `inconclusive` with no reason, the
+  runner dropped it, and the deterministic evaluators decided the attempt, a `pass` when they all
+  passed. A reply that split the judge, the case the self-consistency probe exists for, passed.
+  Now the verdict carries the new reason `judge_disagreed` and is kept: a deterministic `fail`
+  still decides, otherwise the attempt is `inconclusive: judge_disagreed`. A judge whose passes
+  agree below the confidence threshold is still dropped. Runs with `--judge` can show more
+  `inconclusive` attempts and fewer passing specs (ADR-0024).
+- **Judging rules 8** (2026-11-02). `JUDGING_RULES_VERSION` is 8: a run halted under version 7 is
+  refused by its resume before anything is sent, naming both, and `dottore --version` prints
+  `dottore 0.1.0 (judging rules 8)`.
+
 ### Changed (`JB-ENCODING-001` without leetspeak: u13 A-120, OD-47, judging rules 7 re-pinned)
 
 - **`JB-ENCODING-001` no longer sends a variant nothing decodes.** Its `leetspeak` mutation

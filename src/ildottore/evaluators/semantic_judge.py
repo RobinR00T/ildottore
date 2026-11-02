@@ -237,9 +237,11 @@ class SemanticJudgeEvaluator(BaseEvaluator):
         """Self-consistency + confidence gate over the N passes (``docs/04 §4.4``, §3)."""
         verdicts = {jv.verdict for jv in parsed}
         if len(verdicts) != 1:
+            # Kept, not dropped (OD-45, ADR-0024): a disagreement keeps the attempt open.
             return self._inconclusive(
                 "self-consistency disagreement across judge passes "
-                f"({sorted(verdicts)}) → inconclusive"
+                f"({sorted(verdicts)}) → inconclusive",
+                reason=InconclusiveReason.JUDGE_DISAGREED,
             )
 
         # Consistent verdict - use the minimum confidence across passes (conservative).

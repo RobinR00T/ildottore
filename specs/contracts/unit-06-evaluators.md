@@ -54,12 +54,11 @@ combination and a vote nothing called, and a judge-only fail was `confirmed` whe
 4. `semantic_judge` with hardening (`docs/04 §4`): data delimiters, structured JSON output,
    injection tripwire, self-consistency, `temperature=0`. (As built: the first pass at 0, later
    self-consistency passes at 0.5, so the passes are not byte-identical; no seed is sent. Two
-   passes by default. A disagreement between them, like a confidence below the threshold,
-   returns `inconclusive` with no reason; the runner drops a reasonless judge abstention, so the
-   deterministic evaluators decide the attempt. `docs/02 §4` says a disagreement makes the
-   result `inconclusive`: which of the two is intended is an open question for the owner,
-   OD-45, `docs/04 §2`. An outage or an unparseable answer carries `capability_unavailable` and a
-   tripwire hit `judge_compromised`; both are kept.)
+   passes by default. A disagreement between them returns `inconclusive` with the reason
+   `judge_disagreed`, which is kept (A-121, OD-45, ADR-0024); a confidence below the threshold
+   returns `inconclusive` with no reason, which the runner drops, so the deterministic
+   evaluators decide the attempt. An outage or an unparseable answer carries
+   `capability_unavailable` and a tripwire hit `judge_compromised`; both are kept.)
 5. `combine.py` (evaluator_logic). Since OD-19 (2026-10-11) a thin entry to
    `shared.combination.combine_verdicts`; its boolean modes and weighted vote are gone (A-73).
 
@@ -446,6 +445,17 @@ no rule of judgement changed. **Acceptance:** `tests/evaluators/test_judge_escal
 settled attempt never escalated, a disagreement, a low confidence and an outage escalated, the
 second judge's `inconclusive` kept with its reason, nothing without a second judge).
 
+**A-121 (added 2026-11-02) A judge whose passes disagree keeps the attempt open (ADR-0024,
+OD-45).** When the self-consistency passes return different verdicts, `SemanticJudgeEvaluator`
+returns `inconclusive` with the reason `judge_disagreed` (a new `InconclusiveReason`), where it
+returned none and the runner dropped it, so the deterministic evaluators passed the attempt. Under
+`deterministic_first` a deterministic `fail` still decides; otherwise the attempt is
+`inconclusive: judge_disagreed`. A confidence below the threshold still returns no reason and is
+still dropped. **Costs, stated:** judging rules 8 (verdicts change). **Acceptance:**
+`tests/evaluators/test_semantic_judge.py` (the reason), `tests/evaluators/test_one_combination_rule.py`
+(kept beside a deterministic pass and alone, decided by a deterministic fail, under every value
+of `evaluator_logic`), `tests/shared/test_shared_models.py` (the enum's values).
+
 ## §8 Out of scope / forbidden
 - MUST NOT call provider SDKs directly (only via `TargetAdapter`).
 - MUST NOT persist raw secrets/PII anywhere (redactor only).
@@ -482,7 +492,8 @@ second judge's `inconclusive` kept with its reason, nothing without a second jud
   **Decided 2026-11-01 under the owner's delegation (best practice), revisable: the recommended
   option, not built yet; it lands in its own change with the other decided-to-build items (OD-45,
   OD-46, OD-47, OD-49, OD-51), and until then the built behaviour stands. The attempt will read
-  `inconclusive` with a reason of its own (`judge_disagreed`).**
+  `inconclusive` with a reason of its own (`judge_disagreed`).** **Built 2026-11-02 (A-121,
+  ADR-0024), as decided; judging rules 8.**
 - **OD-15** (shared with u01) whether `secret_shape`'s entropy threshold is global or
   per-key-type. **Status (`00-INDEX.md`):** `secret_shape` has landed with per-key-type entropy
   thresholds; the redactor still uses its own global one (`redactor.py`), so the reuse half of

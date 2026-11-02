@@ -221,6 +221,10 @@ class InconclusiveReason(StrEnum):
     success reply the adapter could not read as the provider's (not JSON, not an object, not its
     shape), so there is nothing to evaluate, and the spec cannot pass: the reply that broke may be
     the one an attack changed.
+    ``judge_disagreed`` was added by ADR-0024 (OD-45, u06 A-121): the semantic judge's
+    self-consistency passes returned different verdicts, so the judge could not settle the
+    attempt; unlike a reasonless abstention it is kept, and the attempt stays ``inconclusive``
+    unless a deterministic evaluator reports it exploited.
     """
 
     CAPABILITY_UNAVAILABLE = "capability_unavailable"
@@ -230,6 +234,7 @@ class InconclusiveReason(StrEnum):
     CUT_BY_PROVIDER_OUTPUT_FILTER = "cut_by_provider_output_filter"
     PROVIDER_FILTER_SIDE_UNKNOWN = "provider_filter_side_unknown"
     UNREADABLE_REPLY = "unreadable_reply"
+    JUDGE_DISAGREED = "judge_disagreed"
 
 
 #: The reasoning prefix of an ``inconclusive`` verdict whose in-band scene never reached the model
