@@ -403,7 +403,9 @@ layout before the battery moved into the package (specs/attacks, specs/suites, a
 held the battery) is refused naming where it is now. With none given, a default that is not
 there is "spec path not found: <path>. Pass --spec-path <dir>; ..."; a path given that does not
 exist or holds nothing is "a spec path gives nothing to run" (or to list, to describe, to
-measure), exit 3 either way.
+measure), exit 3 either way. The value builtin names the built-in battery whatever the working
+directory holds, and the note says its path (since 2026-11-02, OD-51); a directory named builtin
+is read by any other spelling of its path, such as its absolute path.
 .TP
 .B --no-color
 Disable colour output.

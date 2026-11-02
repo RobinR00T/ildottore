@@ -72,7 +72,8 @@ def test_an_empty_specs_directory_is_refused_not_replaced_by_the_battery(
     assert wiring.default_spec_paths() == [Path("specs")]
     result = _run_here(tmp_path, monkeypatch)
     assert result.exit_code == 3, result.output  # type: ignore[attr-defined]
-    assert "built-in battery" not in result.output  # type: ignore[attr-defined]
+    # Not read in its place (the fallback note); the refusal may name `--spec-path builtin`.
+    assert "this reads the built-in battery" not in result.output  # type: ignore[attr-defined]
     assert not (tmp_path / "ev").exists() or not any((tmp_path / "ev").rglob("*.json"))
 
 
@@ -96,7 +97,8 @@ def test_a_specs_directory_reaching_its_pack_through_a_link_is_refused(
     assert wiring.default_spec_paths() == [Path("specs")]
     result = _run_here(work, monkeypatch)
     assert result.exit_code == 3, result.output  # type: ignore[attr-defined]
-    assert "built-in battery" not in result.output  # type: ignore[attr-defined]
+    # Not read in its place (the fallback note); the refusal may name `--spec-path builtin`.
+    assert "this reads the built-in battery" not in result.output  # type: ignore[attr-defined]
 
 
 def test_no_specs_directory_reads_the_battery_and_says_so_twice_under_github_actions(

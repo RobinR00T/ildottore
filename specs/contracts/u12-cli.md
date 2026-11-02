@@ -2222,6 +2222,19 @@ failing run's FAIL evidence by requirement and its test case, an unmapped spec w
 passing run never a PASS, the answers narrowing the draft, another target's answers refused and
 no file written, an existing file and a lone `--target` refused).
 
+**A-119 (added 2026-11-02) The built-in battery by name (OD-51).** `--spec-path builtin` (and
+`dottore coverage builtin`) reads the built-in battery inside the installed package, whatever the
+working directory holds, and says on stderr the path it reads (`note: the spec path builtin
+names the built-in battery: <path>`). It is reserved: a directory named `builtin` is read by any
+other spelling of its path (its absolute path, `builtin/.`). A default `specs/` that holds no
+spec is refused as before, and the refusal now names the way to the battery (`(it is the
+default; --spec-path builtin reads the built-in battery)`). `run`, `fleet --run`, `registry ls`,
+`describe`, `coverage`, `render-media` and `replay` read it through the same function; `lint`
+takes paths and does not. **Acceptance:** `tests/cli/test_spec_paths_that_hold_nothing.py` (a
+repository with a `specs/` of OpenAPI files: the default refused naming `builtin`, `builtin` read
+with its note, for `registry ls`, `describe` and `coverage`; a dry run reading it; a directory
+named `builtin` read by its absolute path).
+
 ## §8 Out of scope / forbidden
 - MUST NOT implement attack/mutation/evaluation/scoring/reporting/fingerprint logic (u05-u11,
   u13): only wire and call them. MUST NOT own `cli/lint.py` (u02) or edit any spec YAML.
@@ -2416,7 +2429,9 @@ no file written, an existing file and a lone `--target` refused).
   **Decided 2026-11-01 under the owner's delegation (best practice), revisable: the recommended
   option, not built yet; it lands in its own change with the other decided-to-build items (OD-45,
   OD-46, OD-47, OD-49, OD-51), and until then the built behaviour stands. A reserved `builtin`
-  value of `--spec-path`, printed as the path it resolves to.**
+  value of `--spec-path`, printed as the path it resolves to.** **Built 2026-11-02 (A-119):** as
+  decided, printed in the stderr note rather than the plan, and named by the default refusal; the
+  CI example names it in a comment until its pinned commit carries it.
 - **OD-64** (2026-10-30, A-108, ADR-0020; **decided 2026-11-01, as built**): the cost in euros. Built as the smallest
   reversible version: (1) the operator declares each model's rates in its target file; no price
   list ships with the tool; (2) the rates are not part of the target digest; (3) the figure is an

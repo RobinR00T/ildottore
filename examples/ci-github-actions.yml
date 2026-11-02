@@ -100,6 +100,9 @@ jobs:
       # path, and as a ::warning:: annotation under GitHub Actions. A specs/ directory at the root
       # of your repository is read instead, and the scan exits 3 when it holds no attack spec (an
       # OpenAPI file there, say): run the scan from a directory without one, or pass --spec-path.
+      # A pinned commit that carries u12 A-119 (2026-11-02) or later reads the battery by name
+      # whatever your repository holds: add `--spec-path builtin` to the line below. An earlier
+      # one reads `builtin` as a directory and exits 3.
       - name: Scan (fail the build on confirmed high/critical)
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}   # matches target auth_ref

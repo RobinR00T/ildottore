@@ -270,6 +270,11 @@ def build_registry(spec_paths: list[Path]) -> Registry:
 #: three directories above this file, which a wheel does not have.
 PACKAGED_SPEC_PATH = BATTERY
 
+#: The name ``--spec-path`` reserves for the built-in battery (u12 A-119, OD-51), so a pipeline in
+#: a repository with a ``specs/`` of its own can ask for it. A directory of that name is read by
+#: any other spelling of its path (its absolute path, ``builtin/.``).
+BUILTIN_SPEC_PATH = Path("builtin")
+
 
 def is_own_checkout() -> bool:
     """Whether the working directory is the root of the source checkout this package runs from.
@@ -420,7 +425,12 @@ def refuse_spec_paths_that_hold_nothing(
             "working directory when there is one, else the built-in battery inside the installed "
             "package, which this installation lacks."
         )
-    raise ValueError(f"a spec path gives nothing to {to}: {'; '.join(e.message for e in found)}")
+    message = f"a spec path gives nothing to {to}: {'; '.join(e.message for e in found)}"
+    if default:
+        # A default specs/ of the project's own (OpenAPI files, say): the battery by name (OD-51).
+        named = "dottore coverage builtin" if to == "measure" else "--spec-path builtin"
+        message += f" (it is the default; {named} reads the built-in battery)"
+    raise ValueError(message)
 
 
 # --- policy / scope ----------------------------------------------------------------
