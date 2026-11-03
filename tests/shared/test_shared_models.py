@@ -132,6 +132,7 @@ def test_inconclusive_reason_coverage() -> None:
         "cut_by_provider_output_filter",
         "provider_filter_side_unknown",
         "unreadable_reply",  # ADR-0012 (OD-21, u08 A-74)
+        "judge_disagreed",  # ADR-0024 (OD-45, u06 A-121)
     }
 
 

@@ -46,6 +46,9 @@ Version ``6`` (u08 A-92, 2026-10-20) removes the default ignorable code points a
 variation selector, the combining grapheme joiner, a Hangul filler), which hid a crossing.
 Version ``7`` (u08 A-93, 2026-10-20) measures the canary floors on the folded canary, so a short
 word padded with invisible characters is read exactly, where it read folded as the word.
+Version ``8`` (u06 A-121, OD-45, 2026-11-02) keeps a semantic judge whose self-consistency passes
+disagree: the attempt stays ``inconclusive`` (``judge_disagreed``), where the deterministic
+evaluators decided it and could pass it.
 """
 
 from __future__ import annotations
@@ -89,8 +92,10 @@ __all__ = [
 #: code points (a variation selector, the combining grapheme joiner, a Hangul filler hid a
 #: crossing: inconclusive or pass, where it is a fail). ``7``: u08 A-93, the canary floors measure
 #: the folded canary, so ``ab`` padded with invisible characters is read exactly, not folded to
-#: ``ab`` (every reply holding ``ab`` was a fail).
-JUDGING_RULES_VERSION: Final = 7
+#: ``ab`` (every reply holding ``ab`` was a fail). ``8``: u06 A-121, a judge whose passes disagree
+#: keeps the attempt ``inconclusive`` with the reason ``judge_disagreed`` (OD-45), where it was
+#: dropped and the deterministic evaluators passed it.
+JUDGING_RULES_VERSION: Final = 8
 
 #: The day runs began to record their rules (version 1 took its value), which the refusal of a run
 #: that records none quotes and the docs name (as ``JUDGING_RULES_SINCE``) instead of writing the

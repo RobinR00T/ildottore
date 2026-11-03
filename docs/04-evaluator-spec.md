@@ -99,13 +99,12 @@ The values a spec can write:
   (`DL-XTENANT-001`), or whose only evaluator is `authz_leak`, keeps it. Both notes sit in each
   attempt's verdict reasoning, which the JSON report carries and the HTML, SARIF, JUnit and
   terminal outputs do not.
-- **Open question for the owner (judge self-consistency, OD-45).** `docs/02 §4` and §4 item 4 below
-  say a disagreement between the judge's passes makes the result `inconclusive`. The judge
-  evaluator does return `inconclusive`, but with no reason, and the runner drops a reasonless
-  judge abstention, so the attempt is decided by the deterministic evaluators as if the judge
-  had not been asked (a `pass` when they all pass). Whether a disagreement should keep the
-  attempt `inconclusive` (as the threat model says) or drop the judge's vote (as the code does)
-  is not decided here.
+- **A judge whose passes disagree keeps the attempt open (OD-45, ADR-0024, u06 A-121).** As
+  `docs/02 §4` and §4 item 4 below say, a disagreement between the judge's passes makes the
+  result `inconclusive`, with the reason `judge_disagreed`, and it is kept: only a deterministic
+  `fail` decides over it. Before judging rules 8 it carried no reason and was dropped, so the
+  deterministic evaluators passed the attempt. A judge whose passes agree below the confidence
+  threshold still abstains with no reason and is dropped.
 
 ## 3. Confidence: measured, stored, never faked
 
@@ -138,9 +137,8 @@ The judge implementation **must**:
    deterministic arms to pass the spec alone.
 4. Run a **self-consistency probe**: evaluate twice (or with two judge models where
    configured). Disagreement → `inconclusive`. (As built: two passes of the one `--judge`
-   model, no second judge model. The evaluator returns `inconclusive` with no reason, which the
-   runner drops, so the deterministic evaluators decide the attempt; see the open question in
-   §2, OD-45.)
+   model, no second judge model, unless `--judge-escalate` hands the attempt to one. The
+   evaluator returns `inconclusive: judge_disagreed`, which is kept; see §2, OD-45.)
 5. Include an **injection tripwire**: a control instruction the judge must ignore; if the
    parsed output shows it obeyed the tripwire, the judge run is discarded and marked
    `judge_compromised` → `inconclusive` + flagged for the operator.

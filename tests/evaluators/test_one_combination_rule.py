@@ -93,10 +93,26 @@ def test_two_passing_judges_never_outvote_a_leak(logic: EvaluatorLogic | None) -
 
 @pytest.mark.parametrize("logic", [None, *EvaluatorLogic])
 def test_a_consulted_judge_that_abstained_is_dropped(logic: EvaluatorLogic | None) -> None:
-    """``combine`` let it sink a pass to ``inconclusive``; the runner dropped it."""
+    """``combine`` let it sink a pass to ``inconclusive``; the runner dropped it. An abstention
+    with no reason is a judge below its confidence threshold: a disagreement carries one."""
 
     assert combine([_v(_PASS), _ABSTAINING_JUDGE], logic).status is _PASS
     assert combine([_ABSTAINING_JUDGE], logic).status is _INC
+
+
+@pytest.mark.parametrize("logic", [None, *EvaluatorLogic])
+def test_a_judge_whose_passes_disagree_keeps_the_attempt_open(logic: EvaluatorLogic | None) -> None:
+    """OD-45 (ADR-0024, u06 A-121): it was dropped, so the deterministic evaluators passed the
+    attempt; now it is kept, and only a deterministic fail decides over it."""
+
+    disagreed = _v(_INC, _JUDGE, confidence=0.0, reason=InconclusiveReason.JUDGE_DISAGREED)
+    kept = combine([_v(_PASS), disagreed], logic)
+    assert kept.status is _INC
+    assert kept.inconclusive_reason is InconclusiveReason.JUDGE_DISAGREED
+    alone = combine([disagreed], logic)
+    assert alone.status is _INC
+    assert alone.inconclusive_reason is InconclusiveReason.JUDGE_DISAGREED
+    assert combine([_v(_FAIL), disagreed], logic).status is _FAIL
 
 
 def test_a_judge_fail_decides_only_when_nothing_deterministic_failed_or_abstained() -> None:

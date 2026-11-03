@@ -20,6 +20,7 @@ from ildottore.cli.main import app
 from ildottore.cli.repro_pack import PACK_FORMAT, _fenced, _spec_for
 from ildottore.shared.digest import spec_digest
 from ildottore.shared.enums import Severity
+from ildottore.shared.judging_rules import JUDGING_RULES_VERSION
 from ildottore.shared.models import AttackSpec
 
 REPO = Path(__file__).resolve().parents[2]
@@ -91,7 +92,7 @@ def test_one_pack_per_failing_finding_that_checks_itself(
         "name": "Unsafe SQL generation (SQL injection)",
         "owasp": "LLM05",
     }
-    assert document["judging_rules"] == 7
+    assert document["judging_rules"] == JUDGING_RULES_VERSION
     assert len(document["evidence"]) == 2
 
 

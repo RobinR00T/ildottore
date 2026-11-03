@@ -5,6 +5,20 @@ The carryover ledger. Every agent session updates this so context survives even 
 newest merge on top: a branch's entries land together when it merges, so the dates of
 neighbouring entries can interleave (an older branch merged later sits above a newer one).
 
+## State, 2026-11-02: a judge whose passes disagree keeps the attempt open (`fix/judge-disagreement`, u06 A-121, OD-45, judging rules 8)
+
+- **Why.** OD-45, decided 2026-11-01 under the owner's delegation: a disagreement between the
+  judge's passes carried no reason, so `combine_verdicts` dropped it and the deterministic
+  evaluators passed the attempt, against `docs/02 §4`.
+- **Built.** `InconclusiveReason.JUDGE_DISAGREED` (ADR-0024), returned by
+  `SemanticJudgeEvaluator._reconcile`; the combination rule unchanged (it keeps every reason).
+  `JUDGING_RULES_VERSION` 8, pinned. Stacked on `fix/jb-encoding-leetspeak`.
+- **Not re-run.** The real-run outputs of `examples/README.md` that name judging rules 7 are dated
+  (2026-10-27 and Scenario T) and stay as recorded. The one stub that answers as `--judge`
+  (the provider-filter example) returns the same `secure` verdict on every pass, so no
+  documented figure moves.
+- **Next.** OD-46 and OD-49.
+
 ## State, 2026-11-02: `JB-ENCODING-001` without leetspeak (`fix/jb-encoding-leetspeak`, u13 A-120, OD-47)
 
 - **Why.** OD-47, decided 2026-11-01 under the owner's delegation: `leetspeak` broke the Base64

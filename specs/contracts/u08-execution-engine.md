@@ -1629,7 +1629,8 @@ spec placeholders refused in an identity canary) and
   **Decided 2026-11-01 under the owner's delegation (best practice), revisable: the recommended
   option, not built yet; it lands in its own change with the other decided-to-build items (OD-45,
   OD-46, OD-47, OD-49, OD-51), and until then the built behaviour stands. The attempt will read
-  `inconclusive` with a reason of its own (`judge_disagreed`).**
+  `inconclusive` with a reason of its own (`judge_disagreed`).** **Built 2026-11-02 (u06 A-121,
+  ADR-0024), as decided: `combine_verdicts` keeps the reason, no change to this unit's code.**
 - **OD-58** (shared with u00, u01, u10, u12 and u13; numbered 2026-10-26; **decided 2026-10-26 by
   the owner: as built, the shape not varied**):
   what a planted canary's visible prefix is (A-100). **Built as the smallest reversible version:**
