@@ -193,7 +193,7 @@ def test_the_worked_example_dry_run_prints_the_rest_guard(monkeypatch: pytest.Mo
     assert f"target:  agent-rest-staging (agent) authorized at {_URL}" in result.output
     assert (
         "  guard:   auth failure stops the run, 300s cooldown; token tenant checked, at least 30s "
-        "of life; 20s between queries, at most 30/hour (across processes); this plan's 90 "
+        "of life; 20s between queries, at most 30/hour (across processes); this plan's 85 "
         "requests pass the hourly cap: the run stops there, resume it later; window mon-fri "
         "09:00-19:00 Europe/Madrid; outside the window now: a run started now sends nothing; it "
         "opens mon 2027-01-18 09:00; stops on 3 tool name(s); 200000 bytes per reply"

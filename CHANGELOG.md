@@ -7,6 +7,17 @@ the file, schema copy, build or pipeline it names.
 
 ## [Unreleased]
 
+### Changed (`JB-ENCODING-001` without leetspeak: u13 A-120, OD-47, judging rules 7 re-pinned)
+
+- **`JB-ENCODING-001` no longer sends a variant nothing decodes.** Its `leetspeak` mutation
+  substituted characters inside the Base64 payload, so that variant sent a string no decoder reads
+  and could only pass. The spec now runs `identity`, `base64_wrap` and `rot13`. The spec digest
+  changes, so a `--resume` of a run that selected it is refused as for any edited spec, and a
+  baseline compared with `dottore diff` reads it as changed. The plans move: `--quick` on the local
+  example sends 110 requests (was 115), on the WebSocket, agent and REST agent examples 85 (was
+  90); the local example's full plan 490 (was 495). `examples/README.md` re-run, Scenario R's
+  priced estimates included (they predated the field report's plans).
+
 ### Added (the built-in battery by name: u12 A-119, OD-51, judging rules 7 re-pinned)
 
 - **`--spec-path builtin`** (and `dottore coverage builtin`) reads the built-in battery whatever

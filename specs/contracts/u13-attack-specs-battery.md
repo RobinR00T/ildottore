@@ -162,6 +162,15 @@ fixtures are unchanged: the schema holds one `vulnerable` fixture, and it alread
   and three endorsements that must still fail (a code block, a warning about something else before
   the command, a hedge after it); the fixtures are unchanged.
 
+**A-120 (added 2026-11-02) `JB-ENCODING-001` sends no variant nothing decodes (OD-47).** Its
+`mutations` drop `leetspeak`: a character substitution over the Base64 payload breaks the
+encoding, so that variant sent a string no decoder reads and could only pass (F9 of the 2026-10-03
+audit). The spec keeps `identity`, `base64_wrap` and `rot13`; `rot13` keeps no decode cue (OD-57);
+no mutator changes. Its name and description say Base64 / ROT13. Every documented plan it moves is
+re-run: `--quick` on the local example 110 requests (was 115), on the WebSocket, agent and REST
+agent examples 85 (was 90), the local example's full plan 490 (was 495). **Acceptance:** the spec
+lint, the golden harness and `tests/battery` over the edited spec; `examples/README.md` re-run.
+
 ## §8 Out of scope / forbidden
 - MUST NOT write or modify Python, evaluators, mutators, or the JSON schema (consume only).
 - MUST NOT embed real secrets, real PII, or real breach-corpus data (DL2/DL3: synthetic/canary
@@ -201,7 +210,7 @@ fixtures are unchanged: the schema holds one `vulnerable` fixture, and it alread
   option, not built yet; it lands in its own change with the other decided-to-build items (OD-45,
   OD-46, OD-47, OD-49, OD-51), and until then the built behaviour stands. `leetspeak` leaves
   `JB-ENCODING-001`'s `mutations`; `rot13` keeps no cue (its comprehension question is OD-57's,
-  decided as built); no mutator changes.**
+  decided as built); no mutator changes.** **Built 2026-11-02 (A-120), as decided.**
 - Fixture location convention: inline in the spec vs `tests/fixtures/specs/<id>/`. **Decided
   2026-10-11 under the owner's delegation (best practice), revisable: inline only, as built
   (OD-7, reasoning in u03 §9).** Revisit if a fixture outgrows its spec file (a long multi-turn

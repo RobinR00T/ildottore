@@ -253,7 +253,7 @@ def test_the_worked_example_dry_run_prints_this_plan() -> None:
     # The RAG spec and DL-SECRET-CANARY-001 need their scene seeded; PI-DIRECT-001 and SP-LEAK-001
     # a {{system_prompt}} the template does not send (u08 A-113).
     assert "not seeded: 4 spec(s) on ws-assistant-staging" in result.output
-    assert "would send: 90 requests over 7 specs at runs=5" in result.output
+    assert "would send: 85 requests over 7 specs at runs=5" in result.output
 
 
 # --- a real campaign over the socket -------------------------------------------------------
