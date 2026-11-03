@@ -1,6 +1,8 @@
 # Dependabot - grouped, weekly dependency scan (contract u14 §5.5).
 #
-# Two ecosystems: Python deps (pip / pyproject) and the GitHub Actions we pin in the workflows.
+# Two ecosystems: Python deps (pip: pyproject.toml, and ci-constraints-requirements.txt, the set the
+# PR jobs of ci.yml install, OD-49, u14 A-123; its name ends in requirements.txt so the pip
+# ecosystem reads it) and the GitHub Actions we pin in the workflows.
 # Updates are GROUPED so a week's bumps arrive as one reviewable PR per ecosystem rather than a
 # swarm. Licensing discipline (AGENTS.md §3 - permissive only, no copyleft/source-available) is
 # enforced at review time via CODEOWNERS + the SBOM; Dependabot itself only proposes version

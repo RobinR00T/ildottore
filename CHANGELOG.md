@@ -7,6 +7,19 @@ the file, schema copy, build or pipeline it names.
 
 ## [Unreleased]
 
+### Changed (CI: the PR jobs install a pinned set, the newest releases every night: u14 A-123, OD-49)
+
+- **`ci-constraints-requirements.txt`.** Every CI job installed the newest release of every
+  dependency, so a release broke the next PR whatever it changed (twice on typer 0.27.3, the day
+  it came out). The `static`, `validate` and `package` jobs now install with `pip install -c`
+  on this file: every package, direct and transitive, at one version, resolved for CPython 3.11
+  on Linux by `scripts/ci_constraints.py`. Dependabot's pip ecosystem bumps it weekly.
+- **`audit.yml`'s `full-sweep` runs every night** (weekly before) with no constraints, and prints
+  the versions it installed: a break in a new release is reported the night it lands, outside
+  any PR. The `floors` job is unchanged; nothing an operator installs changes.
+- `tests/test_ci_constraints.py`: every direct dependency is pinned inside its specifier, so a
+  `pyproject.toml` change the file no longer satisfies fails the suite, not a CI install.
+
 ### Added (the engagement's policy pack: u12 A-122, OD-46 and OD-11, judging rules 8 re-pinned)
 
 - **`run --policy-pack FILE`.** The CLI loaded no policy pack, so the eight specs that declare

@@ -1,10 +1,12 @@
 # audit - proactive nightly validator + regression / metamorphic run (docs/07 §5, contract §5.4).
 #
 # CI (ci.yml) is the per-PR merge gate. This workflow is the *proactive* layer: it runs the full
-# regression golden-run snapshot and the metamorphic suite (validation-plan layers 16 & 18) on a
-# nightly cron, plus a weekly deeper sweep, so drift is caught between merges rather than only at
-# PR time. It also re-runs the whole gate stack so a dependency/toolchain change that slips past
-# a quiet week still trips an alarm.
+# regression golden-run snapshot and the metamorphic suite (validation-plan layers 16 & 18) and
+# the whole gate stack every night, so drift is caught between merges rather than only at PR time.
+# Both jobs install the NEWEST release of every dependency, with no constraints: the PR jobs of
+# ci.yml install the pinned ci-constraints-requirements.txt (OD-49, u14 A-123), so this is where
+# a break in a new release shows, the night it lands and outside any PR. The fix is a pin bump
+# (Dependabot's or a hand one) or a code change, in a PR of its own.
 #
 # NOTE (open decision OD, contract §9): this workflow requests **read-only** permissions by
 # default. Any write action (e.g. auto-filing a regression issue) is left OPERATOR-PENDING - a
@@ -15,8 +17,7 @@ name: audit
 
 on:
   schedule:
-    - cron: "0 3 * * *" # nightly 03:00 UTC - regression + metamorphic
-    - cron: "0 5 * * 1" # weekly Monday 05:00 UTC - deeper full-suite sweep
+    - cron: "0 3 * * *" # nightly 03:00 UTC - regression, metamorphic and the full sweep
   workflow_dispatch:
 
 permissions:
@@ -40,7 +41,7 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
-      - name: Install (editable + dev)
+      - name: Install (editable + dev, newest releases)
         run: python -m pip install -e ".[dev]"
 
       # Layer 16 - golden-run regression snapshot. A frozen reference run must produce a stable
@@ -61,17 +62,21 @@ jobs:
         run: python -m tests.selfscan.run --out reports/self-scan.sarif.json
 
   full-sweep:
-    name: weekly full gate sweep
+    # Nightly since OD-49 (2026-11-02), weekly before: with the PR jobs pinned, this is the
+    # first run to meet a new release.
+    name: nightly full gate sweep (newest releases, no constraints)
     runs-on: ubuntu-latest
-    if: github.event.schedule == '0 5 * * 1' || github.event_name == 'workflow_dispatch'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
           cache: pip
-      - name: Install (editable + dev)
+      - name: Install (editable + dev, newest releases)
         run: python -m pip install -e ".[dev]"
+
+      - name: Installed versions
+        run: python -m pip freeze
 
       - name: Static (ruff · format · mypy · import-linter)
         run: |

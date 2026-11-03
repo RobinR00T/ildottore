@@ -8,6 +8,8 @@ Stage-2 build contract. 9-section anatomy per `docs/00 §2`. Read `AGENTS.md` + 
 - **OWNS:** `tests/` (scaffolding, `conftest.py`, shared fixtures, taxonomy layout, fixture
   dirs), `.github/workflows/` (`ci.yml`, `audit.yml`, `dependabot.yml`), `.importlinter`,
   `scripts/dependency_floors.py` (the `floors` job's constraints, u12 A-84),
+  `scripts/ci_constraints.py` and `ci-constraints-requirements.txt` (the PR jobs' pinned set,
+  A-123),
   `pyproject.toml` `[tool.pytest.ini_options]` + `[tool.coverage.*]` sections.
 - **MUST NOT touch:** any `src/ildottore/**` production code, `schemas/`, `docs/`,
   another unit's owned files, or spec YAML under `battery/attacks|suites` (`specs/` until A-84).
@@ -104,6 +106,20 @@ have caught them shared three shapes. They are now gate conditions on a test, no
 3. **A test asserts the number, not the presence of a number.** `"1 specs selected" in output`
    passed for years while the printed count was wrong by 40%. Pin the figure to the thing it
    claims about (the real send count, the real probe count, the real exit code).
+
+**A-123 The PR jobs install one pinned set; the nightly sweep meets new releases (OD-49, added
+2026-11-02).** Every job installed the newest release of every dependency, so a release broke
+the next PR whatever it changed (the train broke twice on typer 0.27.3 the day it came out). The
+`static`, `validate` and `package` jobs of `ci.yml` install `pip install -c
+ci-constraints-requirements.txt`: every package, direct and transitive, at one version, resolved
+by `scripts/ci_constraints.py` for the CI interpreter (CPython 3.11, Linux x86_64, wheels only)
+from the runtime dependencies, the `dev` extra and hatchling. Dependabot's pip ecosystem bumps
+the file (its name ends in `requirements.txt`, which is how that ecosystem finds it). `audit.yml`'s
+`full-sweep` runs every night, not weekly, with no constraints, and prints what it installed:
+a break in a new release is reported the night it lands, outside any PR. The `floors` job (u12
+A-84) is unchanged. `tests/test_ci_constraints.py`: the file pins each package once, exactly,
+sorted; every direct dependency is in it inside its specifier; the three PR jobs install with it,
+`floors` and both `audit.yml` jobs without it, and `full-sweep` carries no schedule condition.
 
 **A-22 Flakiness is a defect in the test, and the fix is determinism, not a retry.** A helper
 that halted a campaign with a request ceiling assumed some attempts had completed, which depends

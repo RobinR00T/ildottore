@@ -39,6 +39,16 @@ respx, coverage, ruff, mypy, import-linter and two type-stub packages. `bandit` 
 - **Weekly, grouped Dependabot.** Python deps and the pinned GitHub Actions are scanned weekly and
   arrive as grouped PRs (`.github/dependabot.yml`: Python split into a runtime group and a dev
   group, Actions in one). Nothing auto-merges.
+- **The PR jobs install one pinned set; a nightly run installs the newest releases (OD-49,
+  u14 A-123).** `ci-constraints-requirements.txt` pins every package the `static`, `validate`
+  and `package` jobs install, direct and transitive, at one version (`pip install -c`), resolved
+  for CPython 3.11 on Linux by `scripts/ci_constraints.py`; Dependabot's pip ecosystem bumps it
+  with `pyproject.toml`. A release therefore reaches a PR only through a Dependabot PR (or a
+  hand bump) that names it, instead of failing whatever PR runs next. `audit.yml`'s
+  `full-sweep` installs with no constraints every night (the static checks, spec lint and the
+  full suite with coverage), so a release that breaks the code is reported the night it lands.
+  The file is a constraints file, not a lock: it has no hashes, and an operator's
+  `pip install` still resolves the newest releases.
 - **Dependabot never proposes a major bump of the two runtime pillars (Pydantic, Typer).** The
   `ignore` rules in `.github/dependabot.yml` drop `version-update:semver-major` for both, so a
   major upgrade is a deliberate manual change, never a Dependabot PR; a breaking major cannot
@@ -58,8 +68,9 @@ recorded as a critical finding, and the gate fails on any high or critical findi
 baseline, so "new" does not apply) and the coverage gate (`--cov-fail-under=85` over the
 aggregate of `src/ildottore`; the threshold lives on the command line in the workflows and the
 Makefile, not in `pyproject.toml`). The scheduled `audit`
-workflow re-runs the golden snapshot, metamorphic, determinism and self-scan nightly, and the
-static checks, spec lint and full suite with coverage weekly. Every
+workflow re-runs the golden snapshot, metamorphic, determinism and self-scan, and the static
+checks, spec lint and full suite with coverage, every night at the newest releases (weekly until
+OD-49). Every
 workflow runs with `permissions: contents: read`.
 
 **Not in CI: `pip-audit` and `bandit`.** Neither workflow has a step for them, so CI enforces
@@ -69,8 +80,9 @@ no options: it fails on any known vulnerability in the environment, whatever its
 that the `B105` skip does not cover), which the Makefile groups under an "advisory" heading.
 Both are part of `make gates`, so a local `make gates` on a fresh `pip install -e ".[dev]"`
 stops at `bandit` until the two tools are installed by hand. A known-vulnerable dependency or a
-bandit finding therefore does not fail the build today. Also not in place: a lock file
-(`pyproject.toml` sets lower bounds only) and a published SBOM.
+bandit finding therefore does not fail the build today. Also not in place: a lock file with
+hashes (`pyproject.toml` sets lower bounds only; the CI constraints file pins versions, not
+artifacts) and a published SBOM.
 
 ## Secrets and credentials
 

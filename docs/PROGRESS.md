@@ -5,6 +5,36 @@ The carryover ledger. Every agent session updates this so context survives even 
 newest merge on top: a branch's entries land together when it merges, so the dates of
 neighbouring entries can interleave (an older branch merged later sits above a newer one).
 
+## State, 2026-11-03: the 2026-11-02 stack landed (#151 to #157)
+
+- **Landed, in order, each by squash.** #151 `fix/field-report` as `b8d0da45`, #152 `feat/esp-ia`
+  as `5029b106`, #153 `feat/spec-path-builtin` (OD-51) as `c0350cd1`, #154
+  `fix/jb-encoding-leetspeak` (OD-47) as `e17ab224`, #155 `fix/judge-disagreement` (OD-45) as
+  `e2383788`, #156 `feat/policy-pack` (OD-46, OD-11) as `e0104104`, and `ci/constraints` (OD-49)
+  as #157 with this entry. After each squash, `main`'s tree equals the branch head's.
+- **How.** Retargeting a stacked PR to `main` after the squash below it does not merge: GitHub
+  marked #152 conflicting (ten files, code included), since the squash commit is not in the
+  branch's history. Each branch was rebased with `git rebase --onto origin/main <old base head>`
+  (no conflicts, and the same tree its CI had passed), signed by the owner, pushed with a lease
+  and run through CI again before its squash.
+- **Next.** The checks OD-49 left for GitHub: the first Monday's Dependabot PR touches
+  `ci-constraints-requirements.txt`, and the Actions tab shows `full-sweep` on the 03:00 UTC run.
+  Open decisions OD-70 and OD-71 (ESP-IA) stay with the owner.
+
+## State, 2026-11-02: the PR jobs install a pinned set (`ci/constraints`, u14 A-123, OD-49)
+
+- **Why.** OD-49, decided 2026-11-01 under the owner's delegation: every CI job installed the
+  newest releases, so a release broke whichever PR ran next.
+- **Built.** `ci-constraints-requirements.txt` (51 packages, CPython 3.11 on Linux, resolved on
+  2026-11-02 by `scripts/ci_constraints.py`) for the `static`, `validate` and `package` jobs;
+  Dependabot bumps it. `audit.yml`'s `full-sweep` every night with no constraints.
+  `tests/test_ci_constraints.py`. Stacked on `feat/policy-pack`.
+- **Not verified here.** That Dependabot opens PRs against the file and that the nightly sweep
+  runs: both need GitHub. To check after merge: the first Monday's Dependabot PR touches the
+  file, and the Actions tab shows `full-sweep` on the 03:00 UTC run.
+- **Next.** The decided-to-build items of 2026-11-01 are all built (OD-45, OD-46, OD-47, OD-49,
+  OD-51); the five branches wait for signature and review.
+
 ## State, 2026-11-02: the engagement's policy pack (`feat/policy-pack`, u12 A-122, OD-46 and OD-11)
 
 - **Why.** OD-46, decided 2026-11-01 under the owner's delegation: no command loaded a policy
@@ -15,7 +45,7 @@ neighbouring entries can interleave (an older branch merged later sits above a n
   alone); `policy.packs.pack_digest`. Stacked on `fix/judge-disagreement`. Scenario V run for
   real (dry runs: 7 blocked without the pack, none with it; the key alone refused).
 - **Not built.** The options on `fleet --run` and the quick scan; a pack's `budgets` stay unread.
-- **Next.** OD-49.
+- **Next.** OD-49 (built next, above).
 
 ## State, 2026-11-02: a judge whose passes disagree keeps the attempt open (`fix/judge-disagreement`, u06 A-121, OD-45, judging rules 8)
 
