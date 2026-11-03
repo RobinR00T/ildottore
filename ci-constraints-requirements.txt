@@ -25,7 +25,7 @@ librt==0.16.0
 markdown-it-py==4.2.0
 markupsafe==3.0.4
 mdurl==0.1.2
-mypy==2.4.0
+mypy==2.4.1
 mypy-extensions==1.1.0
 packaging==26.3
 pathspec==1.1.1
@@ -41,14 +41,14 @@ referencing==0.37.0
 respx==0.23.1
 rich==15.0.0
 rpds-py==2026.9.1
-ruff==0.17.2
+ruff==0.17.3
 shellingham==1.5.4
 sortedcontainers==2.4.0
 tomlkit==0.15.2
 trove-classifiers==2026.9.21.13
 typer==0.27.3
 types-jsonschema==4.26.0.20261006
-types-pyyaml==6.0.12.20260906
+types-pyyaml==6.0.12.20261030
 typing-extensions==4.16.0
 typing-inspection==0.4.4
 websockets==17.4
