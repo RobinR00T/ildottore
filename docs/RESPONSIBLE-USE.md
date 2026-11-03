@@ -39,7 +39,7 @@ These are not aspirations; they are enforced by the code and covered by tests
 | **Mocked / dry-run tools** | Agent tools (`drop_table`, `http_post`, `read_env`, `write_cron`, …) are dry-run mocks that record *intent* only: they never touch a real database, filesystem, or network. |
 | **No real exfiltration** | Data-leak tests use **planted canaries** and **synthetic** data, never real secrets. Any secret/PII a detector sees is stored masked/hashed; raw values are redacted in logs, evidence, and reports. |
 | **Endpoint allowlist (default-deny)** | Adapters refuse any host/path not in the scope allowlist. |
-| **Offensive & PII specs OFF by default** | The agentic-extortion pack (`offensive_simulation`) and PII-elicitation (`layer_b_pii`) are **policy-gated OFF**: they return `blocked_by_policy` with **zero sends** unless the engagement's policy pack explicitly enables the capability (enforced via `requires_policy`; unit-tested). |
+| **Offensive & PII specs OFF by default** | The agentic-extortion pack (`offensive_simulation`) and PII-elicitation (`layer_b_pii`) are **policy-gated OFF**: they return `blocked_by_policy` with **zero sends** unless the engagement's policy pack explicitly enables the capability (enforced via `requires_policy`; unit-tested). From the CLI that pack is `run --policy-pack`, printed and recorded with the run; PII elicitation also needs `--allow-pii-elicitation`. |
 | **Documentation-range IoCs** | Any adversary indicators referenced are RFC-5737 test ranges or fixture strings: allowlist-blocked, never contacted. |
 | **Budget caps** | Availability/DoS tests are hard-capped (tokens/requests/wall-clock) so the tool cannot be turned into a DoS weapon. |
 

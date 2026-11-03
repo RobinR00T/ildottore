@@ -43,6 +43,9 @@ TARGET
   --judge <target.yaml>             LLM-as-judge for semantic_judge (must be in the scope)
   --judge-escalate <target.yaml>    a second judge, only for what --judge cannot settle
                                     (needs --judge; u06 A-109)
+  --policy-pack <pack.yaml>         the engagement's policy pack, in place of the default
+                                    one; printed and recorded (u12 A-122, OD-46)
+  --allow-pii-elicitation           the run's PII key (DL4); needs --policy-pack (OD-11)
 
 SCAN TYPE
   -sn                               discovery only: authorized endpoint + declared
@@ -332,11 +335,6 @@ tried on `run --quick --dry-run` and answered "No such option" (exit 3):
 - `--adaptive`, `--max-attempts`, `--budget-usd`. Adaptive ordering is reached through `-sV`
   or `-A` (see §2). The budget flags that do exist are `--budget-tokens`, `--budget-requests`
   and `--budget-wall`; without them each ceiling is derived from the resolved plan.
-- `--allow-pii-elicitation` and any flag that loads a policy pack. The gated specs
-  (`requires_policy`) therefore cannot be enabled from `dottore` today; whether to add a
-  policy-pack flag is an open decision (OD-46). For `DL-PII-ELICIT-001` it is decided (OD-11,
-  2026-10-11): `--allow-pii-elicitation` comes only together with that flag, the two keys of
-  DL4, never alone.
 - A positional URL or model id (`dottore run https://...`): the positional is read as a file.
 - `run` as the default subcommand.
 - The `discover` subcommand (`-sn` is a flag on `run`).

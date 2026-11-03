@@ -24,6 +24,7 @@ from pathlib import Path
 from pydantic import ValidationError
 
 from ildottore import __version__
+from ildottore.policy.packs import PolicyPack, pack_digest
 from ildottore.shared.config_errors import quoted
 from ildottore.shared.control import control_check, split_control
 from ildottore.shared.digest import (
@@ -101,6 +102,8 @@ def load_resume_run(
     allow_unverified: bool = False,
     adopt: bool = True,
     judge_escalate: Target | None = None,
+    policy_pack: PolicyPack | None = None,
+    allow_pii_elicitation: bool = False,
     selection: dict[str, object] | None = None,
     hardened: bool = False,
 ) -> TestRun:
@@ -141,6 +144,8 @@ def load_resume_run(
             allow_unverified=allow_unverified,
             hardened=hardened,
             judge_escalate=judge_escalate,
+            policy_pack=policy_pack,
+            allow_pii_elicitation=allow_pii_elicitation,
         )
         if specs is not None:
             from ildottore.store.run_sqlite import SqliteRunStore
@@ -1176,6 +1181,8 @@ def _assert_same_context(
     allow_unverified: bool = False,
     hardened: bool = False,
     judge_escalate: Target | None = None,
+    policy_pack: PolicyPack | None = None,
+    allow_pii_elicitation: bool = False,
 ) -> None:
     """Refuse a resume whose TARGET, route or sample size changed since the halt.
 
@@ -1258,6 +1265,29 @@ def _assert_same_context(
             f"run {run_id!r} handed what its judge could not settle to a different model than "
             f"this invocation offers ({which}): one campaign would be arbitrated two ways. "
             "Resume with the same --judge-escalate, or start a fresh run."
+        )
+    # The engagement's pack and the run's PII key (u12 A-122): they decide which specs are sent.
+    # A run stored before the flags records neither, which reads as the default pack, key off.
+    stored_pack = context.get("policy_pack_digest")
+    current_pack = pack_digest(policy_pack) if policy_pack is not None else None
+    if stored_pack != current_pack:
+        which = (
+            "a different --policy-pack, or the same file edited"
+            if stored_pack and current_pack
+            else f"{'a pack' if stored_pack else 'the default pack'} stored, "
+            f"{'a pack' if current_pack else 'the default pack'} now"
+        )
+        raise ValueError(
+            f"run {run_id!r} was authorized by another policy pack than this invocation gives "
+            f"({which}): the pack decides which specs are sent, so one campaign would be two. "
+            "Resume with the same --policy-pack, or start a fresh run."
+        )
+    if bool(context.get("allow_pii_elicitation", False)) != allow_pii_elicitation:
+        stored_key = "on" if context.get("allow_pii_elicitation") else "off"
+        raise ValueError(
+            f"run {run_id!r} ran with --allow-pii-elicitation {stored_key} and this invocation "
+            f"asks for {'on' if allow_pii_elicitation else 'off'} (DL4): resume with the flag as "
+            "it ran, or start a fresh run."
         )
     stored_adaptive = context.get("adaptive")
     if adaptive is not None and stored_adaptive is not None and bool(stored_adaptive) != adaptive:

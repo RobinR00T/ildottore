@@ -548,7 +548,7 @@ def test_a_barren_selection_is_refused(tmp_path: Path) -> None:
         execute_run(_opts(tmp_path, target, scope), [specs])
     # The hint used to say "enable the category in the policy pack", which the CLI cannot do.
     assert "declare the capability on the target" in str(refused.value)
-    assert "cannot load one today" in str(refused.value)
+    assert "needs a --policy-pack that enables it" in str(refused.value)
 
 
 def test_an_explicit_timing_template_beats_the_intensity_flags() -> None:

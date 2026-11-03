@@ -2235,6 +2235,26 @@ repository with a `specs/` of OpenAPI files: the default refused naming `builtin
 with its note, for `registry ls`, `describe` and `coverage`; a dry run reading it; a directory
 named `builtin` read by its absolute path).
 
+**A-122 (added 2026-11-02) The engagement's policy pack, and the run's PII key (OD-46, OD-11).**
+`run --policy-pack FILE` loads a pack through `policy.packs.load_pack` and the runner and the plan
+use it in place of the default pack (which enables every selected category and no capability).
+Before planning, the run prints on stderr `policy pack: <name> (<file>, sha256 <12 hex>): <n>
+categor(ies) and <m> spec(s) enabled, <d> denied; capabilities: ...; layer B: on|off; PII
+elicitation: pack yes|no, run yes|no (both needed, DL4)`, and records `policy_pack_digest`
+(`policy.packs.pack_digest`, the pack's fields as loaded) and `allow_pii_elicitation` in the run's
+context; a resume under another pack, the default one where the run had a pack, or the PII key
+set the other way is refused, and a run recorded before A-122 reads as the default pack, key off.
+`--allow-pii-elicitation` sets `SafetyFlags.allow_pii_elicitation` and is refused without
+`--policy-pack`. A pack that cannot be read or validated is refused before planning (exit 3); the
+pack file is one of the inputs no report path may overwrite. The refusal of a selection that
+sends nothing names `--policy-pack` where it said the CLI could load no pack. Only `run` takes
+the options (`fleet --run` and the quick scan do not). A pack's `budgets` are not read.
+**Costs, stated:** judging rules 8 re-pinned, no rule of judgement changed (the gate is the same;
+the pack it is handed is the operator's). **Acceptance:** `tests/cli/test_policy_pack_flag.py`
+(the key alone refused; without a pack a capability blocked; the pack said and the capability
+open; the pack replacing the default one; three unreadable packs refused; the PII spec with one
+key and with both; the record and the resume bound to it; a run from before the flags).
+
 ## §8 Out of scope / forbidden
 - MUST NOT implement attack/mutation/evaluation/scoring/reporting/fingerprint logic (u05-u11,
   u13): only wire and call them. MUST NOT own `cli/lint.py` (u02) or edit any spec YAML.
@@ -2400,7 +2420,7 @@ named `builtin` read by its absolute path).
   option, not built yet; it lands in its own change with the other decided-to-build items (OD-45,
   OD-46, OD-47, OD-49, OD-51), and until then the built behaviour stands. One `run` option will
   load a pack through `load_pack`, printed in the plan and recorded with the run, together with
-  OD-11's `--allow-pii-elicitation`.**
+  OD-11's `--allow-pii-elicitation`.** **Built 2026-11-02 (A-122), as decided.**
 - **OD-49** (shared with u14; numbered 2026-10-16, A-84; decided 2026-11-01): pin the
   dependency set the PR jobs install, and move the newest-release run to a schedule. Every job
   installs the newest release of every dependency (no lock file), so a release breaks the next PR

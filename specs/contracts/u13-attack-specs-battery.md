@@ -192,7 +192,8 @@ lint, the golden harness and `tests/battery` over the edited spec; `examples/REA
   reused from another engagement does not enable it alone). A run flag is not added alone: with
   no pack to load it would enable nothing, since the CLI's own pack enables no capability. Both
   come with the policy-pack flag, which stays open (OD-46 since 2026-10-12, `docs/12`) because it
-  also gates the seven `agentic-extortion` specs. Alternatives not taken: one flag that enables it
+  also gates the seven `agentic-extortion` specs. **Built 2026-11-02 with OD-46 (u12 A-122):
+  `run --policy-pack` and `--allow-pii-elicitation`, the run flag refused alone.** Alternatives not taken: one flag that enables it
   alone (one switch and no written record, against DL4 and DL5); dropping the spec until then (it
   would lose its lint proof; `blocked_by_policy` already says what holds it back); an opt-in in the
   scope file (the scope authorizes targets, not test categories). Pinned by

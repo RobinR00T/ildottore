@@ -22,6 +22,8 @@ Loading a pack performs **no network I/O** (SSRF-safe, ``docs/02 §4``).
 from __future__ import annotations
 
 import datetime as dt
+import hashlib
+import json
 from collections.abc import Iterable
 from pathlib import Path
 
@@ -50,6 +52,7 @@ __all__ = [
     "authorize_target",
     "enabled_specs",
     "load_pack",
+    "pack_digest",
 ]
 
 # Tags that make a spec "layer-B" / PII-elicitation, off by default (docs/11 §5 DL4/DL5).
@@ -117,6 +120,17 @@ def load_pack(path: str | Path) -> PolicyPack:
         ) from exc
     except Exception as exc:  # a validator that raised something pydantic did not wrap
         raise PolicyPackError(f"policy pack {file_path} failed validation: {exc}") from exc
+
+
+def pack_digest(pack: PolicyPack) -> str:
+    """SHA-256 of the pack as loaded (its fields, not its comments or key order).
+
+    A run records it (``run --policy-pack``, u12 A-122), and a resume under another pack is
+    refused: the pack decides which specs are sent, so two packs are two campaigns.
+    """
+
+    canonical = json.dumps(pack.model_dump(mode="json"), sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
 class CheckResult(BaseModel):

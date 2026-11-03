@@ -48,6 +48,7 @@ from ildottore.cli import resume as resume_mod
 from ildottore.cli.exit_codes import ExitCode, exit_code_for, fail_on_band
 from ildottore.cli.flags import QUICK_SUITE, resolve_suite_id, resolve_timing, unknown_suite
 from ildottore.cli.render import ProgressPrinter
+from ildottore.config import SafetyFlags
 from ildottore.core.budgets import (
     DEFAULT_COMPLETION_TOKENS,
     BudgetLedger,
@@ -77,7 +78,7 @@ from ildottore.core.setup_delivery import (
 from ildottore.fingerprint import failed_probes
 from ildottore.mutators import build_default_registry as build_mutator_registry
 from ildottore.mutators.obfuscation import ObfuscationError, expand_obfuscation, fuzz_chains
-from ildottore.policy import Scope, authorize_target, utc_today
+from ildottore.policy import PolicyPack, Scope, authorize_target, load_pack, pack_digest, utc_today
 from ildottore.policy.errors import PolicyError, ScopeError
 from ildottore.redactor import Redactor, visible_controls
 from ildottore.registry import uncompilable_patterns
@@ -247,6 +248,10 @@ class RunOptions:
     judge: Path | None = None
     #: The judge model a ``--judge`` that cannot settle an attempt hands it to (u06 A-109).
     judge_escalate: Path | None = None
+    #: The engagement's policy pack (u12 A-122, OD-46), in place of the default one.
+    policy_pack: Path | None = None
+    #: The run's PII-elicitation key (DL4, OD-11): enables nothing without the pack's.
+    allow_pii_elicitation: bool = False
     suite: str | None = None
     categories: list[str] = field(default_factory=list)
     spec_globs: list[str] = field(default_factory=list)
@@ -827,6 +832,8 @@ def resolve_target_plans(
     control: bool = False,
     verify: bool = False,
     escalate: bool = False,
+    policy_pack: PolicyPack | None = None,
+    safety: SafetyFlags | None = None,
 ) -> list[TargetPlan]:
     """Resolve, per target, exactly what the run would do - without sending anything.
 
@@ -836,10 +843,12 @@ def resolve_target_plans(
     ``requires_policy`` capabilities). What survives both is what would be sent.
     ``apply_sampling_defaults`` false prices it without the target file's
     ``sampling_defaults``, as a resume of a run started before they were applied sends it.
+    ``policy_pack`` and ``safety`` are the ``--policy-pack`` and ``--allow-pii-elicitation`` the
+    runner gets (u12 A-122); without a pack, the default one.
     """
 
-    pack = wiring.build_permissive_pack(specs)
-    policy = wiring.build_policy_engine(scope, pack)
+    pack = policy_pack if policy_pack is not None else wiring.build_permissive_pack(specs)
+    policy = wiring.build_policy_engine(scope, pack, safety=safety)
     plans: list[TargetPlan] = []
     for loaded in targets:
         path, target = loaded.path, loaded.target
@@ -1911,6 +1920,22 @@ MIN_TIMEOUT_S = 1.0
 MAX_TIMEOUT_S = 86_400.0
 
 
+def policy_pack_line(pack: PolicyPack, path: Path, safety: SafetyFlags) -> str:
+    """What a ``--policy-pack`` enables, said before anything is planned (u12 A-122, OD-46)."""
+
+    capabilities = ", ".join(pack.enabled_capabilities) or "none"
+    keys = (
+        f"pack {'yes' if pack.allow_pii_elicitation else 'no'}, "
+        f"run {'yes' if safety.allow_pii_elicitation else 'no'}"
+    )
+    return (
+        f"policy pack: {pack.name} ({path}, sha256 {pack_digest(pack)[:12]}): "
+        f"{len(pack.allow_categories)} categor(ies) and {len(pack.allow_specs)} spec(s) enabled, "
+        f"{len(pack.deny)} denied; capabilities: {capabilities}; layer B: "
+        f"{'on' if pack.enable_layer_b else 'off'}; PII elicitation: {keys} (both needed, DL4)"
+    )
+
+
 def _validate_options(opts: RunOptions) -> None:
     """Refuse an option the campaign would only trip over at the end, before anything is sent.
 
@@ -1922,6 +1947,13 @@ def _validate_options(opts: RunOptions) -> None:
     """
 
     fail_on_band(opts.fail_on)
+    if opts.allow_pii_elicitation and opts.policy_pack is None:
+        # The second key alone enables nothing (OD-11): the default pack never allows PII
+        # elicitation, so the flag would be accepted and change no plan.
+        raise ValueError(
+            "--allow-pii-elicitation needs --policy-pack: it is the run's key, and the "
+            "engagement's pack must set allow_pii_elicitation too (DL4)"
+        )
     # Written so a NaN refuses too: no comparison holds for it.
     if opts.timeout_s is not None and not MIN_TIMEOUT_S <= opts.timeout_s <= MAX_TIMEOUT_S:
         raise ValueError(
@@ -2011,6 +2043,8 @@ def _check_outputs_spare_inputs(opts: RunOptions) -> None:
         named.append((f"the --judge file {opts.judge}", opts.judge))
     if opts.judge_escalate is not None:
         named.append((f"the --judge-escalate file {opts.judge_escalate}", opts.judge_escalate))
+    if opts.policy_pack is not None:
+        named.append((f"the --policy-pack file {opts.policy_pack}", opts.policy_pack))
     named += [(f"{label} {path}", path) for label, path in opts.extra_inputs]
     if opts.fp_ledger is not None:
         named.append((f"the --fp-ledger file {opts.fp_ledger}", opts.fp_ledger))
@@ -2392,6 +2426,14 @@ def _execute_run(
             )
         # A second model we send prompts to: the same gate as the first (u06 A-109).
         to_authorize.append((opts.judge_escalate, judge_escalate_target))
+    # The engagement's pack (u12 A-122, OD-46): loaded and said before anything is planned.
+    engagement_pack = load_pack(opts.policy_pack) if opts.policy_pack is not None else None
+    safety = SafetyFlags(allow_pii_elicitation=opts.allow_pii_elicitation)
+    if engagement_pack is not None and opts.policy_pack is not None:
+        print(
+            visible_controls(policy_pack_line(engagement_pack, opts.policy_pack, safety)),
+            file=sys.stderr,
+        )
     # Each id cut at 300 characters, as the reason quotes it, and the scope's own ids listed up
     # to 20, each cut (clause A-51).
     refusals = [
@@ -2677,6 +2719,8 @@ def _execute_run(
             control=control,
             verify=verify,
             escalate=judge_escalate_target is not None,
+            policy_pack=engagement_pack,
+            safety=safety,
         )
 
     #: Whether a refusal of the -sV probe pass may not offer dropping -sV: a resume of a
@@ -2709,6 +2753,8 @@ def _execute_run(
             runs=opts.runs if opts.runs_explicit else None,
             judge=judge_target,
             judge_escalate=judge_escalate_target,
+            policy_pack=engagement_pack,
+            allow_pii_elicitation=opts.allow_pii_elicitation,
             adaptive=adaptive,
             allow_unverified=opts.resume_unverified,
             adopt=False,
@@ -3164,6 +3210,8 @@ def _execute_run(
         control=control,
         verify=verify,
         escalate=judge_escalate_target is not None,
+        policy_pack=engagement_pack,
+        safety=safety,
     )
 
     # A target with nothing left to run is refused, for the same reason an empty --spec
@@ -3182,9 +3230,9 @@ def _execute_run(
         raise ValueError(
             "nothing would be sent: every selected spec is unrunnable on "
             f"{'; '.join(barren)}. Widen the selection or declare the capability on the "
-            "target. A spec blocked by policy needs a policy pack that enables it, and the CLI "
-            "cannot load one today (OD-46, decided and not built yet), so it cannot run from "
-            "`dottore`."
+            "target. A spec blocked by policy needs a --policy-pack that enables it (its "
+            "category or id, and every capability its requires_policy names; a PII-elicitation "
+            "spec also --allow-pii-elicitation)."
             + (
                 " A spec counted as not seeded runs once what `--dry-run -vv` names for it is "
                 "fixed: its id in seeded_setup.specs, a seeded_setup.run_token, its own "
@@ -3301,6 +3349,8 @@ def _execute_run(
             control=control,
             verify=verify,
             judge_escalate=judge_escalate_target,
+            policy_pack=engagement_pack,
+            allow_pii_elicitation=opts.allow_pii_elicitation,
         )
         _record_scope(run_db, run_ids[target.id], scope_sha256, resumed=opts.resume is not None)
         _record_order(
@@ -3341,6 +3391,8 @@ def _execute_run(
             control=control,
             verify=verify,
             judge_escalate_target=judge_escalate_target,
+            policy_pack=engagement_pack,
+            safety=safety,
         )
         results.append(result)
         _persist_run_spend(run_db, result)
@@ -3723,6 +3775,8 @@ def _run_one_target(
     control: bool = False,
     verify: bool = False,
     judge_escalate_target: Target | None = None,
+    policy_pack: PolicyPack | None = None,
+    safety: SafetyFlags | None = None,
 ) -> CampaignResult:
     """Assemble a runner for one target and drive one campaign to completion.
 
@@ -3762,6 +3816,8 @@ def _run_one_target(
         control=control,
         verify=verify,
         judge_escalate_target=judge_escalate_target,
+        pack=policy_pack,
+        safety=safety,
     )
     try:
         return interrupts.run_until_stopped(
@@ -4044,6 +4100,8 @@ def _persist_run_integrity(
     control: bool = False,
     verify: bool = False,
     judge_escalate: Target | None = None,
+    policy_pack: PolicyPack | None = None,
+    allow_pii_elicitation: bool = False,
 ) -> None:
     """Record WHAT this campaign is about to run, before it sends anything.
 
@@ -4132,6 +4190,12 @@ def _persist_run_integrity(
                 "control": control,
                 # Whether a failing finding is reviewed (u08 A-107): a resume does the same.
                 "verify": verify,
+                # The engagement's pack and the run's PII key (u12 A-122, OD-46): they decide
+                # which specs are sent, so a resume under others is refused.
+                "policy_pack_digest": (
+                    pack_digest(policy_pack) if policy_pack is not None else None
+                ),
+                "allow_pii_elicitation": allow_pii_elicitation,
             },
         )
 

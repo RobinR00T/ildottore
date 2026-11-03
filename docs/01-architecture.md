@@ -214,9 +214,10 @@ scientifically weak. Therefore:
   authorized it, in the run store and in every report (since 2026-10-05).
 - Policy packs declare which attack categories/specs are permitted for a given engagement
   (e.g. "no DoS category against prod"). Data-leak layer-B specs and PII elicitation are
-  **off unless the policy pack enables them** (`docs/11 §5`). The CLI loads no pack today:
-  `run` builds a permissive pack from the selected specs, so every spec that declares
-  `requires_policy` stays blocked; a flag to load a pack is an open decision (OD-46, `docs/09 §5`).
+  **off unless the policy pack enables them** (`docs/11 §5`). Without `--policy-pack`, `run`
+  builds a permissive pack from the selected specs, which enables no capability, so every spec
+  that declares `requires_policy` stays blocked; `run --policy-pack FILE` loads the engagement's
+  pack in its place, and the run records it (u12 A-122, OD-46).
 - `scope.yaml` may declare **≥2 auth identities** for one target (`multi_identity`) so
   cross-tenant/authz specs can compare identity A vs B. A central **redactor** masks
   secrets/PII in logs, evidence and reports.

@@ -868,6 +868,13 @@ _CONTEXT_FIELDS: Final[dict[str, tuple[bool, Any, str]]] = {
     "target_digest": (True, _is_digest, "a sha256 digest this tool writes"),
     "judge_digest": (True, _is_digest, "null or a sha256 digest this tool writes"),
     "judge_escalate_digest": (True, _is_digest, "null or a sha256 digest this tool writes"),
+    # u12 A-122: the --policy-pack a run was made under, and its PII key.
+    "policy_pack_digest": (
+        True,
+        lambda v: isinstance(v, str) and _SHA256.fullmatch(v) is not None,
+        "null or a sha256 digest",
+    ),
+    "allow_pii_elicitation": (False, _is_bool, "true or false"),
     "adaptive": (False, _is_bool, "true or false"),
     "sampling_defaults_applied": (True, _is_bool, "true or false"),
     "takes_sampling": (True, _is_bool, "true or false"),

@@ -478,6 +478,12 @@ PIN_HISTORY: tuple[tuple[int, str, str], ...] = (
         "2026-11-02: a judge whose self-consistency passes disagree keeps the attempt "
         "inconclusive (judge_disagreed), where it was dropped (u06 A-121, OD-45, ADR-0024)",
     ),
+    (
+        8,
+        "51f7c7864763862745f861e4ad4a104715d9f4f809d112b3d7aa10fb72b62aca",
+        "re-pin 2026-11-02: run --policy-pack and --allow-pii-elicitation (u12 A-122, OD-46); "
+        "the gate is unchanged, the pack it is handed is the operator's",
+    ),
 )
 
 #: The digest each version is pinned to now: the last line of :data:`PIN_HISTORY` for it.
@@ -489,7 +495,7 @@ PINNED: dict[int, str] = {
     5: "c352e9bd55c8e3b0629e4164411b64667327a5c3cd533e003a7cb84475ecf9c4",
     6: "47293b7afb2a5409bff93319a9fa384621c3ecbe8b9a261be8bb428e05d0f4f7",
     7: "27f04a53561548238f8774eff7b83fe0fd9368c5cc993faee9ad363bf1385a80",
-    8: "32a434511422609c90be3df3631883c864161d85385845e10df59dcdd55f422c",
+    8: "51f7c7864763862745f861e4ad4a104715d9f4f809d112b3d7aa10fb72b62aca",
 }
 
 #: One ``<version> <digest>`` line per pin, appended to and never edited: the history must start

@@ -1,0 +1,24 @@
+# An engagement's policy pack (`dottore run --policy-pack`, u12 A-122, OD-46). It replaces the
+# default pack, which enables every selected category and no capability: list here what the
+# engagement's written authorization covers, and nothing else.
+name: example-engagement-2026-11
+# The categories this engagement authorizes (a spec of another category is blocked).
+allow_categories:
+  - prompt_injection
+  - jailbreak
+  - data_leakage
+  - agent_tool_abuse
+  - rag_security
+  - output_security
+  - availability_cost
+# Specs enabled one by one, beyond the categories above (none here).
+allow_specs: []
+# Specs or categories refused whatever else says (the explicit deny wins).
+deny: []
+# The capabilities a spec's requires_policy names: offensive_simulation turns on the seven
+# agentic-extortion specs. layer_b_pii is left out: DL-PII-ELICIT-001 also needs
+# allow_pii_elicitation here and --allow-pii-elicitation on the run (DL4, two keys).
+enabled_capabilities:
+  - offensive_simulation
+enable_layer_b: false
+allow_pii_elicitation: false
