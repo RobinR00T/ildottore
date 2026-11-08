@@ -12,6 +12,9 @@ The value is not the prompts. It is **reproducibility + evidence + risk mapping*
 attempt persists its prompt, full response, sampling params, tool traces and the aggregate
 verdict with its reasoning; findings are scored `impact x exploitability x reproducibility` and
 re-derivable with `dottore replay`. A finding we cannot reproduce or evidence is treated as noise.
+Each reproducibility is printed with the counts behind it and a 95% interval (`0.20 (1/5, 95% CI
+0.04 to 0.62)`), so one exploit in five does not read as the same evidence as two hundred in a
+thousand.
 
 ### Is it safe to run? Will it actually do damage?
 

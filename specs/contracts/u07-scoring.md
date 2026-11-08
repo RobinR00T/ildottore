@@ -97,6 +97,15 @@ included. A crossing only the sweep shows is its measured share (1 of 6 at `--ru
 at `--runs 1`, Medium), where every attempt used to carry the sweep's verdict and read 5 of 5; a
 sweep that showed nothing never lowers the variant that leaks.
 
+**A-126 The counts behind the rate (added 2026-11-08).** `scoring.risk.reproducibility_counts`
+returns the `(successes, trials)` of the rate `reproducibility_from_attempts` takes: the pool's,
+or the variant's (`MIN_VARIANT_ATTEMPTS` or more) with the highest rate, the one with the most
+trials among those tied; `None` with no attempt. `DefaultRiskScorer.score` stores them on
+`RiskScore.successes` and `RiskScore.trials`; `successes / trials == reproducibility` on every
+input (`tests/scoring/test_reproducibility_counts.py`). The 95% Wilson interval drawn from them
+(`shared.intervals.wilson_interval`) is printed by the reports and read by no band, gate or
+`confirmed` flag. No verdict changes; judging rules 9 is re-pinned.
+
 ## §8 Out of scope / forbidden
 - MUST NOT multiply confidence into risk (ADR-0003): hard fence.
 - MUST NOT call LLMs, providers, or evaluators (consumes their `Verdict` output only).

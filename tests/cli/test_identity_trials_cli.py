@@ -230,6 +230,16 @@ def _figures(tmp_path: Path, report: dict[str, Any]) -> dict[str, Any]:
     assert replayed.exit_code == 0, replayed.output
     figure = re.search(rf"reproducibility of {finding['spec_id']}: ([0-9.]+)", replayed.output)
     assert figure is not None, replayed.output
+    # The counts replay reads back are the ones the report printed (u07 A-126).
+    counts = re.search(
+        rf"reproducibility of {finding['spec_id']}: [0-9.]+ \((\d+)/(\d+), 95% CI",
+        replayed.output,
+    )
+    assert counts is not None, replayed.output
+    assert (int(counts[1]), int(counts[2])) == (
+        finding["risk"]["successes"],
+        finding["risk"]["trials"],
+    )
     return {
         "json": finding["risk"]["reproducibility"],
         "band": finding["risk"]["band"],

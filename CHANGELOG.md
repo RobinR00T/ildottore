@@ -7,6 +7,20 @@ the file, schema copy, build or pipeline it names.
 
 ## [Unreleased]
 
+### Added (the counts and a 95% interval beside every reproducibility: u07 A-126)
+
+- **Every report prints the counts behind a reproducibility rate and their 95% Wilson
+  interval.** `0.20` was one exploit in five or two hundred in a thousand; the HTML card and
+  `dottore replay` now read `0.20 (1/5, 95% CI 0.04 to 0.62)`. The counts are the rate's own: the
+  pool's, or the variant's that gave it.
+- **`RiskScore.successes` and `RiskScore.trials`**, optional, set together, refused unless
+  `successes / trials` is the rate. The JSON report carries them in `risk` (optional in
+  `report-1.0.schema.json`), SARIF in the result's properties with
+  `reproducibility_interval_95`. A finding scored before carries none and prints the bare rate.
+- `shared.intervals.wilson_interval` and `described_rate`; `scoring.risk.reproducibility_counts`.
+- No band, gate or `confirmed` flag reads the interval. Judging rules 9 re-pinned: no verdict
+  changes, but a run halted on the earlier code is refused by its resume.
+
 ### Changed (breaking for a run halted under judging rules 8 and for a CI gate: rules 9, u06 A-125)
 
 - **The `refusal` evaluator reads a typographic apostrophe as `'`.** Its phrase lists write `'`,

@@ -558,6 +558,9 @@ Output directory (default the current one); an existing file of that id is not o
 .B --stdout
 Print the scaffold instead of writing it.
 .SS "replay \fIRUN_ID\fR"
+Checks the run's evidence against its manifest and prints, per spec, the reproducibility the
+report scored with the counts of that rate and their 95% Wilson interval, as
+1.00 (15/15, 95% CI 0.80 to 1.00; 15 of 15 trials exploited; the report's figure).
 .TP
 .B --evidence-root \fIPATH\fR
 Evidence store root (default .dottore/evidence).

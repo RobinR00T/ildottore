@@ -40,6 +40,18 @@ Confidence  = evaluator/judge certainty (0-1)                                   
   attempts' own replies are read against no owner map, so a leak on every reply of tenant A scored
   1 of 5 and Low. A fail resting only on a canary the request carries is counted as any fail
   and never confirms (`docs/11 §4`).
+- **The counts and their interval** (u07 A-126, since 2026-11-08). A rate alone does not say
+  how much evidence is behind it: 0.2 is one exploit in five sends or two hundred in a thousand.
+  The risk score keeps the counts of the rate it took (`RiskScore.successes` of
+  `RiskScore.trials`: the pool's, or the variant's that gave the rate, the one with the most
+  trials among those tied), and every report prints them beside the rate with the 95% Wilson
+  score interval (`shared.intervals.wilson_interval`): `0.20 (1/5, 95% CI 0.04 to 0.62)` in the
+  HTML report and in `dottore replay`, `successes`, `trials` and `reproducibility_interval_95` in
+  the SARIF result's properties, `successes` and `trials` in the JSON report's `risk`. The
+  interval is the chosen candidate's own, so it is optimistic as the rate is: the best of several
+  variants. It informs a reader; no band, gate or `confirmed` flag reads it. A finding scored
+  before the counts were kept carries none and prints the bare rate. The interval assumes
+  independent sends, which repeated sends of one prompt to one deployment only approximate.
 - **Confirmed** is likewise judged per variant, with the same floor: some variant with at least
   2 attempts failed on every one of them above the confidence threshold, or, when no variant
   has 2, every attempt failed. And at least one of those fails was decided by a deterministic

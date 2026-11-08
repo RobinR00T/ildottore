@@ -345,6 +345,13 @@ HTML, SARIF, JUnit and terminal outputs through u07's reproducibility. A swept s
 attempt per sweep (`mutation: identity_sweep`), and its finding's line says how many of the trials
 were the sweep's (`1 of the 6 is the identity sweep's`).
 
+**A-126 The counts beside the rate (added 2026-11-08).** A finding whose risk carries
+`successes` and `trials` (u07 A-126) shows them: the JSON report in `risk` (optional in
+`report-1.0.schema.json`), the SARIF result's properties as `successes`, `trials` and
+`reproducibility_interval_95` (`[low, high]`, four decimals), the HTML card as `reproducibility
+0.20 (1/5, 95% CI 0.04 to 0.62)`, `dottore replay` on its per-spec line. A finding without them
+prints the bare rate and no SARIF key (`tests/reporting/test_reproducibility_counts_reported.py`).
+
 ## §8 Out of scope / forbidden
 - MUST NOT compute risk scores, bands, or confirmed/needs-review state (that is u07): only read.
 - MUST NOT read/persist to the run or evidence store beyond the injected read interface (u10).

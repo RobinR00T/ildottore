@@ -3249,9 +3249,16 @@ Risk and confidence are **separate axes**:
   1 of 6 at `--runs 5` (Low), 1 of 2 at `--runs 1` (Medium), 1 of 11 at `--runs 10` (Low), where
   every attempt used to carry the sweep's verdict (1.0, Critical). That is how often the target
   showed the crossing, not how bad it is: review it, or gate findings that need review. `dottore
-  replay` prints each spec's figure (`reproducibility of <spec>: ... (<k> of <n> trials exploited,
-  <s> of them an identity sweep's; the report's figure)`). Confidence is deliberately **not** a
-  multiplier on risk.
+  replay` prints each spec's figure (`reproducibility of <spec>: <rate> (<k>/<n>, 95% CI <low> to
+  <high>; <e> of <t> trials exploited, <s> of them an identity sweep's; the report's figure)`).
+  Since 2026-11-08 (u07 A-126) every report prints the counts of the rate beside it, the pool's or
+  the variant's that gave it, and their 95% Wilson interval, since 0.2 is one exploit in five or
+  two hundred in a thousand. Against the `vulnerable` mock (`examples/target.mock.yaml`, `--runs
+  5 --spec JB-ROLEPLAY-001`) the HTML card reads `reproducibility 1.00 (15/15, 95% CI 0.80 to
+  1.00)`, `replay` prints `reproducibility of JB-ROLEPLAY-001: 1.00 (15/15, 95% CI 0.80 to 1.00;
+  15 of 15 trials exploited; the report's figure)`, and the SARIF result carries `"successes": 15,
+  "trials": 15, "reproducibility_interval_95": [0.7961, 1.0]`. The interval informs; no band or
+  gate reads it (`docs/05 §2`). Confidence is deliberately **not** a multiplier on risk.
 - **Confidence** gates an exploited finding as `confirmed` or not: confirmed needs some mutation
   variant that failed on every one of its attempts, with a mean confidence at or above the spec's
   `confidence_threshold` (with `--runs 1` the attempts are pooled instead), and at least one of
@@ -3588,7 +3595,8 @@ target's owner (§5, `dottore replay`).
   report` prints it). Since 2026-10-11 it constrains the run and each finding, not only the
   summary: a finding has `spec_id`, `target_id`, `status` (`pass`, `fail` or `inconclusive`),
   `risk` (impact and exploitability 1 to 4, reproducibility and confidence 0 to 1, risk 0 to 16,
-  a band) and `confirmed`, and its attempts and evidence the keys that identify them; the run has
+  a band, and since 2026-11-08 the `successes` and `trials` behind the reproducibility, absent on
+  a finding scored before) and `confirmed`, and its attempts and evidence the keys that identify them; the run has
   its `run_id`, `targets` (each with an `id` and a `type`), `findings` and `summary`. Everything
   else stays open (`additionalProperties: true`): report-1.0 grows additively, so a report written
   since `f12ba833` (the earliest build checked; every one the CLI audit of 2026-10-11 kept

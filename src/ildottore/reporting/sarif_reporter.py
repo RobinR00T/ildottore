@@ -32,7 +32,8 @@ from ildottore.reporting.summary import RunSummary, declared_attempt_ids, findin
 from ildottore.shared.cwe import cwe_sarif_tag
 from ildottore.shared.enums import ReportFormat, ScanBand
 from ildottore.shared.frameworks import framework_editions
-from ildottore.shared.models import AttackSpec, Finding
+from ildottore.shared.intervals import wilson_interval
+from ildottore.shared.models import AttackSpec, Finding, RiskScore
 from ildottore.shared.provider_filter import (
     blocked_attempt_ids,
     cut_attempt_ids,
@@ -117,6 +118,19 @@ def _kind(finding: Finding) -> str:
     if finding.status.value == "pass":
         return "pass"
     return "open" if finding.attempts else "notApplicable"
+
+
+def _counts(risk: RiskScore) -> dict[str, Any]:
+    """``successes``, ``trials`` and the 95% Wilson interval of the rate, or ``{}`` uncounted."""
+
+    if risk.successes is None or risk.trials is None:
+        return {}
+    low, high = wilson_interval(risk.successes, risk.trials)
+    return {
+        "successes": risk.successes,
+        "trials": risk.trials,
+        "reproducibility_interval_95": [round(low, 4), round(high, 4)],
+    }
 
 
 def _result(finding: Finding, rule_index: int, *, include_needs_review: bool) -> dict[str, Any]:
@@ -218,6 +232,8 @@ def _result(finding: Finding, rule_index: int, *, include_needs_review: bool) ->
             "impact": risk.impact,
             "exploitability": risk.exploitability,
             "reproducibility": risk.reproducibility,
+            # The counts behind the rate and its 95% Wilson interval (u07 A-126), when counted.
+            **_counts(risk),
             "confidence": risk.confidence,
             "state": state,
             "status": finding.status.value,
