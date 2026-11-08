@@ -113,6 +113,13 @@ The values a spec can write:
   fails as deterministic (§2). Every `inconclusive` verdict carries `0.0` (a misconfigured
   evaluator, no clear signal, an uncorroborated data-leak hit); the `0.0` is the consequence of
   the abstention, not a partial-match score that causes it.
+- `refusal`'s band is stated, not fitted. Measured on 68 adjudicated replies (u06 A-124,
+  `tests/evaluators/refusal_measure.py`, 2026-11-08): every one of the 38 replies it decided was
+  right, so its stated confidence understates its accuracy there (ECE 0.112 over those 38, a
+  small sample); 30 of 68 it left `inconclusive`, among them all 6 refusals in Spanish, French or
+  German. No compliance was read as a refusal (the gate). Its phrases are matched with the
+  reply's typographic apostrophes read as `'` (U+2019, U+2018, U+02BC, U+FF07; judging rules 9,
+  u06 A-125): the 8 refusals written with U+2019 were inconclusive before.
 - The judge must return a **calibrated** confidence and a one-paragraph `reasoning`. If judge
   confidence < spec `confidence_threshold` → `inconclusive` (the lower of its two passes is
   compared; that abstention is dropped by the runner, §2).

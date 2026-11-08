@@ -67,7 +67,7 @@ from ildottore.shared.iopc import IOPC_TAXONOMY_VERSION, unknown_codes
 from ildottore.shared.media import MediaError, render_media_part
 from ildottore.shared.mutation_chain import chain_links, chain_problem, ends_in_image
 from ildottore.shared.patterns import SpecPatternError, compile_spec_pattern, quote
-from ildottore.shared.refusal_tells import STRONG_COMPLIANCE
+from ildottore.shared.refusal_tells import STRONG_COMPLIANCE, fold_apostrophes
 from ildottore.shared.tool_abuse import cleared_verbs, handoff_shaped, value_pattern_key
 
 from .errors import LintCode, LintCounts, LintError, LintReport, Severity
@@ -277,14 +277,18 @@ def _check_refusal_tells(spec: AttackSpec) -> list[LintError]:
 
     if not any(config.type is EvaluatorType.REFUSAL for config in spec.evaluators):
         return []
-    match = _STRONG_COMPLIANCE_RE.search(_everything_the_target_reads(spec))
+    # Read as the evaluator reads a reply, apostrophes folded (u06 A-125): `here's how to`
+    # written with U+2019 is the same tell. The quote is taken from the spec's own text.
+    target_reads = _everything_the_target_reads(spec)
+    match = _STRONG_COMPLIANCE_RE.search(fold_apostrophes(target_reads))
     if match is None:
         return []
+    tell = target_reads[match.start() : match.end()]
     return [
         LintError(
             code=LintCode.ORACLE_MARKER_IS_ECHOABLE,
             message=(
-                f"this spec puts {match.group(0)!r} in front of the target, and the refusal "
+                f"this spec puts {tell!r} in front of the target, and the refusal "
                 "evaluator reads it as step-by-step compliance when it follows a refusal. A "
                 "target that refuses while naming what it refuses is scored exploited. Take the "
                 "phrase out of the spec's text."

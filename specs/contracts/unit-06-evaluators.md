@@ -456,6 +456,36 @@ still dropped. **Costs, stated:** judging rules 8 (verdicts change). **Acceptanc
 (kept beside a deterministic pass and alone, decided by a deterministic fail, under every value
 of `evaluator_logic`), `tests/shared/test_shared_models.py` (the enum's values).
 
+**A-124 (added 2026-11-08) The `refusal` evaluator is measured on replies as models write them.**
+The labelled gate scored it on 20 canonical phrasings, where it is perfect. A second corpus,
+`tests/fixtures/labeled/refusal_adjudicated.json`, holds 68 hand-labelled replies in 13 shapes
+(typographic apostrophes, markdown, a refusal with a safe alternative, refusals with no listed
+phrase, Spanish, French and German, compliance with no opener, behind a disclaimer, after a
+hedge, in role-play); every case the evaluator disagreed with was re-read and kept, none
+relabelled. Measured: 0 compliances read as refusals, 0 refusals read as compliances, 16 of 43
+refusals and 10 of 25 compliances decided, 42 inconclusive, ECE 0.135 over the 26 decided (all
+right). Known gap, held by a strict `xfail`: the markers match only the ASCII apostrophe, so the
+8 refusals written with U+2019 are inconclusive. **Costs, stated:** test code and data only; no
+verdict changes, judging rules unchanged. **Acceptance:** `tests/evaluators/test_refusal_measure.py`
+(no false pass, no false fail, detection floors 16 and 10, the documented band, the ECE
+function).
+
+**A-125 (added 2026-11-08) The `refusal` evaluator reads a typographic apostrophe as `'`.** Its
+phrase lists write `'`, so a refusal written with U+2019, what most chat models emit, matched
+nothing and was `inconclusive` (0 of 8 on A-124's corpus). `shared.refusal_tells.fold_apostrophes`
+reads U+2019, U+2018, U+02BC and U+FF07 as `'`, one character for one, and the evaluator matches
+on the folded reply and quotes every span from the reply as written. The linter's refusal-tell
+check (A-27) reads a spec the same way, so a tell a spec writes with U+2019 is refused as the
+ASCII one is. The fingerprint's guardrail layer keeps its own fold of U+2019 (unchanged here).
+Measured: 28 of 43 refusals decided (16 before), 10 of 25 compliances, 0 false passes, 0 false
+fails, ECE 0.112 over the 38 decided. **Costs, stated:** judging rules 9 (verdicts change: a
+run halted under 8 is refused by its resume); a spec that writes a strong-compliance phrase with
+a typographic apostrophe and scores with `refusal` no longer lints (none of the 79 shipped specs
+does). **Acceptance:** `tests/evaluators/test_refusal_apostrophes.py` (each apostrophe, offsets
+kept, quotes as written, the hedged case, the linter), `tests/evaluators/test_refusal_measure.py`
+(8 of 8 typographic refusals pass, floor 28), `tests/shared/test_judging_rules.py` (version 9
+pinned).
+
 ## §8 Out of scope / forbidden
 - MUST NOT call provider SDKs directly (only via `TargetAdapter`).
 - MUST NOT persist raw secrets/PII anywhere (redactor only).

@@ -35,6 +35,7 @@
 - promptfoo (157 plugins; framework presets owasp:llm/mitre:atlas/nist/eu:ai-act/gdpr/iso:42001): https://www.promptfoo.dev/docs/red-team/plugins/
 - Giskard LLM scan (traditional + LLM-assisted detectors): https://docs.giskard.ai/en/latest/knowledge/llm_vulnerabilities/index.html
 - AgentDojo (97 tasks / 629 security cases; utility+security jointly): https://www.emergentmind.com/topics/agentdojo-benchmark
+- CT0: Cybersecurity Transformer (V. Mayoral-Vilches, Alias Robotics, arXiv 2610.16550 v2, 2026-10-15): a model judging its own reply missed 48.9% of its refusals on 600 adjudicated responses, and a detector that ranks almost perfectly (AUROC 0.998) caught 12.7% at a transferred threshold. Source of the adjudicated refusal measurement (u06 A-124): https://arxiv.org/abs/2610.16550
 - mubix/ai-ctf (Rob Fuller, MIT; AI CTF of tool-abuse challenges: price tampering, SSRF through an authorized fetch, SQL in a tool argument). Source of the three argument-value specs of 2026-10-19, re-authored natively with no text copied (u06 A-88): https://github.com/mubix/ai-ctf
 
 ## Vendor guidance
