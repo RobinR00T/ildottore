@@ -5,6 +5,31 @@ The carryover ledger. Every agent session updates this so context survives even 
 newest merge on top: a branch's entries land together when it merges, so the dates of
 neighbouring entries can interleave (an older branch merged later sits above a newer one).
 
+## State, 2026-11-09: a WebSocket chat endpoint's Origin check (`feat/ws-origin-probe`, u04 A-133, OD-75, ADR-0027)
+
+- **Why.** Piece 6 of the eight generic techniques the owner approved on 2026-11-09: cross-site
+  WebSocket hijacking (CWE-1385). The engine had no way to try an upgrade with a chosen
+  `Origin`: every spec was a prompt, and the adapter dialled with no `Origin` header.
+- **Built.** `capabilities.websocket_origin` (set by the loader for `provider: websocket`, refused
+  declared elsewhere, outside the digest), the runner's probe mark (`shared.probes`), the
+  adapter's `_probe_origin` (two upgrades through the chat's own `_dial`, no frame, a one-second
+  hold, a refused control `WebSocketProbeUntestable`), the optional `websocket.origin`,
+  CWE-1385 in the pinned table, and `AC-WS-ORIGIN-001` in the `access-control` suite. The
+  loopback chat server learnt to check the `Origin` at the upgrade or after it.
+- **Measured.** 20 adapter tests and 17 composition-root tests: a server that checks at the
+  upgrade (refused 403), one that closes with 1008 after it, one that does not check (accepted),
+  a refused control (inconclusive, the cross-site upgrade never tried), and three real campaigns
+  (fail, pass, inconclusive), no frame sent in any. `dottore coverage builtin`: 80 specs, every
+  axis unchanged (ESP-IA 19/27; the spec maps to no ESP-IA requirement). Battery: 49 of 80 name a
+  CWE, 41 of 80 an ATT&CK technique, 64 of 80 an ESP-IA requirement.
+- **Pins.** IoPC `T5.002` only (`T8.004` stays out of scope, `docs/15`; coverage 27/30 unchanged).
+  Judging rules 10 re-pinned (`e3a0ad18...`): no stored verdict changes.
+- **Numbers.** A-133, OD-75, ADR-0027 (piece 5 holds A-132, OD-74, ADR-0026; expect a renumber
+  at rebase if another sibling took them).
+- **Open (the owner's, OD-75).** A `null` and a look-alike origin as further probes; whether a
+  frame on the cross-site socket is ever worth the credential it would carry. The spec maps to
+  no ESP-IA requirement: a mapping is the owner's call.
+
 ## State, 2026-11-09: the `refusal` evaluator reads Spanish, French and German (`feat/refusal-languages`, u06 A-127, judging rules 10)
 
 - **Why.** The open item of 2026-11-08: refusals in Spanish, French and German were 0 of 6, and

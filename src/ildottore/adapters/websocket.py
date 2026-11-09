@@ -49,6 +49,13 @@ that does not satisfy ``expect``, a close or a silence before that reply, an err
 code the block lists) stops the run and starts a cooldown kept across processes; queries are
 paced across processes; a tool the block lists, reported in any frame of a turn, closes the
 connection; and a turn has the byte cap the block sets, when it is lower than the adapter's.
+
+A request the runner marks as the handshake probe (``metadata["probe"] == "websocket_origin"``,
+u04 A-133, OD-75) is not a query: the adapter opens two upgrades, each closed after a short hold
+and neither carrying a frame, one offering the ``Origin`` of the page the chat is served from
+(``websocket.origin``, else derived from the endpoint) and one offering
+:data:`~ildottore.shared.probes.CROSS_SITE_ORIGIN`, and renders what the server did with each as
+the reply's text. A control the server refuses makes the probe untestable, not a verdict.
 """
 
 from __future__ import annotations
@@ -61,9 +68,11 @@ from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, ClassVar, Final, Literal, cast
+from urllib.parse import urlsplit
 
 from websockets.asyncio.client import ClientConnection, connect
 from websockets.exceptions import ConnectionClosed, InvalidHandshake, InvalidStatus, InvalidURI
+from websockets.typing import Origin
 
 from ildottore.adapters.agent_guard import (
     AgentAuthRefused,
@@ -107,6 +116,7 @@ from ildottore.shared.models import (
     WebSocketSpec,
 )
 from ildottore.shared.nesting import NestedTooDeeply
+from ildottore.shared.probes import CROSS_SITE_ORIGIN, PROBE, WEBSOCKET_ORIGIN_PROBE
 from ildottore.shared.provider_filter import blank_text, stop_provenance
 from ildottore.shared.toolcalls import (
     LongInteger,
@@ -123,6 +133,7 @@ __all__ = [
     "MAX_OPEN_CONVERSATIONS",
     "MESSAGES",
     "MIN_CREDENTIAL_LEN",
+    "ORIGIN_HOLD_S",
     "PLACEHOLDER",
     "PROMPT",
     "RESERVED",
@@ -134,11 +145,13 @@ __all__ = [
     "WebSocketFrameTooDeep",
     "WebSocketLost",
     "WebSocketOverflow",
+    "WebSocketProbeUntestable",
     "WebSocketServerError",
     "WebSocketTooMany",
     "WebSocketTurnTimeout",
     "WebSocketUndecodable",
     "carries_system_prompt",
+    "origin_of",
     "placeholders",
     "render",
 ]
@@ -192,6 +205,9 @@ MAX_OPEN_CONVERSATIONS: Final = 256
 _RETRYABLE_STATUS: frozenset[int] = frozenset({429, 500, 502, 503, 504})
 #: How long a close handshake may take before the socket is abandoned.
 _CLOSE_TIMEOUT_S: Final = 2.0
+#: How long the handshake probe holds an accepted upgrade open, waiting for the server to close
+#: it: an endpoint may check the ``Origin`` only after the upgrade and close at once (1008).
+ORIGIN_HOLD_S: Final = 1.0
 #: Close code websockets sends when a frame is larger than ``max_size``.
 _MESSAGE_TOO_BIG: Final = 1009
 #: Close code websockets sends when a text frame is not UTF-8 (raw ``ED A0 80``, half a
@@ -257,6 +273,18 @@ class WebSocketLost(WebSocketClosed):
 class WebSocketTooMany(WebSocketClosed):
     """More than :data:`MAX_OPEN_CONVERSATIONS` held at once: this one is refused, not retried."""
 
+    retryable = False
+
+
+class WebSocketProbeUntestable(AdapterEnvError):
+    """The handshake probe's control upgrade was not accepted (u04 A-133): inconclusive.
+
+    An endpoint that refuses its own page's ``Origin`` refuses every upgrade the probe could
+    compare, so a refusal of the cross-site one says nothing about an ``Origin`` check. Not
+    retried: the same control would be refused again.
+    """
+
+    is_env_error = True
     retryable = False
 
 
@@ -418,6 +446,8 @@ class WebSocketAdapter:
     retry: RetryConfig = field(default_factory=RetryConfig)
     #: Largest single frame accepted (the library closes the connection past it).
     max_frame_bytes: int = MAX_RESPONSE_BYTES
+    #: How long the handshake probe holds an accepted upgrade (:data:`ORIGIN_HOLD_S`).
+    origin_hold_s: float = ORIGIN_HOLD_S
     #: Where the guard keeps its state (``None``: ``agent_guard.guard_state_dir()``), the wall
     #: clock it reads and the sleep it paces with: injected by the tests.
     guard_state_dir: Path | None = None
@@ -512,6 +542,8 @@ class WebSocketAdapter:
         self._check_allowlist()  # BEFORE any socket is opened: unbypassable.
         self._check_credential()
         self._check_guard()
+        if (request.metadata or {}).get(PROBE) == WEBSOCKET_ORIGIN_PROBE:
+            return await self._probe_origin()
         key, turn_index, last_turn = _conversation_of(request)
         if key is None:
             conversation = await self._open()
@@ -555,6 +587,70 @@ class WebSocketAdapter:
 
         for key in list(self._conversations):
             await self._drop(key)
+
+    # --- the handshake probe (u04 A-133, OD-75) ------------------------------------------
+
+    async def _probe_origin(self) -> ModelResponse:
+        """Two upgrades, the page's own ``Origin`` then a cross-site one, rendered as text.
+
+        No frame is sent on either: the handshake template, the session start and the query are
+        all left out, so the probe exercises the upgrade's ``Origin`` check and nothing else.
+        """
+
+        control = self.spec.origin or origin_of(self.url)
+        seen = await self._try_origin(control)
+        if seen["outcome"] != "accepted":
+            raise WebSocketProbeUntestable(
+                f"{self.id}: the handshake probe's control upgrade, with Origin {control}, was "
+                f"{_outcome_text(seen, self.origin_hold_s)}; set websocket.origin to the origin of "
+                "the page the chat is served from"
+            )
+        crossed = await self._try_origin(CROSS_SITE_ORIGIN)
+        text = "\n".join(
+            [
+                "WebSocket Origin probe: two upgrades, no frame sent",
+                f"control origin {control}: {_outcome_text(seen, self.origin_hold_s)}",
+                f"cross-site origin {CROSS_SITE_ORIGIN}: "
+                f"{_outcome_text(crossed, self.origin_hold_s)}",
+            ]
+        )
+        return ModelResponse(text=text, raw_ids={"websocket": {"origin_probe": [seen, crossed]}})
+
+    async def _try_origin(self, origin: str) -> JsonDict:
+        """One upgrade offering ``origin``: ``accepted``, ``closed`` after it, or ``refused``.
+
+        An accepted upgrade is held :attr:`origin_hold_s` and then closed by the adapter; a
+        server that closes it first (its ``Origin`` check runs after the upgrade) is ``closed``.
+        A 429 or 5xx, a refused connection or a timeout is an environment error, retried by the
+        runner as any send; any other status is the server's answer to this ``Origin``. A 401 or
+        403 to the control upgrade is the guard's authentication failure when the file has one.
+        """
+
+        self._check_allowlist()  # defense in depth: the gate decides every dial.
+        try:
+            connection = await self._dial(origin)
+        except InvalidStatus as exc:
+            status = exc.response.status_code
+            if status in _RETRYABLE_STATUS:
+                raise WebSocketClosed(
+                    f"{self.id}: the server answered the probe's upgrade with HTTP {status}"
+                ) from exc
+            if status in (401, 403) and self._guard is not None and origin != CROSS_SITE_ORIGIN:
+                raise self._auth_failed(f"HTTP {status} at the upgrade", refused=True) from exc
+            return {"origin": origin, "outcome": "refused", "status": status}
+        try:
+            async with asyncio.timeout(self.origin_hold_s):
+                await connection.wait_closed()
+        except TimeoutError:
+            return {"origin": origin, "outcome": "accepted", "status": 101}
+        finally:
+            await _close(connection)
+        return {
+            "origin": origin,
+            "outcome": "closed",
+            "status": 101,
+            "close_code": connection.close_code,
+        }
 
     def _check_credential(self) -> None:
         """Refuse a credential the redactor could not mask by value, before any dial."""
@@ -683,8 +779,17 @@ class WebSocketAdapter:
             f"{self.id}: exhausted {attempts} attempt(s) to open {self.url}: {last}"
         )
 
-    async def _connect(self) -> ClientConnection:
-        headers = render(self.spec.headers, self._values(None))
+    async def _dial(self, origin: str | None = None) -> ClientConnection:
+        """Open the upgrade with the file's headers, ``origin`` as the ``Origin`` when given.
+
+        A refused upgrade (``InvalidStatus``) propagates: :meth:`_connect` and
+        :meth:`_try_origin` read a status differently. Anything else that stops the upgrade is
+        translated here. An ``Origin`` the file's headers set is replaced by ``origin``.
+        """
+
+        headers: dict[str, str] = render(self.spec.headers, self._values(None))
+        if origin is not None:
+            headers = {name: value for name, value in headers.items() if name.lower() != "origin"}
         # Cleartext ws is loopback-only and never goes through a proxy (the environment's
         # proxy would see the handshake token in the clear, on a host the scope did not
         # authorize); wss honours the proxy environment as the HTTP adapters do, TLS end to
@@ -693,6 +798,7 @@ class WebSocketAdapter:
         try:
             return await _NoRedirects(
                 self.url,
+                origin=None if origin is None else Origin(origin),
                 additional_headers=headers or None,
                 open_timeout=self.retry.timeout_s,
                 close_timeout=_CLOSE_TIMEOUT_S,
@@ -701,6 +807,23 @@ class WebSocketAdapter:
                 user_agent_header="ildottore",
                 proxy=proxy,
             )
+        except InvalidStatus:
+            raise
+        except InvalidURI as exc:  # pragma: no cover - the gate already parsed a host and path
+            raise AdapterProductError(f"{self.id}: not a WebSocket URL: {exc}") from exc
+        except InvalidHandshake as exc:
+            raise AdapterProductError(
+                f"{self.id}: the endpoint did not complete a WebSocket upgrade: "
+                f"{self._safe(str(exc))}"
+            ) from exc
+        except (OSError, TimeoutError) as exc:
+            raise WebSocketClosed(
+                f"{self.id}: could not connect: {type(exc).__name__}: {self._safe(str(exc))}"
+            ) from exc
+
+    async def _connect(self) -> ClientConnection:
+        try:
+            return await self._dial()
         except InvalidStatus as exc:
             status = exc.response.status_code
             if status in (401, 403) and self._guard is not None:
@@ -718,17 +841,6 @@ class WebSocketAdapter:
             # (no prompt has been sent yet), so it still stops a -sV pass (u09 A-67).
             raise AdapterProductError(
                 f"{self.id}: the server refused the WebSocket upgrade with HTTP {status}{redirect}"
-            ) from exc
-        except InvalidURI as exc:  # pragma: no cover - the gate already parsed a host and path
-            raise AdapterProductError(f"{self.id}: not a WebSocket URL: {exc}") from exc
-        except InvalidHandshake as exc:
-            raise AdapterProductError(
-                f"{self.id}: the endpoint did not complete a WebSocket upgrade: "
-                f"{self._safe(str(exc))}"
-            ) from exc
-        except (OSError, TimeoutError) as exc:
-            raise WebSocketClosed(
-                f"{self.id}: could not connect: {type(exc).__name__}: {self._safe(str(exc))}"
             ) from exc
 
     def _guards_handshake(self) -> bool:
@@ -1159,6 +1271,33 @@ def _prompt_text(request: ModelRequest) -> str:
             content = message.get("content")
             return content if isinstance(content, str) else _as_text(content)
     return ""
+
+
+def origin_of(url: str) -> str:
+    """The ``Origin`` of the page a ``ws(s)://`` endpoint is most likely served from.
+
+    ``ws`` becomes ``http`` and ``wss`` ``https``, with the same host and port (a default port
+    left out): what a browser sends for a page on the endpoint's own host (RFC 6454).
+    """
+
+    parts = urlsplit(url)
+    scheme = "https" if parts.scheme.lower() == "wss" else "http"
+    host = parts.hostname or ""
+    if ":" in host:
+        host = f"[{host}]"
+    default = 443 if scheme == "https" else 80
+    port = "" if parts.port in (None, default) else f":{parts.port}"
+    return f"{scheme}://{host}{port}"
+
+
+def _outcome_text(seen: Mapping[str, object], hold_s: float) -> str:
+    """What the server did with one probe upgrade, in the words the spec's oracle reads."""
+
+    if seen["outcome"] == "accepted":
+        return f"accepted (HTTP 101, held open {hold_s:g}s)"
+    if seen["outcome"] == "closed":
+        return f"closed by the server after the upgrade (close code {seen.get('close_code')})"
+    return f"refused (HTTP {seen.get('status')})"
 
 
 def _conversation_of(request: ModelRequest) -> tuple[str | None, int, bool]:

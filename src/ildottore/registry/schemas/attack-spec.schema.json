@@ -197,10 +197,11 @@
           "multimodal",
           "audio",
           "mcp",
-          "mcp_pins"
+          "mcp_pins",
+          "websocket_origin"
         ]
       },
-      "description": "Capabilities the target must offer for the spec to run. mcp: the target is an MCP server (provider mcp), whose advertised surface the read-only MCP adapter renders (OD-44). mcp_pins: the MCP target pins its catalogue (mcp.pins), which the adapter compares against what the server advertises (u04 A-101)."
+      "description": "Capabilities the target must offer for the spec to run. mcp: the target is an MCP server (provider mcp), whose advertised surface the read-only MCP adapter renders (OD-44). mcp_pins: the MCP target pins its catalogue (mcp.pins), which the adapter compares against what the server advertises (u04 A-101). websocket_origin: the target is a WebSocket endpoint (provider websocket), whose upgrade the adapter probes with a chosen Origin and sends no frame (u04 A-133, OD-75)."
     },
     "description": {
       "type": "string"

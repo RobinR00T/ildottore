@@ -661,7 +661,11 @@ target pins its catalogue under `mcp.pins` (below, "Pinning an MCP server's cata
 `MCP-RUGPULL-001` requires it, and it is refused declared on a live target (an offline mock may
 declare it when its `mock_scenario` is `vulnerable` or `hardened`, which replay the spec's
 fixtures; a `bare` or `comprehending` mock answers a canned string with no catalogue in it, and the
-spec would fail that), u04 A-101. So a `tool:` written
+spec would fail that), u04 A-101; and `websocket_origin`, which you do not write either: it is
+true exactly when `provider` is `websocket`, `AC-WS-ORIGIN-001` requires it (below, "Does the
+endpoint check the Origin?"), and it is refused declared `false` on a WebSocket target or `true`
+on a live target of another provider (an offline mock may declare it under the same two
+`mock_scenario` values), u04 A-133. So a `tool:` written
 for `tools:` is refused (`tool: Extra inputs are not permitted`); older versions ignored it, and
 the target ran with tools off and without the specs that need them. A `capabilities` that is
 not a mapping is refused too (`'capabilities' must be a mapping`), `false`, `0`, `[]` and `""`
@@ -683,9 +687,9 @@ sent, so the provider's default applies. No `dottore` flag sets sampling. For ea
 | a `-sV` probe, `dottore fingerprint` | temperature 0 and a 512-token cap (`PROBE_SAMPLING`) | the target file's block: only `top_p` and `seed` are left to fill (on Anthropic, neither goes out) | | the provider's default |
 | the `--judge` model | temperature 0 on its first pass, 0.5 on the second, `top_p` 1.0 (not sent to an Anthropic judge) | the block of the judge's own file, never the scanned target's: only `max_tokens` and `seed` are left | | the provider's default |
 
-Every shipped spec declares its `sampling` (`temperature` 0 in all 79, `seed` 42 in 77, a
+Every shipped spec declares its `sampling` (`temperature` 0 in all 80, `seed` 42 in 78, a
 `max_tokens` in 40, `top_p` 1.0 in 6), so with the examples' `sampling_defaults: { temperature:
-0.0, top_p: 1.0 }` what the block adds to the shipped battery is `top_p` 1.0 on the 73 specs that
+0.0, top_p: 1.0 }` what the block adds to the shipped battery is `top_p` 1.0 on the 74 specs that
 leave it unset (OpenAI's own default, now written on the wire). A probe's own seed is metadata
 and is not sent; a `seed` in the block is, but only to a target whose file sets
 `capabilities.seed: true` (every capability is false unless set, and a file that does not say
@@ -1392,6 +1396,41 @@ until 2026-10-11 it wrote a `provider: rest` target file `run` refused, OD-37; a
 is given to `dottore fleet` as a hand-written `--judge` file, §4.3); a session that must survive
 a reconnect (by design, OD-36, above).
 
+#### Does the endpoint check the Origin? (`AC-WS-ORIGIN-001`)
+
+A browser attaches the user's cookies to a WebSocket upgrade from any page and applies no
+same-origin policy to the socket, so a chat endpoint that upgrades whatever the `Origin` header
+says can be opened by any site the user visits, as the user (cross-site WebSocket hijacking,
+CWE-1385). `AC-WS-ORIGIN-001` asks, on every `provider: websocket` target, and is skipped as
+`capability_unavailable` everywhere else. It is not a prompt: the adapter opens two upgrades,
+sends no frame on either (no handshake template, no session start, no query), holds each one
+second if accepted and closes it. The first offers the `Origin` of the page the chat is served
+from, the second `https://dottore-cross-site.invalid`, a name under `.invalid` that resolves
+nowhere (u04 A-133, ADR-0027). The reply is what the server did:
+
+```
+WebSocket Origin probe: two upgrades, no frame sent
+control origin https://chat.example.com: accepted (HTTP 101, held open 1s)
+cross-site origin https://dottore-cross-site.invalid: refused (HTTP 403)
+```
+
+An accepted cross-site upgrade fails the spec; a refusal (any status but 429 and 5xx, which are
+retried) or a close during the hold (a server that checks after the upgrade, 1008) passes it. The
+control is derived from the endpoint (`wss://chat.example.com/ws` gives
+`https://chat.example.com`); when the chat page lives elsewhere, say so:
+
+```yaml
+websocket:
+  origin: "https://app.example.com"   # an origin only: scheme, host, optional port; no path
+```
+
+A control the server refuses makes the attempt `inconclusive` (`WebSocketProbeUntestable`, not
+retried), never a verdict: an endpoint that refuses every upgrade without a cookie proves nothing
+about its `Origin` check. An `Origin` in `headers` is replaced for the probe. A server that
+accepts any `Origin` but authenticates on a token in the first frame is less exploitable than one
+that trusts a cookie; the probe cannot see which, so read the finding as "the upgrade was
+accepted", not "a session was read".
+
 #### A deployed agent: the `guard` block
 
 A model API is built for traffic; a deployed assistant often is not. A copilot or an agent with
@@ -1647,7 +1686,7 @@ $ echo $?
 
 | Flag | Meaning |
 |------|---------|
-| `--judge PATH` | judge model `target.yaml` (LLM-as-judge for `semantic_judge`). Without it, a live run (and its `--dry-run`) warns before sending, per live target, how many of the specs that will run there use `semantic_judge` (`28 of the 28 specs that will run on local-llama ...` on the example target: every shipped spec declares a judge since OD-16, `MCP-TOOLPOISON-001` does not run on a chat model since OD-44, and five more wait for a `seeded_setup` or a `disallowed_task` since u08 A-113 and u13 A-114): they come back inconclusive wherever no deterministic evaluator decides |
+| `--judge PATH` | judge model `target.yaml` (LLM-as-judge for `semantic_judge`). Without it, a live run (and its `--dry-run`) warns before sending, per live target, how many of the specs that will run there use `semantic_judge` (`28 of the 28 specs that will run on local-llama ...` on the example target: every shipped spec declares a judge since OD-16, `MCP-TOOLPOISON-001` does not run on a chat model since OD-44 nor `AC-WS-ORIGIN-001`, a WebSocket handshake probe judged by its two regexes, since u04 A-133, and five more wait for a `seeded_setup` or a `disallowed_task` since u08 A-113 and u13 A-114): they come back inconclusive wherever no deterministic evaluator decides |
 | `--runs INT` | reproducibility runs (default 5) |
 | `-T 0..5` | timing template (default 3; `--quick` implies 0, `--deep` and `-A` imply 2; an explicit `-T` always wins); higher is faster/louder |
 | `--rate FLOAT` | max requests/sec, enforced across the whole campaign (one shared gate, so concurrency does not multiply it). Every send passes it: the battery, each retry (a campaign's adapters do not retry on their own; the runner retries, paced and debited, so a 429 storm is not a burst), the `-sV` probes, the multi-identity sweep and the `--judge` model. Must be greater than 0: `0` or a negative rate is refused (exit 3) instead of silently switching pacing off. **Not applied to an offline mock run**, where nothing leaves the process: the resolved plan says so explicitly rather than dropping the flag |
@@ -2629,7 +2668,7 @@ it is the detail behind a figure, not a gap list), and with `--json` leaves each
 `missing`, `out_of_reach` and `not_tested_by_design` lists out.
 
 ```
-Battery coverage (79 specs, no scan performed)
+Battery coverage (80 specs, no scan performed)
 
   OWASP LLM Top 10 (2025)                    8/10   80%
   MITRE ATLAS tactics (2026.09)             13/16   81%
@@ -2773,7 +2812,7 @@ Every attributing probe gets the same answer from this mock, so the fingerprint 
 
 ## 6. The attack battery
 
-79 specs across 14 suites, aligned to OWASP LLM Top 10, MITRE ATLAS, OWASP-Agents-2026 and
+80 specs across 14 suites, aligned to OWASP LLM Top 10, MITRE ATLAS, OWASP-Agents-2026 and
 the Nova IoPC taxonomy, and mapped by falsification to the OWASP AISVS controls they can catch
 failing. Every spec carries its framework mapping, including an optional
 two-axis `iopc:` block (`techniques` = the how, `impacts` = the damage), and the run report
@@ -3007,11 +3046,11 @@ that never engaged. So the shipped specs key a text oracle on what only an explo
 (the leaked marker, the produced batch, the coerced repetition: the absence polarity) and pair it
 with `semantic_judge` wherever the oracle cannot prove the secure direction alone; without a judge
 such a spec is `inconclusive`, never a pass, and a deterministic `fail` still decides alone.
-Against the offline `bare` mock, which answers every prompt with one canned string, all 79 come
+Against the offline `bare` mock, which answers every prompt with one canned string, all 80 come
 out `inconclusive`. Write a custom spec the same way: a `regex_presence` on refusal words fails a
 bounded answer phrased in other words (OD-16, decided 2026-10-11, ADR-0007).
 
-**What the `refusal` evaluator reads, measured.** It is a phrase list, used by 16 of the 79
+**What the `refusal` evaluator reads, measured.** It is a phrase list, used by 16 of the 80
 shipped specs. On 100 adjudicated replies written as deployed models write them
 (`tests/fixtures/labeled/refusal_adjudicated.json`, 2026-11-09, u06 A-124, A-125 and A-127) it
 read no compliance as a refusal and no refusal as a compliance, and it decided 50 of 60 refusals

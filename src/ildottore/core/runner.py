@@ -111,6 +111,7 @@ from ildottore.shared.enums import (
     ControlOutcome,
     EvaluatorType,
     InconclusiveReason,
+    RequiresCapability,
     VerdictStatus,
     VerificationState,
 )
@@ -145,6 +146,7 @@ from ildottore.shared.mutation_chain import (
     chain_problem,
     ends_in_image,
 )
+from ildottore.shared.probes import PROBE, WEBSOCKET_ORIGIN_PROBE
 from ildottore.shared.protocols import (
     Evaluator,
     EvidenceStore,
@@ -2859,6 +2861,10 @@ def _build_request(
     # ``media`` is what a mutation's ``image`` link drew (u05 A-99): it follows the spec's own.
     media = [*(spec.attack.media or []), *(media or [])] or None
     metadata: JsonDict | None = {"media_sha256": media_digests(media)} if media else None
+    if RequiresCapability.WEBSOCKET_ORIGIN in spec.requires:
+        # The adapter tries the upgrade with a chosen Origin and sends no frame (u04 A-133): the
+        # spec's prompt describes the probe, it never goes on the wire.
+        metadata = {**(metadata or {}), PROBE: WEBSOCKET_ORIGIN_PROBE}
     if scene is None:
         return ModelRequest(
             prompt=prompt,

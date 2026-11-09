@@ -140,6 +140,9 @@ class Capability(StrEnum):
     MCP = "mcp"
     #: The MCP target pins its catalogue (``mcp.pins``, u04 A-101). Set by the target loader.
     MCP_PINS = "mcp_pins"
+    #: The target is a WebSocket endpoint whose upgrade the adapter can probe with a chosen
+    #: ``Origin`` (u04 A-133, OD-75): its provider is ``websocket``. Set by the target loader.
+    WEBSOCKET_ORIGIN = "websocket_origin"
 
 
 class RequiresCapability(StrEnum):
@@ -165,6 +168,10 @@ class RequiresCapability(StrEnum):
     #: The spec compares a server's catalogue against the pins its target declares (u04 A-101),
     #: so a server nobody pinned is not judged.
     MCP_PINS = "mcp_pins"
+    #: The spec reads what the WebSocket adapter's handshake probe renders of the upgrades it
+    #: tried with a chosen ``Origin`` (u04 A-133, OD-75), so it means something only against a
+    #: WebSocket endpoint.
+    WEBSOCKET_ORIGIN = "websocket_origin"
 
 
 class AttackOccurrence(StrEnum):

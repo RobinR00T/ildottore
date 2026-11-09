@@ -251,6 +251,11 @@ class FleetTarget(BaseModel):
                 "capabilities.mcp_pins is not declared: pin the catalogue under mcp.pins in the "
                 "target file"
             )
+        # Nor `websocket_origin` (u04 A-133): the provider `websocket` sets it.
+        if "websocket_origin" in self.capabilities.model_fields_set:
+            raise ValueError(
+                "capabilities.websocket_origin is not declared: the provider websocket sets it"
+            )
         return self
 
 
