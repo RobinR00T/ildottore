@@ -733,6 +733,25 @@ reads as U+FFFD, since httpx decodes the stream as text.
   writes `{{system_prompt}}`; the adapter's property of the same name and the plan
   (`cli.wiring.provider_carries_system_prompt`) both use it (u08 A-113).
 
+- **A-132 (added 2026-11-09): an attachment's file name is a carrier (OD-74).** A media part may
+  carry an optional `filename`, the name it is uploaded as: an application that takes uploads
+  usually puts that name into the model's context verbatim, and a scanner of the file's content
+  never reads it. `shared.media.attachment_filename` bounds it to one path component: 1 to 255
+  characters, no `/` or `\`, no `..`, no control or format character (Unicode `Cc`/`Cf`); the
+  attack-spec schema carries the length and the separators, and `render_media_part` refuses the
+  rest, so the linter (`attack.media[i] is not renderable`), the runner and each adapter refuse a
+  bad name. The name is never opened or written. The OpenAI and Anthropic adapters send
+  `[Attached file: <name>]` (`shared.media.ATTACHMENT_LABEL`) as a text block just before the
+  part, since neither image block (`image_url`, `image`) carries a name; a part without one is
+  sent as before. The media digest stays the bytes'; the name rides on the declarative part the
+  request records. The linter reads the name as part of the request and of what the target reads
+  (its echo rule and its canary-planted check). It lands with `MM-IMG-FILENAME-INJECT-001`
+  (u13). Acceptance: `tests/adapters/test_attachment_filename.py` (32: the bounds, the label on
+  both wires and its absence, a bad name refused before the wire, the schema and the linter
+  through the real loader, the shipped spec bound to a run sending its canary in the label and
+  none in the pixels). Judging rules 10 re-pinned: a part with no name is sent and judged as
+  before.
+
 ## §8 Out of scope / forbidden
 - MUST NOT import or call vendor SDKs (`openai`, `anthropic` packages): httpx only (ADR-0002).
 - MUST NOT use LiteLLM as the core abstraction (optional wrapped adapter is MVP-2+, not here).
@@ -958,3 +977,14 @@ reads as U+FFFD, since httpx decodes the stream as text.
   no further list of sensitive directories (`~/.ssh`, `~/.aws`) is checked under another source.
   Reversal, should the owner revisit it: `_isolation_spec` in `cli/wiring.py`, the `isolation`
   branches of `MCPAdapter._discover_stdio`, `adapters/isolation.py`.
+- **OD-74** (2026-11-09, A-132): how an attachment's name reaches the model. Built as the
+  smallest reversible version: (a) a text block `[Attached file: <name>]` just before the part on
+  the OpenAI and Anthropic wires (built), the shape a chat application gives an upload; not
+  taken: the providers' file and document blocks (OpenAI's `file` part with its `filename`,
+  Anthropic's `document` block with its `title`), which carry a name natively but take a PDF or a
+  text file, not the PNG this battery renders, so a spec would need a document renderer first;
+  (b) the name verbatim, so a fail reproduces against a real upload form; (c) at most 255
+  characters, one path component, no control or format character (built). A REST or WebSocket
+  target carries no media, so the spec is skipped there (`capability_unavailable`), never a pass.
+  Reversal: `attachment_label` in `shared.media`, its two call sites in `adapters/openai.py` and
+  `adapters/anthropic.py`, the schema's `filename` and the spec.

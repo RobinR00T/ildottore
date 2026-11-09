@@ -53,7 +53,7 @@ in a run is a third-party report).
   MITRE ATT&CK Enterprise tactics (v20.0)    8/15   53%
 ```
 
-41 of 79 specs carry a mapping; 18 distinct techniques are declared, 14 observed and 4
+42 of 80 specs carry a mapping; 18 distinct techniques are declared, 14 observed and 4
 capability-only. Covered: Reconnaissance, Resource Development, Execution, Persistence, Stealth,
 Credential Access, Exfiltration, Impact. Not covered yet, all **roadmap** (a black-box runtime
 scanner driving an agent can observe each in the target's own tool calls): Initial Access,
@@ -71,7 +71,7 @@ Control. None is out of reach or deliberately untested, and the bucket membershi
 | `RECON-TARGET-OSINT-001` | `T1682` observed; `T1589`, `T1591` capability-only | the model is the public AI service being queried for targeting; the dossier would feed identity and org gathering elsewhere |
 | `SAFETY-PHISH-BEC-001` | `T1683.001` observed; `T1566` capability-only | the lure is generated; nothing is sent |
 | `SAFETY-DISINFO-001` | `T1683.001` observed | written content at scale; no operation follows |
-| `PI-INDIRECT-RAG-001`, `PI-INDIRECT-TOOL-001`, `MM-IMG-DOC-INJECT-001`, `MM-IMG-PROMPTINJECT-001`, `MM-AUD-PROMPTINJECT-001`, `MM-IMG-SPLIT-PAYLOAD-001`, `MEM-POISON-001`, `AG-WORM-PROPAGATE-001` | `T1698` observed | the instruction arrives in data the target processes and is obeyed |
+| `PI-INDIRECT-RAG-001`, `PI-INDIRECT-TOOL-001`, `MM-IMG-DOC-INJECT-001`, `MM-IMG-FILENAME-INJECT-001`, `MM-IMG-PROMPTINJECT-001`, `MM-AUD-PROMPTINJECT-001`, `MM-IMG-SPLIT-PAYLOAD-001`, `MEM-POISON-001`, `AG-WORM-PROPAGATE-001` | `T1698` observed | the instruction arrives in data the target processes and is obeyed |
 | `PI-DELAYED-TRIGGER-001`, `AG-TOOLMETA-POISON-001`, `AG-INTERAGENT-COMPROMISE-001`, `MM-IMG-TOOL-EXFIL-001`, `AG-TOOLCHAIN-EXFIL-001` | `T1698`, `T1700` observed | the injected instruction makes the agent move data out through a tool |
 | `AG-CODEEXEC-UNEXPECTED-001` | `T1698`, `T1059.006` observed | the injected snippet is run through the Python interpreter tool |
 | `AG-EXTORT-CHAIN-001` | `T1698`, `T1552`, `T1485`, `T1486`, `T1700` observed | the JadePuffer chain end to end: inject, read the env, drop, encrypt, POST out |

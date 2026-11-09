@@ -13,6 +13,10 @@ A declarative media part (``attack.media[i]`` / ``ModelRequest.media[i]``) is a 
   black-on-white PNG (the reproducible, declarative path: no binary in the spec).
 * ``{"kind": "image", "format": "png", "data_b64": "<base64>"}`` uses pinned bytes verbatim (for
   a fixed asset a spec wants to reuse). Still byte-stable; no rendering.
+* Any part may name the file it is uploaded as (``"filename": "report.png"``, u04 A-132): an
+  application that takes uploads usually puts that name into the model's context verbatim, and a
+  scanner of the file's content never reads it. :func:`attachment_filename` validates it and
+  :func:`attachment_label` is the text turn an adapter sends beside the part.
 
 ``render_media_part`` returns ``(mime_type, raw_bytes)``. The adapter base64-encodes the bytes
 into the provider's image content block; the runner keeps the *declarative* part on the request,
@@ -27,12 +31,17 @@ from __future__ import annotations
 import base64
 import hashlib
 import struct
+import unicodedata
 import zlib
 from collections.abc import Mapping, Sequence
 
 __all__ = [
+    "ATTACHMENT_LABEL",
     "CHARSETS",
+    "MAX_FILENAME_LENGTH",
     "MediaError",
+    "attachment_filename",
+    "attachment_label",
     "glyph_rows",
     "media_digest",
     "media_digests",
@@ -49,6 +58,13 @@ class MediaError(ValueError):
 _MAX_SCALE = 16
 _MAX_COLUMNS = 256
 _MAX_OUTPUT_PIXELS = 8_000_000  # 8 MP ceiling on the rendered image
+
+#: The longest ``filename`` a part may carry: the 255 a common filesystem allows for one name.
+MAX_FILENAME_LENGTH = 255
+
+#: How an adapter announces a named part, in a text block just before it (u04 A-132, OD-74):
+#: the shape a chat application gives an upload, with the name exactly as the spec wrote it.
+ATTACHMENT_LABEL = "[Attached file: {filename}]"
 
 
 # --- 5x7 bitmap font (public-domain style dot-matrix) ------------------------------------------
@@ -319,9 +335,11 @@ def render_media_part(part: Mapping[str, object]) -> tuple[str, bytes]:
       synthesized from text with the stdlib, so an audio carrier is always pinned bytes; the spec
       declares it as an ``asset`` path that the loader resolves into ``data_b64`` before this runs.
 
-    Raises :class:`MediaError` on an unknown kind/format or malformed data (fail loudly).
+    Raises :class:`MediaError` on an unknown kind/format, malformed data or a ``filename`` that
+    :func:`attachment_filename` refuses (fail loudly).
     """
 
+    attachment_filename(part)  # a bad name fails the part, like bad bytes (u04 A-132)
     kind = part.get("kind")
     if kind == "image":
         return _render_image_part(part)
@@ -363,6 +381,46 @@ def _render_audio_part(part: Mapping[str, object]) -> tuple[str, bytes]:
     if isinstance(data_b64, str) and data_b64:
         return "audio/wav", _decode_b64(data_b64)
     raise MediaError("audio media part needs 'data_b64' (resolved from its 'asset' by the loader)")
+
+
+def attachment_filename(part: Mapping[str, object]) -> str | None:
+    """The ``filename`` a part is uploaded as, validated, or ``None`` when it names none.
+
+    A name is a single path component: 1 to :data:`MAX_FILENAME_LENGTH` characters, no ``/`` or
+    ``\\``, no ``..``, no control or format character (Unicode ``Cc``/``Cf``, so no newline that
+    starts a turn of its own and no invisible character the report would not show). The name is
+    never opened or written: the bounds keep it what an upload form would accept, so a fail
+    reproduces against a real application. Raises :class:`MediaError` otherwise.
+    """
+
+    name = part.get("filename")
+    if name is None:
+        return None
+    if not isinstance(name, str):
+        raise MediaError("media 'filename' must be a string")
+    if not name.strip():
+        raise MediaError("media 'filename' must not be empty")
+    if len(name) > MAX_FILENAME_LENGTH:
+        raise MediaError(
+            f"media 'filename' is {len(name)} characters, over the max of {MAX_FILENAME_LENGTH}"
+        )
+    if "/" in name or "\\" in name:
+        raise MediaError("media 'filename' must not contain a path separator ('/' or '\\')")
+    if ".." in name:
+        raise MediaError("media 'filename' must not contain '..'")
+    bad = next((c for c in name if unicodedata.category(c) in ("Cc", "Cf")), None)
+    if bad is not None:
+        raise MediaError(
+            f"media 'filename' must not contain a control or format character (U+{ord(bad):04X})"
+        )
+    return name
+
+
+def attachment_label(part: Mapping[str, object]) -> str | None:
+    """The text an adapter sends just before a named part (:data:`ATTACHMENT_LABEL`), or None."""
+
+    name = attachment_filename(part)
+    return None if name is None else ATTACHMENT_LABEL.format(filename=name)
 
 
 def media_digest(part: Mapping[str, object]) -> str:

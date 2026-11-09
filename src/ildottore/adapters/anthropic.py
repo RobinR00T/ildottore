@@ -23,7 +23,7 @@ from typing import Any, ClassVar, Final
 
 from ildottore.adapters.base import BaseAdapter, ResponseMalformed
 from ildottore.shared.filter_stops import ANTHROPIC_FILTER_STOPS
-from ildottore.shared.media import MediaError, render_media_part
+from ildottore.shared.media import MediaError, attachment_label, render_media_part
 from ildottore.shared.models import Capabilities, ModelRequest, ModelResponse, Sampling
 
 __all__ = ["MODELS_WITHOUT_SAMPLING", "AnthropicAdapter", "sent_sampling", "takes_no_sampling"]
@@ -228,6 +228,8 @@ class AnthropicAdapter(BaseAdapter):
         The Messages API accepts image input but not audio, so an audio carrier is refused here
         (defense-in-depth: the planner already skips an ``audio`` spec on this adapter, which does
         not declare the capability) rather than sent as a malformed image block the API would 400.
+        A part with a ``filename`` is preceded by a text block naming it (u04 A-132): an image
+        block carries no name of its own.
         """
 
         content: list[dict[str, Any]] = [{"type": "text", "text": request.prompt or ""}]
@@ -237,6 +239,9 @@ class AnthropicAdapter(BaseAdapter):
                 raise MediaError(
                     f"Anthropic Messages API does not accept {mime!r} media (image only)"
                 )
+            label = attachment_label(part)
+            if label is not None:
+                content.append({"type": "text", "text": label})
             content.append(
                 {
                     "type": "image",
