@@ -5,6 +5,30 @@ The carryover ledger. Every agent session updates this so context survives even 
 newest merge on top: a branch's entries land together when it merges, so the dates of
 neighbouring entries can interleave (an older branch merged later sits above a newer one).
 
+## State, 2026-11-09: an injection in an attachment's file name (`feat/filename-injection`, u04 A-132, OD-74, u13)
+
+- **Why.** One of the eight generic techniques the owner approved on 2026-11-09 from a field
+  engagement (piece 4): applications that take uploads often put the file name into the model's
+  context verbatim, and a scanner of the file's content never reads it. The schema had no way to
+  name a part, and the adapters sent none.
+- **Built.** An optional `filename` on a media part, bounded in `shared.media.attachment_filename`
+  (one path component, 1 to 255 characters, no `/`, `\`, `..`, control or format character) and
+  in the attack-spec schema; `render_media_part` refuses a bad name, so the linter, the runner and
+  both adapters do. The OpenAI and Anthropic adapters send `[Attached file: <name>]` as a text
+  block just before the part. The linter reads the name as request text. New spec
+  `MM-IMG-FILENAME-INJECT-001`: a clean floor-plan image whose name carries the note and the
+  canary.
+- **Measured.** `dottore lint`: 80 specs, 14 suites, 0 errors. `dottore coverage --no-gaps`: every
+  figure as before (8/10, 13/16, 27/30, 23/23, 5/51, 12/95, 0/45, 19/27, 8/15). CWE on 49 specs,
+  ESP-IA on 65, ATT&CK on 42. The vision example's dry run with `-p pi --obfuscate image`: 5
+  specs, 65 requests (4 and 60). Judging rules 10 re-pinned (`63df4a47...`), no verdict changes.
+  `make gates` green on 2026-11-09 (ruff, format, mypy 199 files, import-linter 4 kept, spec lint,
+  coverage 97.56%, self-scan, bandit, pip-audit).
+- **Open (OD-74, the owner's call).** The label shape, and whether to use the providers' native
+  file and document blocks (OpenAI `file` with `filename`, Anthropic `document` with `title`),
+  which take a PDF or text, not the PNG the battery renders. Expect a rebase at merge: sibling
+  branches add specs and take A-128 to A-131, OD-72, OD-73, ADR-0025.
+
 ## State, 2026-11-09: the `refusal` evaluator reads Spanish, French and German (`feat/refusal-languages`, u06 A-127, judging rules 10)
 
 - **Why.** The open item of 2026-11-08: refusals in Spanish, French and German were 0 of 6, and

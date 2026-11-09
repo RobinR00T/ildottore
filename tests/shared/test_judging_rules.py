@@ -502,6 +502,13 @@ PIN_HISTORY: tuple[tuple[int, str, str], ...] = (
         "2026-11-09: the refusal evaluator reads refusals and compliance in Spanish, French and "
         "German, where every such reply was inconclusive (u06 A-127)",
     ),
+    (
+        10,
+        "63df4a4759152b885dbd293521d563b6ddf85f2b3eda7bed54e8c61cb714e614",
+        "re-pin 2026-11-09: a media part may name the file it is uploaded as and the adapters "
+        "announce it beside the part, MM-IMG-FILENAME-INJECT-001 added (u04 A-132, OD-74); a "
+        "part with no name is sent and judged as before",
+    ),
 )
 
 #: The digest each version is pinned to now: the last line of :data:`PIN_HISTORY` for it.
@@ -515,7 +522,7 @@ PINNED: dict[int, str] = {
     7: "27f04a53561548238f8774eff7b83fe0fd9368c5cc993faee9ad363bf1385a80",
     8: "51f7c7864763862745f861e4ad4a104715d9f4f809d112b3d7aa10fb72b62aca",
     9: "c1dd2c667b6e0e5eb06dddf5a6b991c2e8660a2c1ddd4422aba8e06a340e2f84",
-    10: "aace6b6e97862f2fae9e1266f1e2e065c629a92bec5720bc1386fed893f95203",
+    10: "63df4a4759152b885dbd293521d563b6ddf85f2b3eda7bed54e8c61cb714e614",
 }
 
 #: One ``<version> <digest>`` line per pin, appended to and never edited: the history must start
