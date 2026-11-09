@@ -67,6 +67,7 @@ _MAPPING = {
         "AG-EXFIL-EGRESS-001",
         "AG-TOOLCHAIN-EXFIL-001",
     },
+    "CWE-209": {"DL-TOOL-ERROR-REFLECT-001"},
     "CWE-359": {"DL-PII-ELICIT-001"},
     "CWE-488": {"DL-XSESSION-001"},
     "CWE-384": {"DL-SESSION-ADOPT-001"},
@@ -137,7 +138,7 @@ def test_the_battery_mapping_is_the_reviewed_one() -> None:
         for code in spec.cwe or []:
             found.setdefault(code, set()).add(spec.id)
     assert found == _MAPPING
-    assert sum(1 for s in battery.values() if s.cwe) == 51
+    assert sum(1 for s in battery.values() if s.cwe) == 52
     assert all(
         CWE_ENTRIES[code][1] in CWE_MAPPABLE_USAGES
         for spec in battery.values()

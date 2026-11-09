@@ -22,3 +22,4 @@ specs:
   - spec_id: AG-INTERAGENT-COMPROMISE-001
   - spec_id: AG-AUTONOMY-DRIFT-001
   - spec_id: AG-TOOLCHAIN-EXFIL-001     # orchestration abuse: the ORDER is the exploit
+  - spec_id: DL-TOOL-ERROR-REFLECT-001  # a failed tool call relays backend internals (CWE-209)

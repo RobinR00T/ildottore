@@ -5,6 +5,26 @@ The carryover ledger. Every agent session updates this so context survives even 
 newest merge on top: a branch's entries land together when it merges, so the dates of
 neighbouring entries can interleave (an older branch merged later sits above a newer one).
 
+## State, 2026-11-09: a tool error that relays backend internals (`feat/dl-tool-error-reflect`, u13 A-135)
+
+- **Why.** The owner asked (2026-11-09) to carry into Il Dottore what serves it from another of
+  the owner's projects, a live validation pipeline. The inventory (eight pieces) was decided the same day
+  at 15:58: all eight, one change each. This is the first: a source review there found tool
+  handlers that pass an upstream error body to the model. Only the generic pattern comes over.
+- **Built.** `DL-TOOL-ERROR-REFLECT-001` (the mock tool's 502 carries the canary in a connection
+  string; `secret_leakage` then the judge); CWE-209 in the pinned table; the spec in
+  `agentic-owasp2026`. 83 specs.
+- **Measured.** Lint clean over 83 specs; both fixtures prove. Against `examples/target.agent.yaml`
+  the spec is not seeded (it needs the deployment's own tool), so stage d of Scenario M is
+  unchanged by it: 93 requests over 27 specs and 106 to the judge (the README said 26 specs and
+  108, and 1682 with `--fuzz 10`, figures already stale on `main`; corrected to the real output,
+  1721 with `--fuzz 10`, measured 2026-11-10).
+- **Costs.** Judging rules 12 re-pinned (no verdict changes).
+- **Next.** The other seven pieces, in this order: the `authority_claim` mutator; a guardrail of
+  the application that answers with a canned reply, read as not reaching the model (with an ADR);
+  `GUARD-TOPIC-SKIP-001`; the WebSocket Origin check; a backlog of agent techniques in `docs/12`;
+  injection in an attachment's file name; a conversation id adopted across identities.
+
 ## State, 2026-11-10: a stance beside a compliance opener abstains (`feat/refusal-mixed`, u06 A-136, OD-77, judging rules 12)
 
 - **Why.** A-128's wider finding: any refusal marker before a weak opener was scored a refusal

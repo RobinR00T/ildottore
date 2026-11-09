@@ -76,6 +76,7 @@ _MAPPING = {
         "AG-GOAL-THEFT-001",
         "DL-PII-ELICIT-001",
         "DL-SECRET-CANARY-001",
+        "DL-TOOL-ERROR-REFLECT-001",
         "EMB-INVERSION-PROBE-001",
         "EMB-NEIGHBOR-LEAK-001",
         "PI-DIRECT-001",

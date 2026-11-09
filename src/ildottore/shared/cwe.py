@@ -67,6 +67,7 @@ CWE_ENTRIES: Final = MappingProxyType(
         ),
         "CWE-94": ("Improper Control of Generation of Code", "Allowed-with-Review"),
         "CWE-201": ("Insertion of Sensitive Information Into Sent Data", "Allowed"),
+        "CWE-209": ("Generation of Error Message Containing Sensitive Information", "Allowed"),
         "CWE-266": ("Incorrect Privilege Assignment", "Allowed"),
         "CWE-290": ("Authentication Bypass by Spoofing", "Allowed"),
         "CWE-359": (
