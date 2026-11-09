@@ -20,15 +20,39 @@ neighbouring entries can interleave (an older branch merged later sits above a n
   upgrade (refused 403), one that closes with 1008 after it, one that does not check (accepted),
   a refused control (inconclusive, the cross-site upgrade never tried), and three real campaigns
   (fail, pass, inconclusive), no frame sent in any. `dottore coverage builtin`: 80 specs, every
-  axis unchanged (ESP-IA 19/27; the spec maps to no ESP-IA requirement). Battery: 49 of 80 name a
-  CWE, 41 of 80 an ATT&CK technique, 64 of 80 an ESP-IA requirement.
+  axis unchanged (ESP-IA 19/27; the spec maps to no ESP-IA requirement). Battery, merged after A-132:
+  81 specs, 50 of 81 name a CWE, 42 of 81 an ATT&CK technique, 65 of 81 an ESP-IA requirement.
 - **Pins.** IoPC `T5.002` only (`T8.004` stays out of scope, `docs/15`; coverage 27/30 unchanged).
-  Judging rules 10 re-pinned (`e3a0ad18...`): no stored verdict changes.
+  Judging rules 10 re-pinned (`0eb6d301...`): no stored verdict changes.
 - **Numbers.** A-133, OD-75, ADR-0027; the sibling branches of 2026-11-09 hold A-128 to A-132,
   A-134, OD-72 to OD-74, OD-76, ADR-0025 and ADR-0026, so none collides.
 - **Open (the owner's, OD-75).** A `null` and a look-alike origin as further probes; whether a
   frame on the cross-site socket is ever worth the credential it would carry. The spec maps to
   no ESP-IA requirement: a mapping is the owner's call.
+
+## State, 2026-11-09: an injection in an attachment's file name (`feat/filename-injection`, u04 A-132, OD-74, u13)
+
+- **Why.** One of the eight generic techniques the owner approved on 2026-11-09 from a field
+  engagement (piece 4): applications that take uploads often put the file name into the model's
+  context verbatim, and a scanner of the file's content never reads it. The schema had no way to
+  name a part, and the adapters sent none.
+- **Built.** An optional `filename` on a media part, bounded in `shared.media.attachment_filename`
+  (one path component, 1 to 255 characters, no `/`, `\`, `..`, control or format character) and
+  in the attack-spec schema; `render_media_part` refuses a bad name, so the linter, the runner and
+  both adapters do. The OpenAI and Anthropic adapters send `[Attached file: <name>]` as a text
+  block just before the part. The linter reads the name as request text. New spec
+  `MM-IMG-FILENAME-INJECT-001`: a clean floor-plan image whose name carries the note and the
+  canary.
+- **Measured.** `dottore lint`: 80 specs, 14 suites, 0 errors. `dottore coverage --no-gaps`: every
+  figure as before (8/10, 13/16, 27/30, 23/23, 5/51, 12/95, 0/45, 19/27, 8/15). CWE on 49 specs,
+  ESP-IA on 65, ATT&CK on 42. The vision example's dry run with `-p pi --obfuscate image`: 5
+  specs, 65 requests (4 and 60). Judging rules 10 re-pinned (`63df4a47...`), no verdict changes.
+  `make gates` green on 2026-11-09 (ruff, format, mypy 199 files, import-linter 4 kept, spec lint,
+  coverage 97.56%, self-scan, bandit, pip-audit).
+- **Open (OD-74, the owner's call).** The label shape, and whether to use the providers' native
+  file and document blocks (OpenAI `file` with `filename`, Anthropic `document` with `title`),
+  which take a PDF or text, not the PNG the battery renders. Expect a rebase at merge: sibling
+  branches add specs and take A-128 to A-131, OD-72, OD-73, ADR-0025.
 
 ## State, 2026-11-09: the `refusal` evaluator reads Spanish, French and German (`feat/refusal-languages`, u06 A-127, judging rules 10)
 

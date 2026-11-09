@@ -28,7 +28,7 @@ def _coverage():
 
 def test_reports_every_axis_over_the_whole_battery() -> None:
     cov = _coverage()
-    assert cov.specs == 80
+    assert cov.specs == 81
     keys = [a.key for a in cov.axes]
     assert keys == [
         "owasp",
@@ -155,7 +155,7 @@ def test_json_output_honours_no_gaps() -> None:
 
 def test_json_output_is_machine_readable_and_complete() -> None:
     doc = json.loads(render_coverage_json(_coverage(), framework="iopc"))
-    assert doc["specs"] == 80
+    assert doc["specs"] == 81
     assert [a["key"] for a in doc["axes"]] == ["iopc_techniques", "iopc_impacts"]
     tech = doc["axes"][0]
     assert len(tech["covered"]) == tech["exercised"]
@@ -399,6 +399,7 @@ def test_each_aisvs_claim_is_carried_by_the_specs_the_audit_kept() -> None:
         "v1.0-C2.1.3": {
             "MM-AUD-PROMPTINJECT-001",
             "MM-IMG-DOC-INJECT-001",
+            "MM-IMG-FILENAME-INJECT-001",
             "MM-IMG-PROMPTINJECT-001",
             "MM-IMG-SPLIT-PAYLOAD-001",
             "MM-IMG-TOOL-EXFIL-001",
@@ -591,7 +592,7 @@ def test_a_retired_or_contradicted_attack_claim_is_reported_not_counted() -> Non
 
 
 def test_the_shipped_battery_attack_axis_is_pinned() -> None:
-    """8 of 15 tactics from 41 mapped specs (2026-10-24, ATT&CK v20.0). Argued in docs/17.
+    """8 of 15 tactics from 42 mapped specs (2026-11-09, ATT&CK v20.0). Argued in docs/17.
 
     The seven uncovered tactics are all roadmap: a black-box runtime scanner driving an agent
     can in principle observe each of them in the target's own tool calls, so none is out of
@@ -621,7 +622,7 @@ def test_the_shipped_battery_attack_axis_is_pinned() -> None:
     }
     assert attack.out_of_reach == () and attack.by_design == ()
     cov = _coverage()
-    assert len({s for *_, specs in cov.attack_techniques for s in specs}) == 41
+    assert len({s for *_, specs in cov.attack_techniques for s in specs}) == 42
     assert len(cov.attack_techniques) == 18
     assert sum(1 for *_, occ, _s in cov.attack_techniques if occ == "capability-only") == 4
 

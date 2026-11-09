@@ -17,7 +17,7 @@ from typing import Any, ClassVar
 
 from ildottore.adapters.base import BaseAdapter, ResponseMalformed, map_logprobs
 from ildottore.shared.filter_stops import OPENAI_FILTER_STOPS
-from ildottore.shared.media import render_media_part
+from ildottore.shared.media import attachment_label, render_media_part
 from ildottore.shared.models import Capabilities, ModelRequest, ModelResponse, Sampling
 
 __all__ = ["OpenAIAdapter", "sent_sampling"]
@@ -159,11 +159,16 @@ class OpenAIAdapter(BaseAdapter):
 
         An image part becomes an ``image_url`` data-URL block; an audio part becomes an
         ``input_audio`` block (base64 + format), the shape the audio-capable chat models accept.
+        A part with a ``filename`` is preceded by a text block naming it (u04 A-132): neither
+        block carries a name of its own.
         """
 
         content: list[dict[str, Any]] = [{"type": "text", "text": request.prompt or ""}]
         for part in request.media or []:
             mime, raw = render_media_part(part)
+            label = attachment_label(part)
+            if label is not None:
+                content.append({"type": "text", "text": label})
             b64 = base64.b64encode(raw).decode("ascii")
             if mime.startswith("audio/"):
                 audio_format = mime.split("/", 1)[1]  # "audio/wav" -> "wav"

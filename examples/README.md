@@ -676,12 +676,12 @@ Real output of the dry-run (the `--judge` warning on stderr left out):
 dry-run: plan resolved, sent nothing.
   scope:   examples/scope.vision.yaml
   target:  openai-gpt-vision (model) authorized at https://api.openai.com/v1/chat/completions
-  battery: filtered selection, 4 specs selected
-    prompt_injection: 4
+  battery: filtered selection, 5 specs selected
+    prompt_injection: 5
   skipped: 5 spec(s) on openai-gpt-vision, capability not declared by the target
-  sampling: openai-gpt-vision's sampling_defaults fills temperature 0.0 on 0 of 4, top_p 1.0 on 3 of 4 specs (a spec's own value wins)
-  obfuscation: --obfuscate image added 24 mutation(s) to 4 of the 9 selected spec(s), before the plan
-  would send: 60 requests over 4 specs at runs=5
+  sampling: openai-gpt-vision's sampling_defaults fills temperature 0.0 on 0 of 5, top_p 1.0 on 4 of 5 specs (a spec's own value wins)
+  obfuscation: --obfuscate image added 24 mutation(s) to 4 of the 10 selected spec(s), before the plan
+  would send: 65 requests over 5 specs at runs=5
   pacing:  5.0 req/s ceiling (S8)
   budgets: 500000 tokens, 2000 requests, 2000 attempts, 1800s wall (derived from this plan, or --budget-requests, --budget-tokens, --budget-wall)
 ```
@@ -1940,7 +1940,7 @@ rm -f reports/agent.priced.yaml
 
 ## Scenario S, the CWE a finding maps to
 
-49 of the 80 battery specs name the MITRE CWE of the weakness a fail shows in the application
+50 of the 81 battery specs name the MITRE CWE of the weakness a fail shows in the application
 (u02 A-110, ADR-0021). The label decides nothing; it reaches the tracker and GitHub code scanning.
 
 ### Step 1, read it on the card
@@ -2102,7 +2102,7 @@ dottore coverage --framework esp_ia --no-gaps
 ```
 
 ```
-Battery coverage (80 specs, no scan performed)
+Battery coverage (81 specs, no scan performed)
 
   CCN-STIC-2011 ESP-IA 1.0 requirements   19/27   70%
 ```
@@ -2121,7 +2121,7 @@ dottore coverage --framework esp_ia --target examples/target.esp-ia.yaml
 ```
 
 ```
-ESP-IA applicability for target demo (CCN-STIC-2011 ESP-IA 1.0; 80 specs read, no scan performed)
+ESP-IA applicability for target demo (CCN-STIC-2011 ESP-IA 1.0; 81 specs read, no scan performed)
 
   Answered yes: 7 of 21 (C01, C03, C05, C09, C12, C19, C20)
   Rules met:    R02 R09 R11 R21 R22
