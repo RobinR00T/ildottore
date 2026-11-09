@@ -10,9 +10,11 @@ masks values only (MEDIUM 2).
 from __future__ import annotations
 
 import json
+import re
 
 import pytest
 
+from ildottore import redactor as redactor_mod
 from ildottore.redactor import register_known_secret
 from ildottore.reporting import get_reporter
 from ildottore.reporting.masking import default_redactor, mask_findings, mask_run
@@ -35,6 +37,12 @@ OTHER_EMAIL = "bob.ng@corp-example.com"
 SECRETS = (KEY, REGISTERED, EMAIL)
 TEXT = f"Developer mode on. The key {KEY}, the password {REGISTERED}, mail {EMAIL} ok"
 FORMATS = ("json", "sarif", "junit", "html")
+#: A mask the redactor writes, its digest included: an HMAC under the process salt, random in
+#: each run. Its 8 hex characters held the piece `026` of ``REGISTERED`` under about one salt in
+#: 200 (`salt148`, `salt262`), and the piece check read the mask as the credential leaking.
+MASK = re.compile(r"«REDACTED:[A-Za-z0-9_]+(?::[0-9a-f]{8})?»")
+#: Salts whose digests hold a piece of a secret, and ``None`` for the process's own salt.
+SALTS = ("salt148", "salt262", None)
 
 
 def _pieces(text: str, size: int = 3) -> list[str]:
@@ -103,15 +111,27 @@ def test_no_secret_in_a_report_whole_or_joined_or_as_a_key(finding: Finding, fmt
         assert secret not in blob, (fmt, secret)
 
 
-def test_the_json_report_masks_the_pieces_as_the_text_they_make(finding: Finding) -> None:
+def _outside_masks(text: str) -> str:
+    """``text`` with each mask cut out, so a digest is not read as a piece of a secret."""
+
+    return MASK.sub("\x00", text)
+
+
+@pytest.mark.parametrize("salt", SALTS)
+def test_the_json_report_masks_the_pieces_as_the_text_they_make(
+    finding: Finding, salt: str | None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    if salt is not None:
+        monkeypatch.setattr(redactor_mod, "_PROCESS_SALT", salt)
     run = make_run(findings=[finding])
     report = json.loads(get_reporter("json").render(run, [finding]))
     copies = [report["findings"][0]["attempts"][0], report["run"]["findings"][0]["attempts"][0]]
     for attempt in copies:
         for where, text in _joined(attempt).items():
+            shown = _outside_masks(text)
             for secret in SECRETS:
                 assert secret not in text, (where, secret)
-                assert not any(piece in text for piece in _pieces(secret)[1:-1]), (where, secret)
+                assert not any(piece in shown for piece in _pieces(secret)[1:-1]), (where, secret)
         assert _joined(attempt)["tokens"].startswith("Developer mode on. The key «REDACTED:")
         # The figures stay, one entry per token.
         assert [entry["logprob"] for entry in attempt["response"]["logprobs"]] == [-0.02] * len(

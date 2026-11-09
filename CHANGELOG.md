@@ -26,6 +26,19 @@ the file, schema copy, build or pipeline it names.
 - Open (OD-74, the owner's call): the providers' file and document blocks, which carry a name
   natively but take a PDF or a text file, not the PNG the battery renders.
 
+### Fixed (a report test that read a mask's digest as a leaked credential: tests only)
+
+- **`test_the_json_report_masks_the_pieces_as_the_text_they_make` failed about once in 200 runs,
+  and no credential leaked.** Its check that no 3-character piece of a secret survives read the
+  masks too: `026`, a piece of the test's registered credential, is all hex, and a mask's
+  digest (an HMAC under the process salt, random in each run) held it under about one salt in
+  200 (`«REDACTED:credential:c7602693»`). Seen in a `make gates` run on 2026-11-09. The check now
+  cuts the masks out before looking for pieces, the whole-secret check still reads the raw text,
+  and the test runs under the two salts that failed and under the process's own.
+- The package is unchanged, so no contract row and no judging-rules re-pin. The two sibling
+  checks (`tests/test_redactor_split_values.py`, `tests/store/test_split_values_at_rest.py`) use
+  a fixed `Redactor(salt="s")`, whose digests hold no piece, and cannot flake.
+
 ### Changed (breaking for a run halted under judging rules 9 and for a CI gate: rules 10, u06 A-127)
 
 - **The `refusal` evaluator reads Spanish, French and German.** `translate` sends
