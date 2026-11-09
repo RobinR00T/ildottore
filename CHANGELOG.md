@@ -7,6 +7,14 @@ the file, schema copy, build or pipeline it names.
 
 ## [Unreleased]
 
+### Added (docs: candidate techniques from 2026 agent-security research)
+
+- **`docs/12` lists six candidate techniques** from a public, curated 2026 reading list, each
+  source opened and checked: forged roles and reasoning, a forged user turn that survives context
+  compaction, semantic cache poisoning, exfiltration in the URL of an allowed fetch, data pollution
+  in tool output, and a support agent that acts before it verifies the caller. Three more are
+  noted as not specs. Nothing is built; each needs its own contract row.
+
 ### Added (the authority appeal as a mutation: u05 A-129)
 
 - **`authority_claim`.** Prepends a claim that the operator, the lead developer, the

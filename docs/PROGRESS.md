@@ -5,6 +5,16 @@ The carryover ledger. Every agent session updates this so context survives even 
 newest merge on top: a branch's entries land together when it merges, so the dates of
 neighbouring entries can interleave (an older branch merged later sits above a newer one).
 
+## State, 2026-11-09: candidate techniques for the battery (`docs/technique-backlog`, docs only)
+
+- **Why.** The owner asked to bring into Il Dottore what serves it from a separate research corpus;
+  the technique backlog was one of the pieces they chose (2026-11-09).
+- **Done.** A `docs/12` P2 row: six candidate specs and three sources that are not specs, from the
+  AI list of `irsdl/webhacklist` (`2026-ai.md`, `b92c8ba3`). Upstream summaries are machine-written
+  and unreviewed, so each source was opened and its title checked on 2026-11-09; the descriptions
+  are ours, nothing copied.
+- **Open.** Which to build, the owner's call. None is built, none has a contract row.
+
 ## State, 2026-11-09: the authority appeal as a mutation (`feat/authority-claim`, u05 A-129)
 
 - **Why.** The second of the eight pieces the owner approved on 2026-11-09 (carried over from his
