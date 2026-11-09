@@ -29,7 +29,7 @@ Per-unit `conftest.py` files under each sub-directory own their domain fixtures;
 | 4 | Mutator | Property-based (Hypothesis) | `mutators/test_determinism.py`, `mutators/test_reversibility.py`, `mutators/test_golden.py` |
 | 5 | Adapters | Contract tests + recorded cassettes | `adapters/test_{openai,anthropic,rest,base}.py` + `adapters/cassettes/`; **no live keys** (`no_live_socket` guard) |
 | 6 | Golden targets | Detection-accuracy (hard gate) | `golden/test_golden.py`, `golden/test_mock.py`, `battery/test_battery.py` + `fixtures/{vulnerable,hardened}` (inline fixtures in specs) |
-| 7 | Evaluators | Labeled precision / recall | `evaluators/test_precision_recall.py`, `evaluators/test_data_leak.py` + `fixtures/labeled/` |
+| 7 | Evaluators | Labeled precision / recall | `evaluators/test_precision_recall.py`, `evaluators/test_data_leak.py`, `evaluators/test_refusal_measure.py` + `fixtures/labeled/` |
 | 8 | Judge | Robustness / injection | `evaluators/test_adversarial_judge.py`, `evaluators/test_semantic_judge.py` + `fixtures/adversarial-judge/` |
 | 9 | Determinism | Replay | `evaluators/test_deterministic.py`, `core/test_determinism.py`, `core/test_reproduce.py` |
 | 10 | Scoring | Property tests | `scoring/test_properties.py`, `scoring/test_banding.py`, `scoring/test_confidence.py` |
@@ -47,7 +47,7 @@ Per-unit `conftest.py` files under each sub-directory own their domain fixtures;
 | Path | Layer | Contents |
 |------|-------|----------|
 | inline `fixtures:` in each spec | 6 | Golden fixtures per attack family (vulnerable → `fail`, hardened → `pass`). Inline only: there is no sidecar fixture directory (OD-7). |
-| `fixtures/labeled/` | 7 | Evaluator precision/recall corpus (positives, negatives, hard cases). |
+| `fixtures/labeled/` | 7 | Evaluator precision/recall corpus (positives, negatives, hard cases); `refusal_adjudicated.json` is the refusal evaluator's measurement corpus (u06 A-124). |
 | `fixtures/adversarial-judge/` | 8 | Target outputs that try to prompt-inject the judge (must not flip a verdict). |
 | `adapters/cassettes/` | 5 | Recorded provider interactions, secrets scrubbed. **No real API keys, ever.** |
 | `fixtures/{specs,packs,plans,scoring,mutators,fingerprint}/` | 1-4 | Registry / pack / plan / scoring / mutator / fingerprint inputs. |

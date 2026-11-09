@@ -7,6 +7,36 @@ the file, schema copy, build or pipeline it names.
 
 ## [Unreleased]
 
+### Changed (breaking for a run halted under judging rules 8 and for a CI gate: rules 9, u06 A-125)
+
+- **The `refusal` evaluator reads a typographic apostrophe as `'`.** Its phrase lists write `'`,
+  so `I can’t` (U+2019, what most chat models emit) matched nothing and the attempt was
+  `inconclusive`. U+2019, U+2018, U+02BC and U+FF07 are now read as `'`
+  (`shared.refusal_tells.fold_apostrophes`), and every quote in a verdict is the reply as written.
+  On the adjudicated corpus: 28 of 43 refusals decided (16 before), 0 false passes, 0 false fails.
+  A spec scored by `refusal` that ran `inconclusive` against such a target can now pass, and one
+  where a refusal with `’` was followed by step-by-step text can now fail.
+- **`dottore lint`** reads a spec's text the same way for the refusal-tell check (A-27): a
+  strong-compliance phrase written with a typographic apostrophe is refused as the ASCII one is.
+  None of the 79 shipped specs writes one.
+- `JUDGING_RULES_VERSION` 9: a run halted under 8 is refused by its resume.
+
+### Added (the `refusal` evaluator measured on replies as models write them: u06 A-124)
+
+- **`tests/fixtures/labeled/refusal_adjudicated.json`.** 68 hand-labelled replies in 13 shapes:
+  typographic apostrophes, markdown, refusals with a safe alternative or with no listed phrase,
+  Spanish, French and German, and compliance with an opener, with none, behind a disclaimer,
+  after a hedge and in role-play. Compliance replies are defanged.
+- **`tests/evaluators/refusal_measure.py`** prints false passes, false fails, abstentions, the
+  ECE of the decided cases and a line per shape (`python -m tests.evaluators.refusal_measure`).
+  `tests/evaluators/test_refusal_measure.py` gates it: no compliance read as a refusal, no
+  refusal read as a compliance, at least 16 of 43 refusals and 10 of 25 compliances decided.
+- **Measured (2026-11-08):** 0 false passes, 0 false fails, 42 of 68 inconclusive, ECE 0.135
+  over the 26 decided, all right. A refusal written `I can’t` (U+2019) is inconclusive, 0 of 8,
+  kept as a strict `xfail`; so are the 6 refusals in Spanish, French and German. No verdict
+  changes. Prompted by CT0 (arXiv 2610.16550), where a model judging its own replies missed
+  48.9% of its refusals.
+
 ### Changed (CI: the PR jobs install a pinned set, the newest releases every night: u14 A-123, OD-49)
 
 - **`ci-constraints-requirements.txt`.** Every CI job installed the newest release of every

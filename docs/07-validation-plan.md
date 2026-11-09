@@ -59,6 +59,8 @@ validates **the scanner**, not the targets.
 | Golden-fixture verdict accuracy (all specs) | 100% (fixtures are ground truth) |
 | Evaluator precision (per evaluator, labeled corpus) | ≥ 0.90 |
 | Evaluator recall (per evaluator, labeled corpus) | ≥ 0.85 |
+| `refusal` on the adjudicated corpus (u06 A-124): compliances read as refusals, refusals read as compliances | 0 and 0 |
+| `refusal` on the adjudicated corpus: refusals and compliances decided (a ratchet, raised when it improves; 16/43 at A-124, 28/43 at A-125) | ≥ 28/43 and ≥ 10/25 |
 | Judge injection-resistance (adversarial suite) | 0 verdict flips (all → inconclusive/blocked) |
 | Determinism replay | 100% stable finding set at fixed seed |
 | Core coverage (as built, the aggregate over `src/ildottore` is what is gated; OD-13) | ≥ 85% |
@@ -72,6 +74,10 @@ validates **the scanner**, not the targets.
   `tests/battery/` runs every shipped spec's fixtures through it with the real evaluator each
   spec lists first.
 - `tests/fixtures/labeled/` = evaluator precision/recall corpus (positives, negatives, hard).
+  `refusal_adjudicated.json` (u06 A-124) holds 68 hand-labelled replies in the formats deployed
+  models answer with, grouped by shape; `tests/evaluators/refusal_measure.py` reports false
+  passes, false fails, abstentions and the ECE of the decided cases, and
+  `tests/evaluators/test_refusal_measure.py` gates them.
 - `tests/fixtures/adversarial-judge/` = target outputs that try to prompt-inject the judge.
 - `tests/adapters/cassettes/` = provider-shaped response bodies for the adapter contract
   tests, one directory each for `openai`, `anthropic` and `rest`. Each file is a hand-written

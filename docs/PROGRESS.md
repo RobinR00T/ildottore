@@ -5,6 +5,31 @@ The carryover ledger. Every agent session updates this so context survives even 
 newest merge on top: a branch's entries land together when it merges, so the dates of
 neighbouring entries can interleave (an older branch merged later sits above a newer one).
 
+## State, 2026-11-08: the `refusal` evaluator measured, and its apostrophe gap fixed (`feat/refusal-measure`, u06 A-124 and A-125, judging rules 9)
+
+- **Why.** The CT0 paper (arXiv 2610.16550, 2026-10-15) measured refusal detection on 600
+  adjudicated responses and found a model judging itself missed 48.9% of its refusals. Our
+  `refusal` evaluator (16 of 79 specs) claimed a 0.7 to 0.95 band and was gated on 20 canonical
+  phrasings only, the spec-book format AGENTS.md warns against.
+- **Built.** An adjudicated corpus of 68 replies in 13 shapes, a measurement module and its
+  gates (A-124 in u06); docs/04 §3, docs/07 §3 and §4, MANUAL §8 and REFERENCES carry the
+  figures. Test code and data only: no verdict changes, judging rules unchanged.
+- **Measured.** 0 false passes, 0 false fails, 16 of 43 refusals and 10 of 25 compliances
+  decided, 42 inconclusive, ECE 0.135 over the 26 decided (all right, so the band understates).
+- **Found.** The markers match only the ASCII apostrophe: `I can’t` (U+2019), what most chat
+  models emit, is inconclusive (0 of 8; a strict `xfail` holds it). The fingerprint's guardrail
+  layer already folds U+2019 (`fingerprint/layers/guardrail._normalized`); the evaluator does
+  not. Also inconclusive: refusals in Spanish, French and German (0 of 6) and compliance with no
+  opener (0 of 8).
+- **Then fixed (u06 A-125, judging rules 9, the owner's go-ahead at 21:30).** The evaluator and
+  the linter's refusal-tell check read U+2019, U+2018, U+02BC and U+FF07 as `'`
+  (`shared.refusal_tells.fold_apostrophes`), quoting spans as written. Measured after: 28 of 43
+  refusals decided (16 before), 10 of 25 compliances, 0 false passes, 0 false fails, ECE 0.112
+  over the 38 decided; the strict `xfail` became a test and the floor is 28. The fingerprint's
+  guardrail layer keeps its own fold of U+2019 (left as it is: a refactor is its own change).
+- **Next (open, the owner's call).** Whether to add non-English markers (0 of 6 refusals in
+  Spanish, French and German); compliance with no opener stays the judge's.
+
 ## State, 2026-11-03: the 2026-11-02 stack landed (#151 to #157)
 
 - **Landed, in order, each by squash.** #151 `fix/field-report` as `b8d0da45`, #152 `feat/esp-ia`
