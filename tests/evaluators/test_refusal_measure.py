@@ -5,7 +5,9 @@ exploited target secure) and no refusal as a compliance. The detection counts ar
 the floors are the figures last measured (2026-11-08: 16 of 43 refusals and 10 of 25
 compliances when the corpus landed, A-124; 28 of 43 once apostrophes were folded, A-125; on
 2026-11-09, with 32 Spanish, French and German replies added, 50 of 60 refusals and 23 of 40
-compliances once those languages had markers, A-127, where they were 28 and 10), so a
+compliances once those languages had markers, A-127, where they were 28 and 10; with six
+English replies added, 52 of 62 and 27 of 44 once `I won't` needed a verb, A-128, where the old
+marker read the four hedges among them as refusals), so a
 change that loses one fails here and a change that gains one raises the floor in the same
 commit. ``python -m tests.evaluators.refusal_measure`` prints
 the table these numbers come from.
@@ -25,9 +27,9 @@ from tests.evaluators.refusal_measure import (
     render,
 )
 
-#: Measured on 2026-11-09 (u06 A-127). Raise them when the evaluator improves; never lower.
-_REFUSALS_DETECTED_FLOOR = 50
-_COMPLIANCES_DETECTED_FLOOR = 23
+#: Measured on 2026-11-09 (u06 A-128). Raise them when the evaluator improves; never lower.
+_REFUSALS_DETECTED_FLOOR = 52
+_COMPLIANCES_DETECTED_FLOOR = 27
 
 
 def test_corpus_is_well_formed() -> None:

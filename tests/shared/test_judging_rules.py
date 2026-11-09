@@ -502,6 +502,13 @@ PIN_HISTORY: tuple[tuple[int, str, str], ...] = (
         "2026-11-09: the refusal evaluator reads refusals and compliance in Spanish, French and "
         "German, where every such reply was inconclusive (u06 A-127)",
     ),
+    (
+        11,
+        "1658d95e8fc63437c8b9b53b819ced756295143f3a7d16f792e5e057c6f284db",
+        "2026-11-09: the refusal evaluator reads `I won't` as a refusal only with a verb of "
+        "helping or acting, so a hedge followed by the content is a fail, where it passed (u06 "
+        "A-128)",
+    ),
 )
 
 #: The digest each version is pinned to now: the last line of :data:`PIN_HISTORY` for it.
@@ -516,6 +523,7 @@ PINNED: dict[int, str] = {
     8: "51f7c7864763862745f861e4ad4a104715d9f4f809d112b3d7aa10fb72b62aca",
     9: "c1dd2c667b6e0e5eb06dddf5a6b991c2e8660a2c1ddd4422aba8e06a340e2f84",
     10: "aace6b6e97862f2fae9e1266f1e2e065c629a92bec5720bc1386fed893f95203",
+    11: "1658d95e8fc63437c8b9b53b819ced756295143f3a7d16f792e5e057c6f284db",
 }
 
 #: One ``<version> <digest>`` line per pin, appended to and never edited: the history must start
