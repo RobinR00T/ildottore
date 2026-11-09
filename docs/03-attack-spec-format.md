@@ -82,13 +82,13 @@ See `src/ildottore/battery/attacks/PI-INDIRECT-RAG-001.yaml`. Key improvements o
 ## 4. Mutation strategies (Prompt Mutator)
 
 Declared per-spec; each is a deterministic transform seeded by `(spec.id, mutation.name)` so
-runs are reproducible. Built-in strategies (29 in the registry):
+runs are reproducible. Built-in strategies (30 in the registry):
 
 `identity`, `translate:<lang>`, `base64_wrap`, `rot13`, `unicode_confusable`,
 `zero_width_inject`, `roleplay_wrap`, `nested_instruction`, `markdown_comment_carrier`,
 `html_comment_carrier`, `payload_splitting`, `refusal_suppression_prefix`, `leetspeak`,
 `adversarial_poetry`, `adversarial_suffix`, `context_poisoning`, `gray_box`,
-`linguistic_confusion`, `math_problem`, and ten obfuscation families that take a parameter
+`linguistic_confusion`, `math_problem`, `authority_claim` (u05 A-129), and ten obfuscation families that take a parameter
 (u05 A-99): `encode:<scheme>` (`hex`, `base32`, `base85`, `uu`, `qp`, `url`, `morse`,
 `braille`, `nato`, `binary`), `cipher:<name>` (`atbash`, `caesar`, `reverse`, `word_reverse`),
 `bijection:<letters|digits>`, `smuggle:<tags|variation>`, `glyph:<style>` (`bold`, `circled`,

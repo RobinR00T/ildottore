@@ -3006,7 +3006,9 @@ meets one).
 
 **Presets**: `encodings`, `ciphers`, `unicode`, `structured`, `evasion`, `art`, `framing` (the
 existing wrappers), `bon` (`bon:0` to `bon:7`), `image` (six chains that end in a PNG) and
-`all` (every preset but `bon` and `image`, 55 mutations).
+`all` (every preset but `bon` and `image`, 56 mutations). `framing` holds `authority_claim`
+since u05 A-129: the ask after a claim that the operator, a developer, the administrator or a
+security audit approved it.
 
 **Images.** An `image` link needs a target that declares `capabilities: {multimodal: true}`.
 Without it, `run` refuses before anything is sent, and the runner refuses such a spec as

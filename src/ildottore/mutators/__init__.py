@@ -17,6 +17,7 @@ from __future__ import annotations
 from ildottore.mutators.adversarial_poetry import AdversarialPoetryMutator
 from ildottore.mutators.adversarial_suffix import AdversarialSuffixMutator
 from ildottore.mutators.ascii_art import AsciiArtMutator
+from ildottore.mutators.authority_claim import AuthorityClaimMutator
 from ildottore.mutators.base import BaseMutator, MutationResult, Mutator, derive_int_seed
 from ildottore.mutators.base64_wrap import Base64WrapMutator
 from ildottore.mutators.bijection import BijectionMutator
@@ -58,6 +59,7 @@ __all__ = [
     "AdversarialPoetryMutator",
     "AdversarialSuffixMutator",
     "AsciiArtMutator",
+    "AuthorityClaimMutator",
     "Base64WrapMutator",
     "BaseMutator",
     "BestOfNMutator",

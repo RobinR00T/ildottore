@@ -5,6 +5,19 @@ The carryover ledger. Every agent session updates this so context survives even 
 newest merge on top: a branch's entries land together when it merges, so the dates of
 neighbouring entries can interleave (an older branch merged later sits above a newer one).
 
+## State, 2026-11-09: the authority appeal as a mutation (`feat/authority-claim`, u05 A-129)
+
+- **Why.** The second of the eight pieces the owner approved on 2026-11-09 (carried over from his
+  live validation pipeline): its extraction battery used twelve techniques, and authority was the
+  one with no mutator here.
+- **Built.** `authority_claim`, four seeded claims before the verbatim ask, in `framing`.
+- **Measured.** `all` 56 mutations; `-sV` 18 requests (the carrier layer leaves it out: it keeps
+  the text); stage d of Scenario M with the three families and `--fuzz 10` 1722 agent
+  requests, one more than without it (1721).
+- **Costs.** Judging rules 12 re-pinned (no verdict changes).
+- **Open.** Whether a shipped spec should name it (`SP-LEAK-001`, `RECON-SYSTEM-001`) is the
+  owner's call: it would change those specs' plans and every figure that counts them.
+
 ## State, 2026-11-09: a tool error that relays backend internals (`feat/dl-tool-error-reflect`, u13 A-135)
 
 - **Why.** The owner asked (2026-11-09) to carry into Il Dottore what serves it from another of
