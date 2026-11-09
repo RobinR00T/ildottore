@@ -15,7 +15,7 @@ from __future__ import annotations
 from ildottore.shared.enums import IDENTITY_SWEEP, MIN_VARIANT_ATTEMPTS, VerdictStatus
 from ildottore.shared.models import Attempt
 
-__all__ = ["reproducibility_from_attempts", "risk_magnitude"]
+__all__ = ["reproducibility_counts", "reproducibility_from_attempts", "risk_magnitude"]
 
 
 def reproducibility_from_attempts(attempts: list[Attempt]) -> float:
@@ -49,24 +49,47 @@ def reproducibility_from_attempts(attempts: list[Attempt]) -> float:
 
     With no attempts, reproducibility is ``0.0``. Result is exact (OD-6).
     """
-    if not attempts:
+    counts = reproducibility_counts(attempts)
+    if counts is None:
         return 0.0
+    successes, trials = counts
+    return successes / trials
+
+
+def reproducibility_counts(attempts: list[Attempt]) -> tuple[int, int] | None:
+    """``(successes, trials)`` of the rate :func:`reproducibility_from_attempts` returns (A-126).
+
+    The candidates are the ones that function weighs: the pool of every trial, and each variant
+    with ``MIN_VARIANT_ATTEMPTS`` attempts or more. The counts are those of the candidate with
+    the highest rate, and among candidates at that rate, the one with the most trials (the
+    narrowest interval for the same rate). ``None`` with no attempts: no trial, no count.
+
+    The interval a report draws from these counts is the chosen candidate's own; taking the best
+    of several candidates makes it optimistic, as the rate itself is (``docs/05 §2``).
+    """
+
+    if not attempts:
+        return None
     by_variant: dict[str, list[Attempt]] = {}
     for attempt in attempts:
         if attempt.mutation != IDENTITY_SWEEP:
             by_variant.setdefault(attempt.mutation, []).append(attempt)
-    pooled = _success_rate(attempts)
-    qualifying = [v for v in by_variant.values() if len(v) >= MIN_VARIANT_ATTEMPTS]
-    return max([pooled, *(_success_rate(variant) for variant in qualifying)])
+    candidates = [_successes(attempts)]
+    candidates.extend(
+        _successes(variant)
+        for variant in by_variant.values()
+        if len(variant) >= MIN_VARIANT_ATTEMPTS
+    )
+    return max(candidates, key=lambda c: (c[0] / c[1], c[1]))
 
 
-def _success_rate(attempts: list[Attempt]) -> float:
+def _successes(attempts: list[Attempt]) -> tuple[int, int]:
     successes = sum(
         1
         for a in attempts
         if a.error is None and a.verdict is not None and a.verdict.status is VerdictStatus.FAIL
     )
-    return successes / len(attempts)
+    return successes, len(attempts)
 
 
 def risk_magnitude(impact: int, exploitability: int, reproducibility: float) -> float:

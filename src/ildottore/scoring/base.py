@@ -24,7 +24,7 @@ from ildottore.scoring.confidence import (
     aggregate_confidence,
     gate_state,
 )
-from ildottore.scoring.risk import reproducibility_from_attempts, risk_magnitude
+from ildottore.scoring.risk import reproducibility_counts, risk_magnitude
 from ildottore.shared.models import AttackSpec, Attempt, RiskScore, Verdict
 
 __all__ = ["DefaultRiskScorer"]
@@ -57,7 +57,9 @@ class DefaultRiskScorer:
         """Compute the two-axis :class:`RiskScore` for one spec (``docs/05 §2``)."""
         impact = spec.scoring.impact
         exploitability = spec.scoring.exploitability
-        reproducibility = reproducibility_from_attempts(attempts)
+        counts = reproducibility_counts(attempts)
+        successes, trials = counts if counts is not None else (None, None)
+        reproducibility = successes / trials if successes is not None and trials else 0.0
         risk = risk_magnitude(impact, exploitability, reproducibility)
         band = band_for_risk(risk, self._band_policy)
         confidence = aggregate_confidence(verdicts)
@@ -68,6 +70,8 @@ class DefaultRiskScorer:
             risk=risk,
             band=band,
             confidence=confidence,
+            successes=successes,
+            trials=trials,
         )
 
     def state(

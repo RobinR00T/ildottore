@@ -32,6 +32,7 @@ from ildottore.reporting.summary import (
 )
 from ildottore.shared.attack import ATTACK_VERSION
 from ildottore.shared.enums import ReportFormat, VerdictStatus
+from ildottore.shared.intervals import described_rate
 from ildottore.shared.iopc import IOPC_IMPACTS, IOPC_TAXONOMY_VERSION
 from ildottore.shared.models import AttackSpec, Finding
 
@@ -124,6 +125,7 @@ class HtmlReporter(BaseReporter):
             "impact": finding.risk.impact,
             "exploitability": finding.risk.exploitability,
             "reproducibility": finding.risk.reproducibility,
+            "reproducibility_text": _reproducibility_text(finding),
             "confidence": finding.risk.confidence,
             "confirmed": finding.confirmed,
             "state": finding_state(finding),
@@ -183,3 +185,13 @@ class HtmlReporter(BaseReporter):
 
 
 register_reporter(ReportFormat.HTML, HtmlReporter)
+
+
+def _reproducibility_text(finding: Finding) -> str:
+    """``"0.20 (1/5, 95% CI 0.04 to 0.62)"``, or the bare rate with no counts (u11 A-126)."""
+
+    risk = finding.risk
+    rate = f"{risk.reproducibility:.2f}"
+    if risk.successes is None or risk.trials is None:
+        return rate
+    return f"{rate} ({described_rate(risk.successes, risk.trials)})"

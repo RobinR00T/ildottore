@@ -154,6 +154,9 @@ oracle).
   `fail`/`pass`.
 - `RiskScore = {impact:1-4, exploitability:1-4, reproducibility:float[0,1], score:float, band:Band}`
   (`docs/05 §2-§3`; the model carries the value, u07 computes it).
+  Since u07 A-126 (2026-11-08) it also carries the optional `successes` and `trials` of the
+  reproducibility: set together or not at all, `successes <= trials`, and `successes / trials`
+  equal to the rate, or the model refuses it; a score without them dumps as before.
 - `ModelFingerprint` mirrors the `docs/10 §2` JSON (family/version guesses+confidence,
   capabilities, guardrails, evidence[], spoofing_flags, recommended_plan_ref).
 

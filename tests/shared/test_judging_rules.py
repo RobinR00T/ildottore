@@ -490,6 +490,12 @@ PIN_HISTORY: tuple[tuple[int, str, str], ...] = (
         "2026-11-08: the refusal evaluator reads a typographic apostrophe as an ASCII one, so a "
         "refusal written with U+2019 is a pass, where it was inconclusive (u06 A-125)",
     ),
+    (
+        9,
+        "c1dd2c667b6e0e5eb06dddf5a6b991c2e8660a2c1ddd4422aba8e06a340e2f84",
+        "re-pin 2026-11-08: the risk score keeps the counts behind its reproducibility and the "
+        "reports print them with a 95% Wilson interval (u07 A-126); no verdict changes",
+    ),
 )
 
 #: The digest each version is pinned to now: the last line of :data:`PIN_HISTORY` for it.
@@ -502,7 +508,7 @@ PINNED: dict[int, str] = {
     6: "47293b7afb2a5409bff93319a9fa384621c3ecbe8b9a261be8bb428e05d0f4f7",
     7: "27f04a53561548238f8774eff7b83fe0fd9368c5cc993faee9ad363bf1385a80",
     8: "51f7c7864763862745f861e4ad4a104715d9f4f809d112b3d7aa10fb72b62aca",
-    9: "3ee29aebbd24d6b899041c226c8368d30377e662287a8e31a505701532ee2c01",
+    9: "c1dd2c667b6e0e5eb06dddf5a6b991c2e8660a2c1ddd4422aba8e06a340e2f84",
 }
 
 #: One ``<version> <digest>`` line per pin, appended to and never edited: the history must start

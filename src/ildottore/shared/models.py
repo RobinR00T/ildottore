@@ -1261,6 +1261,33 @@ class RiskScore(_Frozen):
     risk: Annotated[float, Field(ge=0.0, le=16.0)]
     band: ScanBand
     confidence: Unit
+    #: The counts behind ``reproducibility`` (u07 A-126): ``successes`` exploits in ``trials``
+    #: tries of the variant (or the pool) whose rate it is, so ``reproducibility`` is their
+    #: quotient. Unset on a finding that ran no trial (blocked, skipped, a resume's placeholder)
+    #: and on a report written before A-126, and then left out of a dump, as before.
+    successes: Annotated[int, Field(ge=0)] | None = None
+    trials: Annotated[int, Field(ge=1)] | None = None
+
+    @model_validator(mode="after")
+    def _counts_match_the_rate(self) -> RiskScore:
+        if (self.successes is None) != (self.trials is None):
+            raise ValueError("successes and trials are set together or not at all")
+        if self.successes is not None and self.trials is not None:
+            if self.successes > self.trials:
+                raise ValueError("successes cannot exceed trials")
+            if not math.isclose(self.successes / self.trials, self.reproducibility):
+                raise ValueError("reproducibility must be successes / trials")
+        return self
+
+    @model_serializer(mode="wrap")
+    def _without_unset_counts(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        """The dump as before A-126 when no trial was counted."""
+
+        dumped: dict[str, Any] = handler(self)
+        if dumped.get("trials") is None:
+            dumped.pop("successes", None)
+            dumped.pop("trials", None)
+        return dumped
 
 
 class ControlCheck(_Frozen):

@@ -5,6 +5,25 @@ The carryover ledger. Every agent session updates this so context survives even 
 newest merge on top: a branch's entries land together when it merges, so the dates of
 neighbouring entries can interleave (an older branch merged later sits above a newer one).
 
+## State, 2026-11-08: the counts and a 95% interval beside every reproducibility (`feat/repro-interval`, u07 A-126, stacked on `feat/refusal-measure`)
+
+- **Why.** The CT0 paper (arXiv 2610.16550) reports each rate with its count and a confidence
+  interval. Our reports printed `reproducibility 0.20`, which reads the same for one exploit in
+  five and two hundred in a thousand.
+- **Built.** `RiskScore` carries the optional `successes` and `trials` of the rate it took
+  (`scoring.risk.reproducibility_counts`: the pool's or the best variant's, the most trials among
+  ties); `shared.intervals.wilson_interval` gives the 95% Wilson interval. The JSON report
+  (`risk.successes`, `risk.trials`, optional in the schema), SARIF (`successes`, `trials`,
+  `reproducibility_interval_95`), the HTML card and `dottore replay` print them. A finding scored
+  before prints the bare rate. No band, gate or `confirmed` flag reads the interval.
+- **Measured.** Against the `vulnerable` mock, `JB-ROLEPLAY-001 --runs 5`: `1.00 (15/15, 95% CI
+  0.80 to 1.00)` in HTML and `replay`, `[0.7961, 1.0]` in SARIF.
+- **Costs.** Judging rules 9 re-pinned (no verdict changes): a run halted on the earlier digest
+  is refused by its resume. The HTML golden snapshot gained the reproducibility line.
+- **Open (not decided).** The interval assumes independent sends; repeated sends of one prompt to
+  one deployment approximate that. Whether a gate should ever read the lower bound is the owner's
+  call; nothing reads it today.
+
 ## State, 2026-11-08: the `refusal` evaluator measured, and its apostrophe gap fixed (`feat/refusal-measure`, u06 A-124 and A-125, judging rules 9)
 
 - **Why.** The CT0 paper (arXiv 2610.16550, 2026-10-15) measured refusal detection on 600

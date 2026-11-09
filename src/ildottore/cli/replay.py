@@ -14,9 +14,10 @@ from pathlib import Path
 
 from ildottore.core.runner import SAMPLING_NOT_SENT
 from ildottore.redactor import visible_controls
-from ildottore.scoring.risk import reproducibility_from_attempts
+from ildottore.scoring.risk import reproducibility_counts, reproducibility_from_attempts
 from ildottore.shared.control import control_outcome
 from ildottore.shared.enums import CONTROL, IDENTITY_SWEEP, VerdictStatus
+from ildottore.shared.intervals import described_rate
 from ildottore.shared.models import Attempt
 from ildottore.shared.provider_filter import (
     blocked_by_provider_filter,
@@ -224,10 +225,12 @@ def _by_spec(result: ReplayResult) -> list[str]:
             if a.error is None and a.verdict is not None and a.verdict.status is VerdictStatus.FAIL
         )
         swept = sum(1 for a in attempts if a.mutation == IDENTITY_SWEEP)
+        counts = reproducibility_counts(attempts)
+        rate = f"{described_rate(*counts)}; " if counts is not None else ""
         lines.append(
             f"  reproducibility of {visible_controls(spec_id)}: "
-            f"{reproducibility_from_attempts(attempts):.2f} ({exploited} of {len(attempts)} "
-            "trials exploited"
+            f"{reproducibility_from_attempts(attempts):.2f} ({rate}{exploited} of "
+            f"{len(attempts)} trials exploited"
             + (f", {swept} of them an identity sweep's" if swept else "")
             + "; the report's figure)"
         )
