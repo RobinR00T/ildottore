@@ -24,8 +24,8 @@ neighbouring entries can interleave (an older branch merged later sits above a n
   CWE, 41 of 80 an ATT&CK technique, 64 of 80 an ESP-IA requirement.
 - **Pins.** IoPC `T5.002` only (`T8.004` stays out of scope, `docs/15`; coverage 27/30 unchanged).
   Judging rules 10 re-pinned (`e3a0ad18...`): no stored verdict changes.
-- **Numbers.** A-133, OD-75, ADR-0027 (piece 5 holds A-132, OD-74, ADR-0026; expect a renumber
-  at rebase if another sibling took them).
+- **Numbers.** A-133, OD-75, ADR-0027; the sibling branches of 2026-11-09 hold A-128 to A-132,
+  A-134, OD-72 to OD-74, OD-76, ADR-0025 and ADR-0026, so none collides.
 - **Open (the owner's, OD-75).** A `null` and a look-alike origin as further probes; whether a
   frame on the cross-site socket is ever worth the credential it would carry. The spec maps to
   no ESP-IA requirement: a mapping is the owner's call.
