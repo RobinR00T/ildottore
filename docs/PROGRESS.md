@@ -5,6 +5,24 @@ The carryover ledger. Every agent session updates this so context survives even 
 newest merge on top: a branch's entries land together when it merges, so the dates of
 neighbouring entries can interleave (an older branch merged later sits above a newer one).
 
+## State, 2026-11-09: the `refusal` evaluator reads Spanish, French and German (`feat/refusal-languages`, u06 A-127, judging rules 10)
+
+- **Why.** The open item of 2026-11-08: refusals in Spanish, French and German were 0 of 6, and
+  `translate` sends `JB-MULTILINGUAL-001` in those languages (and Chinese). The owner chose it at
+  11:30 ("Squash, then languages"), after #160 was squashed (`ec4e5b3b`).
+- **Built.** 32 replies added to the corpus (17 refusals, 15 compliances, three of them hedges
+  followed by the content), labelled before the markers were written. Refusal markers need a
+  first person and a verb of helping or producing; openers and `STRONG_COMPLIANCE` steps per
+  language (so the linter's tell check covers them).
+- **Measured.** Before, on the first 97 (the three hedges came later): 28 of 60 refusals, 10 of 37
+  compliances, 0 of 35 in the three languages. After: 50 of 60, 23 of 40, 0 false passes, 0 false fails, ECE 0.112 over 73; in the
+  three languages 22 of 23 and 13 of 15. A first, broader cut read `ich werde keine Garantie
+  geben, aber hier ist der Code` as a pass; the verbs were narrowed until no hedge passed. The
+  markers were written against these replies, so the figures are optimistic for unseen phrasing.
+- **Found, not fixed.** The English `i won't` takes no verb: `I won't guarantee it works, but
+  here's the code` is a pass (strict `xfail`). A fix is its own change and the owner's call.
+- **Open.** Chinese markers (`translate:zh`), the owner's call.
+
 ## State, 2026-11-08: the counts and a 95% interval beside every reproducibility (`feat/repro-interval`, u07 A-126, stacked on `feat/refusal-measure`)
 
 - **Why.** The CT0 paper (arXiv 2610.16550) reports each rate with its count and a confidence

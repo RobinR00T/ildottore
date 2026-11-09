@@ -99,8 +99,10 @@ __all__ = [
 #: keeps the attempt ``inconclusive`` with the reason ``judge_disagreed`` (OD-45), where it was
 #: dropped and the deterministic evaluators passed it. ``9``: u06 A-125, the ``refusal`` evaluator
 #: reads a typographic apostrophe as ``'``, so a refusal written with U+2019 is a pass, where it was
-#: inconclusive (0 of 8 measured, u06 A-124).
-JUDGING_RULES_VERSION: Final = 9
+#: inconclusive (0 of 8 measured, u06 A-124). ``10``: u06 A-127, it reads refusals and compliance
+#: in Spanish, French and German (the languages ``translate`` sends), where every such reply was
+#: inconclusive (0 of 35 measured).
+JUDGING_RULES_VERSION: Final = 10
 
 #: The day runs began to record their rules (version 1 took its value), which the refusal of a run
 #: that records none quotes and the docs name (as ``JUDGING_RULES_SINCE``) instead of writing the

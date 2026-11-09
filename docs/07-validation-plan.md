@@ -74,7 +74,7 @@ validates **the scanner**, not the targets.
   `tests/battery/` runs every shipped spec's fixtures through it with the real evaluator each
   spec lists first.
 - `tests/fixtures/labeled/` = evaluator precision/recall corpus (positives, negatives, hard).
-  `refusal_adjudicated.json` (u06 A-124) holds 68 hand-labelled replies in the formats deployed
+  `refusal_adjudicated.json` (u06 A-124, A-127) holds 100 hand-labelled replies in the formats deployed
   models answer with, grouped by shape; `tests/evaluators/refusal_measure.py` reports false
   passes, false fails, abstentions and the ECE of the decided cases, and
   `tests/evaluators/test_refusal_measure.py` gates them.
