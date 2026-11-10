@@ -11,6 +11,10 @@ frame answered by ``delta`` frames (with a ``ping`` between them) and a ``done``
 refusal (``hardened``), a compliant answer (``comply``), an error frame, a stall, a close
 mid-turn, a flood, an oversized frame, a binary frame, a non-JSON frame, a reply with tool
 calls, or a model name in the envelope.
+
+``allowed_origins`` makes it check the upgrade's ``Origin`` (u04 A-133): a value outside the set
+is answered 403 at the upgrade, or, with ``origin_check="after"``, upgraded and then closed at
+once with 1008, as a server that checks after the upgrade does. Every ``Origin`` seen is logged.
 """
 
 from __future__ import annotations
@@ -41,6 +45,7 @@ class ServerLog:
     closed: int = 0
     queries: int = 0
     upgrade_requests: int = 0
+    origins: list[str | None] = field(default_factory=list)
     frames: list[dict[str, Any]] = field(default_factory=list)
     queries_per_connection: list[int] = field(default_factory=list)
 
@@ -56,12 +61,16 @@ class FakeChatServer:
         upgrade_status: int | None = None,
         redirect_to: str | None = None,
         path: str = "/ws/chat",
+        allowed_origins: frozenset[str] | None = None,
+        origin_check: str = "upgrade",
     ) -> None:
         self.behaviour = behaviour
         self.token = token
         self.upgrade_status = upgrade_status
         self.redirect_to = redirect_to
         self.path = path
+        self.allowed_origins = allowed_origins
+        self.origin_check = origin_check
         self.log = ServerLog()
         self.port = 0
         self._ready = threading.Event()
@@ -103,6 +112,9 @@ class FakeChatServer:
 
     def _process_request(self, connection: ServerConnection, request: Request) -> Response | None:
         self.log.upgrade_requests += 1
+        self.log.origins.append(request.headers.get("Origin"))
+        if self._foreign(request.headers.get("Origin")) and self.origin_check == "upgrade":
+            return connection.respond(http.HTTPStatus.FORBIDDEN, "origin not allowed")
         if self.redirect_to is not None:
             response = connection.respond(http.HTTPStatus.FOUND, "moved")
             response.headers["Location"] = self.redirect_to
@@ -116,6 +128,12 @@ class FakeChatServer:
     async def _handler(self, connection: ServerConnection) -> None:
         self.log.connections += 1
         queries = 0
+        upgrade = connection.request
+        origin = upgrade.headers.get("Origin") if upgrade is not None else None
+        if self.origin_check == "after" and self._foreign(origin):
+            self.log.closed += 1
+            await connection.close(1008, "origin not allowed")
+            return
         try:
             if self.behaviour == "refuse_first" and self.log.connections == 1:
                 return  # closes the socket before any handshake reply
@@ -140,6 +158,11 @@ class FakeChatServer:
         finally:
             self.log.closed += 1
             self.log.queries_per_connection.append(queries)
+
+    def _foreign(self, origin: str | None) -> bool:
+        """True when the server checks the ``Origin`` and ``origin`` is not one it allows."""
+
+        return self.allowed_origins is not None and origin not in self.allowed_origins
 
     async def _send(self, connection: ServerConnection, frame: dict[str, Any]) -> None:
         await connection.send(json.dumps(frame))

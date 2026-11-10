@@ -672,6 +672,8 @@ def test_the_digest_leaves_an_absent_block_out() -> None:
     before["capabilities"].pop("mcp")
     # And `capabilities.mcp_pins` (u04 A-101), left out when false.
     before["capabilities"].pop("mcp_pins")
+    # And `capabilities.websocket_origin` (u04 A-133), left out when false.
+    before["capabilities"].pop("websocket_origin")
     before["__route__"] = "live"
     assert target_digest(plain) == digest._sha(before)
     assert "websocket" not in json.dumps(before)

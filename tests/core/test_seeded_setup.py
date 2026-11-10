@@ -345,6 +345,8 @@ def test_a_stored_run_without_the_block_keeps_its_digest() -> None:
     before["capabilities"].pop("mcp")
     # And `capabilities.mcp_pins` (u04 A-101), left out when false.
     before["capabilities"].pop("mcp_pins")
+    # And `capabilities.websocket_origin` (u04 A-133), left out when false.
+    before["capabilities"].pop("websocket_origin")
     before["__route__"] = "live"
     assert target_digest(plain) == digest._sha(before)
     assert target_digest(plain) != target_digest(_target(SeededSetup(specs=["*"])))

@@ -87,6 +87,7 @@ _MAPPING = {
     "CWE-79": {"OUT-XSS-001"},
     "CWE-770": {"DOS-TOKEN-AMP-001", "DOS-RESOURCE-HIJACK-001"},
     "CWE-918": {"AC-SSRF-001", "AC-SSRF-SCHEME-001"},
+    "CWE-1385": {"AC-WS-ORIGIN-001"},
 }
 
 
@@ -135,7 +136,7 @@ def test_the_battery_mapping_is_the_reviewed_one() -> None:
         for code in spec.cwe or []:
             found.setdefault(code, set()).add(spec.id)
     assert found == _MAPPING
-    assert sum(1 for s in battery.values() if s.cwe) == 49
+    assert sum(1 for s in battery.values() if s.cwe) == 50
     assert all(
         CWE_ENTRIES[code][1] in CWE_MAPPABLE_USAGES
         for spec in battery.values()

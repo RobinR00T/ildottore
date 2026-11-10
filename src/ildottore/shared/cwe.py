@@ -91,6 +91,7 @@ CWE_ENTRIES: Final = MappingProxyType(
             "Allowed",
         ),
         "CWE-918": ("Server-Side Request Forgery", "Allowed"),
+        "CWE-1385": ("Missing Origin Validation in WebSockets", "Allowed"),
         "CWE-1427": ("Improper Neutralization of Input Used for LLM Prompting", "Allowed"),
         # Mappable alternatives MITRE's notes point at, not named by the battery today.
         "CWE-77": (

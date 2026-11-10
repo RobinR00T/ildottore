@@ -76,6 +76,7 @@ _REQUIRES_TO_CAPABILITY: dict[RequiresCapability, str] = {
     RequiresCapability.MULTIMODAL: "multimodal",
     RequiresCapability.MCP: "mcp",
     RequiresCapability.MCP_PINS: "mcp_pins",
+    RequiresCapability.WEBSOCKET_ORIGIN: "websocket_origin",
 }
 
 

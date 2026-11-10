@@ -1940,7 +1940,7 @@ rm -f reports/agent.priced.yaml
 
 ## Scenario S, the CWE a finding maps to
 
-49 of the 80 battery specs name the MITRE CWE of the weakness a fail shows in the application
+50 of the 81 battery specs name the MITRE CWE of the weakness a fail shows in the application
 (u02 A-110, ADR-0021). The label decides nothing; it reaches the tracker and GitHub code scanning.
 
 ### Step 1, read it on the card
@@ -2102,7 +2102,7 @@ dottore coverage --framework esp_ia --no-gaps
 ```
 
 ```
-Battery coverage (80 specs, no scan performed)
+Battery coverage (81 specs, no scan performed)
 
   CCN-STIC-2011 ESP-IA 1.0 requirements   19/27   70%
 ```
@@ -2121,7 +2121,7 @@ dottore coverage --framework esp_ia --target examples/target.esp-ia.yaml
 ```
 
 ```
-ESP-IA applicability for target demo (CCN-STIC-2011 ESP-IA 1.0; 80 specs read, no scan performed)
+ESP-IA applicability for target demo (CCN-STIC-2011 ESP-IA 1.0; 81 specs read, no scan performed)
 
   Answered yes: 7 of 21 (C01, C03, C05, C09, C12, C19, C20)
   Rules met:    R02 R09 R11 R21 R22
@@ -2289,3 +2289,48 @@ error: --allow-pii-elicitation needs --policy-pack: it is the run's key, and the
 
 Exit 3. `DL-PII-ELICIT-001` needs both keys (OD-11): `allow_pii_elicitation: true` and
 `layer_b_pii` in the pack, and the flag on the run.
+
+## Scenario W, does the WebSocket endpoint check the Origin? (`AC-WS-ORIGIN-001`)
+
+A chat endpoint that upgrades a WebSocket whatever the `Origin` says can be opened by any web
+page the signed-in user visits, with the user's cookies (cross-site WebSocket hijacking,
+CWE-1385). `AC-WS-ORIGIN-001` runs on every `provider: websocket` target and nowhere else. It
+sends no prompt and no frame: each request is two upgrades, the chat page's own `Origin` and
+`https://dottore-cross-site.invalid`, each held one second and closed (u04 A-133, ADR-0027).
+
+```bash
+dottore run --dry-run --spec AC-WS-ORIGIN-001 \
+  -t examples/target.websocket.yaml --scope examples/scope.websocket.yaml
+```
+
+Real output of that exact command (the note on stderr about the checkout and the unset
+credential left out):
+
+```
+dry-run: plan resolved, sent nothing.
+  scope:   examples/scope.websocket.yaml
+  target:  ws-assistant-staging (chatbot) authorized at wss://assistant.example.test/ws/chat
+  battery: filtered selection, 1 specs selected
+    data_leakage: 1
+  would send: 5 requests over 1 specs at runs=5
+  pacing:  5.0 req/s ceiling (S8)
+  budgets: 500000 tokens, 2000 requests, 2000 attempts, 1800s wall (derived from this plan, or --budget-requests, --budget-tokens, --budget-wall)
+```
+
+No `--judge` warning: the spec reads the probe with two regexes and needs no judge. On a live
+run, the reply the evidence keeps is the probe's own rendering:
+
+```
+WebSocket Origin probe: two upgrades, no frame sent
+control origin https://assistant.example.test: accepted (HTTP 101, held open 1s)
+cross-site origin https://dottore-cross-site.invalid: accepted (HTTP 101, held open 1s)
+```
+
+That is a FAIL: the endpoint upgraded a socket for a site it has no reason to trust. `refused
+(HTTP 403)`, or `closed by the server after the upgrade (close code 1008)`, is a pass. If the
+chat page is not on the endpoint's own host, uncomment `origin:` in the target file, or the
+control upgrade is refused and the attempt is `inconclusive` (the error says to set
+`websocket.origin`). The host is `example.test`, so drop `--dry-run` only after pointing both
+files at your deployment. `tests/cli/test_websocket_origin_target.py` runs the spec against a
+loopback server three ways: one that checks the `Origin`, one that does not, one that refuses
+its own page.

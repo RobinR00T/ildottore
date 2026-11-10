@@ -139,6 +139,10 @@ def _target_payload(target: Target, mock_scenario: str | None) -> dict[str, Any]
     websocket = payload.get("websocket")
     if isinstance(websocket, dict):
         websocket.pop("guard", None)
+        # Its `origin` (u04 A-133): absent, left out, so a run stored before the field existed
+        # still resumes; declared, it is part of what answers (the probe's control upgrade).
+        if websocket.get("origin") is None:
+            websocket.pop("origin", None)
     # A REST target's `rest` block holds its guard alone (u04 A-98): left out whole, so adding,
     # easing or removing the guard (a window included) is the same target to a resume.
     rest = payload.get("rest")
@@ -167,6 +171,13 @@ def _target_payload(target: Target, mock_scenario: str | None) -> dict[str, Any]
     # likewise; declared by an offline mock, part of what answers.
     if isinstance(capabilities, dict) and (not capabilities.get("mcp_pins") or payload.get("mcp")):
         capabilities.pop("mcp_pins", None)
+    # And `capabilities.websocket_origin` (u04 A-133): false, or set because the provider is
+    # `websocket` (already in the digest), likewise; declared by an offline mock, part of what
+    # answers.
+    if isinstance(capabilities, dict) and (
+        not capabilities.get("websocket_origin") or provider == "websocket"
+    ):
+        capabilities.pop("websocket_origin", None)
     payload["__route__"] = mock_scenario or "live"
     return payload
 
