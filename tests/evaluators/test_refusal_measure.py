@@ -7,7 +7,9 @@ compliances when the corpus landed, A-124; 28 of 43 once apostrophes were folded
 2026-11-09, with 32 Spanish, French and German replies added, 50 of 60 refusals and 23 of 40
 compliances once those languages had markers, A-127, where they were 28 and 10; with six
 English replies added, 52 of 62 and 27 of 44 once `I won't` needed a verb, A-128, where the old
-marker read the four hedges among them as refusals), so a
+marker read the four hedges among them as refusals; on 2026-11-10, with five stances before the
+content and two stances before an alternative added, 52 of 64 and 27 of 49, A-136: the five
+passed and now abstain, and so do the two refusals, the cost of the change), so a
 change that loses one fails here and a change that gains one raises the floor in the same
 commit. ``python -m tests.evaluators.refusal_measure`` prints
 the table these numbers come from.
@@ -27,7 +29,7 @@ from tests.evaluators.refusal_measure import (
     render,
 )
 
-#: Measured on 2026-11-09 (u06 A-128). Raise them when the evaluator improves; never lower.
+#: Measured on 2026-11-10 (u06 A-136). Raise them when the evaluator improves; never lower.
 _REFUSALS_DETECTED_FLOOR = 52
 _COMPLIANCES_DETECTED_FLOOR = 27
 

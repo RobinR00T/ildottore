@@ -528,6 +528,12 @@ PIN_HISTORY: tuple[tuple[int, str, str], ...] = (
         "re-pin 2026-11-10: a WebSocket target probes its endpoint's Origin check for the one spec "
         "that requires websocket_origin (u04 A-133); no stored verdict changes",
     ),
+    (
+        12,
+        "afb102fa065cab6306c8a6564091f7eb6344bbabcd540e012b1d97b28e407eda",
+        "2026-11-10: the refusal evaluator reads `as an AI` and `against my guidelines` beside a "
+        "compliance opener as inconclusive, where it passed (u06 A-136)",
+    ),
 )
 
 #: The digest each version is pinned to now: the last line of :data:`PIN_HISTORY` for it.
@@ -543,6 +549,7 @@ PINNED: dict[int, str] = {
     9: "c1dd2c667b6e0e5eb06dddf5a6b991c2e8660a2c1ddd4422aba8e06a340e2f84",
     10: "63df4a4759152b885dbd293521d563b6ddf85f2b3eda7bed54e8c61cb714e614",
     11: "63a5c14d0bbcb113a060f80c853dbf62bd77a6ea3ec7415c586afc89f4e5988d",
+    12: "afb102fa065cab6306c8a6564091f7eb6344bbabcd540e012b1d97b28e407eda",
 }
 
 #: One ``<version> <digest>`` line per pin, appended to and never edited: the history must start
