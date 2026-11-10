@@ -2047,6 +2047,46 @@ def _mcp_capability(
     return caps
 
 
+def _websocket_origin_capability(
+    path: Path, raw: dict[str, Any], caps_raw: dict[str, Any], caps: Capabilities
+) -> Capabilities:
+    """``capabilities.websocket_origin``: true exactly when the target is a WebSocket endpoint.
+
+    Its provider is ``websocket`` (u04 A-133, OD-75): the WebSocket adapter's handshake probe is
+    the one route that tries an upgrade with a chosen ``Origin``, which ``AC-WS-ORIGIN-001``
+    reads, so the capability follows the provider and is not declared, as ``mcp`` does (OD-44).
+    Declared ``false`` on a WebSocket target, or ``true`` on a live target of another provider, it
+    says what the route does not do, and is refused. An offline mock may declare it only when it
+    replays the spec's fixtures: a ``bare`` or ``comprehending`` mock answers a canned string that
+    holds no probe, and the spec's oracle would fail it (OD-16), as ``mcp_pins`` is refused there.
+    """
+
+    provider = raw.get("provider")
+    is_websocket = isinstance(provider, str) and provider.strip().lower() == "websocket"
+    if is_websocket:
+        if "websocket_origin" in caps_raw and not caps.websocket_origin:
+            raise ValueError(
+                f"target file {path} 'capabilities' declares websocket_origin false for a "
+                "WebSocket endpoint (provider websocket); leave it out: the provider sets it"
+            )
+        return caps.model_copy(update={"websocket_origin": True})
+    if not caps.websocket_origin:
+        return caps
+    if not _uses_mock(raw):
+        raise ValueError(
+            f"target file {path} 'capabilities' declares websocket_origin for a live target "
+            "whose provider is not websocket: only the WebSocket adapter probes an upgrade; leave "
+            "it out, or set provider: websocket"
+        )
+    if raw.get("mock_scenario") not in _PIN_REPLAYS:
+        raise ValueError(
+            f"target file {path} declares websocket_origin on an offline mock that replays no "
+            "fixtures; set mock_scenario to vulnerable or hardened: a canned reply holds no "
+            "handshake probe to judge"
+        )
+    return caps
+
+
 def _endpoint_credentials(parts: SplitResult) -> list[str]:
     """The credentials an endpoint URL's user info carries, as written and percent-decoded.
 
@@ -2129,6 +2169,7 @@ def _target_from(path: Path, raw: dict[str, Any]) -> Target:
             f"target file {path} 'capabilities' failed validation: {validation_problems(exc)}"
         ) from exc
     caps = _mcp_capability(path, raw, caps_raw, caps)
+    caps = _websocket_origin_capability(path, raw, caps_raw, caps)
     # Text or absent: `_read_target_yaml` refuses anything else, once read as absent (A-53).
     name = raw.get("name")
 

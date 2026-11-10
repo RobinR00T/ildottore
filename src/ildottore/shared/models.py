@@ -12,7 +12,7 @@ from __future__ import annotations
 import math
 import posixpath
 import re
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Final, Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import (
@@ -399,6 +399,10 @@ class Capabilities(_Frozen):
     # not empty, which the target loader sets; an offline mock may declare it. ``MCP-RUGPULL-001``
     # requires it, so a server nobody pinned is not judged against a catalogue it never had.
     mcp_pins: bool = False
+    # Whether the target is a WebSocket endpoint (u04 A-133, OD-75): true exactly when its
+    # ``provider`` is ``websocket``, which the target loader sets; an offline mock may declare it.
+    # ``AC-WS-ORIGIN-001`` requires it: the adapter's handshake probe is its only route.
+    websocket_origin: bool = False
 
 
 class SeededSetup(_Frozen):
@@ -932,6 +936,30 @@ class WebSocketSpec(_Frozen):
     headers: dict[str, str] = Field(default_factory=dict)
     vars: dict[str, str] = Field(default_factory=dict)
     guard: WebSocketGuard | None = None
+    #: The ``Origin`` of the page the chat is served from, which the handshake probe offers as
+    #: its control upgrade (u04 A-133, OD-75). Left out, it is derived from ``endpoint`` (``ws``
+    #: to ``http``, ``wss`` to ``https``, the same host and port). An origin only: a scheme of
+    #: ``http`` or ``https``, a host and an optional port, never a path, a query or user info.
+    origin: str | None = None
+
+    @field_validator("origin")
+    @classmethod
+    def _origin_is_an_origin(cls, value: str | None) -> str | None:
+        if value is not None and _ORIGIN.fullmatch(value) is None:
+            raise ValueError(
+                "origin must be a scheme (http or https), a host and an optional port, with no "
+                "path, query or user info (for example https://chat.example.com)"
+            )
+        return value
+
+
+#: An ``Origin`` header value (RFC 6454 serialization): scheme, host (a name or a bracketed IPv6
+#: address) and an optional port, nothing after it.
+_ORIGIN: Final = re.compile(
+    r"https?://"
+    r"(?:\[[0-9A-Fa-f:.]+\]|[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?)"
+    r"(?::[0-9]{1,5})?"
+)
 
 
 #: A list price per million tokens, in euros: what the operator pays, never a figure the scanner

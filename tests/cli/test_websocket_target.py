@@ -510,5 +510,6 @@ def test_the_target_digest_binds_the_websocket_block(tmp_path: Path) -> None:
     assert target_digest(target) != target_digest(changed)
     # Absent, the field is left out: a run stored before it existed still resumes.
     plain = Target.model_validate({"id": "t", "type": "model"})
-    assert json.dumps(plain.model_dump(mode="json")).count("websocket") == 1
+    # The block's own key, not `capabilities.websocket_origin` (u04 A-133).
+    assert json.dumps(plain.model_dump(mode="json")).count('"websocket":') == 1
     assert target_digest(plain) == target_digest(plain.model_copy(update={"websocket": None}))

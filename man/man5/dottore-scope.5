@@ -306,7 +306,10 @@ the file is loaded, and so is a ws:// or wss:// endpoint on any other provider, 
 session.one_query_in_flight false (OD-35: one query at a time per connection, by design). One
 connection per conversation, never re-dialled in the middle of one (a later turn whose
 connection is gone is inconclusive, OD-36); every frame is kept in the evidence with the
-credential as its placeholder.
+credential as its placeholder. The provider sets capabilities.websocket_origin (never written
+by hand on a live target), which runs AC-WS-ORIGIN-001: two upgrades and no frame, one with the
+chat page's Origin (websocket.origin, an origin only, else derived from the endpoint) and one
+with https://dottore-cross-site.invalid; an accepted cross-site upgrade fails it.
 Worked file:
 examples/target.websocket.yaml; reference in docs/MANUAL.md section 4.2.
 .PP

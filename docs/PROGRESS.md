@@ -5,6 +5,53 @@ The carryover ledger. Every agent session updates this so context survives even 
 newest merge on top: a branch's entries land together when it merges, so the dates of
 neighbouring entries can interleave (an older branch merged later sits above a newer one).
 
+## State, 2026-11-09: session adoption (`feat/session-adoption`, u08 A-134, OD-76, ADR-0026)
+
+- **Why.** Piece 5 of the 8 generic techniques the owner approved on 2026-11-09: a server that
+  takes a client-chosen conversation id without checking it against its owner lets another
+  identity adopt the session (CWE-639, CWE-384). The identity sweep sent one request to every
+  identity at once; nothing carried a value from one identity into another's request.
+- **Built.** `setup.session_handoff` (spec schema), `rest.session` (target file),
+  `core.session_handoff`, `CampaignRunner._sweep_handoff` and `_HandedAdapter`, the REST
+  adapter's session field and issued id, `session_gap` in the plan and the runner, and
+  `DL-SESSION-ADOPT-001` (82 specs with `MM-IMG-FILENAME-INJECT-001` and `AC-WS-ORIGIN-001`). The owner is the first identity the attempts are not sent
+  as; the attempts carry the owner's id too, so they repeat the adoption and can confirm it.
+- **Measured.** `tests/core/test_session_handoff.py`, 12 tests, against a loopback REST stub with
+  two identities at `--runs 1` (3 requests): not bound, a confirmed Critical fail, exit 2,
+  reproducibility 2 of 2, with the scanner's id and with an issued one; bound to its owner, a
+  pass, exit 0; no `rest.session`, nothing sent, `inconclusive`. No conversation id in the
+  evidence or the four reports. Coverage figures unchanged (`dottore coverage builtin`).
+- **First cut, changed before the commit.** With the adoption in the sweep alone (the
+  `DL-XTENANT-001` shape), a real adoption read as a Medium, unconfirmed fail (1 of 2 trials,
+  exit 0): the attempts went without the id. They carry it now.
+- **Open (OD-76, the owner's call).** A header, cookie or WebSocket carrier for the id; an
+  issued id tried as a guess. Numbers taken next to the siblings' (A-128 to A-131, OD-72, OD-73,
+  ADR-0025): expect a rebase at merge.
+
+## State, 2026-11-09: a WebSocket chat endpoint's Origin check (`feat/ws-origin-probe`, u04 A-133, OD-75, ADR-0027)
+
+- **Why.** Piece 6 of the eight generic techniques the owner approved on 2026-11-09: cross-site
+  WebSocket hijacking (CWE-1385). The engine had no way to try an upgrade with a chosen
+  `Origin`: every spec was a prompt, and the adapter dialled with no `Origin` header.
+- **Built.** `capabilities.websocket_origin` (set by the loader for `provider: websocket`, refused
+  declared elsewhere, outside the digest), the runner's probe mark (`shared.probes`), the
+  adapter's `_probe_origin` (two upgrades through the chat's own `_dial`, no frame, a one-second
+  hold, a refused control `WebSocketProbeUntestable`), the optional `websocket.origin`,
+  CWE-1385 in the pinned table, and `AC-WS-ORIGIN-001` in the `access-control` suite. The
+  loopback chat server learnt to check the `Origin` at the upgrade or after it.
+- **Measured.** 20 adapter tests and 17 composition-root tests: a server that checks at the
+  upgrade (refused 403), one that closes with 1008 after it, one that does not check (accepted),
+  a refused control (inconclusive, the cross-site upgrade never tried), and three real campaigns
+  (fail, pass, inconclusive), no frame sent in any. `dottore coverage builtin`: 80 specs, every
+  axis unchanged (ESP-IA 19/27; the spec maps to no ESP-IA requirement). Battery, merged after A-132:
+  81 specs, 50 of 81 name a CWE, 42 of 81 an ATT&CK technique, 65 of 81 an ESP-IA requirement.
+- **Pins.** IoPC `T5.002` only (`T8.004` stays out of scope, `docs/15`; coverage 27/30 unchanged).
+  Judging rules 11 re-pinned (`63a5c14d...`): no stored verdict changes.
+- **Numbers.** A-133, OD-75, ADR-0027; the sibling branches of 2026-11-09 hold A-128 to A-132,
+  A-134, OD-72 to OD-74, OD-76, ADR-0025 and ADR-0026, so none collides.
+- **Open (the owner's, OD-75).** A `null` and a look-alike origin as further probes; whether a
+  frame on the cross-site socket is ever worth the credential it would carry. The spec maps to
+  no ESP-IA requirement: a mapping is the owner's call.
 ## State, 2026-11-09: `I won't` needs a verb (`feat/refusal-hedge`, u06 A-128, judging rules 11, stacked on #163)
 
 - **Why.** Found while bounding A-127's markers: `I won't guarantee it works, but here's the code`
@@ -18,29 +65,6 @@ neighbouring entries can interleave (an older branch merged later sits above a n
   `As an AI, I can share this: here's the code` and `This is against my guidelines in general, but
   here's the script` both pass. A fix is in the mixed-signal rule, not the lists; the owner's
   call.
-
-## State, 2026-11-09: session adoption (`feat/session-adoption`, u08 A-134, OD-76, ADR-0026)
-
-- **Why.** Piece 5 of the 8 generic techniques the owner approved on 2026-11-09: a server that
-  takes a client-chosen conversation id without checking it against its owner lets another
-  identity adopt the session (CWE-639, CWE-384). The identity sweep sent one request to every
-  identity at once; nothing carried a value from one identity into another's request.
-- **Built.** `setup.session_handoff` (spec schema), `rest.session` (target file),
-  `core.session_handoff`, `CampaignRunner._sweep_handoff` and `_HandedAdapter`, the REST
-  adapter's session field and issued id, `session_gap` in the plan and the runner, and
-  `DL-SESSION-ADOPT-001` (81 specs with `MM-IMG-FILENAME-INJECT-001`). The owner is the first identity the attempts are not sent
-  as; the attempts carry the owner's id too, so they repeat the adoption and can confirm it.
-- **Measured.** `tests/core/test_session_handoff.py`, 12 tests, against a loopback REST stub with
-  two identities at `--runs 1` (3 requests): not bound, a confirmed Critical fail, exit 2,
-  reproducibility 2 of 2, with the scanner's id and with an issued one; bound to its owner, a
-  pass, exit 0; no `rest.session`, nothing sent, `inconclusive`. No conversation id in the
-  evidence or the four reports. Coverage figures unchanged (`dottore coverage builtin`).
-- **First cut, changed before the commit.** With the adoption in the sweep alone (the
-  `DL-XTENANT-001` shape), a real adoption read as a Medium, unconfirmed fail (1 of 2 trials,
-  exit 0): the attempts went without the id. They carry it now.
-- **Open (OD-76, the owner's call).** A header, cookie or WebSocket carrier for the id; an
-  issued id tried as a guess. Numbers taken next to the siblings' (A-128 to A-131, OD-72, OD-73,
-  ADR-0025): expect a rebase at merge.
 
 ## State, 2026-11-09: an injection in an attachment's file name (`feat/filename-injection`, u04 A-132, OD-74, u13)
 

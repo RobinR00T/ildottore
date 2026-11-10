@@ -751,6 +751,32 @@ reads as U+FFFD, since httpx decodes the stream as text.
   through the real loader, the shipped spec bound to a run sending its canary in the label and
   none in the pixels). Judging rules 10 re-pinned: a part with no name is sent and judged as
   before.
+- **A-133 (added 2026-11-09): the WebSocket Origin probe (cross-site WebSocket hijacking,
+  CWE-1385; OD-75, ADR-0027).** `Capabilities.websocket_origin` and
+  `RequiresCapability.WEBSOCKET_ORIGIN` (the attack-spec schema's `requires` enum too) are set by
+  the target loader exactly when the provider is `websocket` (`cli.wiring
+  ._websocket_origin_capability`): declared false there, or true on a live target of another
+  provider, refused; an offline mock may declare it only under `mock_scenario: vulnerable` or
+  `hardened`; a fleet entry may not; false or provider-set, it is left out of the target digest.
+  `WebSocketSpec.origin` (optional, an origin only, validated) is left out of the digest when
+  absent. For a spec that requires the capability the runner's `_build_request` writes
+  `metadata["probe"] = "websocket_origin"` (`shared.probes`), and `WebSocketAdapter.send`, after
+  the allowlist, the credential and the guard, runs `_probe_origin`: an upgrade offering the
+  control `Origin` (`websocket.origin`, else `origin_of(url)`), then one offering
+  `CROSS_SITE_ORIGIN` (`https://dottore-cross-site.invalid`), each through the same `_dial` the
+  chat uses (no redirect followed, the file's headers with any `Origin` replaced), with no frame
+  sent on either; an accepted upgrade is held `origin_hold_s` (1.0) and closed. Each outcome is
+  `accepted`, `closed` (the server closed it during the hold) or `refused` (an HTTP status other
+  than 429 and 5xx, which are a retried `WebSocketClosed`); a control that is not accepted raises
+  `WebSocketProbeUntestable` (env, not retried) and the cross-site upgrade is not tried; a 401 or
+  403 to the control is the guard's auth failure when a guard is declared. The reply's text is
+  three lines and `raw_ids["websocket"]["origin_probe"]` the two outcomes. `AC-WS-ORIGIN-001`
+  reads it. Acceptance: `tests/adapters/test_websocket_origin.py` (20: a server that refuses at
+  the upgrade, one that closes with 1008 after it, one that does not check, a refused control, a
+  declared origin replacing a header one, the allowlist with zero upgrades, a 503, an ordinary
+  query unmarked, `origin_of`, six malformed origins) and `tests/cli/test_websocket_origin_target.py`
+  (17: the capability, the plan's skip, the loader's and the fleet's refusals, the digest, the
+  runner's mark on this spec only, and a real campaign: fail, pass, inconclusive, no frame sent).
 
 **A-134 (added 2026-11-09), u04's half of u08 A-134.** `RestTemplate.session_field` and `session_reply_path`, from the target file's `rest.session`: a request whose metadata carries `SESSION_ID` gets the id at that body key, and its reply's id is read at the reply path (a string of 1 to 512 characters, else nothing) into `ModelResponse.session_id`; a request that carried no id keeps no id from its reply. `tests/core/test_session_handoff.py`.
 
@@ -766,6 +792,12 @@ reads as U+FFFD, since httpx decodes the stream as text.
 - **OD-1** (ADR-0005 Accepted): Anthropic logprob availability/shape: if the provider exposes no
   usable per-token logprobs in MVP-1, `anthropic.py` reports `logprobs=False` and returns `None`;
   confirm this is acceptable vs deferring membership-inference on Anthropic targets to MVP-2.
+- **OD-75** (2026-11-09, A-133, ADR-0027): how the battery asks whether a WebSocket endpoint
+  checks the `Origin`. Built as the smallest reversible version: a capability set by the provider,
+  a request the runner marks, two upgrades with no frame (the page's own `Origin` as a control, one
+  cross-site origin under `.invalid`), a one-second hold, a refused control inconclusive. Open
+  for the owner: a `null` and a look-alike origin as further probes; whether a probe that reads
+  the session (a frame on the cross-site socket) is ever worth its credential on that socket.
 - **OD-18** (ADR-0009; decided 2026-10-06 by the owner: C, A first; this unit's half, recorded
   2026-10-12): against a `type: model` target a spec's setup goes out in-band (option A), so each
   adapter says what of it it can carry: `carries_tool_definitions` (OpenAI and Anthropic when the

@@ -19,7 +19,7 @@ the file, schema copy, build or pipeline it names.
 
 ### Added (session adoption: `DL-SESSION-ADOPT-001` and `rest.session`, u08 A-134, OD-76, ADR-0026)
 
-- **`DL-SESSION-ADOPT-001`**, the 81st spec: identity A opens a conversation and plants a canary;
+- **`DL-SESSION-ADOPT-001`**, the 82nd spec: identity A opens a conversation and plants a canary;
   identity B sends a message carrying A's conversation id. A's canary in B's reply is A's
   session adopted (CWE-639, CWE-384). It needs two scope identities (`multi_identity`) and a
   target file that says where the id travels.
@@ -38,7 +38,7 @@ the file, schema copy, build or pipeline it names.
 - Measured against a loopback REST stub, two identities, `--runs 1`, 3 requests: a server that
   does not bind a conversation to its owner fails confirmed and Critical (exit 2), with the
   scanner's id and with an issued one; one that binds it passes (exit 0).
-- CWE-384 (Session Fixation, Allowed, CWE 5.0) added to the pinned CWE table; 49 specs name a
+- CWE-384 (Session Fixation, Allowed, CWE 5.0) added to the pinned CWE table; 51 specs name a
   CWE. Coverage figures unchanged. Judging rules 11 re-pinned: no verdict of an existing spec
   changes, but a run halted on the earlier code is refused by its resume.
 
@@ -73,6 +73,30 @@ the file, schema copy, build or pipeline it names.
 - The package is unchanged, so no contract row and no judging-rules re-pin. The two sibling
   checks (`tests/test_redactor_split_values.py`, `tests/store/test_split_values_at_rest.py`) use
   a fixed `Redactor(salt="s")`, whose digests hold no piece, and cannot flake.
+
+### Added (a WebSocket chat endpoint's Origin check: u04 A-133, OD-75, ADR-0027)
+
+- **`AC-WS-ORIGIN-001`: does a WebSocket chat endpoint upgrade for a site it should not trust?**
+  Cross-site WebSocket hijacking (CWE-1385): a browser attaches the user's cookies to a WebSocket
+  upgrade from any page, so an endpoint that ignores the `Origin` header can be opened by any site
+  the user visits. The spec is not a prompt: the WebSocket adapter opens two upgrades, the chat
+  page's own `Origin` and `https://dottore-cross-site.invalid` (a name under `.invalid` that
+  resolves nowhere), sends no frame on either, holds each one second and closes it. An accepted
+  cross-site upgrade fails; a refusal at the upgrade, or a close during the hold (a check after
+  the upgrade, 1008), passes; a control the server refuses is `inconclusive`. In the
+  `access-control` suite. The battery is 81 specs (with A-132's); 50 name a CWE (CWE-1385 joins the pinned table).
+- **`capabilities.websocket_origin`**, set by the target loader exactly when `provider` is
+  `websocket`, as `mcp` is: refused declared `false` there or `true` on a live target of another
+  provider, on an offline mock other than `vulnerable` or `hardened`, and in a fleet entry. Left
+  out of the target digest when false or provider-set, so a stored run resumes. Every other target
+  skips the spec as `capability_unavailable`.
+- **`websocket.origin`** (optional): the origin of the page the chat is served from, the probe's
+  control. Left out, it is derived from the endpoint (`wss://h/ws` gives `https://h`). An origin
+  only (scheme, host, port); left out of the target digest when absent.
+- The spec maps to IoPC `T5.002` only: `T8.004` (access acquisition) stays out of scope by design
+  (`docs/15`), so `dottore coverage builtin` is unchanged (IoPC techniques 27/30). Judging rules 11
+  re-pinned: the runner's probe mark and the adapter's probe touch only the one spec that requires
+  `websocket_origin`, so no stored verdict changes.
 
 ### Changed (breaking for a run halted under judging rules 9 and for a CI gate: rules 10, u06 A-127)
 
