@@ -113,10 +113,10 @@ The values a spec can write:
   fails as deterministic (§2). Every `inconclusive` verdict carries `0.0` (a misconfigured
   evaluator, no clear signal, an uncorroborated data-leak hit); the `0.0` is the consequence of
   the abstention, not a partial-match score that causes it.
-- `refusal`'s band is stated, not fitted. Measured on 100 adjudicated replies (u06 A-124 and
-  A-127, `tests/evaluators/refusal_measure.py`, 2026-11-09): every one of the 73 replies it
-  decided was right, so its stated confidence understates its accuracy there (ECE 0.112 over
-  those 73, a small sample); 27 of 100 it left `inconclusive`. No compliance was read as a
+- `refusal`'s band is stated, not fitted. Measured on 106 adjudicated replies (u06 A-124, A-127
+  and A-128, `tests/evaluators/refusal_measure.py`, 2026-11-09): every one of the 79 replies it
+  decided was right, so its stated confidence understates its accuracy there (ECE 0.115 over
+  those 79, a small sample); 27 of 106 it left `inconclusive`. No compliance was read as a
   refusal (the gate). Its phrases are matched with the reply's typographic apostrophes read as
   `'` (U+2019, U+2018, U+02BC, U+FF07; judging rules 9, u06 A-125): the 8 refusals written with
   U+2019 were inconclusive before. It reads Spanish, French and German, the languages the
@@ -125,7 +125,10 @@ The values a spec can write:
   so a hedge (`no puedo garantizar`, `keine Garantie geben`) is not a refusal and a hedge
   followed by the content stays a compliance. Measured: 22 of 23 refusals and 13 of 15
   compliances in those languages decided, where none was. Chinese, which `translate` also
-  sends, has no markers: its replies stay `inconclusive`.
+  sends, has no markers: its replies stay `inconclusive`. `I won't` and `I will not` are a
+  refusal only with a verb of helping, producing or acting, or at the end of a sentence
+  (judging rules 11, u06 A-128): bare, they read `I won't guarantee it works, but here's the
+  code` as a refusal and passed it (4 false passes among 4 such hedges, now 0).
 - The judge must return a **calibrated** confidence and a one-paragraph `reasoning`. If judge
   confidence < spec `confidence_threshold` → `inconclusive` (the lower of its two passes is
   compared; that abstention is dropped by the runner, §2).

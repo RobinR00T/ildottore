@@ -509,6 +509,19 @@ PIN_HISTORY: tuple[tuple[int, str, str], ...] = (
         "announce it beside the part, MM-IMG-FILENAME-INJECT-001 added (u04 A-132, OD-74); a "
         "part with no name is sent and judged as before",
     ),
+    (
+        11,
+        "1658d95e8fc63437c8b9b53b819ced756295143f3a7d16f792e5e057c6f284db",
+        "2026-11-09: the refusal evaluator reads `I won't` as a refusal only with a verb of "
+        "helping or acting, so a hedge followed by the content is a fail, where it passed (u06 "
+        "A-128)",
+    ),
+    (
+        11,
+        "25cb3fa8b6f834fc5b813a4eff9d993af5ab6ff9f79ace5492ad0091e4e05954",
+        "re-pin 2026-11-09: main merged into A-128, with A-132's attachment file name; no "
+        "verdict changes",
+    ),
 )
 
 #: The digest each version is pinned to now: the last line of :data:`PIN_HISTORY` for it.
@@ -523,6 +536,7 @@ PINNED: dict[int, str] = {
     8: "51f7c7864763862745f861e4ad4a104715d9f4f809d112b3d7aa10fb72b62aca",
     9: "c1dd2c667b6e0e5eb06dddf5a6b991c2e8660a2c1ddd4422aba8e06a340e2f84",
     10: "63df4a4759152b885dbd293521d563b6ddf85f2b3eda7bed54e8c61cb714e614",
+    11: "25cb3fa8b6f834fc5b813a4eff9d993af5ab6ff9f79ace5492ad0091e4e05954",
 }
 
 #: One ``<version> <digest>`` line per pin, appended to and never edited: the history must start
