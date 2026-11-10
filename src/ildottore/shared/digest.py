@@ -139,8 +139,9 @@ def _target_payload(target: Target, mock_scenario: str | None) -> dict[str, Any]
     websocket = payload.get("websocket")
     if isinstance(websocket, dict):
         websocket.pop("guard", None)
-    # A REST target's `rest` block holds its guard alone (u04 A-98): left out whole, so adding,
-    # easing or removing the guard (a window included) is the same target to a resume.
+    # A REST target's guard (u04 A-98) is left out, so adding, easing or removing it (a window
+    # included) is the same target to a resume; `rest.session` (u08 A-134) changes what a handoff
+    # sends, so it stays in.
     rest = payload.get("rest")
     if isinstance(rest, dict):
         rest.pop("guard", None)

@@ -166,6 +166,19 @@ class MitreAttack(_SchemaMirror):
 _TOOL_FLAGS: tuple[str, ...] = ("destructive", "external")
 
 
+class SessionHandoff(_SchemaMirror):
+    """``setup.session_handoff``: one identity's session handed to another (u08 A-134, OD-76).
+
+    ``plant`` is what the owner identity sends first, in a session of its own, and holds the
+    spec's canary. Every other identity then sends the attack carrying the owner's session id (the
+    id the scanner chose, or the one the owner's reply returned): a server that binds a session to
+    whoever opened it answers them in a session of their own, and the owner's canary in their reply
+    is the owner's conversation adopted (CWE-639, CWE-384).
+    """
+
+    plant: str = Field(min_length=1)
+
+
 class Setup(_SchemaMirror):
     """Declarative ``setup`` block (all fields optional per schema)."""
 
@@ -174,6 +187,7 @@ class Setup(_SchemaMirror):
     memory_seed: list[JsonDict] | None = None
     system_prompt: str | None = None
     canaries: list[str] | None = None
+    session_handoff: SessionHandoff | None = None
 
     @field_validator("tools")
     @classmethod
@@ -763,8 +777,34 @@ class WebSocketGuard(_Frozen):
     max_response_bytes: Annotated[int, Field(ge=1)] | None = None
 
 
+#: A top-level key of the generic REST body; ``prompt`` is the prompt's own.
+_BODY_KEY_PATTERN = r"^[A-Za-z_][A-Za-z0-9_-]{0,63}$"
+#: A dotted path in a JSON reply (``get_path``): keys and list indices.
+_REPLY_PATH_PATTERN = r"^[A-Za-z0-9_-]{1,64}(\.[A-Za-z0-9_-]{1,64}){0,7}$"
+
+
+class RestSession(_Frozen):
+    """``rest.session``: where a REST target's conversation id travels (u04 A-134, OD-76).
+
+    ``field`` is the key of the request body that carries the id of the conversation a message
+    belongs to (``conversation_id``, say); ``reply_path`` is where the reply returns the id the
+    server issued, when it issues one. Declared, the session handoff of a spec
+    (``setup.session_handoff``) can be sent: the owner's request carries an id the scanner chose,
+    and the others carry the owner's (the issued one when ``reply_path`` is declared). Only a spec
+    that hands a session over sends a ``field``; every other request is sent as before.
+    """
+
+    field: Annotated[str, Field(pattern=_BODY_KEY_PATTERN)]
+    reply_path: Annotated[str, Field(pattern=_REPLY_PATH_PATTERN)] | None = None
+
+    def model_post_init(self, _context: object) -> None:
+        if self.field == "prompt":
+            raise ValueError("rest.session.field must not be 'prompt', the prompt's own key")
+
+
 class RestSpec(_Frozen):
-    """The ``rest:`` block of a ``provider: rest`` target: today its ``guard`` alone (u04 A-98).
+    """The ``rest:`` block of a ``provider: rest`` target: its ``guard`` (u04 A-98) and where a
+    conversation id travels (``session``, u04 A-134).
 
     The reply shape of a target file's REST target is the generic one (the text at ``text``);
     this block adds what a deployed agent behind plain HTTP needs, the same ``guard`` a
@@ -773,6 +813,7 @@ class RestSpec(_Frozen):
     """
 
     guard: WebSocketGuard | None = None
+    session: RestSession | None = None
 
 
 #: A pinned entry of an MCP server's catalogue: ``tool:``, ``resource:`` or ``prompt:`` and the
@@ -1118,17 +1159,24 @@ class ModelResponse(_Frozen):
     usage: JsonDict | None = None
     filter_side: Literal["input", "output", "unknown"] | None = None
     foreign_stop: bool = False
+    #: The conversation id the reply returned at the target file's ``rest.session.reply_path``
+    #: (u04 A-134). The runner reads it from the owner's reply of a session handoff and drops it
+    #: before a reply is stored, so an issued id is never written to evidence.
+    session_id: str | None = None
 
     @model_serializer(mode="wrap")
     def _without_unset_filter_side(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
-        """The dump as before OD-42 when no trace said which side a filter acted on, and as
-        before A-79 when the stop is not another provider's filter word."""
+        """The dump as before OD-42 when no trace said which side a filter acted on, as before
+        A-79 when the stop is not another provider's filter word, and as before A-134 when the
+        reply returned no session id."""
 
         dumped: dict[str, Any] = handler(self)
         if dumped.get("filter_side") is None:
             dumped.pop("filter_side", None)
         if not dumped.get("foreign_stop"):
             dumped.pop("foreign_stop", None)
+        if dumped.get("session_id") is None:
+            dumped.pop("session_id", None)
         return dumped
 
 

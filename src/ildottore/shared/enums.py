@@ -258,6 +258,11 @@ MIN_VARIANT_ATTEMPTS: int = 2
 # ``core.runner._is_confirmed``).
 IDENTITY_SWEEP: str = "identity_sweep"
 
+# The ``ModelRequest.metadata`` key of the conversation id a session handoff sends (u08 A-134): the
+# REST adapter writes it at the target file's ``rest.session.field``. Set only on the handoff's own
+# requests, and dropped from the one the sweep's trial stores.
+SESSION_ID: str = "session_id"
+
 # The ``mutation`` a spec's control is stored under (u08 A-106): the spec's ``attack.control``,
 # sent once without the attack after the spec failed. No mutator has this name (the runner refuses
 # a spec that asks for one). The control is not a trial: its attempt lives in ``Finding.control``,

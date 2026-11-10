@@ -1940,7 +1940,7 @@ rm -f reports/agent.priced.yaml
 
 ## Scenario S, the CWE a finding maps to
 
-49 of the 80 battery specs name the MITRE CWE of the weakness a fail shows in the application
+50 of the 81 battery specs name the MITRE CWE of the weakness a fail shows in the application
 (u02 A-110, ADR-0021). The label decides nothing; it reaches the tracker and GitHub code scanning.
 
 ### Step 1, read it on the card
@@ -2102,7 +2102,7 @@ dottore coverage --framework esp_ia --no-gaps
 ```
 
 ```
-Battery coverage (80 specs, no scan performed)
+Battery coverage (81 specs, no scan performed)
 
   CCN-STIC-2011 ESP-IA 1.0 requirements   19/27   70%
 ```
@@ -2121,7 +2121,7 @@ dottore coverage --framework esp_ia --target examples/target.esp-ia.yaml
 ```
 
 ```
-ESP-IA applicability for target demo (CCN-STIC-2011 ESP-IA 1.0; 80 specs read, no scan performed)
+ESP-IA applicability for target demo (CCN-STIC-2011 ESP-IA 1.0; 81 specs read, no scan performed)
 
   Answered yes: 7 of 21 (C01, C03, C05, C09, C12, C19, C20)
   Rules met:    R02 R09 R11 R21 R22

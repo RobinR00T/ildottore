@@ -752,6 +752,8 @@ reads as U+FFFD, since httpx decodes the stream as text.
   none in the pixels). Judging rules 10 re-pinned: a part with no name is sent and judged as
   before.
 
+**A-134 (added 2026-11-09), u04's half of u08 A-134.** `RestTemplate.session_field` and `session_reply_path`, from the target file's `rest.session`: a request whose metadata carries `SESSION_ID` gets the id at that body key, and its reply's id is read at the reply path (a string of 1 to 512 characters, else nothing) into `ModelResponse.session_id`; a request that carried no id keeps no id from its reply. `tests/core/test_session_handoff.py`.
+
 ## §8 Out of scope / forbidden
 - MUST NOT import or call vendor SDKs (`openai`, `anthropic` packages): httpx only (ADR-0002).
 - MUST NOT use LiteLLM as the core abstraction (optional wrapped adapter is MVP-2+, not here).

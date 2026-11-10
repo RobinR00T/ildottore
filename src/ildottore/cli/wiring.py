@@ -1117,7 +1117,13 @@ def build_real_adapter(
             f"target {target.id!r} has unknown provider {quoted(target.provider)}; expected one "
             f"of {', '.join(TARGET_PROVIDERS)}"
         )
-    template = RestTemplate(path=parts.path or "/")
+    session = target.rest.session if target.rest is not None else None
+    template = RestTemplate(
+        path=parts.path or "/",
+        # Where a session handoff's conversation id travels (u04 A-134), when the file says.
+        session_field=session.field if session is not None else None,
+        session_reply_path=session.reply_path if session is not None else None,
+    )
     return RestAdapter(
         id=target.id,
         base_url=origin,

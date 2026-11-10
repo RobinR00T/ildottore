@@ -251,6 +251,15 @@
           "items": {
             "type": "string"
           }
+        },
+        "session_handoff": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["plant"],
+          "description": "The owner identity sends `plant` (holding the spec's canary) in a session of its own; every other identity then sends the attack carrying the owner's session id (u08 A-134)",
+          "properties": {
+            "plant": { "type": "string", "minLength": 1 }
+          }
         }
       }
     },

@@ -45,3 +45,6 @@ rest:
       path: "tool"
       names: ["write_record", "run_workflow", "send_message"]
     max_response_bytes: 200000       # a lower cap than the adapter's own, per reply
+  session:                           # where a conversation id travels (u08 A-134)
+    field: "conversation_id"         # the body key; only DL-SESSION-ADOPT-001 sends it
+    reply_path: "conversation_id"    # optional: where a reply returns the id the server issued

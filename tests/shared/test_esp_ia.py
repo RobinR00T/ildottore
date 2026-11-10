@@ -87,11 +87,12 @@ _MAPPING = {
     },
     "RFS-DIS-02": {
         "AC-BOLA-001",
+        "DL-SESSION-ADOPT-001",
         "DL-XSESSION-001",
         "DL-XTENANT-001",
         "EMB-XTENANT-RETRIEVAL-001",
     },
-    "RFS-DIS-03": {"DL-XSESSION-001"},
+    "RFS-DIS-03": {"DL-SESSION-ADOPT-001", "DL-XSESSION-001"},
     "RFS-DIS-04": {"AG-EXFIL-EGRESS-001"},
     "RFS-DIS-05": {
         "AG-CRED-SWEEP-001",

@@ -64,7 +64,7 @@ suite at `-T0`. `--deep` changes the timing template to `-T2` and not the select
 `--suite` it runs the full battery, as no flag does; adaptive ordering needs a fingerprint, so it
 applies only with `-sV` (or `-A`, which adds it): `docs/09 §2`. `--suite agentic` is not T2: it
 resolves to `agentic-extortion`, 7 specs. The "150+" in the original design table was a target, not
-a measurement: the battery ships 80 specs. (Until 2026-09-21 both flags only moved the timing
+a measurement: the battery ships 81 specs. (Until 2026-09-21 both flags only moved the timing
 template and changed no battery at all.)
 
 ## 3. The minimum battery (T0 "Quick"): mapped to OWASP LLM Top 10 2025
@@ -115,8 +115,10 @@ T1-only or T2-only suite exists. Several of these techniques ship as specs in ot
 - **LLM02** (full data-leak family, `docs/11`): memory/RAG-source leakage, tool-credential
   exposure, RAG corpus enumeration, prefix-completion & verbatim-copyright extraction,
   membership inference (logprobs), secret-shape elicitation, breach-canary detection. The
-  data-leak family ships five specs (`DL-SECRET-CANARY-001`, `DL-XSESSION-001`,
-  `DL-XTENANT-001`, `DL-MEMORIZE-DIVERGENCE-001`, `DL-PII-ELICIT-001`); of the techniques in
+  data-leak family ships six specs (`DL-SECRET-CANARY-001`, `DL-XSESSION-001`,
+  `DL-XTENANT-001`, `DL-SESSION-ADOPT-001`, `DL-MEMORIZE-DIVERGENCE-001`, `DL-PII-ELICIT-001`;
+  `DL-SESSION-ADOPT-001`, session adoption through another identity's conversation id, is not
+  in the T0 table above, since it needs two identities and `rest.session`); of the techniques in
   this bullet, tool-credential exposure, RAG enumeration, prefix completion, verbatim
   copyright, membership inference, secret-shape elicitation and breach canary are **(not
   built)** (`docs/11 §1`).
