@@ -22,6 +22,29 @@ neighbouring entries can interleave (an older branch merged later sits above a n
   apart needs the content after the opener, not a phrase list. Number A-136, not A-129: the
   sibling Vicentín branches hold A-129 to A-131 and A-134, A-135.
 
+## State, 2026-11-09: session adoption (`feat/session-adoption`, u08 A-134, OD-76, ADR-0026)
+
+- **Why.** Piece 5 of the 8 generic techniques the owner approved on 2026-11-09: a server that
+  takes a client-chosen conversation id without checking it against its owner lets another
+  identity adopt the session (CWE-639, CWE-384). The identity sweep sent one request to every
+  identity at once; nothing carried a value from one identity into another's request.
+- **Built.** `setup.session_handoff` (spec schema), `rest.session` (target file),
+  `core.session_handoff`, `CampaignRunner._sweep_handoff` and `_HandedAdapter`, the REST
+  adapter's session field and issued id, `session_gap` in the plan and the runner, and
+  `DL-SESSION-ADOPT-001` (82 specs with `MM-IMG-FILENAME-INJECT-001` and `AC-WS-ORIGIN-001`). The owner is the first identity the attempts are not sent
+  as; the attempts carry the owner's id too, so they repeat the adoption and can confirm it.
+- **Measured.** `tests/core/test_session_handoff.py`, 12 tests, against a loopback REST stub with
+  two identities at `--runs 1` (3 requests): not bound, a confirmed Critical fail, exit 2,
+  reproducibility 2 of 2, with the scanner's id and with an issued one; bound to its owner, a
+  pass, exit 0; no `rest.session`, nothing sent, `inconclusive`. No conversation id in the
+  evidence or the four reports. Coverage figures unchanged (`dottore coverage builtin`).
+- **First cut, changed before the commit.** With the adoption in the sweep alone (the
+  `DL-XTENANT-001` shape), a real adoption read as a Medium, unconfirmed fail (1 of 2 trials,
+  exit 0): the attempts went without the id. They carry it now.
+- **Open (OD-76, the owner's call).** A header, cookie or WebSocket carrier for the id; an
+  issued id tried as a guess. Numbers taken next to the siblings' (A-128 to A-131, OD-72, OD-73,
+  ADR-0025): expect a rebase at merge.
+
 ## State, 2026-11-09: a WebSocket chat endpoint's Origin check (`feat/ws-origin-probe`, u04 A-133, OD-75, ADR-0027)
 
 - **Why.** Piece 6 of the eight generic techniques the owner approved on 2026-11-09: cross-site

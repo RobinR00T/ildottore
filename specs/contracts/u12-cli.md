@@ -2256,6 +2256,8 @@ the pack it is handed is the operator's). **Acceptance:** `tests/cli/test_policy
 open; the pack replacing the default one; three unreadable packs refused; the PII spec with one
 key and with both; the record and the resume bound to it; a run from before the flags).
 
+**A-134 (added 2026-11-09), u12's half of u08 A-134.** The target file's `rest.session` reaches the REST template (`cli.wiring.build_real_adapter`), and `cli.run.delivery_gap` asks `session_gap` after `prompt_gap`, so the plan lists a handoff spec without `rest.session` as not seeded and prices nothing for it.
+
 ## §8 Out of scope / forbidden
 - MUST NOT implement attack/mutation/evaluation/scoring/reporting/fingerprint logic (u05-u11,
   u13): only wire and call them. MUST NOT own `cli/lint.py` (u02) or edit any spec YAML.

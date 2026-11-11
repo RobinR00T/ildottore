@@ -47,13 +47,13 @@ spec means the technique was attempted and refused), a claim about the attacker'
 intelligence statement (no `reported` or `source-assessed` occurrence exists here, because nothing
 in a run is a third-party report).
 
-## Figures (copied from `dottore coverage --framework attack`, 2026-10-24)
+## Figures (copied from `dottore coverage --framework attack`, 2026-11-09)
 
 ```
   MITRE ATT&CK Enterprise tactics (v20.0)    8/15   53%
 ```
 
-42 of 81 specs carry a mapping; 18 distinct techniques are declared, 14 observed and 4
+42 of 82 specs carry a mapping; 18 distinct techniques are declared, 14 observed and 4
 capability-only. Covered: Reconnaissance, Resource Development, Execution, Persistence, Stealth,
 Credential Access, Exfiltration, Impact. Not covered yet, all **roadmap** (a black-box runtime
 scanner driving an agent can observe each in the target's own tool calls): Initial Access,

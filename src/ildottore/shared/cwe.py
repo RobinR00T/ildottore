@@ -73,6 +73,8 @@ CWE_ENTRIES: Final = MappingProxyType(
             "Exposure of Private Personal Information to an Unauthorized Actor",
             "Allowed",
         ),
+        # Added 2026-11-09 (u08 A-134), read on cwe.mitre.org/data/definitions/384.html (CWE 5.0).
+        "CWE-384": ("Session Fixation", "Allowed"),
         "CWE-451": (
             "User Interface (UI) Misrepresentation of Critical Information",
             "Allowed-with-Review",

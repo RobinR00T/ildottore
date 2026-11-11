@@ -33,6 +33,7 @@ import httpx
 from ildottore.adapters.agent_guard import AgentGuardState, GuardKeeper
 from ildottore.adapters.base import MAX_RESPONSE_BYTES, BaseAdapter, ResponseMalformed
 from ildottore.adapters.paths import get_path
+from ildottore.shared.enums import SESSION_ID
 from ildottore.shared.filter_stops import (
     BEDROCK_FILTER_STOPS,
     GEMINI_FILTER_STOPS,
@@ -92,6 +93,10 @@ _INPUT_ACTIONS: frozenset[str] = frozenset({"BLOCKED"})
 _OUTPUT_ACTIONS: frozenset[str] = frozenset({"BLOCKED", "ANONYMIZED"})
 
 
+#: The longest conversation id read from a reply (u04 A-134); a longer one is not read.
+MAX_SESSION_ID_LENGTH = 512
+
+
 @dataclass(frozen=True)
 class RestTemplate:
     """Declarative request/response mapping for a generic REST endpoint.
@@ -111,6 +116,9 @@ class RestTemplate:
       does not read is an ordinary stop (``ModelResponse.foreign_stop``), except its shape's own
       word on a reply with no text, which is that filter's withheld reply whatever is declared
       (:attr:`shape_filter_stops`; pre-merge audit of ``10cb526b``, MEDIUM).
+    * ``session_field`` - the body key a session handoff's conversation id is written at, and
+      ``session_reply_path`` the reply path the server's issued id is read at (u04 A-134, the
+      target file's ``rest.session``). A request that carries no id is sent as before.
     """
 
     path: str = "/"
@@ -123,6 +131,8 @@ class RestTemplate:
     static_body: Mapping[str, Any] = field(default_factory=dict)
     static_headers: Mapping[str, str] = field(default_factory=dict)
     filter_stops: frozenset[str] | None = None
+    session_field: str | None = None
+    session_reply_path: str | None = None
 
     def __post_init__(self) -> None:
         # Each one a provider documents, trimmed and in lower case: a typo would leave a filter
@@ -202,13 +212,19 @@ class RestAdapter(BaseAdapter):
         """The base send loop, after the guard's checks when the target file declares one.
 
         The allowlist still runs first: a refused URL reaches neither the guard's state file nor
-        the network.
+        the network. The reply keeps the conversation id it returned only for a request that
+        carried one (u04 A-134).
         """
 
         if self._keeper is not None:
             self._check_allowlist(self._full_url())
             self._keeper.check_before_dial(self.api_key)
-        return await super().send(request)
+        response = await super().send(request)
+        if response.session_id is not None and SESSION_ID not in (request.metadata or {}):
+            # Only a session handoff's own request reads the issued id (u04 A-134): any other
+            # reply is stored as before, without the id the server put in it.
+            response = response.model_copy(update={"session_id": None})
+        return response
 
     async def _before_attempt(self) -> None:
         """Pace each request the guard declares a pace for (a retry takes a slot too)."""
@@ -317,6 +333,10 @@ class RestAdapter(BaseAdapter):
         body[self.template.prompt_field] = self._prompt_text(request)
         if self.template.system_field is not None and request.system_prompt is not None:
             body[self.template.system_field] = request.system_prompt
+        session = (request.metadata or {}).get(SESSION_ID)
+        if self.template.session_field is not None and isinstance(session, str):
+            # A session handoff's request (u08 A-134): the conversation it claims to belong to.
+            body[self.template.session_field] = session
 
         headers: dict[str, str] = {"content-type": "application/json"}
         headers.update(self.template.static_headers)
@@ -411,6 +431,13 @@ class RestAdapter(BaseAdapter):
             if id_value is not None:
                 ids["id"] = id_value
 
+        session_id = None
+        if self.template.session_reply_path is not None:
+            issued = get_path(payload, self.template.session_reply_path)
+            # The target's bytes: a bounded string or nothing, never a structure sent back.
+            if isinstance(issued, str) and 0 < len(issued) <= MAX_SESSION_ID_LENGTH:
+                session_id = issued
+
         usage = None
         if self.template.usage_path is not None:
             usage_value = get_path(payload, self.template.usage_path)
@@ -426,6 +453,7 @@ class RestAdapter(BaseAdapter):
             raw_ids=self._redact_ids(ids),
             usage=usage,
             filter_side=self._guardrail_side(payload, finish_reason),
+            session_id=session_id,
         )
 
     def _guardrail_side(

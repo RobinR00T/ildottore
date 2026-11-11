@@ -541,6 +541,8 @@ requirement by requirement, the axis at 19 of 27 with one roadmap gap, the refus
 and of two classified codes, four malformed codes refused by the schema, the card and the
 editions, the digest), `tests/cli/test_coverage_cmd.py` (the axis in order).
 
+**A-134 (added 2026-11-09), u02's half of u08 A-134.** The attack-spec schema's `setup.session_handoff` (`plant`, a non-empty string, no other key). `shared.cwe` pins CWE-384 (Session Fixation, Allowed, read on cwe.mitre.org on 2026-11-09, CWE 5.0).
+
 ## §8 Out of scope / forbidden
 - MUST NOT execute spec/plugin code or open any socket at load (parse + validate + register only).
 - MUST NOT author, mutate, or "fix" spec/suite/pack YAML (u13 owns content).
