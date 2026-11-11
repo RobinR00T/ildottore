@@ -181,6 +181,7 @@ def coverage_lines(
     blocked = summary.provider_filter
     cut = summary.output_filter
     unsaid = summary.filter_side_unknown
+    canned = summary.canned_by_target
     unread = summary.unreadable
     withheld = summary.withheld
     return [
@@ -226,7 +227,7 @@ def coverage_lines(
                 "failure, a timeout, HTTP 429 or 5xx, a reply over the size cap, one that could "
                 "not be decoded or one nested too deeply or could not be read, or was refused by "
                 "the provider's input filter, or stopped by its filter on a side it did not "
-                "report), so their "
+                "report, or answered by the target's application with a canned reply), so their "
                 "framework codes are NOT counted as covered"
             ]
             if cov.not_exercised
@@ -265,6 +266,17 @@ def coverage_lines(
                 + ")"
             ]
             if unsaid.attempts
+            else []
+        ),
+        # ADR-0025 (u11 A-130): the target's application answered, not the model.
+        *(
+            [
+                f"Answered by the target's application with a canned reply: "
+                f"{canned.attempts} attempt(s) in {len(canned.specs)} spec(s) ("
+                + ", ".join(canned.specs)
+                + "); inconclusive and need review, never a pass"
+            ]
+            if canned.attempts
             else []
         ),
         # OD-21 (u08 A-74): never a pass, so never silent: the reply that broke may be the one an

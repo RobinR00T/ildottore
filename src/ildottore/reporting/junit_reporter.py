@@ -27,6 +27,7 @@ from ildottore.shared.frameworks import framework_editions
 from ildottore.shared.models import Finding
 from ildottore.shared.provider_filter import (
     blocked_attempt_ids,
+    canned_attempt_ids,
     cut_attempt_ids,
     side_unknown_attempt_ids,
 )
@@ -76,6 +77,9 @@ class JunitReporter(BaseReporter):
         unsaid = len(side_unknown_attempt_ids(finding.attempts))
         if unsaid:
             counts += f" provider_filter_side_unknown={unsaid}"
+        canned = len(canned_attempt_ids(finding.attempts))
+        if canned:  # the target's application answered, not the model (ADR-0025)
+            counts += f" canned_by_target={canned}"
         # And the replies the adapter could not read (OD-21, u08 A-74), which never pass either.
         unreadable = len(unreadable_attempt_ids(finding.attempts))
         if unreadable:

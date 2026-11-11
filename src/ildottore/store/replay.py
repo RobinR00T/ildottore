@@ -19,6 +19,7 @@ from ildottore.shared.enums import CONTROL, VerdictStatus
 from ildottore.shared.models import Attempt
 from ildottore.shared.provider_filter import (
     blocked_attempt_ids,
+    canned_attempt_ids,
     cut_attempt_ids,
     side_unknown_attempt_ids,
 )
@@ -117,6 +118,11 @@ class ReplayResult:
         """Attempts the provider's filter stopped on a side it did not report (OD-42)."""
 
         return len(side_unknown_attempt_ids(self.effective_attempts()))
+
+    def canned_by_target(self) -> int:
+        """Attempts the target's application answered with a canned reply (ADR-0025)."""
+
+        return len(canned_attempt_ids(self.effective_attempts()))
 
     def unreadable_replies(self) -> int:
         """Attempts whose reply the adapter could not read (OD-21, u08 A-74).

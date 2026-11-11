@@ -154,6 +154,7 @@ from ildottore.shared.models import (
 )
 from ildottore.shared.package_data import BATTERY
 from ildottore.shared.protocols import Reporter, TargetAdapter
+from ildottore.shared.provider_filter import canned_key
 from ildottore.shared.review_holds import ReviewHold
 from ildottore.store import FsEvidenceStore, SqliteRunStore
 
@@ -2231,6 +2232,7 @@ def _target_from(path: Path, raw: dict[str, Any]) -> Target:
         pricing=pricing,
         disallowed_task=disallowed_task,
         esp_ia=_esp_ia_profile(path, raw.get("esp_ia")),
+        canned_replies=_canned_replies(path, raw.get("canned_replies")),
     )
 
 
@@ -2247,6 +2249,48 @@ def _esp_ia_profile(path: Path, raw: object) -> EspIaProfile | None:
         raise ValueError(
             f"target file {path} 'esp_ia' failed validation: {validation_problems(exc)}"
         ) from exc
+
+
+#: How many ``canned_replies`` a target file may list, and the longest one (ADR-0025).
+MAX_CANNED_REPLIES: Final = 50
+MAX_CANNED_REPLY_CHARS: Final = 2000
+
+
+def _canned_replies(path: Path, raw: object) -> list[str] | None:
+    """The file's ``canned_replies`` (u08 A-130, ADR-0025), each stripped, or ``None``.
+
+    The fixed texts the deployment's own guardrail answers with in place of the model: a reply
+    equal to one of them (``shared.provider_filter.canned_key``) is scored ``canned_by_target``,
+    never as the model refusing. Never quoted back: the loaders quote nothing an operator wrote.
+    """
+
+    if raw is None:
+        return None
+    if not isinstance(raw, list) or not raw:
+        raise ValueError(f"target file {path} 'canned_replies' must be a non-empty list of texts")
+    if len(raw) > MAX_CANNED_REPLIES:
+        raise ValueError(
+            f"target file {path} 'canned_replies' lists {len(raw)} texts; at most "
+            f"{MAX_CANNED_REPLIES}"
+        )
+    texts: list[str] = []
+    for index, item in enumerate(raw, start=1):
+        if not isinstance(item, str) or not item.strip():
+            raise ValueError(
+                f"target file {path} 'canned_replies' entry {index} must be non-empty text"
+            )
+        text = item.strip()
+        if len(text) > MAX_CANNED_REPLY_CHARS:
+            raise ValueError(
+                f"target file {path} 'canned_replies' entry {index} is {len(text)} characters; "
+                f"at most {MAX_CANNED_REPLY_CHARS}"
+            )
+        if not canned_key(text):
+            raise ValueError(
+                f"target file {path} 'canned_replies' entry {index} holds no visible text"
+            )
+        texts.append(text)
+    return texts
 
 
 #: The longest ``disallowed_task`` a target file may name: a request, not a document.

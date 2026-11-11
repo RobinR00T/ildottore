@@ -288,6 +288,10 @@
       "fail": 1,
       "pass": 1
     },
+    "canned_by_target": {
+      "attempts": 0,
+      "specs": []
+    },
     "confidence_distribution": {
       "count": 2.0,
       "max": 0.92,

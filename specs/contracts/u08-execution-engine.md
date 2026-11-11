@@ -1536,6 +1536,23 @@ spec placeholders refused in an identity canary) and
   spec alone refused with exit 3; no id in the
   evidence or the reports; the pieces).
 
+- **A-130 (added 2026-11-09): a reply the target's own application wrote is not the model's
+  (ADR-0025, OD-72).** A target file may list `canned_replies` (1 to 50 texts, each at most 2,000
+  characters, in the target digest). The runner marks a reply equal to one of them
+  (`shared.provider_filter.canned_key`: NFC, case folded, format characters dropped, whitespace
+  collapsed; never a reply with a tool call) as `ModelResponse.canned_reply`, on the campaign's
+  adapter (`_CannedAdapter`) and on each reply of the identity sweep, a session handoff's (A-134)
+  included, whose adopter answered with one is left out by name. `filter_side` reads it on the
+  `application` side whatever its stop; the evaluators that read a replaced reply decide (a canary
+  in it fails), else `inconclusive: canned_by_target`, which joins `CUT_REASONS` (never a pass,
+  kept by a resume), `filtered_attempt` (a run answered throughout is `filtered`, exit 3) and
+  every report's counts (the finding's line, JSON `summary.canned_by_target`, SARIF, JUnit, HTML,
+  the terminal, `replay`); such an attempt does not exercise its categories. Judging rules 13.
+  Acceptance: `tests/cli/test_canned_reply_campaign.py` (the control run that passes as on
+  `main`, the declared run `inconclusive` and exit 3, every report's count, `replay`, the
+  comparison rule, the loader's refusals, the digest) and `tests/core/test_session_handoff.py`
+  (an adopter answered with a canned reply is left out).
+
 ## §8 Out of scope / forbidden
 - MUST NOT import adapter/evaluator/scorer/store **concretes**: interfaces only; composition is
   u12. `lint-imports` enforces.
@@ -1729,3 +1746,11 @@ spec placeholders refused in an identity canary) and
   `model`, the identity sweep exempt; (3) on a `model` target `DL-SECRET-CANARY-001` still goes
   out with a canary nobody planted. Reversal: `prompt_gap` and `_canary_off_request` returning
   nothing. Owner: human.
+
+- **OD-72** (2026-11-09, A-130, ADR-0025; **open**): the application's canned replies. Built as
+  the smallest reversible version: the operator declares the texts and a reply equal to one is
+  `inconclusive: canned_by_target`. Not built: detecting a pool on its own (the same reply byte
+  for byte on the control and every trigger), since a model at temperature 0 can refuse different
+  prompts identically and a control goes out only for a failing spec; the owner decides whether
+  it becomes a note, a verdict or nothing. Reversal: the loader drops `canned_replies`. Owner:
+  human.

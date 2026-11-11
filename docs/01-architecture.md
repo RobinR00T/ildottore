@@ -98,7 +98,7 @@ class Evaluator(Protocol):
     #                                   judge_compromised|blocked_by_provider_filter|
     #                                   cut_by_provider_output_filter|
     #                                   provider_filter_side_unknown|unreadable_reply|
-    #                                   judge_disagreed|None}
+    #                                   judge_disagreed|canned_by_target|None}
     #   blocked_by_provider_filter (ADR-0011, OD-41): the provider's own input filter refused the
     #   prompt before the model saw it. cut_by_provider_output_filter and
     #   provider_filter_side_unknown (its amendment, OD-42): the provider's filter cut or replaced
@@ -107,6 +107,8 @@ class Evaluator(Protocol):
     #   (ADR-0012, OD-21): the adapter could not read the reply as the provider's
     #   (shared.unreadable). The runner sets the four, no evaluator does. judge_disagreed
     #   (ADR-0024, OD-45): the semantic judge's self-consistency passes disagreed; kept.
+    #   canned_by_target (ADR-0025, A-130): the reply is one of the target file's
+    #   canned_replies, the application's own text, not the model's; set by the runner.
 
 
 class Mutator(Protocol):

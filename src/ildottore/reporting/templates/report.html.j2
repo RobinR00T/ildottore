@@ -94,6 +94,17 @@
       They are inconclusive and need review, never a pass.
     </p>
     {% endif %}
+    {# ADR-0025 (u11 A-130): optional in report-1.0 too. #}
+    {% if summary.canned_by_target and summary.canned_by_target.attempts %}
+    <p class="provider-filter">
+      Answered by the target's application:
+      <strong>{{ summary.canned_by_target.attempts }}</strong> attempt(s) in
+      {{ summary.canned_by_target.specs | length }} spec(s)
+      ({{ summary.canned_by_target.specs | join(', ') }}) came back as one of the canned replies
+      the target file declares, not the model's. They are inconclusive and need review, never a
+      pass.
+    </p>
+    {% endif %}
     {# OD-21 (u08 A-74): optional in report-1.0 too. #}
     {% if summary.unreadable_reply and summary.unreadable_reply.attempts %}
     <p class="provider-filter">
@@ -167,8 +178,8 @@
         every send ended in an environment error, such as a network
         failure, a timeout, HTTP 429 or 5xx, a reply over the size cap, one that could not be
         decoded or one nested too deeply, or was refused by the provider's input filter, or
-        stopped by its filter on a side it did not report), so
-        their framework codes are not counted as covered.
+        stopped by its filter on a side it did not report, or answered by the target's
+        application with a canned reply), so their framework codes are not counted as covered.
       </p>
       {% endif %}
       {% if summary.coverage.off_universe %}

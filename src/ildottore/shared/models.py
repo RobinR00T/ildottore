@@ -1082,6 +1082,17 @@ class Target(_Frozen):
     # the provider's own. Its own word or nothing, checked here for every path (below) and by the
     # loader first (``cli.wiring``, which names the file); left out of a dump when ``None``.
     filter_stops: list[str] | None = None
+    # The fixed texts the deployment's own guardrail answers with in place of the model (u08
+    # A-130, ADR-0025): a reply equal to one of them, compared as ``provider_filter.canned_key``
+    # says, is the application's: ``inconclusive: canned_by_target``. Out of a dump if ``None``;
+    # in the target digest when set (it changes how a reply is scored).
+    canned_replies: (
+        Annotated[
+            list[Annotated[str, Field(min_length=1, max_length=2000)]],
+            Field(min_length=1, max_length=50),
+        ]
+        | None
+    ) = None
 
     @field_validator("filter_stops")
     @classmethod
@@ -1122,6 +1133,8 @@ class Target(_Frozen):
             dumped.pop("disallowed_task", None)
         if dumped.get("esp_ia") is None:
             dumped.pop("esp_ia", None)
+        if dumped.get("canned_replies") is None:
+            dumped.pop("canned_replies", None)
         return dumped
 
 
@@ -1177,6 +1190,12 @@ class ModelResponse(_Frozen):
     adapter that read the reply sets it (``shared.provider_filter.stop_provenance``); the stop is
     kept as sent, as evidence, and read as an ordinary one, so the reply is the model's answer.
     ``False`` is left out of a dump, so every other reply is stored, reported and hashed as before.
+
+    ``canned_reply`` is ``True`` when the reply is one of the fixed texts the target file declares
+    its application's own guardrail answers with (``Target.canned_replies``, u00 and u08 A-130,
+    ADR-0025), marked by the composition root's adapter wrapper. The application wrote it, not the
+    model, so ``shared.provider_filter`` reads it as a filter's reply on the ``application`` side.
+    ``False`` is left out of a dump, as ``foreign_stop`` is.
     """
 
     text: str
@@ -1191,6 +1210,7 @@ class ModelResponse(_Frozen):
     #: (u04 A-134). The runner reads it from the owner's reply of a session handoff and drops it
     #: before a reply is stored, so an issued id is never written to evidence.
     session_id: str | None = None
+    canned_reply: bool = False
 
     @model_serializer(mode="wrap")
     def _without_unset_filter_side(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
@@ -1205,6 +1225,8 @@ class ModelResponse(_Frozen):
             dumped.pop("foreign_stop", None)
         if dumped.get("session_id") is None:
             dumped.pop("session_id", None)
+        if not dumped.get("canned_reply"):
+            dumped.pop("canned_reply", None)
         return dumped
 
 

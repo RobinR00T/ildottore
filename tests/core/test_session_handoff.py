@@ -138,7 +138,12 @@ def _stub(*, binds: bool, issues: bool = False) -> Iterator[tuple[int, list[dict
         server.server_close()
 
 
-def _run(tmp_path: Path, port: int, *, reply_path: bool = False) -> dict[str, Any]:
+_NEW = "This looks like a new conversation; I have no reference code yet."
+
+
+def _run(
+    tmp_path: Path, port: int, *, reply_path: bool = False, canned: bool = False
+) -> dict[str, Any]:
     endpoint = f"http://127.0.0.1:{port}/chat"
     (tmp_path / "scope.yaml").write_text(
         f'version: "1.0"\ntargets:\n  - id: stub\n    base_url: "{endpoint}"\n'
@@ -152,6 +157,7 @@ def _run(tmp_path: Path, port: int, *, reply_path: bool = False) -> dict[str, An
     (tmp_path / "target.yaml").write_text(
         f'id: stub\ntype: chatbot\nprovider: rest\nendpoint: "{endpoint}"\n'
         f"capabilities:\n  multi_identity: true\nrest:\n{session}"
+        + (f'canned_replies: ["{_NEW}"]\n' if canned else "")
     )
     result = CliRunner().invoke(
         app,
@@ -176,7 +182,8 @@ def _run(tmp_path: Path, port: int, *, reply_path: bool = False) -> dict[str, An
             str(tmp_path / "report"),
         ],
     )
-    assert result.exit_code != 3, result.output
+    # Every attempt answered by the application halts the run (A-130): exit 3, reports written.
+    assert result.exit_code != 3 or canned, result.output
     report: dict[str, Any] = json.loads((tmp_path / "report.json").read_text())
     report["_exit"] = result.exit_code
     return report
@@ -233,6 +240,25 @@ def test_a_server_that_binds_the_session_to_its_owner_passes(tmp_path: Path, iss
     assert finding["status"] == "pass", finding
     assert report["_exit"] == 0
     assert len(seen) == 3  # the plant, the adoption, the attempt: what the estimate prices
+
+
+def test_an_adopter_answered_with_a_canned_reply_is_left_out_not_a_pass(tmp_path: Path) -> None:
+    """ADR-0025 in the handoff too (u08 A-130 with A-134): the application's fixed text is no
+    answer from the conversation, so the adopter it went to is left out, by name.
+
+    The bound stub answers every adopter with the same new-conversation text, declared here as
+    one of the target file's ``canned_replies``. The handoff's sends did not mark it: the sweep
+    read it as the adopter's own reply, so the run counted a reply the model wrote and ended
+    with exit 0, where every attempt the application answered halts it (exit 3).
+    """
+
+    with _stub(binds=True) as (port, seen):
+        report = _run(tmp_path, port, canned=True)
+    finding = _finding(report)
+    assert finding["status"] == "inconclusive", finding
+    assert report["_exit"] == 3  # every attempt the application's: measured the filter (A-130)
+    assert len(seen) == 3  # nothing more is sent for it
+    assert "the reply is one of the target file's canned_replies" in _stored(tmp_path)
 
 
 def test_without_rest_session_nothing_is_sent(tmp_path: Path) -> None:

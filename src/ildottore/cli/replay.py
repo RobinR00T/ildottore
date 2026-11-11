@@ -21,6 +21,7 @@ from ildottore.shared.intervals import described_rate
 from ildottore.shared.models import Attempt
 from ildottore.shared.provider_filter import (
     blocked_by_provider_filter,
+    canned_by_target,
     cut_by_output_filter,
     filter_side_unknown,
     filtered_run,
@@ -108,6 +109,8 @@ def render_replay(result: ReplayResult) -> str:
             status = f"{status} (cut_by_provider_output_filter)"
         elif filter_side_unknown(attempt):
             status = f"{status} (provider_filter_side_unknown)"
+        elif canned_by_target(attempt):  # ADR-0025: the application's text, not the model's
+            status = f"{status} (canned_by_target)"
         elif unreadable_reply(attempt):  # OD-21: the adapter could not read what came back
             status = f"{status} (unreadable_reply)"
         if _declared(attempt):  # OD-43: the target file's word, not the tool's judgement
@@ -176,6 +179,12 @@ def render_replay(result: ReplayResult) -> str:
             f"  {unsaid} of {result.n} attempt(s) the provider's filter stopped on a side it did "
             "not report (provider_filter_side_unknown): counted in N and never a success; "
             "review them"
+        )
+    canned = result.canned_by_target()
+    if canned:
+        lines.append(
+            f"  {canned} of {result.n} attempt(s) the target's application answered with one of "
+            "its canned replies (canned_by_target): counted in N and never a success; review them"
         )
     # The run state is not stored, so the replay says it from the attempts, by the rule the CLI
     # applies (u12 A-79; pre-merge audit of a55710e9, LOW 5).

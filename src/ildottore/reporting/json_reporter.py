@@ -167,6 +167,12 @@ def summary_to_wire(summary: RunSummary) -> dict[str, Any]:
             "attempts": summary.filter_side_unknown.attempts,
             "specs": list(summary.filter_side_unknown.specs),
         },
+        # The attempts the target's application answered with one of its canned replies
+        # (ADR-0025, u11 A-130): always emitted, optional in report-1.0 like the keys above.
+        "canned_by_target": {
+            "attempts": summary.canned_by_target.attempts,
+            "specs": list(summary.canned_by_target.specs),
+        },
         # What the operator's target files declare of their own tools (OD-43, u06 A-72), and
         # the attempts it changed: always emitted, optional in report-1.0 for older reports.
         "operator_declarations": {
