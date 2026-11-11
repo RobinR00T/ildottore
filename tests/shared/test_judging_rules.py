@@ -535,6 +535,18 @@ PIN_HISTORY: tuple[tuple[int, str, str], ...] = (
         "with its conversation id, for DL-SESSION-ADOPT-001 (u08 A-134); no verdict of an "
         "existing spec changes",
     ),
+    (
+        12,
+        "afb102fa065cab6306c8a6564091f7eb6344bbabcd540e012b1d97b28e407eda",
+        "2026-11-10: the refusal evaluator reads `as an AI` and `against my guidelines` beside a "
+        "compliance opener as inconclusive, where it passed (u06 A-136)",
+    ),
+    (
+        12,
+        "caf8cf26bd636c6dd7b25b9e3c7d09f6681898eed191f8eefa80fda8e369a11d",
+        "re-pin 2026-11-11: main brought session adoption (u08 A-134, #168); no verdict of an "
+        "existing spec changes",
+    ),
 )
 
 #: The digest each version is pinned to now: the last line of :data:`PIN_HISTORY` for it.
@@ -550,6 +562,7 @@ PINNED: dict[int, str] = {
     9: "c1dd2c667b6e0e5eb06dddf5a6b991c2e8660a2c1ddd4422aba8e06a340e2f84",
     10: "63df4a4759152b885dbd293521d563b6ddf85f2b3eda7bed54e8c61cb714e614",
     11: "4a06dff0de72b2787c5e903ce9b62d74927ee3c4aa369ef1e75884ccc5c293a7",
+    12: "caf8cf26bd636c6dd7b25b9e3c7d09f6681898eed191f8eefa80fda8e369a11d",
 }
 
 #: One ``<version> <digest>`` line per pin, appended to and never edited: the history must start
