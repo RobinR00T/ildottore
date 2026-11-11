@@ -1512,6 +1512,30 @@ spec placeholders refused in an identity canary) and
   exempt, a seeded RAG spec still not delivered), `tests/core/test_seeded_setup.py` re-pinned, and
   every worked example's plan in `examples/README.md` re-run.
 
+- **A-134 (added 2026-11-09): a session handed from one identity to another (OD-76, ADR-0026;
+  halves in u00, u02, u04, u12, u13).** A spec that declares `setup.session_handoff` (`plant`,
+  holding the spec's canary) is swept in order (`CampaignRunner._sweep_handoff`): the owner, the
+  first scope identity the attempts are not sent as (`core.session_handoff.owner_index`), sends the
+  plant with a conversation id of the scanner's (`scanner_session_id`: `dottore-` and 32 hex digits
+  of a SHA-256 of the run and the spec), and the spec's canaries are mapped to it in the owner
+  map; then every other identity sends the attack carrying the owner's id, and so does each
+  attempt (`_HandedAdapter`), so the spec's runs repeat the adoption and an attempt's own reply
+  can confirm it. The id travels in `ModelRequest.metadata[SESSION_ID]`, which the REST adapter
+  writes at the target file's `rest.session.field`; with `rest.session.reply_path` declared the
+  owner's reply's id is handed over instead (`ModelResponse.session_id`, read only for a request
+  that carried an id, at most 512 characters), and a reply that returns none leaves every adopter
+  out by name (fail closed). The sweep's trial stores an adopter's reply, never the owner's plant
+  reply. No id is stored: the trial and each attempt record the owner and 12 hex digits of the
+  id's SHA-256 (`session_digest`), and every reply drops the id it returned. Without
+  `rest.session` the plan and the runner refuse the spec (`session_gap`,
+  `session_handoff_unavailable`, a fifth question after `prompt_gap`) with nothing sent, and
+  `sweeps_identities` prices no sweep for it. One send per identity, as the estimate prices a
+  sweep. Acceptance: `tests/core/test_session_handoff.py` (a loopback REST stub that binds a
+  conversation to its owner passes, one that does not fails confirmed and Critical, exit 2, with
+  the scanner's id and with the issued one; nothing sent without `rest.session`, a run of the
+  spec alone refused with exit 3; no id in the
+  evidence or the reports; the pieces).
+
 ## §8 Out of scope / forbidden
 - MUST NOT import adapter/evaluator/scorer/store **concretes**: interfaces only; composition is
   u12. `lint-imports` enforces.
@@ -1523,6 +1547,17 @@ spec placeholders refused in an identity canary) and
 - Not its call: OD-5 adaptive default · judge model (OD-3) · evidence encryption (OD-4).
 
 ## §9 Open decisions (human sign-off → rolls to 00-INDEX ledger)
+- **OD-76** (2026-11-09): how a session handoff is sent (A-134, ADR-0026). Built as the
+  smallest reversible version: the id in a body field of the generic REST body only
+  (`rest.session`), not a header, a cookie, a query parameter or another provider's body; the
+  owner chosen as the first identity the attempts are not sent as; the attempts carrying the
+  owner's id, so they repeat the adoption; the id the server issued handed over when
+  `reply_path` is declared, nobody sent when it returns none. **Open** for the owner: a header or
+  cookie carrier (a deployment that reads the conversation from `X-Session-Id` or a cookie cannot
+  be tested today), a WebSocket session (`{{session_id}}` in a frame template), and whether a
+  server-issued id should also be tried as a guess (an id another identity never saw) rather
+  than handed over. Reversal: drop `setup.session_handoff` from the schema and the spec, the
+  `session` block from `RestSpec`, and `_sweep_handoff`; nothing else reads them.
 - **OD-5** adaptive planner default-ON with `-sV` vs opt-in (proposed: `-sV`⇒adaptive on,
   `--no-adaptive` escape hatch for benchmark parity). **Decided 2026-10-11 under the owner's
   delegation (best practice), revisable: signed off as built.** `-sV`/`-A` imply adaptive ordering,

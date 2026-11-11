@@ -257,6 +257,8 @@ needle)` yields each stretch of `text` whose fold holds `needle`, in order, over
 one (two matches inside one character that folds to more than one, `ß`, included), linear in the
 text; an empty needle is refused. Still no `ildottore` import.
 
+**A-134 (added 2026-11-09), u00's half of u08 A-134.** Three additive optional fields: `Setup.session_handoff` (`SessionHandoff.plant`, mirrored in the attack-spec schema), `RestSpec.session` (`RestSession`: `field`, a body key other than `prompt`; `reply_path`, a dotted reply path) and `ModelResponse.session_id`, left out of a dump when `None`, so every reply is stored and hashed as before. `shared.enums.SESSION_ID` is the `ModelRequest.metadata` key a handoff's id travels under.
+
 ## §8 Out of scope / forbidden
 - MUST NOT import any other `ildottore` package or any provider SDK / httpx / Jinja / Typer.
 - MUST NOT implement behavior: no scoring/banding math (u07), no evaluation (u06), no I/O,

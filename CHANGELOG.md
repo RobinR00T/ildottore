@@ -17,6 +17,31 @@ the file, schema copy, build or pipeline it names.
   now abstains instead of passing.
 - `JUDGING_RULES_VERSION` 11: a run halted under 10 is refused by its resume.
 
+### Added (session adoption: `DL-SESSION-ADOPT-001` and `rest.session`, u08 A-134, OD-76, ADR-0026)
+
+- **`DL-SESSION-ADOPT-001`**, the 82nd spec: identity A opens a conversation and plants a canary;
+  identity B sends a message carrying A's conversation id. A's canary in B's reply is A's
+  session adopted (CWE-639, CWE-384). It needs two scope identities (`multi_identity`) and a
+  target file that says where the id travels.
+- **`rest.session`** in a REST target file: `field`, the body key a conversation id travels in
+  (`prompt` refused), and `reply_path`, optional, where a reply returns the id the server
+  issued. Only a spec that hands a session over sends it; every other request is sent as before.
+- **`setup.session_handoff`** in the spec schema (`plant`): the identity sweep sends it as the
+  owner, the first identity the attempts are not sent as, under an id of the scanner's, then the
+  attack as every other identity with the owner's id, and every attempt carries it too, so an
+  attempt's own reply confirms the adoption. With `reply_path` the issued id is handed over; a
+  reply that returns none sends nobody after it. No id is stored: the evidence records the owner
+  and 12 hex digits of its SHA-256.
+- Without `rest.session` the spec is `inconclusive` (`session_handoff_unavailable`) with nothing
+  sent; the dry run lists it as not seeded, and a run that selects it alone is refused (exit 3),
+  its message naming `rest.session` among the fixes.
+- Measured against a loopback REST stub, two identities, `--runs 1`, 3 requests: a server that
+  does not bind a conversation to its owner fails confirmed and Critical (exit 2), with the
+  scanner's id and with an issued one; one that binds it passes (exit 0).
+- CWE-384 (Session Fixation, Allowed, CWE 5.0) added to the pinned CWE table; 51 specs name a
+  CWE. Coverage figures unchanged. Judging rules 11 re-pinned: no verdict of an existing spec
+  changes, but a run halted on the earlier code is refused by its resume.
+
 ### Added (an injection in an attachment's file name: u04 A-132, OD-74)
 
 - **A media part may name the file it is uploaded as (`filename`).** Applications that take

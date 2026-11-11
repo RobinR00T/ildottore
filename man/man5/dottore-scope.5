@@ -341,6 +341,11 @@ naming another tenant or a listed tool stops the run after that reply, which is 
 request, a retry included, takes a pacing slot; token.tenant is written as is. Worked file:
 examples/target.agent-rest.yaml.
 .PP
+rest.session (u08 A-134) says where a conversation id travels: field, the request body key
+(prompt is refused), and reply_path, optional, the dotted path of the id a reply returns. Only a
+spec that hands one identity's conversation to another (DL-SESSION-ADOPT-001) sends it; without
+it that spec is inconclusive, session_handoff_unavailable, with nothing sent.
+.PP
 .B mcp
 (provider mcp only) pins the catalogue a server was reviewed with: under
 .BR pins ,

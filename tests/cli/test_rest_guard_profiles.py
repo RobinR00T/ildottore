@@ -154,9 +154,14 @@ def test_the_rest_guard_is_not_part_of_the_target_digest(tmp_path: Path) -> None
         _write(tmp_path, _with_guard(window=None, pacing={"max_per_hour": 5}), "b.yaml")
     )
     plain_raw = _example()
-    plain_raw.pop("rest")
+    plain_raw["rest"].pop("guard")
     plain = wiring.load_target(_write(tmp_path, plain_raw, "c.yaml"))
     assert target_digest(guarded) == target_digest(eased) == target_digest(plain)
+    # rest.session changes what a handoff sends (u08 A-134), so it stays in the digest.
+    sessionless_raw = _example()
+    sessionless_raw.pop("rest")
+    sessionless = wiring.load_target(_write(tmp_path, sessionless_raw, "e.yaml"))
+    assert target_digest(sessionless) != target_digest(plain)
     # The endpoint is still in it.
     moved = wiring.load_target(
         _write(tmp_path, {**plain_raw, "endpoint": "https://other.example.test/api/chat"}, "d.yaml")

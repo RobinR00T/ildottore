@@ -28,7 +28,7 @@ def _coverage():
 
 def test_reports_every_axis_over_the_whole_battery() -> None:
     cov = _coverage()
-    assert cov.specs == 81
+    assert cov.specs == 82
     keys = [a.key for a in cov.axes]
     assert keys == [
         "owasp",
@@ -155,7 +155,7 @@ def test_json_output_honours_no_gaps() -> None:
 
 def test_json_output_is_machine_readable_and_complete() -> None:
     doc = json.loads(render_coverage_json(_coverage(), framework="iopc"))
-    assert doc["specs"] == 81
+    assert doc["specs"] == 82
     assert [a["key"] for a in doc["axes"]] == ["iopc_techniques", "iopc_impacts"]
     tech = doc["axes"][0]
     assert len(tech["covered"]) == tech["exercised"]
@@ -415,8 +415,8 @@ def test_each_aisvs_claim_is_carried_by_the_specs_the_audit_kept() -> None:
             "MM-IMG-SPLIT-PAYLOAD-001",
             "MM-IMG-TOOL-EXFIL-001",
         },
-        "v1.0-C5.2.2": {"DL-XTENANT-001", "EMB-XTENANT-RETRIEVAL-001"},
-        "v1.0-C5.2.4": {"AC-BOLA-001", "DL-XSESSION-001", "DL-XTENANT-001"},
+        "v1.0-C5.2.2": {"DL-SESSION-ADOPT-001", "DL-XTENANT-001", "EMB-XTENANT-RETRIEVAL-001"},
+        "v1.0-C5.2.4": {"AC-BOLA-001", "DL-SESSION-ADOPT-001", "DL-XSESSION-001", "DL-XTENANT-001"},
         "v1.0-C7.3.1": {
             "JB-ENCODING-001",
             "JB-LIKERT-001",

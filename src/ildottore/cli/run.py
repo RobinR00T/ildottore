@@ -65,6 +65,7 @@ from ildottore.core.runner import (
     sweeps_identities,
     unjudged_attempt_ids,
 )
+from ildottore.core.session_handoff import session_gap
 from ildottore.core.setup_delivery import (
     MAX_TOOL_ROUNDS,
     delivers_in_band,
@@ -228,7 +229,8 @@ def delivery_gap(spec: AttackSpec, target: Target) -> str | None:
     The plan's copy of the runner's questions (``core.runner``, which asks the adapter): the
     scene is not seeded (``seeding_gap``), the request the policy forbids is not named
     (``task_gap``, u13 A-114), the trace cannot be read (``trace_gap``), or the canary sits in a
-    system prompt the adapter does not send (``prompt_gap``, u08 A-113).
+    system prompt the adapter does not send (``prompt_gap``, u08 A-113), or a session handoff the
+    target file gives no field to travel in (``session_gap``, u08 A-134).
     """
 
     return (
@@ -236,6 +238,7 @@ def delivery_gap(spec: AttackSpec, target: Target) -> str | None:
         or task_gap(spec, target)
         or trace_gap(spec, target, returns_tool_calls=wiring.provider_returns_tool_calls(target))
         or prompt_gap(spec, carries_system_prompt=wiring.provider_carries_system_prompt(target))
+        or session_gap(spec, target)
     )
 
 
@@ -3237,8 +3240,8 @@ def _execute_run(
                 " A spec counted as not seeded runs once what `--dry-run -vv` names for it is "
                 "fixed: its id in seeded_setup.specs, a seeded_setup.run_token, its own "
                 "deployment name for each of its scene tools in seeded_setup.tools, an adapter "
-                "that returns tool calls, a {{system_prompt}} in the WebSocket template, or a "
-                "disallowed_task in the target file."
+                "that returns tool calls, a {{system_prompt}} in the WebSocket template, a "
+                "rest.session for a session handoff, or a disallowed_task in the target file."
                 if any(p.not_seeded for p in plans if not p.selected)
                 else ""
             )

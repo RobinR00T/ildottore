@@ -687,7 +687,7 @@ sent, so the provider's default applies. No `dottore` flag sets sampling. For ea
 | a `-sV` probe, `dottore fingerprint` | temperature 0 and a 512-token cap (`PROBE_SAMPLING`) | the target file's block: only `top_p` and `seed` are left to fill (on Anthropic, neither goes out) | | the provider's default |
 | the `--judge` model | temperature 0 on its first pass, 0.5 on the second, `top_p` 1.0 (not sent to an Anthropic judge) | the block of the judge's own file, never the scanned target's: only `max_tokens` and `seed` are left | | the provider's default |
 
-Every shipped spec declares its `sampling` (`temperature` 0 in all 81, `seed` 42 in 79, a
+Every shipped spec declares its `sampling` (`temperature` 0 in all 82, `seed` 42 in 80, a
 `max_tokens` in 41, `top_p` 1.0 in 6), so with the examples' `sampling_defaults: { temperature:
 0.0, top_p: 1.0 }` what the block adds to the shipped battery is `top_p` 1.0 on the 75 specs that
 leave it unset (OpenAI's own default, now written on the wire). A probe's own seed is metadata
@@ -1533,6 +1533,30 @@ of a 429 or a 5xx included, since the agent sees each one; `max_response_bytes` 
 refuses the other transport's). A REST target has no `vars`, so `token.tenant` is written as is.
 The block is outside the target digest, as the WebSocket one. Server-sent events are not a
 transport of their own: a REST target reads one JSON reply per request.
+
+**Where a conversation id travels: `rest.session`.** A deployment that keeps conversations is
+told which one a message belongs to by an id in the request. `rest.session.field` names the body
+key it travels in (`conversation_id`, say; `prompt` is refused), and `rest.session.reply_path`,
+optional, the dotted path where a reply returns the id the server issued. Only a spec that hands
+a conversation from one identity to another sends it (`setup.session_handoff`, today
+`DL-SESSION-ADOPT-001`, u08 A-134): the identity sweep sends the spec's plant, with its canary, as
+the owner, the first scope identity the attempts are not sent as, under an id of the scanner's
+(`dottore-` and 32 hex digits, derived from the run and the spec); then the attack as every other
+identity, and each attempt, carrying the owner's id (the issued one when `reply_path` is
+declared; a reply that returns none sends nobody after it, never a made-up id). A server that
+binds a conversation to its owner answers them in one of their own and the spec passes; the
+owner's canary in their reply fails it, confirmed when an attempt's own reply holds it. No id is
+written down: the evidence records the owner and 12 hex digits of the id's SHA-256. Without
+`rest.session` the spec is `inconclusive` (`session_handoff_unavailable`) with nothing sent, and
+the dry run lists it as not seeded; a run that selects it alone is refused before a request goes
+out (exit 3, `nothing would be sent`). Every other request is sent as before.
+
+```yaml
+rest:
+  session:
+    field: "conversation_id"         # the body key the conversation id travels in
+    reply_path: "conversation_id"    # optional: where the reply returns the id the server issued
+```
 
 **Keep a real profile out of every repository.** A profile for a real agent names a real host and
 a real tenant. Keep it with its scope outside any checkout, as a profile:
@@ -2668,7 +2692,7 @@ it is the detail behind a figure, not a gap list), and with `--json` leaves each
 `missing`, `out_of_reach` and `not_tested_by_design` lists out.
 
 ```
-Battery coverage (81 specs, no scan performed)
+Battery coverage (82 specs, no scan performed)
 
   OWASP LLM Top 10 (2025)                    8/10   80%
   MITRE ATLAS tactics (2026.09)             13/16   81%
@@ -2812,7 +2836,7 @@ Every attributing probe gets the same answer from this mock, so the fingerprint 
 
 ## 6. The attack battery
 
-81 specs across 14 suites, aligned to OWASP LLM Top 10, MITRE ATLAS, OWASP-Agents-2026 and
+82 specs across 14 suites, aligned to OWASP LLM Top 10, MITRE ATLAS, OWASP-Agents-2026 and
 the Nova IoPC taxonomy, and mapped by falsification to the OWASP AISVS controls they can catch
 failing. Every spec carries its framework mapping, including an optional
 two-axis `iopc:` block (`techniques` = the how, `impacts` = the damage), and the run report
@@ -3064,11 +3088,11 @@ that never engaged. So the shipped specs key a text oracle on what only an explo
 (the leaked marker, the produced batch, the coerced repetition: the absence polarity) and pair it
 with `semantic_judge` wherever the oracle cannot prove the secure direction alone; without a judge
 such a spec is `inconclusive`, never a pass, and a deterministic `fail` still decides alone.
-Against the offline `bare` mock, which answers every prompt with one canned string, all 81 come
+Against the offline `bare` mock, which answers every prompt with one canned string, all 82 come
 out `inconclusive`. Write a custom spec the same way: a `regex_presence` on refusal words fails a
 bounded answer phrased in other words (OD-16, decided 2026-10-11, ADR-0007).
 
-**What the `refusal` evaluator reads, measured.** It is a phrase list, used by 16 of the 81
+**What the `refusal` evaluator reads, measured.** It is a phrase list, used by 16 of the 82
 shipped specs. On 100 adjudicated replies written as deployed models write them
 (`tests/fixtures/labeled/refusal_adjudicated.json`, 2026-11-09, u06 A-124, A-125, A-127 and
 A-128) it read no compliance as a refusal and no refusal as a compliance, and it decided 52 of 62
@@ -3917,6 +3941,7 @@ not checked. See [`06-extensibility-suites.md`](06-extensibility-suites.md),
 | Plain-http target refused | Non-loopback http is blocked; use `https`, or point at `localhost`/`127.0.0.1`. The same for `ws://`: use `wss://` off loopback. |
 | WebSocket run stops with `the handshake reply did not satisfy expect` | The first non-ignored frame after `handshake.send` did not match `handshake.expect`: usually a wrong or unset credential (`auth_ref`), or a reply frame your deployment sends before the acknowledgement that is not in `ignore_types`. A refused upgrade (`HTTP 401`, a redirect) stops the run the same way; a `503` is retried by the runner, each retry a request against the ceiling (see "Reconnects" in §4.2). |
 | WebSocket attempts all `inconclusive` with `WebSocketTurnTimeout` | No frame matched `final_path`/`final_value` within `timeout_seconds`: check the final frame's shape against what your deployment really sends (an acknowledgement frame your server sends after `session.start` is read as part of the first turn unless `session.expect` or `ignore_types` names it). |
+| `DL-SESSION-ADOPT-001` is `inconclusive` with `session_handoff_unavailable` | The spec hands one identity's conversation id to another, and the target file declares no `rest.session` for the id to travel in (§4.2). Declare the body key your deployment reads it from; nothing was sent (a run of that spec alone stops with exit 3 and names `rest.session`). |
 | `authz_leak` is `capability_unavailable` | It needs two identities to compare: the target's `multi_identity` capability and a scope with >=2 identities (each with its owned `canary`), and every identity heard from: one whose send failed, whose reply could not be read or whose reply the provider's filter stopped is named in the verdict (`the identity sweep left out ...`) and keeps it from passing. The runner then sends as each identity, for a spec that requires `multi_identity` (`DL-XTENANT-001`) and for one that declares `authz_leak` to corroborate (`EMB-XTENANT-RETRIEVAL-001`), never over an in-band scene (a `type: model` target gets the spec's documents in every request, the other tenant's included). Without a sweep, the first stays `inconclusive`; the second is decided by its other evaluators, and its verdict says `authz_leak set aside: no identity sweep ran`. After a sweep where fewer than two identities answered, `authz_leak` stays `inconclusive` for both (the second's verdict says `authz_leak kept: fewer than two identities answered the identity sweep`; with two or more answers beside one left out, `authz_leak kept: 2 identities answered the identity sweep, and it did not hear from every identity`), unless a deterministic check failed or the reply that came back shows the canary of another identity (that one is a confirmed fail, whether or not its owner answered): check that every identity's credential and endpoint work. A spec that requires `multi_identity` and carries a scene (documents, tools or memory) is never swept on a `type: model` target, since the scene goes in-band, and stays `inconclusive` there unless a deterministic check failed. A real scan also needs each tenant's canary pre-seeded in that tenant's data. |
 | `scope file ... identity '<name>': its canary can appear in a reply by chance (...)` (exit 3) | The identity's `canary` is one ordinary text can hold: shorter than 16 characters (measured case-folded with its invisible characters removed, as `authz_leak` reads it, u08 A-93), with a space, part of an identity's name or the target id, holding one with what is left under these floors, or too few distinct characters (§4.1, u08 A-85). `authz_leak` would read it in another identity's reply as that identity's data received. Plant a random token (`CANARY-<16 random hex digits>`) in that identity's data and write it there. |
 | A cross-tenant spec fails, `needs review`, with `authz_leak: 1 tenant-scoped canary(ies) surfaced in a non-owner identity, and the request every identity was sent carries each of them` (the identity sweep's trial) or `... surfaced in the reply received as <identity>, which the scope does not give them, and the request this reply answers (or the base prompt its variant is built from) carries ...` (an attempt's own reply) | The attack prompt (or its system prompt or image text) names the canary, so tenant A's reply may only quote it while refusing, or may hold tenant B's record: a fail that is never confirmed and never a pass, which gates CI only with `--include-needs-review` (u08 A-85). Give the identity a canary the request does not name, or plant a second marker in the record (the spec's own `setup.canaries`): a crossing of one the request does not carry still confirms the leak. |

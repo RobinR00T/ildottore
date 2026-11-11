@@ -68,6 +68,16 @@ from ildottore.core.metering import SendMeter
 from ildottore.core.pacing import RateLimiter
 from ildottore.core.planner import build_plan
 from ildottore.core.reproduce import DEFAULT_N, attempt_id_for, planned_attempts_held, reproduce
+from ildottore.core.session_handoff import (
+    NO_ISSUED_ID,
+    OWNER_UNHEARD,
+    carries_session,
+    hands_off,
+    owner_index,
+    scanner_session_id,
+    session_digest,
+    session_gap,
+)
 from ildottore.core.setup_delivery import (
     IN_BAND,
     SEEDED,
@@ -107,6 +117,7 @@ from ildottore.shared.enums import (
     CONTROL,
     IDENTITY_SWEEP,
     MIN_VARIANT_ATTEMPTS,
+    SESSION_ID,
     SETUP_NOT_REACHED,
     ControlOutcome,
     EvaluatorType,
@@ -235,6 +246,12 @@ class _Sweep:
     canary, the left-out ones' included), ``left_out`` the identities not heard from, and why.
     ``received_as`` names the identities the attempts are sent as (u08 A-87): each attempt's own
     reply is read against ``owners`` as theirs, and the sweep's comparison is a trial of its own.
+
+    A session handoff (u08 A-134) names the identity whose reply its trial stores
+    (``trial_from``, an adopter's, never the owner's plant reply, which holds the owner's own
+    canary), what its evidence records of the handoff (``handoff``), and the conversation id the
+    attempts carry (``session``: the owner's, held in memory and never stored; ``None`` when no id
+    was handed over, or when the attempts are sent as the owner, who adopts nothing).
     """
 
     request: ModelRequest
@@ -242,6 +259,9 @@ class _Sweep:
     owners: dict[str, str]
     left_out: _LeftOut
     received_as: tuple[str, ...] = ()
+    trial_from: str | None = None
+    handoff: JsonDict | None = None
+    session: str | None = None
 
 
 @runtime_checkable
@@ -535,6 +555,31 @@ class _WatchedAdapter:
             raise
         self._watch.read()
         return response
+
+
+class _HandedAdapter:
+    """The campaign's adapter, every request carrying a handed-over conversation id (u08 A-134).
+
+    Set on the request's metadata as it goes out (``SESSION_ID``), which the REST adapter writes
+    at the target file's ``rest.session.field``; the attempt the runner stores keeps the request
+    it built, so the id is never written down. Every other attribute is the wrapped adapter's.
+    """
+
+    def __init__(self, inner: TargetAdapter, session: str) -> None:
+        self._inner = inner
+        self._session = session
+        self.id = inner.id
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._inner, name)
+
+    def capabilities(self) -> Capabilities:
+        return self._inner.capabilities()
+
+    async def send(self, request: ModelRequest) -> ModelResponse:
+        metadata: JsonDict = {**(request.metadata or {}), SESSION_ID: self._session}
+        response = await self._inner.send(request.model_copy(update={"metadata": metadata}))
+        return response.model_copy(update={"session_id": None}) if response.session_id else response
 
 
 class CampaignRunner:
@@ -1175,6 +1220,7 @@ class CampaignRunner:
                 or prompt_gap(
                     spec, carries_system_prompt=getattr(adapter, "carries_system_prompt", False)
                 )
+                or session_gap(spec, target)
             )
         if gap is not None:
             if prior is not None and prior.attempts:
@@ -1224,6 +1270,7 @@ class CampaignRunner:
         # Which send of its id each artifact stored here is (``shared.resend``): a resume's
         # re-send is the attempt in the place of the try it replaces, whatever the file names.
         sends: dict[str, int] = {}
+        handed: JsonDict | None = None  # what each attempt records of a session handoff (A-134)
         for earlier in attempts:
             sends[earlier.attempt_id] = max(
                 sends.get(earlier.attempt_id, 0), send_number(earlier) or 0
@@ -1258,6 +1305,15 @@ class CampaignRunner:
                     ref, trial = self._stored(run_id, trial)
                     evidence_refs.append(ref)
                     attempts.append(trial)
+                if sweep.session is not None and sweep.handoff is not None:
+                    # Each attempt is an adoption too (u08 A-134): sent as the attempts' identity
+                    # with the owner's conversation id, so the spec's runs repeat it and its own
+                    # replies can confirm it. The id rides on the wire only, never on the record.
+                    adapter = _HandedAdapter(adapter, sweep.session)
+                    handed = {
+                        "owner": sweep.handoff["owner"],
+                        "adopted": sweep.handoff["adopted"],
+                    }
             for mutation in mutators:
                 # Filled as each attempt completes, so a halt in the middle of the batch (a
                 # ceiling, a product error) leaves the attempts it had answered in hand. They
@@ -1295,6 +1351,8 @@ class CampaignRunner:
                         _tagged_seeded(result.attempt, seeded_tools) if seeded else result.attempt
                     )
                     attempt = self._tagged_unsent(spec, attempt)
+                    if handed is not None:
+                        attempt = _tagged_handoff(attempt, handed)
                     verdict: Verdict | None = None
                     try:
                         verdict = await self._evaluate(
@@ -1676,6 +1734,8 @@ class CampaignRunner:
         probes = list(self._identity_adapters(target))
         if len(probes) < 2:
             return None
+        if hands_off(spec):
+            return await self._sweep_handoff(spec, base_prompt, run_id, probes, ledger=ledger)
 
         identities: dict[str, ModelResponse] = {}
         owners: dict[str, str] = {}
@@ -1730,6 +1790,118 @@ class CampaignRunner:
             received_as=tuple(probe.identity_id for probe in probes if probe.sends_attempts),
         )
 
+    async def _swept_send(
+        self, probe: IdentityProbe, request: ModelRequest, ledger: BudgetLedger
+    ) -> tuple[ModelResponse | None, tuple[str, str] | None]:
+        """One sweep send as ``probe``: ``(reply, None)``, or ``(None, (detail, why))`` left out.
+
+        Paced and debited as every send of the sweep; an unreadable, filtered or failed reply is
+        left out by name, with why, as :meth:`_sweep_identities` leaves one out.
+        """
+
+        try:
+            await self._pacer.acquire()
+            ledger.debit_request()
+            response = await probe.adapter.send(request)
+        except BudgetExhausted:
+            raise
+        except Exception as exc:
+            if is_unreadable_reply(exc):
+                why = _LEFT_UNREADABLE
+            elif is_provider_filter_block(exc):
+                why = _LEFT_FILTERED
+            else:
+                why = _LEFT_UNANSWERED
+            return None, (_clipped(_one_line(f"{type(exc).__name__}: {exc}")), why)
+        if filter_side(response) is not None:
+            return None, (describe_filter_stop(response), _LEFT_FILTERED)
+        return response, None
+
+    async def _sweep_handoff(
+        self,
+        spec: AttackSpec,
+        base_prompt: str,
+        run_id: str,
+        probes: list[IdentityProbe],
+        *,
+        ledger: BudgetLedger,
+    ) -> _Sweep:
+        """The identity sweep of a session handoff, in order (u08 A-134, OD-76, ADR-0026).
+
+        The owner (:func:`~ildottore.core.session_handoff.owner_index`) sends the plant with a
+        conversation id of the scanner's; the canary is mapped to it, as a scope canary is to its
+        identity. Every other identity then sends the attack carrying the owner's id (the one the
+        owner's reply returned, when the target file reads one), and the owner's canary in its
+        reply is that conversation adopted. An owner not heard from, or whose reply returned no
+        id where the file says it would, leaves every adopter out by name, so ``authz_leak``
+        cannot pass. The ids are not stored: the trial records a digest of each, and the replies
+        drop the id they returned. One send per identity, as the estimate prices a sweep.
+        """
+
+        setup = spec.setup
+        if setup is None or setup.session_handoff is None:  # never: the caller asked hands_off
+            raise ValueError(f"{spec.id} hands no session over")
+        sampling = self._sampling(spec)
+        owner = probes[owner_index(probes)]
+        adopters = [probe for probe in probes if probe is not owner]
+        owners: dict[str, str] = {
+            probe.canary.replace("{{run_id}}", run_id): probe.identity_id
+            for probe in probes
+            if probe.canary
+        }
+        for canary in setup.canaries or []:
+            owners[canary] = owner.identity_id  # bound per run before the spec reaches here
+        chosen = scanner_session_id(run_id, spec.id)
+        plant = ModelRequest(
+            prompt=setup.session_handoff.plant,
+            sampling=sampling,
+            identity=owner.identity_id,
+            metadata={SESSION_ID: chosen},
+        )
+        identities: dict[str, ModelResponse] = {}
+        left: _LeftOut = {}
+        issued = _reads_issued_id(owner.adapter)
+        reply, gone = await self._swept_send(owner, plant, ledger)
+        session: str | None = None
+        if gone is not None:
+            left[owner.identity_id] = gone
+        elif reply is not None:
+            session = reply.session_id if issued else chosen
+            identities[owner.identity_id] = reply.model_copy(update={"session_id": None})
+        record: JsonDict = {"owner": owner.identity_id, "id_from": "reply" if issued else "scanner"}
+        sent = _build_request(spec, base_prompt, sampling=sampling)
+        if session is None:
+            why = OWNER_UNHEARD if gone is not None else NO_ISSUED_ID
+            for probe in adopters:
+                left[probe.identity_id] = ("not sent", why)
+            record["adopted"] = None
+        else:
+            record["adopted"] = session_digest(session)
+            metadata: JsonDict = {**(sent.metadata or {}), SESSION_ID: session}
+            handed = sent.model_copy(update={"metadata": metadata})
+            for probe in adopters:
+                answer, out = await self._swept_send(
+                    probe, handed.model_copy(update={"identity": probe.identity_id}), ledger
+                )
+                if out is not None:
+                    left[probe.identity_id] = out
+                elif answer is not None:
+                    identities[probe.identity_id] = answer.model_copy(update={"session_id": None})
+        heard = [probe.identity_id for probe in adopters if probe.identity_id in identities]
+        attempts_as = tuple(probe.identity_id for probe in probes if probe.sends_attempts)
+        if session is not None and owner.identity_id not in attempts_as:
+            record["attempts_carry"] = True
+        return _Sweep(
+            request=sent,
+            identities=identities,
+            owners=owners,
+            left_out=left,
+            received_as=attempts_as,
+            trial_from=next((n for n in attempts_as if n in heard), heard[0] if heard else None),
+            handoff=record,
+            session=session if owner.identity_id not in attempts_as else None,
+        )
+
     async def _sweep_trial(
         self,
         spec: AttackSpec,
@@ -1759,7 +1931,11 @@ class CampaignRunner:
 
         if not _declares_authz_leak(spec):
             return None
-        receiver = next((name for name in sweep.received_as if name in sweep.identities), None)
+        if sweep.handoff is not None:
+            # A handoff's trial is an adopter's reply, never the owner's plant reply (A-134).
+            receiver = sweep.trial_from
+        else:
+            receiver = next((name for name in sweep.received_as if name in sweep.identities), None)
         reply = sweep.identities.get(receiver) if receiver is not None else None
         every = sorted({*sweep.identities, *sweep.left_out})
         record: JsonDict = {
@@ -1767,11 +1943,14 @@ class CampaignRunner:
             "answered": sorted(sweep.identities),
             "attempts_as": list(sweep.received_as),
         }
+        if sweep.handoff is not None:
+            record["session_handoff"] = dict(sweep.handoff)
+        # The conversation id is never stored: the record holds its digest (A-134).
+        metadata = {
+            key: value for key, value in (sweep.request.metadata or {}).items() if key != SESSION_ID
+        }
         request = sweep.request.model_copy(
-            update={
-                "identity": receiver,
-                "metadata": {**(sweep.request.metadata or {}), IDENTITY_SWEEP: record},
-            }
+            update={"identity": receiver, "metadata": {**metadata, IDENTITY_SWEEP: record}}
         )
         trial = Attempt(
             attempt_id=attempt_id_for(spec.id, IDENTITY_SWEEP, index),
@@ -1820,11 +1999,19 @@ class CampaignRunner:
                 compared,
                 sweep.left_out,
             )
-        whose = (
-            f"the reply of {receiver}, whom the attempts are sent as"
-            if receiver is not None
-            else "no reply of the identity the attempts are sent as"
-        )
+        if sweep.handoff is not None:
+            whose = (
+                f"the reply of {receiver}, sent with the conversation id of "
+                f"{sweep.handoff['owner']}, who planted the canary"
+                if receiver is not None
+                else "no reply of an identity sent with the owner's conversation id"
+            )
+        else:
+            whose = (
+                f"the reply of {receiver}, whom the attempts are sent as"
+                if receiver is not None
+                else "no reply of the identity the attempts are sent as"
+            )
         judged_apart = any(c.type is EvaluatorType.SEMANTIC_JUDGE for c in spec.evaluators)
         note = (
             f"identity sweep: the attack sent once as each of {len(every)} scope identities and "
@@ -2577,6 +2764,17 @@ def _is_multi_identity(spec: AttackSpec) -> bool:
     return any(str(getattr(r, "value", r)) == "multi_identity" for r in (spec.requires or []))
 
 
+def _reads_issued_id(adapter: TargetAdapter) -> bool:
+    """True when ``adapter`` reads the conversation id a reply returns (``rest.session``).
+
+    Then a session handoff hands over the id the owner's reply returned, not the scanner's: the
+    server named the conversation, and an id it did not issue would open a fresh one.
+    """
+
+    template = getattr(adapter, "template", None)
+    return getattr(template, "session_reply_path", None) is not None
+
+
 def _declares_authz_leak(spec: AttackSpec) -> bool:
     return any(e.type is EvaluatorType.AUTHZ_LEAK for e in spec.evaluators)
 
@@ -2597,6 +2795,8 @@ def sweeps_identities(spec: AttackSpec, target: Target) -> bool:
 
     if delivers_in_band(spec, target):
         return False
+    if hands_off(spec) and not carries_session(target):
+        return False  # nothing is sent for it (``session_gap``, u08 A-134)
     return _is_multi_identity(spec) or (
         target.capabilities.multi_identity and _declares_authz_leak(spec)
     )
@@ -2706,6 +2906,19 @@ _JUDGE_NOTE_CHARS = 240
 _NOTE_REDACTOR: Final = Redactor()
 #: A character a token of the redactor's rules can be made of, as the adapters' excerpt reads it.
 _TOKEN_CHAR: Final = re.compile(r"[\w+/=.:@-]")
+
+
+def _tagged_handoff(attempt: Attempt, handed: JsonDict) -> Attempt:
+    """The attempt with ``session_handoff`` on its request: whose conversation id it carried.
+
+    The owner's identity and the id's digest (``core.session_handoff.session_digest``), never the
+    id: an issued one is a credential of the owner's conversation (u08 A-134).
+    """
+
+    metadata: JsonDict = {**(attempt.request.metadata or {}), "session_handoff": dict(handed)}
+    return attempt.model_copy(
+        update={"request": attempt.request.model_copy(update={"metadata": metadata})}
+    )
 
 
 def _tagged_seeded(attempt: Attempt, seeded_tools: dict[str, str]) -> Attempt:
