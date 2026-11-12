@@ -559,6 +559,12 @@ PIN_HISTORY: tuple[tuple[int, str, str], ...] = (
         "re-pin 2026-11-12: the authority_claim mutator (u05 A-129) on judging rules 12; a "
         "new mutation, no evaluator and no combination changed",
     ),
+    (
+        12,
+        "59af2dfee70c91209cc89af8a2389476917b30b76babee018a44505f3ed5771e",
+        "re-pin 2026-11-12: GUARD-TOPIC-SKIP-001 in the battery (u13 A-131) on judging rules "
+        "12, after authority_claim; a new spec, no evaluator and no combination changed",
+    ),
 )
 
 #: The digest each version is pinned to now: the last line of :data:`PIN_HISTORY` for it.
@@ -574,7 +580,7 @@ PINNED: dict[int, str] = {
     9: "c1dd2c667b6e0e5eb06dddf5a6b991c2e8660a2c1ddd4422aba8e06a340e2f84",
     10: "63df4a4759152b885dbd293521d563b6ddf85f2b3eda7bed54e8c61cb714e614",
     11: "4a06dff0de72b2787c5e903ce9b62d74927ee3c4aa369ef1e75884ccc5c293a7",
-    12: "636e634de0f1e1bf1b289fb6c2fdc9cd9da23df05e999a109a79711af4a2f2f0",
+    12: "59af2dfee70c91209cc89af8a2389476917b30b76babee018a44505f3ed5771e",
 }
 
 #: One ``<version> <digest>`` line per pin, appended to and never edited: the history must start

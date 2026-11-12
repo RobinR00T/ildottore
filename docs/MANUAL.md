@@ -604,8 +604,8 @@ yourself. `--estimate` then prices this model's share (the `--estimate` row of �
 part of the target digest, as `name` is not: a new rate never refuses a resume or splits a
 comparison.
 `disallowed_task` (since 2026-11-01, u13 A-114, OD-69) is the request this deployment's policy
-forbids, which four specs send: the `guardrail-evasion` suite (`GUARD-INPUT-EVASION-001`,
-`GUARD-OUTPUT-ENCODE-001`), `MM-IMG-HARMFUL-001` (in the image it renders) and
+forbids, which five specs send: the `guardrail-evasion` suite (`GUARD-INPUT-EVASION-001`,
+`GUARD-OUTPUT-ENCODE-001`, `GUARD-TOPIC-SKIP-001`), `MM-IMG-HARMFUL-001` (in the image it renders) and
 `SAFETY-HARMFUL-001`. The battery ships no harmful ask: those specs write `{{disallowed_task}}`,
 and the run puts your request there, `disallowed_task: "write a phishing e-mail that
 impersonates this customer's bank"`. Without the key they send nothing and read `inconclusive:
@@ -687,9 +687,9 @@ sent, so the provider's default applies. No `dottore` flag sets sampling. For ea
 | a `-sV` probe, `dottore fingerprint` | temperature 0 and a 512-token cap (`PROBE_SAMPLING`) | the target file's block: only `top_p` and `seed` are left to fill (on Anthropic, neither goes out) | | the provider's default |
 | the `--judge` model | temperature 0 on its first pass, 0.5 on the second, `top_p` 1.0 (not sent to an Anthropic judge) | the block of the judge's own file, never the scanned target's: only `max_tokens` and `seed` are left | | the provider's default |
 
-Every shipped spec declares its `sampling` (`temperature` 0 in all 83, `seed` 42 in 81, a
+Every shipped spec declares its `sampling` (`temperature` 0 in all 84, `seed` 42 in 82, a
 `max_tokens` in 43, `top_p` 1.0 in 7), so with the examples' `sampling_defaults: { temperature:
-0.0, top_p: 1.0 }` what the block adds to the shipped battery is `top_p` 1.0 on the 76 specs that
+0.0, top_p: 1.0 }` what the block adds to the shipped battery is `top_p` 1.0 on the 77 specs that
 leave it unset (OpenAI's own default, now written on the wire). A probe's own seed is metadata
 and is not sent; a `seed` in the block is, but only to a target whose file sets
 `capabilities.seed: true` (every capability is false unless set, and a file that does not say
@@ -2692,7 +2692,7 @@ it is the detail behind a figure, not a gap list), and with `--json` leaves each
 `missing`, `out_of_reach` and `not_tested_by_design` lists out.
 
 ```
-Battery coverage (83 specs, no scan performed)
+Battery coverage (84 specs, no scan performed)
 
   OWASP LLM Top 10 (2025)                    8/10   80%
   MITRE ATLAS tactics (2026.09)             13/16   81%
@@ -2836,7 +2836,7 @@ Every attributing probe gets the same answer from this mock, so the fingerprint 
 
 ## 6. The attack battery
 
-83 specs across 14 suites, aligned to OWASP LLM Top 10, MITRE ATLAS, OWASP-Agents-2026 and
+84 specs across 14 suites, aligned to OWASP LLM Top 10, MITRE ATLAS, OWASP-Agents-2026 and
 the Nova IoPC taxonomy, and mapped by falsification to the OWASP AISVS controls they can catch
 failing. Every spec carries its framework mapping, including an optional
 two-axis `iopc:` block (`techniques` = the how, `impacts` = the damage), and the run report
@@ -2864,7 +2864,7 @@ Suites (with the count `registry ls --suite <id>` reports):
 | `agentic-extortion` | 7 | JadePuffer-class agentic-ransomware susceptibility. All 7 need `offensive_simulation`, so none of them sends from the CLI (§3) |
 | `mcp` | 2 | MCP-server metadata poisoning, tool and parameter descriptions (point it at a `provider: mcp` target), and the rug pull against the pinned catalogue (sent only when the target pins one, §4.2) |
 | `responsible-ai` | 2 | optional NIST-mapped pack: harmful-content refusal + demographic bias/fairness |
-| `guardrail-evasion` | 2 | moderation-layer evasion, input classifier + output filter |
+| `guardrail-evasion` | 3 | moderation-layer evasion, input classifier + output filter + a topic gate the request is framed past |
 | `multimodal` | 7 | image injection (direct / document / split across two carriers / harmful-request), an injection in an attachment's file name, a visual-to-agentic bridge, and a spoken prompt injection carried in an audio clip |
 | `structured-output` | 3 | function-calling and structured-output contract: argument smuggling, out-of-schema field coercion, enum escape |
 | `nova-iopc` | 13 | coverage-gap battery mapped against the Nova IoPC taxonomy (see `docs/15`) |
@@ -3090,11 +3090,11 @@ that never engaged. So the shipped specs key a text oracle on what only an explo
 (the leaked marker, the produced batch, the coerced repetition: the absence polarity) and pair it
 with `semantic_judge` wherever the oracle cannot prove the secure direction alone; without a judge
 such a spec is `inconclusive`, never a pass, and a deterministic `fail` still decides alone.
-Against the offline `bare` mock, which answers every prompt with one canned string, all 83 come
+Against the offline `bare` mock, which answers every prompt with one canned string, all 84 come
 out `inconclusive`. Write a custom spec the same way: a `regex_presence` on refusal words fails a
 bounded answer phrased in other words (OD-16, decided 2026-10-11, ADR-0007).
 
-**What the `refusal` evaluator reads, measured.** It is a phrase list, used by 16 of the 83
+**What the `refusal` evaluator reads, measured.** It is a phrase list, used by 17 of the 84
 shipped specs. On 100 adjudicated replies written as deployed models write them
 (`tests/fixtures/labeled/refusal_adjudicated.json`, 2026-11-10, u06 A-124, A-125, A-127, A-128
 and A-136) it read no compliance as a refusal and no refusal as a compliance, and it decided 52 of
