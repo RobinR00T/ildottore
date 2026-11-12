@@ -890,8 +890,8 @@ another suite on the same command is refused (exit 3), so run each stage on its 
 |---|---|---|---|---|
 | a | `--suite guardrail-evasion` | 5 over 2 specs | 10 | one sitting, about 1 min |
 | b | `--suite multi-turn` | 49 over 5 specs | 26 | 3 sittings, over 2 h |
-| c | `--suite agentic-owasp2026` | none: refused, its 6 specs not seeded or not delivered | 0 | nothing to send |
-| d | no selection flag: every spec this target can run | 93 over 26 specs | 108 | 5 sittings, over 4 h |
+| c | `--suite agentic-owasp2026` | none: refused, its 7 specs not seeded or not delivered | 0 | nothing to send |
+| d | no selection flag: every spec this target can run | 93 over 27 specs | 106 | 5 sittings, over 4 h |
 | e | `--spec OUT-SQLI-001 --spec JB-ROLEPLAY-001 --obfuscate encodings,unicode,structured` | 97 over 2 specs | 128 | 5 sittings, over 4 h |
 
 ```bash
@@ -905,16 +905,16 @@ estimate: 49 requests over 5 spec-runs across 1 target(s) at runs=1 (no sends ma
   + 26 request(s) to the --judge model (~32346 tokens), paced and debited from the same ceilings
 ```
 
-`agentic-owasp2026` sends nothing here: five of its six need a scene in the deployment (a tool, a
+`agentic-owasp2026` sends nothing here: six of its seven need a scene in the deployment (a tool, a
 document, a second agent), so seed the ones you can and declare them, as Scenario K step 3
-explains, and the sixth plants its canary in a system prompt this template does not send. Stage a
+explains, and the seventh plants its canary in a system prompt this template does not send. Stage a
 runs because [`target.agent.yaml`](target.agent.yaml) names the request its policy forbids
-(`disallowed_task`); without that line both of its specs are refused. `-A` selects the same 26 specs as stage d and adds 18 fingerprint probes first (`-sV`)
+(`disallowed_task`); without that line both of its specs are refused. `-A` selects the same 27 specs as stage d and adds 18 fingerprint probes first (`-sV`)
 at `-T2`: it is a deeper plan, not a larger battery.
 
 **3. Carriers only on what held, never on everything.** The same three families over the whole of
-stage d, with `--fuzz 10`, are 1682 agent requests at `--runs 1` (8410 at the default `--runs
-5`): about 85 sittings, three and a half days of the guard's hours, at `--runs 1`, and weeks at 5. Pick the specs the agent
+stage d, with `--fuzz 10`, are 1721 agent requests at `--runs 1` (8605 at the default `--runs
+5`): about 87 sittings, three and a half days of the guard's hours, at `--runs 1`, and weeks at 5. Pick the specs the agent
 held in stages a to d, preview a carrier with `dottore mutate` (Scenario K step 7), and add one
 family at a time (stage e).
 
@@ -1940,7 +1940,7 @@ rm -f reports/agent.priced.yaml
 
 ## Scenario S, the CWE a finding maps to
 
-51 of the 82 battery specs name the MITRE CWE of the weakness a fail shows in the application
+52 of the 83 battery specs name the MITRE CWE of the weakness a fail shows in the application
 (u02 A-110, ADR-0021). The label decides nothing; it reaches the tracker and GitHub code scanning.
 
 ### Step 1, read it on the card
@@ -2102,7 +2102,7 @@ dottore coverage --framework esp_ia --no-gaps
 ```
 
 ```
-Battery coverage (82 specs, no scan performed)
+Battery coverage (83 specs, no scan performed)
 
   CCN-STIC-2011 ESP-IA 1.0 requirements   19/27   70%
 ```
@@ -2121,7 +2121,7 @@ dottore coverage --framework esp_ia --target examples/target.esp-ia.yaml
 ```
 
 ```
-ESP-IA applicability for target demo (CCN-STIC-2011 ESP-IA 1.0; 82 specs read, no scan performed)
+ESP-IA applicability for target demo (CCN-STIC-2011 ESP-IA 1.0; 83 specs read, no scan performed)
 
   Answered yes: 7 of 21 (C01, C03, C05, C09, C12, C19, C20)
   Rules met:    R02 R09 R11 R21 R22
@@ -2139,8 +2139,8 @@ ESP-IA applicability for target demo (CCN-STIC-2011 ESP-IA 1.0; 82 specs read, n
   RFS-DIS-01  T.DISCLOSURE  (rule R11)
     8 spec(s) would run
     runs: AC-DEBUG-001, AG-GOAL-THEFT-001, DL-PII-ELICIT-001, DL-SECRET-CANARY-001, PI-DIRECT-001, RECON-MODEL-IDENTITY-001, RECON-SYSTEM-001, SP-LEAK-001
+    blocked, capability_unavailable (tools): DL-TOOL-ERROR-REFLECT-001, PI-INDIRECT-TOOL-001
     blocked, capability_unavailable (rag): EMB-INVERSION-PROBE-001, EMB-NEIGHBOR-LEAK-001, PI-INDIRECT-RAG-001
-    blocked, capability_unavailable (tools): PI-INDIRECT-TOOL-001
 
   RFS-EXH-01  T.EXHAUSTION  (rule R21)
     2 spec(s) would run
