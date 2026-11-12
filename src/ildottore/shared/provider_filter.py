@@ -36,6 +36,14 @@ One reply is never marked, whatever the file declares: one with no text and no t
 ends on its provider's own word, which is that filter's withheld reply (pre-merge audit of
 ``10cb526b``, MEDIUM).
 
+ADR-0025 (u08 A-130): a deployment's own guardrail that answers in the model's place with a fixed
+text, an HTTP 200 the provider knows nothing about. Until then such a reply was read as the model
+refusing, and the spec passed on the application's words. A target file lists those texts
+(``canned_replies``); the composition root marks a reply equal to one of them
+(:func:`mark_canned`, after :func:`canned_key`), and :func:`filter_side` reads it on the
+:data:`APPLICATION_SIDE`: ``inconclusive: canned_by_target``, read by the evaluators that read a
+replaced reply only, so a canary in it still fails and nothing else passes it.
+
 Here, in ``shared``, because several peers read it: the runner records and scores it, the replay
 and every report count it, a resume keeps it without sending it again, and the fingerprint's
 guardrail layer reads the same stop reasons (u09 A-67), which ``core`` may not import from it.
@@ -43,6 +51,7 @@ guardrail layer reads the same stop reasons (u09 A-67), which ``core`` may not i
 
 from __future__ import annotations
 
+import unicodedata
 from collections.abc import Iterable
 from typing import Final
 
@@ -62,6 +71,8 @@ from ildottore.shared.filter_stops import (
 from ildottore.shared.models import Attempt, ModelResponse
 
 __all__ = [
+    "APPLICATION_SIDE",
+    "CANNED_STOP",
     "CUT_REASONS",
     "FILTER_STOPS",
     "INPUT_FILTER_REFUSED",
@@ -72,6 +83,9 @@ __all__ = [
     "blank_text",
     "blocked_attempt_ids",
     "blocked_by_provider_filter",
+    "canned_attempt_ids",
+    "canned_by_target",
+    "canned_key",
     "cut_attempt_ids",
     "cut_by_output_filter",
     "describe_filter_stop",
@@ -81,6 +95,7 @@ __all__ = [
     "filtered_attempt",
     "filtered_run",
     "is_filter_stop",
+    "mark_canned",
     "partial_reply",
     "replaced_reply",
     "side_unknown_attempt_ids",
@@ -98,6 +113,11 @@ INPUT_FILTER_REFUSED = "the provider's input filter refused the prompt before th
 INPUT_SIDE: Final = "input"
 OUTPUT_SIDE: Final = "output"
 UNKNOWN_SIDE: Final = "unknown"
+#: The side of a reply the target's own application wrote in the model's place (ADR-0025).
+APPLICATION_SIDE: Final = "application"
+
+#: What :func:`filter_stop` says of a canned reply: no provider sent a stop for it.
+CANNED_STOP: Final = "canned_reply"
 
 #: The reasons of an attempt whose reply the provider's filter stopped after the prompt reached
 #: the model, or may have (OD-42): a spec with one of them cannot pass.
@@ -105,6 +125,7 @@ CUT_REASONS: Final = frozenset(
     {
         InconclusiveReason.CUT_BY_PROVIDER_OUTPUT_FILTER,
         InconclusiveReason.PROVIDER_FILTER_SIDE_UNKNOWN,
+        InconclusiveReason.CANNED_BY_TARGET,
     }
 )
 
@@ -207,13 +228,43 @@ def stop_provenance(
     return response.model_copy(update={"foreign_stop": foreign})
 
 
+def canned_key(text: str) -> str:
+    """``text`` as a canned reply is compared: NFC, case folded, every run of whitespace one space.
+
+    The application's fixed text comes back with the transport's own line ends and trailing
+    spaces, and a template may change their case; the words are what is compared. Format
+    characters are dropped as blank (:func:`blank_text`), so a zero-width space does not hide one.
+    """
+
+    kept = "".join(" " if char.isspace() else char for char in unicodedata.normalize("NFC", text))
+    kept = "".join(char for char in kept if char == " " or not blank_text(char))
+    return " ".join(kept.casefold().split())
+
+
+def mark_canned(response: ModelResponse, replies: frozenset[str]) -> ModelResponse:
+    """``response`` marked ``canned_reply`` when its text is one of ``replies`` (keys, ADR-0025).
+
+    ``replies`` holds the :func:`canned_key` of each text the target file declares. A reply with a
+    tool call is the model's turn, never the application's fixed answer, and is left as it is.
+    """
+
+    if not replies or response.tool_calls or response.canned_reply:
+        return response
+    if canned_key(response.text) not in replies:
+        return response
+    return response.model_copy(update={"canned_reply": True})
+
+
 def filter_stop(response: ModelResponse) -> str | None:
     """The reply's stop reason, trimmed and in lower case, when it is a filter's; else ``None``.
 
     Not when the adapter marked it foreign (:func:`stop_provenance`): a stop the target's provider
-    does not document, or its target file does not declare, is an ordinary stop.
+    does not document, or its target file does not declare, is an ordinary stop. A canned reply
+    (ADR-0025) is :data:`CANNED_STOP`, whatever stop came with it.
     """
 
+    if response.canned_reply:
+        return CANNED_STOP
     if response.foreign_stop:
         return None
     stop = normalized_stop(response.finish_reason)
@@ -232,6 +283,8 @@ def filter_side(response: ModelResponse) -> str | None:
     stop = filter_stop(response)
     if stop is None:
         return None
+    if stop == CANNED_STOP:
+        return APPLICATION_SIDE
     if response.filter_side is not None:
         return response.filter_side
     if stop in _OUTPUT_STOPS:
@@ -307,6 +360,8 @@ def _output_tokens(usage: object) -> list[object]:
 def describe_filter_stop(response: ModelResponse) -> str:
     """The stop reason as the provider sent it, and where its side came from, for the evidence."""
 
+    if response.canned_reply:
+        return "the reply is one of the target file's canned_replies"
     stop = (response.finish_reason or "").strip()
     detail = f"stop reason {stop}"
     if response.filter_side == INPUT_SIDE:
@@ -381,6 +436,18 @@ def filter_side_unknown(attempt: Attempt) -> bool:
     return _stopped_on(attempt, InconclusiveReason.PROVIDER_FILTER_SIDE_UNKNOWN, UNKNOWN_SIDE)
 
 
+def canned_by_target(attempt: Attempt) -> bool:
+    """True when this attempt's reply is one of the target's own canned replies (ADR-0025)."""
+
+    return _stopped_on(attempt, InconclusiveReason.CANNED_BY_TARGET, APPLICATION_SIDE)
+
+
+def canned_attempt_ids(attempts: Iterable[Attempt]) -> set[str]:
+    """The ids of the attempts the target's application answered with a canned reply."""
+
+    return {attempt.attempt_id for attempt in attempts if canned_by_target(attempt)}
+
+
 def cut_attempt_ids(attempts: Iterable[Attempt]) -> set[str]:
     """The ids of the attempts the provider's output filter cut (one per id)."""
 
@@ -388,12 +455,16 @@ def cut_attempt_ids(attempts: Iterable[Attempt]) -> set[str]:
 
 
 def filtered_attempt(attempt: Attempt) -> bool:
-    """True when the provider's filter refused, cut or stopped this attempt (OD-41, OD-42)."""
+    """True when a filter refused, cut or stopped this attempt (OD-41, OD-42, ADR-0025).
+
+    The provider's, or the target application's own canned reply.
+    """
 
     return (
         blocked_by_provider_filter(attempt)
         or cut_by_output_filter(attempt)
         or filter_side_unknown(attempt)
+        or canned_by_target(attempt)
     )
 
 

@@ -66,6 +66,8 @@ from ildottore.shared.models import AttackSpec, Attempt, Finding, Target
 from ildottore.shared.provider_filter import (
     blocked_attempt_ids,
     blocked_by_provider_filter,
+    canned_attempt_ids,
+    canned_by_target,
     cut_attempt_ids,
     filter_side_unknown,
     side_unknown_attempt_ids,
@@ -350,6 +352,8 @@ class RunSummary:
     #: OD-42: replies the provider's output filter cut, and ones it stopped on an unsaid side.
     output_filter: FilterCuts = field(default_factory=FilterCuts)
     filter_side_unknown: FilterCuts = field(default_factory=FilterCuts)
+    #: ADR-0025 (u11 A-130): replies the target's application wrote in the model's place.
+    canned_by_target: FilterCuts = field(default_factory=FilterCuts)
     #: OD-21 (u11's half of u08 A-74): replies the adapter could not read as the provider's,
     #: counted the same way. Never a pass of the model either: a spec with one is inconclusive.
     unreadable: FilterCuts = field(default_factory=FilterCuts)
@@ -435,14 +439,17 @@ def _exercised(attempt: Attempt) -> bool:
     A conversation the provider's input filter cut carries a reply when the model had called a
     tool, and is not exercised unless that trace failed it (OD-41): the turn the spec is about
     never reached the model. Neither is a reply the provider's filter stopped on a side it did
-    not report (OD-42): it may be the prompt that was refused. A reply its output filter cut did
-    reach the model, which wrote it, and is exercised.
+    not report (OD-42): it may be the prompt that was refused. Nor is one of the target's own
+    canned replies (ADR-0025): the application answered, and the prompt may never have reached
+    the model. A reply its output filter cut did reach the model, which wrote it, and is
+    exercised.
     """
 
     if (
         attempt.response is None
         or blocked_by_provider_filter(attempt)
         or filter_side_unknown(attempt)
+        or canned_by_target(attempt)
     ):
         return False
     verdict = attempt.verdict
@@ -629,6 +636,8 @@ def build_run_summary(
     cut_specs: set[str] = set()
     unsaid = 0
     unsaid_specs: set[str] = set()
+    canned = 0
+    canned_specs: set[str] = set()
     unread = 0
     unread_specs: set[str] = set()
     withheld = 0
@@ -647,6 +656,10 @@ def build_run_summary(
         if stopped:
             unsaid += stopped
             unsaid_specs.add(finding.spec_id)
+        answered = len(canned_attempt_ids(finding.attempts))
+        if answered:
+            canned += answered
+            canned_specs.add(finding.spec_id)
         broken = len(unreadable_attempt_ids(finding.attempts))
         if broken:
             unread += broken
@@ -700,6 +713,7 @@ def build_run_summary(
         provider_filter=FilterBlocks(attempts=blocked, specs=tuple(sorted(blocked_specs))),
         output_filter=FilterCuts(attempts=cut, specs=tuple(sorted(cut_specs))),
         filter_side_unknown=FilterCuts(attempts=unsaid, specs=tuple(sorted(unsaid_specs))),
+        canned_by_target=FilterCuts(attempts=canned, specs=tuple(sorted(canned_specs))),
         unreadable=FilterCuts(attempts=unread, specs=tuple(sorted(unread_specs))),
         operator_declarations=operator_declarations(targets, findings),
         withheld=FilterCuts(attempts=withheld, specs=tuple(sorted(withheld_specs))),

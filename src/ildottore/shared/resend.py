@@ -40,7 +40,12 @@ from typing import Final
 from ildottore.shared.amounts import is_count
 from ildottore.shared.enums import InconclusiveReason
 from ildottore.shared.models import Attempt, JsonDict
-from ildottore.shared.provider_filter import CUT_REASONS, cut_by_output_filter, filter_side_unknown
+from ildottore.shared.provider_filter import (
+    CUT_REASONS,
+    canned_by_target,
+    cut_by_output_filter,
+    filter_side_unknown,
+)
 from ildottore.shared.unreadable import unreadable_reply
 
 __all__ = [
@@ -77,14 +82,17 @@ def with_send_number(attempt: Attempt, number: int) -> Attempt:
 
 
 def never_a_pass(attempt: Attempt) -> bool:
-    """True when this attempt keeps its spec from passing: unreadable, cut, or side unknown.
+    """True when this attempt keeps its spec from passing: unreadable, cut, side unknown, canned.
 
     Read as every count reads it: from the verdict's reason, or, on an attempt stored without a
     verdict, from the error's mark or the reply's stop reason.
     """
 
     return (
-        unreadable_reply(attempt) or cut_by_output_filter(attempt) or filter_side_unknown(attempt)
+        unreadable_reply(attempt)
+        or cut_by_output_filter(attempt)
+        or filter_side_unknown(attempt)
+        or canned_by_target(attempt)
     )
 
 

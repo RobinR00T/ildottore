@@ -338,6 +338,27 @@
             }
           }
         },
+        "canned_by_target": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "attempts",
+            "specs"
+          ],
+          "description": "The attempts whose reply is one of the fixed texts the target file declares its own application answers with in the model's place (canned_replies, ADR-0025). Each is an inconclusive attempt with the reason canned_by_target, needing review and never a pass. Optional in report-1.0; always emitted by this build.",
+          "properties": {
+            "attempts": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "specs": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
         "unreadable_reply": {
           "type": "object",
           "additionalProperties": false,

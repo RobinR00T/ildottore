@@ -36,6 +36,7 @@ from ildottore.shared.intervals import wilson_interval
 from ildottore.shared.models import AttackSpec, Finding, RiskScore
 from ildottore.shared.provider_filter import (
     blocked_attempt_ids,
+    canned_attempt_ids,
     cut_attempt_ids,
     side_unknown_attempt_ids,
 )
@@ -185,6 +186,12 @@ def _result(finding: Finding, rule_index: int, *, include_needs_review: bool) ->
             f"; {unsaid} of {sent} attempt(s) stopped by the provider's filter on a side it did "
             "not report: review them"
         )
+    canned = len(canned_attempt_ids(finding.attempts))
+    if canned:
+        message += (
+            f"; {canned} of {sent} attempt(s) answered by the target's application with one of "
+            "its canned replies, not by the model: review them"
+        )
     if finding.control is not None and finding.control.outcome.value == "not_attributed":
         # u08 A-106: the same ask without the attack failed too.
         message += "; its control failed too: the target does this unattacked, review it"
@@ -241,6 +248,7 @@ def _result(finding: Finding, rule_index: int, *, include_needs_review: bool) ->
             **({"blocked_by_provider_filter": blocked} if blocked else {}),
             **({"cut_by_provider_output_filter": cut} if cut else {}),
             **({"provider_filter_side_unknown": unsaid} if unsaid else {}),
+            **({"canned_by_target": canned} if canned else {}),
             **({"unreadable_reply": unreadable} if unreadable else {}),
             **({"operator_declaration_attempts": declared} if declared else {}),
             **({"evidence_withheld": withheld} if withheld else {}),
@@ -279,7 +287,8 @@ def _blocked_property(findings: list[Finding]) -> dict[str, int]:
     """The run's counts of attempts the provider's filter stopped, each only when not zero.
 
     ``blocked_by_provider_filter`` (OD-41), ``cut_by_provider_output_filter`` and
-    ``provider_filter_side_unknown`` (OD-42).
+    ``provider_filter_side_unknown`` (OD-42), and the target's own ``canned_by_target``
+    (ADR-0025).
     """
 
     counts = {
@@ -288,6 +297,7 @@ def _blocked_property(findings: list[Finding]) -> dict[str, int]:
         "provider_filter_side_unknown": sum(
             len(side_unknown_attempt_ids(f.attempts)) for f in findings
         ),
+        "canned_by_target": sum(len(canned_attempt_ids(f.attempts)) for f in findings),
         # The replies the adapter could not read (OD-21, u08 A-74).
         "unreadable_reply": sum(len(unreadable_attempt_ids(f.attempts)) for f in findings),
         # Attempts stored with the pieces of their reply withheld (A-77).

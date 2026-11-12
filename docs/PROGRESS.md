@@ -5,6 +5,30 @@ The carryover ledger. Every agent session updates this so context survives even 
 newest merge on top: a branch's entries land together when it merges, so the dates of
 neighbouring entries can interleave (an older branch merged later sits above a newer one).
 
+## State, 2026-11-09: a reply the target's own application wrote is not the model's (`feat/canned-replies`, u08 A-130, ADR-0025, judging rules 13)
+
+- **Why.** The owner asked to bring into Il Dottore what serves from a separate validation tool
+  (2026-11-09, piece 1 of 8, approved). In a field engagement a deployment's guardrail answered
+  every trigger and the control with the same rejection, byte for byte: nothing proved the prompt
+  reached the model, and Il Dottore would have read it as the model refusing. No detail of that
+  engagement is here.
+- **Built.** `Target.canned_replies`, `ModelResponse.canned_reply`, `InconclusiveReason.
+  CANNED_BY_TARGET`; the runner marks replies on the campaign's adapter and in the identity
+  sweep; `shared.provider_filter` reads them on an `application` side, routed like a cut reply;
+  every report counts them; the filtered-run error names the application.
+- **Measured.** Through the CLI against a loopback stub, `PI-DIRECT-001 --runs 2` with a judge:
+  without the key `status=pass`, exit 0 (as on `main`); with it `6/6 answered by the target's
+  application`, exit 3, the judge never asked.
+- **Found and fixed on the way.** The first cut's filtered-run error said the 6 replies were
+  "stopped by [the provider's filter] on a side it did not report".
+- **Rebased on session adoption (A-134, 2026-11-11).** The handoff's sends did not mark a canned
+  reply: an adopter answered with one counted as a reply the model wrote, exit 0. They mark it
+  now and leave that adopter out by name, exit 3 (`tests/core/test_session_handoff.py`, failing
+  without the change).
+- **Rebased on the mixed-signal refusal fix (A-136, #169, 2026-11-11).** It took judging rules
+  12 first, so this change is 13.
+- **Open (OD-72).** Detecting a pool without the declaration: the owner's call.
+
 ## State, 2026-11-09: the authority appeal as a mutation (`feat/authority-claim`, u05 A-129)
 
 - **Why.** The second of the eight pieces the owner approved on 2026-11-09 (carried over from his

@@ -117,6 +117,8 @@ from ildottore.shared.mutation_chain import ends_in_image
 from ildottore.shared.provider_filter import (
     blocked_attempt_ids,
     blocked_by_provider_filter,
+    canned_attempt_ids,
+    canned_by_target,
     cut_attempt_ids,
     cut_by_output_filter,
     filtered_attempt,
@@ -2900,8 +2902,10 @@ def _execute_run(
             prior_attempts = [a for a in effective if a.attempt_id in kept_ids]
             blocked = len(blocked_attempt_ids(prior_attempts))
             # OD-42: a reply the provider's filter cut is answered, and kept like any other.
-            trimmed = len(cut_attempt_ids(prior_attempts)) + len(
-                side_unknown_attempt_ids(prior_attempts)
+            trimmed = (
+                len(cut_attempt_ids(prior_attempts))
+                + len(side_unknown_attempt_ids(prior_attempts))
+                + len(canned_attempt_ids(prior_attempts))
             )
             # It keeps none when every stored attempt is sent again: "keeps 0 attempt(s) across 4
             # spec(s)" read as a resume with nothing to do (verification of 07aa0b3a, LOW 2).
@@ -3563,18 +3567,26 @@ def _filtered_reason(result: CampaignResult) -> str | None:
     filtered = [a for a in attempts if filtered_attempt(a)]
     blocked = sum(blocked_by_provider_filter(a) for a in filtered)
     withheld = sum(cut_by_output_filter(a) for a in filtered)
-    unsaid = len(filtered) - blocked - withheld
+    canned = sum(canned_by_target(a) for a in filtered)  # ADR-0025: the application's
+    unsaid = len(filtered) - blocked - withheld - canned
+    if not canned:
+        who = "the provider's filter"
+    elif canned == len(filtered):
+        who = "the target's application with a canned reply"
+    else:
+        who = "the provider's filter or the target's application"
     counts = [
         f"{blocked} refused by its input filter" if blocked else "",
         f"{withheld} cut or replaced by its output filter" if withheld else "",
         f"{unsaid} stopped by it on a side it did not report" if unsaid else "",
+        f"{canned} with one of the target file's canned_replies" if canned else "",
         f"{len(attempts) - len(filtered)} failed before a reply could be read"
         if len(attempts) > len(filtered)
         else "",
     ]
     unread = " or got no reply that could be read" if len(attempts) > len(filtered) else ""
     return (
-        f"every one of the {len(attempts)} attempt(s) was answered by the provider's filter"
+        f"every one of the {len(attempts)} attempt(s) was answered by {who}"
         f"{unread} ({', '.join(c for c in counts if c)}), so no reply the model wrote whole was "
         "evaluated: the run measured the filter, not the model. To measure the model, run it "
         "where the filter lets the attack prompts through; every such attempt is in the "
