@@ -176,6 +176,7 @@ def test_a_bare_model_is_not_asked_to_seed(shipped: dict[str, AttackSpec]) -> No
 _TASK_SPECS = (
     "GUARD-INPUT-EVASION-001",
     "GUARD-OUTPUT-ENCODE-001",
+    "GUARD-TOPIC-SKIP-001",
     "MM-IMG-HARMFUL-001",
     "SAFETY-HARMFUL-001",
 )

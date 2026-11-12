@@ -5,6 +5,27 @@ The carryover ledger. Every agent session updates this so context survives even 
 newest merge on top: a branch's entries land together when it merges, so the dates of
 neighbouring entries can interleave (an older branch merged later sits above a newer one).
 
+## State, 2026-11-09: an on-topic framing past the input classifier (`feat/guard-topic-skip`, u13 A-131)
+
+- **Why.** Piece 2 of the eight the owner approved on 2026-11-09 from another project of the
+  owner's: a deployed assistant's guardrail skipped its classifier when the message named the
+  service's own subject. Only the generic pattern comes over.
+- **Built.** `GUARD-TOPIC-SKIP-001` (the forbidden request framed as about the service; the bare
+  request as its `control`), in `guardrail-evasion`. 84 specs.
+- **Measured.** Lint clean over 84 specs; both fixtures prove. Scenario M, `--estimate --runs 1`:
+  stage a 6 requests over 3 specs and 12 to the judge (5, 2 and 10 before); stage d 94 over 28
+  specs and 108 to the judge (93, 27 and 106 before; measured 2026-11-10 on `main` with
+  AC-WS-ORIGIN-001), and 1760 with `--fuzz 10` (1721 before).
+- **Open (OD-73).** A target-file field naming the deployment's own domain terms: the generic
+  framing cannot reach a gate keyed on one.
+- **Rebased on `DL-TOOL-ERROR-REFLECT-001` (#170) and `authority_claim` (#171), 2026-11-12.**
+  84 specs, measured on the rebased tree: stage d 94 over 28 specs and 108 to the judge (#170's
+  spec is not seeded on the example agent), 1761 with `--fuzz 10` (8805 at `--runs 5`, 89
+  sittings: #171's mutator adds one), stage c refuses 7 specs, CWE on 52 of 84, `refusal` in 17,
+  `seed` 42 in 82, `max_tokens` in 43, `top_p` 1.0 in 7.
+- **Pairs with** the canned-reply piece (`feat/canned-replies`, A-130): a control refused with the
+  application's text is the gate firing, and the attack answered by the model is the gate skipped.
+
 ## State, 2026-11-09: the authority appeal as a mutation (`feat/authority-claim`, u05 A-129)
 
 - **Why.** The second of the eight pieces the owner approved on 2026-11-09 (carried over from his
