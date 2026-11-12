@@ -7,6 +7,16 @@ the file, schema copy, build or pipeline it names.
 
 ## [Unreleased]
 
+### Added (the authority appeal as a mutation: u05 A-129)
+
+- **`authority_claim`.** Prepends a claim that the operator, the lead developer, the
+  administrator or a sanctioned security audit approved the request, then the request verbatim.
+  One of four claims, drawn from the spec id and the mutation name, so a run reproduces. A spec
+  can name it in `mutations`; `--obfuscate framing` and `--obfuscate all` (now 56 mutations) add
+  it, and `--fuzz` may draw it. `dottore mutate authority_claim "<text>"` previews it.
+- The fingerprint does not send it (it keeps the operator's text): `-sV` stays 18 requests. No
+  shipped spec names it.
+
 ### Added (a tool error that relays backend internals: u13 A-135)
 
 - **`DL-TOOL-ERROR-REFLECT-001`.** A mock tool fails with a 502 whose connection string carries a

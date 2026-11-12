@@ -51,12 +51,14 @@ EXPECTED_BUILTINS = {
     "ascii_art",
     "evade",
     "image",
+    # u05 A-129: the authority appeal
+    "authority_claim",
 }
 
 
 def test_all_builtins_present() -> None:
     assert set(_NAMES) == EXPECTED_BUILTINS
-    assert len(_NAMES) == 29
+    assert len(_NAMES) == 30
 
 
 def test_every_builtin_has_a_golden_fixture() -> None:

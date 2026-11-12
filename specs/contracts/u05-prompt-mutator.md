@@ -11,7 +11,7 @@ Stage-2 build contract. 9-section anatomy per `docs/00 §2`. Read `AGENTS.md` + 
   (markdown + html carriers), `payload_splitting.py`, `refusal_suppression_prefix.py`; since
   A-99 the obfuscation families `encode.py`, `cipher.py`, `bijection.py`, `smuggle.py`,
   `glyph.py`, `bon.py`, `structured.py`, `ascii_art.py`, `evade.py`, `image.py`, and
-  `obfuscation.py` (presets, `--fuzz` chains).
+  `obfuscation.py` (presets, `--fuzz` chains); since A-129 `authority_claim.py`.
 - **MUST NOT touch:** `shared/`, `adapters/`, `core/`, `evaluators/`, `scoring/`, `policy/`,
   `registry/` (spec registry, u02), any spec/suite YAML, `schemas/`.
 
@@ -44,6 +44,17 @@ naming an unknown mutation is a linter error (u02), never a silent skip.
   variants; the rest none). The spec linter (u02, fed the names and
   parameters by `cli/lint.py`) and the runner (u08) refuse an unaccepted parameter
   (`UNKNOWN_MUTATOR_TYPE`; `unknown_mutator_parameter`, nothing sent). `docs/06 §3`.
+- **As built (2026-11-09, A-129): `authority_claim`.** The authority appeal of the extraction
+  batteries, the one family of them the registry lacked (roleplay, translation, payload splitting,
+  refusal suppression, a forged prior turn and structured output were built). It prepends one of
+  four claims, drawn by `seeded_rng(seed, salt=name)`, that the operator, the lead developer, the
+  administrator or a sanctioned security audit approved the ask, and keeps the ask verbatim
+  (intent-preserving, not reversible, no parameter). In the `framing` preset, so `all` is 56
+  mutations and `--fuzz` may draw it; `--fuzz` still adds the same number of chains (stage d of
+  Scenario M with `--fuzz 10` is 1722 agent requests, measured, one more than the 1721 without it). It keeps the operator's text, so
+  the fingerprint's carrier layer (u09) does not probe it: `-sV` stays 18 requests. No shipped
+  spec names it. Acceptance: its golden fixture (`tests/fixtures/mutators/golden/authority_claim.json`),
+  the registry count (30), `dottore registry mutators`.
 - **As built (2026-10-26, A-99): obfuscation and fuzzing.** Ten families, each a pure function
   of `(text, seed)` with its parameter read from the seed's tail: `encode`, `cipher`,
   `bijection`, `smuggle`, `glyph`, `bon`, `structured`, `ascii_art`, `evade` (the IDS and WAF

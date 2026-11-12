@@ -107,6 +107,7 @@ PRESETS: dict[str, tuple[str, ...]] = {
         "leetspeak",
         "adversarial_suffix",
         "math_problem",
+        "authority_claim",
     ),
     "bon": tuple(f"bon:{n}" for n in range(8)),
     # The carrier drawn into a PNG (needs a target that declares multimodal input).

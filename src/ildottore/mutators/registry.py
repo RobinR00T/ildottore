@@ -18,6 +18,7 @@ from importlib.metadata import entry_points
 from ildottore.mutators.adversarial_poetry import AdversarialPoetryMutator
 from ildottore.mutators.adversarial_suffix import AdversarialSuffixMutator
 from ildottore.mutators.ascii_art import AsciiArtMutator
+from ildottore.mutators.authority_claim import AuthorityClaimMutator
 from ildottore.mutators.base import Mutator
 from ildottore.mutators.base64_wrap import Base64WrapMutator
 from ildottore.mutators.bijection import BijectionMutator
@@ -57,8 +58,8 @@ __all__ = [
 
 ENTRY_POINT_GROUP = "dottore.mutators"
 
-# The 29 built-in strategies (docs/03 §4 + docs/14 enhancers + docs/12 P1 adversarial suffix +
-# the ten obfuscation families of u05 A-99).
+# The 30 built-in strategies (docs/03 §4 + docs/14 enhancers + docs/12 P1 adversarial suffix +
+# the ten obfuscation families of u05 A-99 + the authority claim of u05 A-129).
 # ``markdown_comment_carrier`` + ``html_comment_carrier`` are the two carriers named in the
 # docs; ``comment_carrier`` is the owning module (contract §1).
 _BUILTINS: tuple[type[Mutator], ...] = (
@@ -92,6 +93,8 @@ _BUILTINS: tuple[type[Mutator], ...] = (
     AsciiArtMutator,
     EvadeMutator,
     ImageMutator,
+    # u05 A-129: the authority appeal of the extraction batteries.
+    AuthorityClaimMutator,
 )
 
 
